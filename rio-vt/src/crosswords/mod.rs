@@ -1592,8 +1592,6 @@ impl<U: EventListener> Crosswords<U> {
             // paths return without touching the write-path damage
             // bookkeeping: record it here or the renderer never
             // repaints the row (stale glyphs until a full redraw).
-            // Ghostty marks dirty at both of its attach sites the same
-            // way (Terminal.zig:1090, :1174).
             self.damage.damage_line(row.0 as usize);
         }
         // id == 0: slot space exhausted. Keep the cell's existing
@@ -8234,21 +8232,70 @@ mod tests {
         cw.swap_alt();
     }
 
-    /// Mode 2027: a zero-width codepoint with no base to join (orphan
-    /// at column 0) is dropped, never legacy-attached: the mode just
-    /// computed a boundary and wcwidth-attaching would contradict it
-    /// (ghostty Terminal.zig, print width==0 branch).
+    fn partial_damage_lines(cw: &mut Crosswords<VoidListener>) -> Vec<usize> {
+        match cw.damage() {
+            TermDamage::Full => panic!("expected partial damage"),
+            TermDamage::Partial(iter) => {
+                let mut lines: Vec<usize> = iter.map(|d| d.line).collect();
+                lines.sort_unstable();
+                lines
+            }
+        }
+    }
+
+    /// A combining mark arriving in its own damage window (its base was
+    /// painted and the damage consumed) must damage the base's row: the
+    /// attach mutates a painted cell. This is the mechanism behind the
+    /// 0.5.20 "stale glyphs until you scroll" report.
     #[test]
+    fn cluster_attach_records_damage() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(8, 3);
+        cw.input('e');
+        cw.reset_damage(); // renderer consumed the frame with the base
+
+        cw.input('\u{0301}');
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{0301}']);
+        assert_eq!(partial_damage_lines(&mut cw), [0]);
+    }
+
+    /// Same contract on the legacy wcwidth path (clustering opted out):
+    /// the zero-width attach predates mode 2027 and had the same gap.
+    #[test]
+    fn legacy_zero_width_attach_records_damage() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(8, 3);
+        cw.set_grapheme_clustering(false);
+        cw.input('e');
+        cw.reset_damage();
+
+        cw.input('\u{0301}');
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{0301}']);
+        assert_eq!(partial_damage_lines(&mut cw), [0]);
+    }
+
+    /// A VS16 that widens the cluster damages the row through both the
+    /// widen and the attach; the selector must also land in the extras.
+    #[test]
+    fn vs16_widen_records_damage() {
+        use crate::performer::handler::Handler;
+        let mut cw = term_2027(8, 3);
+        cw.input('\u{2764}'); // text-default heart, narrow
+        cw.reset_damage();
+
+        cw.input('\u{FE0F}');
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Wide);
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{FE0F}']);
+        assert!(partial_damage_lines(&mut cw).contains(&0));
+    }
+
     /// Damage soundness: every row whose visible content changed since
     /// the last reset must be covered by the damage the terminal
     /// reports. Feeds randomized VT streams (clusters, wide chars,
     /// erases, scrolls, alt screen) and diffs full row snapshots. Bare
     /// continuation codepoints are separate chunks deliberately: an
     /// attach that lands in its own damage window is exactly the
-    /// "stale glyphs until you scroll" class of bug. Ghostty guards
-    /// the same invariant by calling cursorMarkDirty at every
-    /// mutation site, including both attach paths (Terminal.zig:1090,
-    /// :1174).
+    /// "stale glyphs until you scroll" class of bug.
     #[test]
     fn damage_covers_every_content_change() {
         use crate::performer::handler::Processor;
@@ -8363,6 +8410,11 @@ mod tests {
         }
     }
 
+    /// Mode 2027: a zero-width codepoint with no base to join (orphan
+    /// at column 0) is dropped, never legacy-attached: the mode just
+    /// computed a boundary and wcwidth-attaching would contradict it
+    /// (ghostty Terminal.zig, print width==0 branch).
+    #[test]
     fn mode_2027_orphan_zero_width_dropped() {
         use crate::ansi::mode::PrivateMode;
         use crate::performer::handler::Handler;
