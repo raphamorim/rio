@@ -3841,7 +3841,11 @@ impl Screen<'_> {
 
                 let current = self.context_manager.current();
                 let cursor = &current.renderable_content.cursor;
-                let cursor_row = cursor.state.pos.row.0 as usize;
+                // Vi mode reports the cursor in scroll-adjusted viewport
+                // rows; today's clamps keep it non-negative, but a
+                // negative Line wrapping through `as usize` would fling
+                // the trail target off by ~10^18 px, so clamp first.
+                let cursor_row = cursor.state.pos.row.0.max(0) as usize;
                 let cursor_col = cursor.state.pos.col.0;
 
                 // Cursor position in physical pixels.

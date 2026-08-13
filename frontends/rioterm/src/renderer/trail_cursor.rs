@@ -26,9 +26,6 @@ const IDLE_FRAME_DT: f32 = 1.0 / 60.0;
 /// complete the whole animation in one step.
 const MAX_FRAME_DT: f32 = 0.1;
 
-/// Beam and underline thickness as a fraction of the cell width.
-const THIN_SHAPE_FRACTION: f32 = 0.15;
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TrailSettings {
     /// Overrides the cursor color when set.
@@ -111,6 +108,11 @@ pub struct TrailCursor {
 /// The cursor rect a shape occupies, as quad corners TL TR BR BL.
 /// `None` for a hidden cursor: the trail keeps its previous target
 /// and fades where it stands.
+///
+/// Beam and underline reuse the grid's own sprite geometry
+/// (`cursor_thickness`, the bar's boundary straddle, the underline
+/// gap) so the trail converges exactly onto the cursor the grid
+/// draws, not onto an approximation a few pixels off it.
 fn target_rect(
     x: f32,
     y: f32,
@@ -118,11 +120,24 @@ fn target_rect(
     cell_height: f32,
     shape: CursorShape,
 ) -> Option<[[f32; 2]; 4]> {
-    let thickness = (cell_width * THIN_SHAPE_FRACTION).round().max(1.0);
+    let t = crate::grid_emit::cursor_thickness(cell_height.max(1.0) as u32);
+    let thickness = t as f32;
     let (x0, y0, w, h) = match shape {
         CursorShape::Block => (x, y, cell_width, cell_height),
-        CursorShape::Beam => (x, y, thickness, cell_height),
-        CursorShape::Underline => (x, y + cell_height - thickness, cell_width, thickness),
+        // The bar is centered on the LEFT edge of the cursor cell
+        // (sprite bearing `-((t + 1) / 2)`), straddling the boundary.
+        CursorShape::Beam => (x - t.div_ceil(2) as f32, y, thickness, cell_height),
+        // The underline sits at the SGR-underline baseline: `gap`
+        // empty rows below it.
+        CursorShape::Underline => {
+            let gap = crate::grid_emit::underline_gap_below(cell_height.max(1.0) as u32);
+            (
+                x,
+                y + cell_height - thickness - gap as f32,
+                cell_width,
+                thickness,
+            )
+        }
         CursorShape::Hidden => return None,
     };
     Some([[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]])
@@ -343,6 +358,14 @@ impl TrailCursor {
     /// vertex pipeline. `cursor_color` applies when no color override
     /// is configured; the visibility ramp and the configured opacity
     /// both scale the alpha.
+    ///
+    /// Known gap vs kitty: their fragment shader masks the live
+    /// cursor rect out of the trail, so the smear never overpaints
+    /// the cursor or the glyph inside it. This quad has no mask, so
+    /// mid-flight the target cell is covered (invisible at the
+    /// default color, a tint with a color or opacity override).
+    /// Masking a convex quad minus a rect is non-convex, so it needs
+    /// shader support rather than caller geometry.
     pub fn draw(
         &self,
         sugarloaf: &mut Sugarloaf,
@@ -674,6 +697,26 @@ mod tests {
         t.snap();
         assert!(!t.tick(0.016, true, true, 1, CELL_W, CELL_H));
         assert!(max_corner_error(&t) <= SETTLE_EPSILON_PX);
+    }
+
+    /// Thin shapes must converge onto the cursor the grid actually
+    /// draws: same thickness source, the bar's boundary straddle,
+    /// the underline's baseline gap.
+    #[test]
+    fn thin_shapes_match_drawn_cursor_geometry() {
+        let t = crate::grid_emit::cursor_thickness(CELL_H as u32) as f32;
+        let gap = crate::grid_emit::underline_gap_below(CELL_H as u32) as f32;
+
+        let beam = target_rect(50.0, 40.0, CELL_W, CELL_H, CursorShape::Beam).unwrap();
+        assert_eq!(beam[0][0], 50.0 - (t as u32).div_ceil(2) as f32);
+        assert_eq!(beam[1][0] - beam[0][0], t);
+        assert_eq!(beam[3][1] - beam[0][1], CELL_H);
+
+        let under =
+            target_rect(50.0, 40.0, CELL_W, CELL_H, CursorShape::Underline).unwrap();
+        assert_eq!(under[0][1], 40.0 + CELL_H - t - gap);
+        assert_eq!(under[3][1] - under[0][1], t);
+        assert_eq!(under[1][0] - under[0][0], CELL_W);
     }
 
     #[test]

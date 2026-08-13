@@ -538,7 +538,7 @@ impl CursorRenderStyle {
 /// cell height. Capped at 2 px so deeply-zoomed cells don't get a
 /// chunky frame / fat bar instead of a cursor hint.
 #[inline]
-fn cursor_thickness(cell_h: u32) -> u32 {
+pub(crate) fn cursor_thickness(cell_h: u32) -> u32 {
     (cell_h / 16).clamp(1, 2)
 }
 
@@ -752,7 +752,7 @@ fn decoration_thickness(size_px: f32) -> u32 {
 /// below. Mirrors the spirit of `underline_position` but
 /// simplified — we don't have per-font metrics here.
 #[inline]
-fn underline_gap_below(cell_h: u32) -> u32 {
+pub(crate) fn underline_gap_below(cell_h: u32) -> u32 {
     (cell_h / 20).max(1)
 }
 
