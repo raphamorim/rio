@@ -226,6 +226,21 @@ void rio_surface_scroll(rio_surface_t *surface, int32_t delta_lines);
 bool rio_surface_scroll_wheel(rio_surface_t *surface, int32_t lines,
                               uint16_t col, uint16_t row, uint8_t mods);
 
+/* Report a mouse button press/release to the program when it asked for mouse
+   events (DEC 1000/1002/1003, SGR/UTF8/X10). `button` is 0=left, 1=middle,
+   2=right; `mods` uses the same bits as rio_surface_scroll_wheel. Returns
+   true when a report reached the program (the host should then skip its own
+   selection); false when nothing grabs the mouse, or shift bypasses to a
+   local selection. */
+bool rio_surface_mouse_button(rio_surface_t *surface, uint16_t col, uint16_t row,
+                              uint8_t button, bool pressed, uint8_t mods);
+
+/* Report pointer motion for button-event (1002, a button held) / any-event
+   (1003, bare motion) modes. `button` is 0/1/2 for the button held during a
+   drag, or 3 for none. Returns true when a report was emitted. */
+bool rio_surface_mouse_motion(rio_surface_t *surface, uint16_t col, uint16_t row,
+                              uint8_t button, uint8_t mods);
+
 /* `side_right` is true when the pointer sits in the right half of the cell.
    It decides whether that cell falls inside the selection, so a drag can
    reach the cells at both ends. */

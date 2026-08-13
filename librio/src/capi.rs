@@ -1180,6 +1180,60 @@ pub unsafe extern "C" fn rio_surface_scroll_wheel(
     .unwrap_or(false)
 }
 
+/// Report a mouse button press/release to the program if it asked for mouse
+/// events. `button` is 0=left, 1=middle, 2=right; `mods` uses the same bits
+/// as rio_surface_scroll_wheel. Returns true when a report reached the
+/// program (the host should then skip its own selection); false when nothing
+/// grabs the mouse, or shift bypasses to a local selection.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_mouse_button(
+    surface: *const Surface,
+    col: u16,
+    row: u16,
+    button: u8,
+    pressed: bool,
+    mods: u8,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return false;
+        }
+        unsafe { &*surface }.mouse_button(
+            col,
+            row,
+            button,
+            pressed,
+            Modifiers::from_bits_truncate(mods),
+        )
+    }))
+    .unwrap_or(false)
+}
+
+/// Report pointer motion for button-event (1002) / any-event (1003) modes.
+/// `button` is 0/1/2 for the button held during a drag, or 3 for none.
+/// Returns true when a report was emitted.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_mouse_motion(
+    surface: *const Surface,
+    col: u16,
+    row: u16,
+    button: u8,
+    mods: u8,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return false;
+        }
+        unsafe { &*surface }.mouse_motion(
+            col,
+            row,
+            button,
+            Modifiers::from_bits_truncate(mods),
+        )
+    }))
+    .unwrap_or(false)
+}
+
 /// The foreground process's name, for host-side program detection
 /// (agent state, tab icons). Free with rio_text_free.
 #[no_mangle]
