@@ -545,6 +545,8 @@ impl Screen<'_> {
 
         self.mark_dirty();
         self.resize_all_contexts();
+        // Reflowed cursor displacement is layout, not travel.
+        self.renderer.trail_cursor.snap();
     }
 
     #[inline]
@@ -564,6 +566,10 @@ impl Screen<'_> {
 
         self.context_manager
             .resize_all_grids(width, height, &mut self.sugarloaf);
+
+        // A resize reflows the cursor; that displacement is layout,
+        // not travel, and must not animate a smear.
+        self.renderer.trail_cursor.snap();
 
         self
     }
@@ -634,6 +640,8 @@ impl Screen<'_> {
         self.context_manager
             .resize_all_grids(width, height, &mut self.sugarloaf);
         self.mark_dirty();
+        // Rescaled cursor displacement is layout, not travel.
+        self.renderer.trail_cursor.snap();
 
         self
     }
@@ -1535,6 +1543,8 @@ impl Screen<'_> {
             .move_divider_up(amount, &mut self.sugarloaf)
         {
             self.mark_dirty();
+            // Divider displacement is layout, not cursor travel.
+            self.renderer.trail_cursor.snap();
         }
     }
 
@@ -1545,6 +1555,8 @@ impl Screen<'_> {
             .move_divider_down(amount, &mut self.sugarloaf)
         {
             self.mark_dirty();
+            // Divider displacement is layout, not cursor travel.
+            self.renderer.trail_cursor.snap();
         }
     }
 
@@ -1555,6 +1567,8 @@ impl Screen<'_> {
             .move_divider_left(amount, &mut self.sugarloaf)
         {
             self.mark_dirty();
+            // Divider displacement is layout, not cursor travel.
+            self.renderer.trail_cursor.snap();
         }
     }
 
@@ -1565,6 +1579,8 @@ impl Screen<'_> {
             .move_divider_right(amount, &mut self.sugarloaf)
         {
             self.mark_dirty();
+            // Divider displacement is layout, not cursor travel.
+            self.renderer.trail_cursor.snap();
         }
     }
 
@@ -1681,6 +1697,11 @@ impl Screen<'_> {
             ));
             context_grid.update_dimensions(&mut self.sugarloaf);
         }
+
+        // The tab strip appearing or vanishing shifts every panel;
+        // a background tab can close without a route change, so this
+        // reflow is not covered by the route-switch teleport.
+        self.renderer.trail_cursor.snap();
     }
 
     #[inline]
@@ -3791,8 +3812,6 @@ impl Screen<'_> {
         let (window_update, any_panel_dirty) = self
             .renderer
             .run(&mut self.sugarloaf, &mut self.context_manager);
-        let has_animation = self.renderer.needs_redraw();
-        let should_present = any_panel_dirty || has_animation;
 
         if self.renderer.custom_mouse_cursor {
             let scale = self.sugarloaf.scale_factor();
@@ -3829,14 +3848,15 @@ impl Screen<'_> {
                 let cursor_px_x = origin_x + cursor_col as f32 * cell_width;
                 let cursor_px_y = origin_y + cursor_row as f32 * cell_height;
 
-                self.renderer.trail_cursor.set_route(current.route_id);
-                self.renderer.trail_cursor.set_destination(
+                self.renderer.trail_cursor.update(
                     cursor_px_x,
                     cursor_px_y,
                     cell_width,
                     cell_height,
+                    cursor.state.content,
+                    cursor.state.is_visible(),
+                    current.route_id,
                 );
-                self.renderer.trail_cursor.animate(cell_width, cell_height);
 
                 let cursor_color = self.renderer.named_colors.cursor;
                 self.renderer.trail_cursor.draw(
@@ -3846,6 +3866,13 @@ impl Screen<'_> {
                 );
             }
         }
+
+        // Animation state is read after the trail advanced: a cursor
+        // movement can start animating in this same frame, and reading
+        // it earlier would fail to schedule the continuation frame,
+        // freezing the trail mid-flight until unrelated damage arrives.
+        let has_animation = self.renderer.needs_redraw();
+        let should_present = any_panel_dirty || has_animation;
 
         // Phase 2.2/2.3: per-panel CellBg + CellText emission with
         // per-row dirty gating. Iterates every panel in the active
