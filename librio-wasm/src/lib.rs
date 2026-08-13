@@ -687,7 +687,8 @@ impl RioTerm {
 
 /// Measure the first grapheme cluster in a UTF-32 buffer: returns
 /// `[len, width]`, the number of codepoints the cluster spans and its
-/// terminal cell width (1 or 2); `[0, 0]` for an empty buffer. Same
+/// terminal cell width (2 wide, 1 narrow, 0 for bare zero-width
+/// marks); `[0, 0]` for an empty buffer. Same
 /// segmentation and width rules as printing under grapheme clustering
 /// (DEC mode 2027), so renderers can size text for cells without
 /// replaying input. The buffer must contain a complete first cluster

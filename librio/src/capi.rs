@@ -1021,8 +1021,9 @@ pub unsafe extern "C" fn rio_render_state_cell_cluster(
 
 /// Measure the first grapheme cluster in a UTF-32 buffer: returns the
 /// number of codepoints the cluster spans and writes its terminal
-/// cell width (1 or 2) to `out_width` when non-null. Returns 0 for a
-/// null or empty buffer. Segmentation and width follow the same rules
+/// cell width to `out_width` when non-null (2 for wide, 1 for narrow,
+/// 0 for bare zero-width marks). Returns 0 for a null or empty
+/// buffer. Segmentation and width follow the same rules
 /// the terminal applies when printing under grapheme clustering, so
 /// embedders can size text for cells without replaying input. The
 /// buffer must contain a complete first cluster or the logical end of

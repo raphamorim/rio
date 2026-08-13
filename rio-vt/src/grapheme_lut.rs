@@ -92,7 +92,8 @@ pub fn start_state(first: u8) -> u8 {
 
 /// Measure the first grapheme cluster in `codepoints`: how many
 /// codepoints it spans and how many terminal cells it occupies.
-/// Returns `(len, width)`; `(0, 0)` for an empty slice.
+/// Returns `(len, width)`; `(0, 0)` for an empty slice, and width 0
+/// for a cluster of bare zero-width marks with no base to ride.
 ///
 /// Segmentation and width follow the same rules the mode-2027 input
 /// path applies when printing: a variation selector flips the width
@@ -196,19 +197,26 @@ mod tests {
         // (input, expected len, expected width)
         let cases: &[(&[u32], usize, u8)] = &[
             (&[], 0, 0),
-            (&[0x61, 0x62], 1, 1),           // "ab": narrow, breaks
-            (&[0x4E00], 1, 2),               // lone CJK: wide
-            (&[0x65, 0x301, 0x62], 2, 1),    // e + combining acute
-            (&[0x2764, 0xFE0F], 2, 2),       // text heart forced emoji
-            (&[0x231A, 0xFE0E], 2, 1),       // emoji watch forced text
-            (&[0x61, 0xFE0F], 2, 1),         // selector off base: ignored
-            (&[0x61, 0xFE0F, 0x301], 3, 1),  // ignored selector keeps joining
-            (&[0x31, 0xFE0F, 0x20E3], 3, 2), // keycap sequence
+            (&[0x61, 0x62], 1, 1),             // "ab": narrow, breaks
+            (&[0x4E00], 1, 2),                 // lone CJK: wide
+            (&[0x65, 0x301, 0x62], 2, 1),      // e + combining acute
+            (&[0x2764, 0xFE0F], 2, 2),         // text heart forced emoji
+            (&[0x231A, 0xFE0E], 2, 1),         // emoji watch forced text
+            (&[0x61, 0xFE0F], 2, 1),           // selector off base: ignored
+            (&[0x61, 0xFE0F, 0x301], 3, 1),    // ignored selector keeps joining
+            (&[0x61, 0xFE0F, 0xFE0F], 3, 1),   // double ignored selector
+            (&[0x231A, 0xFE0E, 0xFE0F], 3, 1), // selector after selector: ignored
+            (&[0x31, 0xFE0F, 0x20E3], 3, 2),   // keycap sequence
+            (&[0x31, 0x20E3], 2, 1),           // keycap without VS16 stays narrow
             (&[0x1F468, 0x200D, 0x1F33E], 3, 2), // ZWJ farmer
-            (&[0x1F44D, 0x1F3FB], 2, 2),     // thumbs up + skin tone
+            (&[0x1F3F4, 0x200D, 0x2620, 0xFE0F], 4, 2), // pirate flag: VS16 after ZWJ
+            (&[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467], 5, 2), // ZWJ family
+            (&[0x1F44D, 0x1F3FB], 2, 2),       // thumbs up + skin tone
             (&[0x1F1E7, 0x1F1F7, 0x1F1E7, 0x1F1F7], 2, 2), // flag pairs split
-            (&[0x110000, 0x61], 1, 1),       // invalid first: one narrow cell
-            (&[0x65, 0x301, 0xD800], 2, 1),  // invalid later: terminates
+            (&[0x110000, 0x61], 1, 1),         // invalid first: one narrow cell
+            (&[0x65, 0x301, 0xD800], 2, 1),    // invalid later: terminates
+            (&[0x61, 0x110000], 1, 1),         // out-of-range later: terminates
+            (&[0x301, 0x301], 2, 0),           // bare marks: no cell of their own
         ];
         for &(cps, len, width) in cases {
             assert_eq!(cluster_width(cps), (len, width), "input {cps:04X?}");
