@@ -3791,8 +3791,6 @@ impl Screen<'_> {
         let (window_update, any_panel_dirty) = self
             .renderer
             .run(&mut self.sugarloaf, &mut self.context_manager);
-        let has_animation = self.renderer.needs_redraw();
-        let should_present = any_panel_dirty || has_animation;
 
         if self.renderer.custom_mouse_cursor {
             let scale = self.sugarloaf.scale_factor();
@@ -3835,6 +3833,8 @@ impl Screen<'_> {
                     cursor_px_y,
                     cell_width,
                     cell_height,
+                    cursor.state.content,
+                    cursor.state.is_visible(),
                 );
                 self.renderer.trail_cursor.animate(cell_width, cell_height);
 
@@ -3846,6 +3846,12 @@ impl Screen<'_> {
                 );
             }
         }
+
+        // Evaluate animation state after advancing the cursor. A movement
+        // can start in this frame, so checking before `set_destination` /
+        // `animate` would fail to schedule its continuation.
+        let has_animation = self.renderer.needs_redraw();
+        let should_present = any_panel_dirty || has_animation;
 
         // Phase 2.2/2.3: per-panel CellBg + CellText emission with
         // per-row dirty gating. Iterates every panel in the active
@@ -4041,6 +4047,13 @@ impl Screen<'_> {
                         )
                     });
                 let cursor_shape = cursor.state.content;
+                // Alacritty interpolates and draws one cursor rect. Rio's
+                // animation is an overlay, so the equivalent behavior is to
+                // suppress the active route's grid cursor while that overlay
+                // is moving. Inactive panels retain their hollow cursors.
+                let cursor_visible = cursor.state.is_visible()
+                    && !(self.renderer.trail_cursor_enabled
+                        && self.renderer.trail_cursor.hides_static_cursor(ctx.route_id));
                 let cursor_blinking = ctx.renderable_content.has_blinking_enabled;
                 let cursor_blink_visible =
                     !cursor_blinking || ctx.renderable_content.is_blinking_cursor_visible;
@@ -4067,7 +4080,7 @@ impl Screen<'_> {
                     term_colors,
                     cursor_col: cursor.state.pos.col.0 as u16,
                     cursor_row: cursor.state.pos.row.0 as u16,
-                    cursor_visible: cursor.state.is_visible(),
+                    cursor_visible,
                     cursor_shape,
                     cursor_blinking,
                     cursor_blink_visible,

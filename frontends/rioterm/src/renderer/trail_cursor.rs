@@ -1,151 +1,130 @@
-// This file was heavily inspired by neovide implementation.
+// Alacritty-style smooth cursor motion. While this overlay animates, the
+// active panel suppresses its static grid cursor so only the interpolated
+// rectangle is visible.
 
-use crate::renderer::helpers::spring::Spring;
+use rio_backend::ansi::CursorShape;
 use rio_backend::sugarloaf::Sugarloaf;
 use std::time::Instant;
 
-/// Animation duration for long jumps (seconds).
-const ANIMATION_LENGTH: f32 = 0.15;
+/// Per-frame interpolation at 60 FPS. Mirrors Alacritty's
+/// `smooth_motion_factor`.
+const SMOOTH_MOTION_FACTOR: f32 = 0.20;
 
-/// Animation duration for short (≤2 cell horizontal) movements.
-const SHORT_ANIMATION_LENGTH: f32 = 0.04;
+/// Motion multiplier for the side opposite the travel direction. Lower
+/// values stretch more; 1.0 keeps the rectangle shape rigid.
+const SMOOTH_MOTION_SPRING: f32 = 0.80;
 
-/// Trail size 0.0–1.0.
-/// 1.0 = max stretch (leading edge jumps instantly,
-/// trailing edge lags most).
-const TRAIL_SIZE: f32 = 1.0;
+/// Maximum stretch relative to the destination cell size.
+const SMOOTH_MOTION_MAX_STRETCH_X: f32 = 3.0;
+const SMOOTH_MOTION_MAX_STRETCH_Y: f32 = 2.0;
+
+/// Matches Alacritty's cursor rect alpha. The static cursor is suppressed
+/// while this overlay is animating.
+const TRAIL_ALPHA: f32 = 1.0;
 const DEPTH: f32 = 0.0;
 
-#[derive(Clone)]
-struct Corner {
-    spring_x: Spring,
-    spring_y: Spring,
-    /// Current animated pixel position.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CursorRect {
     x: f32,
     y: f32,
-    /// Offset relative to cursor center (shape-aware).
-    rel_x: f32,
-    rel_y: f32,
-    prev_dest_x: f32,
-    prev_dest_y: f32,
-    anim_length: f32,
+    width: f32,
+    height: f32,
 }
 
-impl Corner {
-    fn new(rel_x: f32, rel_y: f32) -> Self {
+impl CursorRect {
+    #[inline]
+    fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
-            spring_x: Spring::new(),
-            spring_y: Spring::new(),
-            x: 0.0,
-            y: 0.0,
-            rel_x,
-            rel_y,
-            prev_dest_x: -1e6,
-            prev_dest_y: -1e6,
-            anim_length: 0.0,
+            x,
+            y,
+            width,
+            height,
         }
     }
 
     #[inline]
-    fn destination(
-        &self,
-        center_x: f32,
-        center_y: f32,
-        cell_w: f32,
-        cell_h: f32,
-    ) -> (f32, f32) {
-        (
-            center_x + self.rel_x * cell_w,
-            center_y + self.rel_y * cell_h,
-        )
+    fn for_shape(
+        cursor_x: f32,
+        cursor_y: f32,
+        cell_width: f32,
+        cell_height: f32,
+        shape: CursorShape,
+    ) -> Option<Self> {
+        let thickness = (cell_width * 0.15).round().max(1.0);
+
+        match shape {
+            CursorShape::Block => {
+                Some(Self::new(cursor_x, cursor_y, cell_width, cell_height))
+            }
+            CursorShape::Beam => {
+                Some(Self::new(cursor_x, cursor_y, thickness, cell_height))
+            }
+            CursorShape::Underline => Some(Self::new(
+                cursor_x,
+                cursor_y + cell_height - thickness,
+                cell_width,
+                thickness,
+            )),
+            CursorShape::Hidden => None,
+        }
     }
 
     #[inline]
-    fn update(
-        &mut self,
-        center_x: f32,
-        center_y: f32,
-        cell_w: f32,
-        cell_h: f32,
-        dt: f32,
-        immediate_movement: bool,
-    ) -> bool {
-        let (dest_x, dest_y) = self.destination(center_x, center_y, cell_w, cell_h);
-
-        if (dest_x - self.prev_dest_x).abs() > 0.01
-            || (dest_y - self.prev_dest_y).abs() > 0.01
-        {
-            self.spring_x.position = dest_x - self.x;
-            self.spring_y.position = dest_y - self.y;
-            self.prev_dest_x = dest_x;
-            self.prev_dest_y = dest_y;
-        }
-
-        // Teleport: snap to destination without animating.
-        if immediate_movement {
-            self.x = dest_x;
-            self.y = dest_y;
-            self.spring_x.reset();
-            self.spring_y.reset();
-            return false;
-        }
-
-        let mut animating = self.spring_x.update(dt, self.anim_length);
-        animating |= self.spring_y.update(dt, self.anim_length);
-        self.x = dest_x - self.spring_x.position;
-        self.y = dest_y - self.spring_y.position;
-
-        animating
+    fn visibly_matches(self, other: Self) -> bool {
+        self.x.round() == other.x.round()
+            && self.y.round() == other.y.round()
+            && self.width.round() == other.width.round()
+            && self.height.round() == other.height.round()
     }
 
-    /// Direction alignment: dot product of the corner's relative direction
-    /// with the travel direction.  Higher = more aligned with movement =
-    /// "leading".  Matches neovide's `calculate_direction_alignment`.
     #[inline]
-    fn direction_alignment(
-        &self,
-        center_x: f32,
-        center_y: f32,
-        cell_w: f32,
-        cell_h: f32,
-    ) -> f32 {
-        let (dest_x, dest_y) = self.destination(center_x, center_y, cell_w, cell_h);
+    fn interpolate(self, target: Self, factor: f32) -> Self {
+        let interp =
+            |from: f32, to: f32, factor: f32| from * (1.0 - factor) + to * factor;
 
-        // Corner's relative direction (normalized).
-        let rel_len = (self.rel_x * self.rel_x + self.rel_y * self.rel_y)
-            .sqrt()
-            .max(1e-6);
-        let corner_dir_x = self.rel_x / rel_len;
-        let corner_dir_y = self.rel_y / rel_len;
+        let dx = target.x - self.x;
+        let dy = target.y - self.y;
 
-        // Travel direction (from current animated pos to destination).
-        let dx = dest_x - self.x;
-        let dy = dest_y - self.y;
-        let travel_len = (dx * dx + dy * dy).sqrt().max(1e-6);
+        let x1_factor = factor * if dx < 0.0 { 1.0 } else { SMOOTH_MOTION_SPRING };
+        let y1_factor = factor * if dy < 0.0 { 1.0 } else { SMOOTH_MOTION_SPRING };
+        let x2_factor = factor * if dx > 0.0 { 1.0 } else { SMOOTH_MOTION_SPRING };
+        let y2_factor = factor * if dy > 0.0 { 1.0 } else { SMOOTH_MOTION_SPRING };
 
-        (dx / travel_len) * corner_dir_x + (dy / travel_len) * corner_dir_y
+        let mut x1 = interp(self.x, target.x, x1_factor);
+        let mut y1 = interp(self.y, target.y, y1_factor);
+        let mut x2 = interp(self.x + self.width, target.x + target.width, x2_factor);
+        let mut y2 = interp(self.y + self.height, target.y + target.height, y2_factor);
+
+        let max_width = target.width * SMOOTH_MOTION_MAX_STRETCH_X;
+        let max_height = target.height * SMOOTH_MOTION_MAX_STRETCH_Y;
+        let width = (x2 - x1).min(max_width);
+        let height = (y2 - y1).min(max_height);
+
+        if dx < 0.0 {
+            x1 = x2 - width;
+        } else {
+            x2 = x1 + width;
+        }
+
+        if dy < 0.0 {
+            y1 = y2 - height;
+        } else {
+            y2 = y1 + height;
+        }
+
+        Self {
+            x: x1,
+            y: y1,
+            width: x2 - x1,
+            height: y2 - y1,
+        }
     }
 }
 
 pub struct TrailCursor {
-    /// Four corners: [top-left, top-right, bottom-right, bottom-left].
-    corners: [Corner; 4],
+    current: Option<CursorRect>,
+    target: Option<CursorRect>,
     last_frame: Instant,
-    /// Current destination center (physical pixels).
-    dest_cx: f32,
-    dest_cy: f32,
-    /// Previous destination center, used to detect jumps.
-    prev_dest_cx: f32,
-    prev_dest_cy: f32,
-    /// Center before the current jump — preserved so `compute_jump` can
-    /// measure travel distance (since `set_destination` overwrites
-    /// `prev_dest` before `animate` runs).
-    jump_from_cx: f32,
-    jump_from_cy: f32,
-    /// One-shot flag: set when destination changes, consumed in `animate`.
-    jumped: bool,
-    /// True until the first real destination is set — first frame teleports.
-    first_frame: bool,
     route_id: Option<usize>,
     animating: bool,
 }
@@ -153,21 +132,9 @@ pub struct TrailCursor {
 impl TrailCursor {
     pub fn new() -> Self {
         Self {
-            corners: [
-                Corner::new(-0.5, -0.5), // top-left
-                Corner::new(0.5, -0.5),  // top-right
-                Corner::new(0.5, 0.5),   // bottom-right
-                Corner::new(-0.5, 0.5),  // bottom-left
-            ],
+            current: None,
+            target: None,
             last_frame: Instant::now(),
-            dest_cx: 0.0,
-            dest_cy: 0.0,
-            prev_dest_cx: -1e6,
-            prev_dest_cy: -1e6,
-            jump_from_cx: -1e6,
-            jump_from_cy: -1e6,
-            jumped: false,
-            first_frame: true,
             route_id: None,
             animating: false,
         }
@@ -176,203 +143,141 @@ impl TrailCursor {
     pub fn set_route(&mut self, route_id: usize) {
         if self.route_id != Some(route_id) {
             self.route_id = Some(route_id);
-            self.first_frame = true;
+            self.current = None;
+            self.target = None;
+            self.animating = false;
+            self.last_frame = Instant::now();
         }
     }
 
-    /// Update the cursor destination.  Called once per frame **before**
-    /// `animate()`.  Sets the `jumped` flag when the destination changes
-    /// (matching neovide's `update_cursor_destination`).
+    /// Update the cursor destination. Called once per frame before
+    /// `animate()`. The inputs are physical pixels.
     pub fn set_destination(
         &mut self,
         cursor_x: f32,
         cursor_y: f32,
         cell_width: f32,
         cell_height: f32,
+        shape: CursorShape,
+        visible: bool,
     ) {
-        // Center of cursor cell.
-        let cx = cursor_x + cell_width * 0.5;
-        let cy = cursor_y + cell_height * 0.5;
-        self.dest_cx = cx;
-        self.dest_cy = cy;
+        let Some(target) = visible
+            .then(|| {
+                CursorRect::for_shape(cursor_x, cursor_y, cell_width, cell_height, shape)
+            })
+            .flatten()
+        else {
+            self.current = None;
+            self.target = None;
+            self.animating = false;
+            return;
+        };
 
-        // Detect a jump (destination changed).
-        if (cx - self.prev_dest_cx).abs() > 0.01 || (cy - self.prev_dest_cy).abs() > 0.01
-        {
-            self.jump_from_cx = self.prev_dest_cx;
-            self.jump_from_cy = self.prev_dest_cy;
-            self.prev_dest_cx = cx;
-            self.prev_dest_cy = cy;
-            self.jumped = true;
+        if self.target == Some(target) {
+            return;
         }
+
+        if self.current.is_none() {
+            self.current = Some(target);
+        } else {
+            if !self.animating {
+                self.last_frame = Instant::now();
+            }
+            self.animating = true;
+        }
+
+        self.target = Some(target);
     }
 
-    /// Run animation for one frame.  Called once per frame **after**
-    /// `set_destination()`.  If `jumped` is set, computes corner ranking
-    /// and assigns animation lengths exactly once per jump (matching
-    /// neovide's `animate`).
-    pub fn animate(&mut self, cell_width: f32, cell_height: f32) {
+    /// Run animation for one frame. Kept with the same signature as the
+    /// previous implementation because the caller already has cell metrics.
+    pub fn animate(&mut self, _cell_width: f32, _cell_height: f32) {
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.1);
         self.last_frame = now;
 
-        let cx = self.dest_cx;
-        let cy = self.dest_cy;
-
-        // First frame: teleport all corners to destination without
-        // animation (matches neovide's `immediate_movement`).
-        let immediate = self.first_frame;
-        if self.first_frame {
-            self.first_frame = false;
-        }
-
-        // On jump: compute ranking and set animation lengths (one-shot).
-        if self.jumped && !immediate {
-            self.compute_jump(cx, cy, cell_width, cell_height);
-        }
-        self.jumped = false;
-
-        // Spring update every frame (matching neovide).
-        let mut still_animating = false;
-        for corner in &mut self.corners {
-            if corner.update(cx, cy, cell_width, cell_height, dt, immediate) {
-                still_animating = true;
-            }
-        }
-
-        self.animating = still_animating;
-    }
-
-    /// Compute corner direction-alignment ranking and assign animation
-    /// lengths.  Called exactly once per cursor jump (matching neovide's
-    /// `Corner::jump` called from the `if self.jumped` block).
-    fn compute_jump(&mut self, cx: f32, cy: f32, cell_width: f32, cell_height: f32) {
-        // Compute jump vector in cell units for short-movement detection.
-        // `jump_from` is the center *before* this jump was detected.
-        let jump_x = if cell_width > 0.0 {
-            ((cx - self.jump_from_cx) / cell_width).abs()
-        } else {
-            0.0
+        let Some(target) = self.target else {
+            self.animating = false;
+            return;
         };
-        let jump_y = if cell_height > 0.0 {
-            ((cy - self.jump_from_cy) / cell_height).abs()
-        } else {
-            0.0
-        };
-        let is_short = jump_x <= 2.001 && jump_y < 0.001;
 
-        if is_short {
-            let t = ANIMATION_LENGTH.min(SHORT_ANIMATION_LENGTH);
-            for c in &mut self.corners {
-                c.anim_length = t;
-            }
+        let Some(current) = self.current else {
+            self.current = Some(target);
+            self.animating = false;
+            return;
+        };
+
+        if current.visibly_matches(target) {
+            self.current = Some(target);
+            self.animating = false;
             return;
         }
 
-        // Direction-alignment ranking (neovide-style).
-        let mut alignments: [(usize, f32); 4] = [
-            (
-                0,
-                self.corners[0].direction_alignment(cx, cy, cell_width, cell_height),
-            ),
-            (
-                1,
-                self.corners[1].direction_alignment(cx, cy, cell_width, cell_height),
-            ),
-            (
-                2,
-                self.corners[2].direction_alignment(cx, cy, cell_width, cell_height),
-            ),
-            (
-                3,
-                self.corners[3].direction_alignment(cx, cy, cell_width, cell_height),
-            ),
-        ];
+        let factor = (SMOOTH_MOTION_FACTOR * dt * 60.0).clamp(0.0, 1.0);
+        let next = current.interpolate(target, factor);
 
-        // Sort ascending: lowest alignment = most trailing.
-        alignments.sort_by(|a, b| {
-            a.1.partial_cmp(&b.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(a.0.cmp(&b.0))
-        });
-
-        // Build per-corner rank array.
-        let mut ranks = [0usize; 4];
-        for (rank, &(corner_idx, _)) in alignments.iter().enumerate() {
-            ranks[corner_idx] = rank;
-        }
-
-        let leading = ANIMATION_LENGTH * (1.0 - TRAIL_SIZE).clamp(0.0, 1.0);
-        let trailing = ANIMATION_LENGTH;
-        let mid = (leading + trailing) / 2.0;
-
-        for (i, corner) in self.corners.iter_mut().enumerate() {
-            corner.anim_length = match ranks[i] {
-                0 => trailing,
-                1 => mid,
-                _ => leading,
-            };
+        if next.visibly_matches(target) {
+            self.current = Some(target);
+            self.animating = false;
+        } else {
+            self.current = Some(next);
+            self.animating = true;
         }
     }
 
-    /// Draw the cursor trail as a single convex quad spanned by the four
-    /// animated corners — emitted as two triangles through the existing
-    /// `DrawCmd::Vertices` pipeline. Matches neovide's approach of
-    /// `PathBuilder::move_to(TL).line_to(TR).line_to(BR).line_to(BL).close()`
-    /// into a single `draw_path`. The old scanline fill (up to 640 rects
-    /// per frame) was a workaround for `sugarloaf.rect` being axis-aligned
-    /// only; `sugarloaf.triangle` already accepts arbitrary vertex
-    /// positions, so one fan covers the same pixels in one draw call.
     pub fn draw(
         &self,
         sugarloaf: &mut Sugarloaf,
         scale_factor: f32,
         cursor_color: [f32; 4],
     ) {
-        if !self.animating {
+        if !self.animating || scale_factor <= 0.0 {
             return;
         }
 
+        let Some(rect) = self.current else {
+            return;
+        };
+
         let inv = 1.0 / scale_factor;
+        let x1 = rect.x * inv;
+        let y1 = rect.y * inv;
+        let x2 = (rect.x + rect.width) * inv;
+        let y2 = (rect.y + rect.height) * inv;
+        let mut color = cursor_color;
+        color[3] *= TRAIL_ALPHA;
 
-        // Corner positions in *logical* pixels (sugarloaf.triangle scales
-        // by scale_factor internally). Ordered TL, TR, BR, BL — same
-        // winding as neovide's path builder.
-        let pts: [(f32, f32); 4] = [
-            (self.corners[0].x * inv, self.corners[0].y * inv),
-            (self.corners[1].x * inv, self.corners[1].y * inv),
-            (self.corners[2].x * inv, self.corners[2].y * inv),
-            (self.corners[3].x * inv, self.corners[3].y * inv),
-        ];
-
-        // Fan from TL: (TL, TR, BR) + (TL, BR, BL). Two triangles share
-        // TL and BR, so the shared diagonal seam is hidden inside the
-        // convex hull — same as any triangle-fan tessellation.
-        sugarloaf.triangle(
-            pts[0].0,
-            pts[0].1,
-            pts[1].0,
-            pts[1].1,
-            pts[2].0,
-            pts[2].1,
-            DEPTH,
-            cursor_color,
-        );
-        sugarloaf.triangle(
-            pts[0].0,
-            pts[0].1,
-            pts[2].0,
-            pts[2].1,
-            pts[3].0,
-            pts[3].1,
-            DEPTH,
-            cursor_color,
-        );
+        sugarloaf.triangle(x1, y1, x2, y1, x2, y2, DEPTH, color);
+        sugarloaf.triangle(x1, y1, x2, y2, x1, y2, DEPTH, color);
     }
 
-    /// `true` while the spring corners haven't settled *visibly*.
+    /// `true` while the animated rectangle has not visibly settled.
     #[inline]
     pub fn is_animating(&self) -> bool {
         self.animating
+    }
+
+    /// The animated overlay replaces the grid cursor while it is moving.
+    /// Restrict suppression to the route that owns the overlay so inactive
+    /// split panels keep their hollow cursors.
+    #[inline]
+    pub fn hides_static_cursor(&self, route_id: usize) -> bool {
+        self.animating && self.route_id == Some(route_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn moving_overlay_hides_static_cursor_only_on_its_route() {
+        let mut cursor = TrailCursor::new();
+        cursor.set_route(7);
+        cursor.set_destination(0.0, 0.0, 10.0, 20.0, CursorShape::Block, true);
+        cursor.set_destination(10.0, 0.0, 10.0, 20.0, CursorShape::Block, true);
+
+        assert!(cursor.hides_static_cursor(7));
+        assert!(!cursor.hides_static_cursor(8));
     }
 }
