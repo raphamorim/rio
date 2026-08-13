@@ -240,7 +240,15 @@ impl TrailCursor {
         // cursor, so the opacity drops outright.
         let ramp = dt / self.settings.decay_slow;
         self.opacity = if visible {
-            (self.opacity + ramp).min(1.0)
+            if self.moving || self.was_moving {
+                (self.opacity + ramp).min(1.0)
+            } else {
+                // Parked and visible nothing is drawn, so restore in
+                // one step: a cursor that hides and shows per refresh
+                // (TUIs, scrollback) must not dim its next flight by
+                // ramping up from the last chop.
+                1.0
+            }
         } else if self.moving || self.was_moving {
             (self.opacity - ramp).max(0.0)
         } else {
@@ -589,6 +597,41 @@ mod tests {
         // frame is owed because the previous frame painted.
         assert!(t.tick(1.0, false, true, 1, CELL_W, CELL_H));
         assert_eq!(t.opacity, 0.0);
+        assert!(!t.tick(0.016, false, true, 1, CELL_W, CELL_H));
+    }
+
+    /// A hide/show storm at rest (TUIs redrawing with DECTCEM, or
+    /// scrolling back and returning) must leave the trail at full
+    /// strength for its next flight, not dimmed by the last chop.
+    #[test]
+    fn reappearing_at_rest_restores_full_opacity() {
+        let mut t = trail(0.0);
+        for _ in 0..5 {
+            t.tick(0.016, false, true, 1, CELL_W, CELL_H);
+            t.tick(0.016, true, true, 1, CELL_W, CELL_H);
+        }
+        assert_eq!(t.opacity, 1.0);
+    }
+
+    /// Corners can settle while a hide-fade still has opacity left:
+    /// the drain tick then owes one clearing frame even though both
+    /// motion flags already dropped (the motion-flag logic alone
+    /// stranded the last painted quad here).
+    #[test]
+    fn settle_during_fade_still_clears_the_last_quad() {
+        let mut t = trail(0.0);
+        retarget(&mut t, 20.0, 0.0);
+        t.tick(0.016, true, true, 1, CELL_W, CELL_H);
+
+        // Hide mid-flight with a dt that settles the corners while
+        // the fade is still in flight.
+        assert!(t.tick(0.36, false, true, 1, CELL_W, CELL_H));
+        assert!(!t.moving, "corners must have settled");
+        assert!(t.opacity > 0.0, "fade must still be in flight");
+
+        // The drain tick paints nothing, but the previous frame did:
+        // one clearing frame, then quiet.
+        assert!(t.tick(0.05, false, true, 1, CELL_W, CELL_H));
         assert!(!t.tick(0.016, false, true, 1, CELL_W, CELL_H));
     }
 
