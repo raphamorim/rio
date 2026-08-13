@@ -447,7 +447,14 @@ pub struct Surface {
 /// Encode one mouse report. SGR (`CSI < b ; x ; y M`) when the program
 /// asked for it, else the original X10 form, whose coordinates are
 /// offset by 32 and cannot exceed 223 without the UTF-8 extension.
-fn mouse_report(button: u8, col: u16, row: u16, pressed: bool, sgr: bool, utf8: bool) -> Vec<u8> {
+fn mouse_report(
+    button: u8,
+    col: u16,
+    row: u16,
+    pressed: bool,
+    sgr: bool,
+    utf8: bool,
+) -> Vec<u8> {
     let x = col.saturating_add(1);
     let y = row.saturating_add(1);
     if sgr {
