@@ -109,6 +109,11 @@ pub fn start_state(first: u8) -> u8 {
 /// Values that are not Unicode scalars (surrogates, above U+10FFFF)
 /// measure as one single-width codepoint when first and terminate the
 /// cluster when later, so untrusted FFI input cannot wedge the walk.
+///
+/// Known limitation: a cluster led by a zero-width Prepend codepoint
+/// (Arabic number signs and kin) measures by pure segmentation rules,
+/// while the print path drops such an orphan lead outright; leading
+/// prepends are not given special width handling.
 pub fn cluster_width(codepoints: &[u32]) -> (usize, u8) {
     let Some(&first) = codepoints.first() else {
         return (0, 0);

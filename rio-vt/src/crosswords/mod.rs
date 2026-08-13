@@ -8661,6 +8661,28 @@ mod tests {
     }
 
     /// The interning lookup must be purged when slots are swept, or a
+    /// re-alloc of old content would return a dead slot id.
+    #[test]
+    fn reclaim_purges_interning_lookup() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 2);
+        cw.input('e');
+        cw.input('\u{301}');
+        let content = cw
+            .grid
+            .extras_table
+            .get(cw.grid[Line(0)][Column(0)].extras_id().unwrap())
+            .unwrap()
+            .clone();
+        // Drop the only reference and sweep.
+        cw.clear_screen(ClearMode::All);
+        cw.grid.reclaim_extras();
+        // Re-alloc of the same content must yield a live slot.
+        let id = cw.grid.alloc_extras(content.clone());
+        assert_ne!(id, 0);
+        assert_eq!(cw.grid.extras_table.get(id), Some(&content));
+    }
+
     /// A width-bearing continuation joining a cluster whose base sits
     /// at the last column widens through the row edge: the base moves
     /// to the next row as a wide pair and its earlier extras move with
