@@ -208,6 +208,13 @@ pub struct Window {
     pub decorations: Decorations,
     #[serde(default = "bool::default", rename = "macos-use-unified-titlebar")]
     pub macos_use_unified_titlebar: bool,
+    /// Let the topmost terminal cells paint through the transparent titlebar.
+    /// Off by default so terminal backgrounds stop at the viewport boundary.
+    #[serde(
+        default = "bool::default",
+        rename = "extend-terminal-background-into-titlebar"
+    )]
+    pub extend_terminal_background_into_titlebar: bool,
     #[serde(rename = "macos-use-shadow", default = "default_bool_true")]
     pub macos_use_shadow: bool,
     #[serde(rename = "macos-traffic-light-position-x", default = "Option::default")]
@@ -258,6 +265,7 @@ impl Default for Window {
             decorations: Decorations::default(),
             blur: WindowBlur::default(),
             macos_use_unified_titlebar: false,
+            extend_terminal_background_into_titlebar: false,
             macos_use_shadow: true,
             macos_traffic_light_position_x: None,
             macos_traffic_light_position_y: None,

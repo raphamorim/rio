@@ -177,6 +177,7 @@ pub struct Renderer {
     pub option_as_alt: String,
     #[allow(unused)]
     pub macos_use_unified_titlebar: bool,
+    pub extend_terminal_background_into_titlebar: bool,
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], rio_backend::sugarloaf::Color, bool),
@@ -238,6 +239,9 @@ impl Renderer {
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
+            extend_terminal_background_into_titlebar: config
+                .window
+                .extend_terminal_background_into_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
             is_vi_mode_enabled: false,
@@ -432,6 +436,56 @@ impl Renderer {
             && !self.command_palette.is_enabled()
             && !self.search.is_active()
             && !self.confirm_quit.is_active()
+    }
+
+    /// Dominant background painted by the top row of the topmost terminal
+    /// panel(s). With edge-cell extension enabled, this is the color that
+    /// actually sits behind the unified-titlebar tab strip; the configured
+    /// window background is only the fallback for transparent cells.
+    fn top_edge_background(
+        &self,
+        context_manager: &ContextManager<EventProxy>,
+        fallback: [f32; 4],
+    ) -> [f32; 4] {
+        let grid = context_manager.current_grid();
+        let min_top = grid
+            .contexts()
+            .values()
+            .map(|item| item.layout_rect[1])
+            .fold(f32::INFINITY, f32::min);
+        if !min_top.is_finite() {
+            return fallback;
+        }
+
+        let mut counts = rustc_hash::FxHashMap::<[u8; 4], usize>::default();
+        for item in grid.contexts().values() {
+            if (item.layout_rect[1] - min_top).abs() > 0.5 {
+                continue;
+            }
+            let rc = &item.val.renderable_content;
+            let Some(row) = rc.visible_rows.first() else {
+                continue;
+            };
+            for &sq in row.inner.iter().take(rc.columns) {
+                let style = crate::grid_emit::resolve_style(&rc.style_table, sq);
+                let rgba = crate::grid_emit::cell_bg(sq, style, self, &rc.term_colors);
+                *counts.entry(rgba).or_default() += 1;
+            }
+        }
+
+        let Some((rgba, _)) = counts.into_iter().max_by_key(|(_, count)| *count) else {
+            return fallback;
+        };
+        let alpha = rgba[3] as f32 / 255.0;
+        if alpha <= 0.0 {
+            return fallback;
+        }
+        [
+            rgba[0] as f32 / 255.0 * alpha + fallback[0] * (1.0 - alpha),
+            rgba[1] as f32 / 255.0 * alpha + fallback[1] * (1.0 - alpha),
+            rgba[2] as f32 / 255.0 * alpha + fallback[2] * (1.0 - alpha),
+            alpha + fallback[3] * (1.0 - alpha),
+        ]
     }
 
     #[inline]
@@ -818,16 +872,22 @@ impl Renderer {
             }
         }
 
+        let island_bg = self
+            .last_window_bg
+            .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32])
+            .unwrap_or(self.named_colors.background.0);
+        let island_bg = if self.extend_terminal_background_into_titlebar {
+            self.top_edge_background(context_manager, island_bg)
+        } else {
+            island_bg
+        };
         if let Some(island) = &mut self.island {
-            let island_bg = self
-                .last_window_bg
-                .map(|c| [c.r as f32, c.g as f32, c.b as f32, c.a as f32])
-                .unwrap_or(self.named_colors.background.0);
             island.render(
                 sugarloaf,
                 (window_size.width, window_size.height, scale_factor),
                 context_manager,
                 island_bg,
+                self.extend_terminal_background_into_titlebar,
             );
         }
 

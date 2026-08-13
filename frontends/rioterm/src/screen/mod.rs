@@ -65,14 +65,14 @@ const MAX_SEARCH_HISTORY_SIZE: usize = 255;
 /// Compute the physical-pixel clip owned by each terminal panel.
 ///
 /// Interior bounds stop at the panel's Taffy allocation. Outermost panels own
-/// the left, right, and bottom window margins, but the top bound always stays
-/// at the terminal viewport so edge-cell colors cannot paint through Rio's
-/// unified titlebar. This also keeps splits from painting over siblings or
-/// configured gutters.
+/// the left, right, and bottom window margins. The top stays at the terminal
+/// viewport by default, but can opt into owning the titlebar too. Splits never
+/// paint over siblings or configured gutters in either mode.
 fn panel_clip_rects(
     layout_rects: &[[f32; 4]],
     scaled_margin: Margin,
     window_size: [f32; 2],
+    extend_into_titlebar: bool,
 ) -> Vec<[f32; 4]> {
     if layout_rects.is_empty() {
         return Vec::new();
@@ -81,6 +81,10 @@ fn panel_clip_rects(
     let min_left = layout_rects
         .iter()
         .map(|rect| rect[0])
+        .fold(f32::INFINITY, f32::min);
+    let min_top = layout_rects
+        .iter()
+        .map(|rect| rect[1])
         .fold(f32::INFINITY, f32::min);
     let max_right = layout_rects
         .iter()
@@ -107,12 +111,12 @@ fn panel_clip_rects(
                 (scaled_margin.left + rect[0]).round()
             }
             .clamp(0.0, window_width);
-            // Unlike the other outer edges, the top never expands to the
-            // drawable edge: on macOS that area contains the unified
-            // titlebar and tab strip rather than terminal padding.
-            let top = (scaled_margin.top + rect[1])
-                .round()
-                .clamp(0.0, window_height);
+            let top = if extend_into_titlebar && same_edge(rect[1], min_top) {
+                0.0
+            } else {
+                (scaled_margin.top + rect[1]).round()
+            }
+            .clamp(0.0, window_height);
             let right = if same_edge(layout_right, max_right) {
                 window_width
             } else {
@@ -4203,6 +4207,7 @@ impl Screen<'_> {
                 &layout_rects,
                 scaled_margin,
                 [window_size.width, window_size.height],
+                self.renderer.extend_terminal_background_into_titlebar,
             );
             for (panel, clip) in panels.iter_mut().zip(clips) {
                 panel.panel_clip = clip;
@@ -4531,9 +4536,9 @@ impl Screen<'_> {
                             window_size.height,
                         ),
                     // grid_padding anchors the terminal cells. The bg
-                    // pass extends left/right/bottom edge cells, while
-                    // panel_clip bounds the fill to this pane and keeps
-                    // its top at the terminal viewport below the titlebar.
+                    // pass extends left/right/bottom edge cells. The
+                    // titlebar direction is opt-in; panel_clip keeps every
+                    // fill bounded to the area owned by this pane.
                     grid_padding: [panel_top, 0.0, 0.0, panel_left],
                     cursor_color: cursor_col_u,
                     cursor_bg_color: cursor_bg_u,
@@ -4545,7 +4550,12 @@ impl Screen<'_> {
                     flags: 0,
                     padding_extend: rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_LEFT
                         | rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_RIGHT
-                        | rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_DOWN,
+                        | rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_DOWN
+                        | if renderer_ref.extend_terminal_background_into_titlebar {
+                            rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_UP
+                        } else {
+                            0
+                        },
                     input_colorspace,
                     panel_clip: p.panel_clip,
                 };
@@ -5037,7 +5047,7 @@ mod tests {
     #[test]
     fn panel_clip_rects_extend_only_outer_split_edges() {
         let rects = [[2.0, 2.0, 390.0, 576.0], [408.0, 2.0, 390.0, 576.0]];
-        let clips = panel_clip_rects(&rects, Margin::all(2.0), [800.0, 580.0]);
+        let clips = panel_clip_rects(&rects, Margin::all(2.0), [800.0, 580.0], false);
 
         assert_eq!(clips[0], [4.0, 394.0, 580.0, 0.0]);
         assert_eq!(clips[1], [4.0, 800.0, 580.0, 410.0]);
@@ -5049,6 +5059,7 @@ mod tests {
             &[[2.0, 2.0, 794.0, 574.0]],
             Margin::all(2.0),
             [800.0, 580.0],
+            false,
         );
 
         assert_eq!(clips, vec![[4.0, 800.0, 580.0, 0.0]]);
@@ -5057,9 +5068,18 @@ mod tests {
     #[test]
     fn panel_clip_rects_keep_stacked_panels_below_titlebar() {
         let rects = [[2.0, 2.0, 794.0, 280.0], [2.0, 298.0, 794.0, 278.0]];
-        let clips = panel_clip_rects(&rects, Margin::all(2.0), [800.0, 580.0]);
+        let clips = panel_clip_rects(&rects, Margin::all(2.0), [800.0, 580.0], false);
 
         assert_eq!(clips[0], [4.0, 800.0, 284.0, 0.0]);
+        assert_eq!(clips[1], [300.0, 800.0, 580.0, 0.0]);
+    }
+
+    #[test]
+    fn panel_clip_rects_optionally_extend_topmost_panels_into_titlebar() {
+        let rects = [[2.0, 2.0, 794.0, 280.0], [2.0, 298.0, 794.0, 278.0]];
+        let clips = panel_clip_rects(&rects, Margin::all(2.0), [800.0, 580.0], true);
+
+        assert_eq!(clips[0], [0.0, 800.0, 284.0, 0.0]);
         assert_eq!(clips[1], [300.0, 800.0, 580.0, 0.0]);
     }
 
