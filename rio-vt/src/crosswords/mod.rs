@@ -3575,6 +3575,23 @@ impl<U: EventListener> Handler for Crosswords<U> {
             // desyncs every wcwidth-based redraw (tmux positions its
             // cursor from its own per-codepoint math and leaves stray
             // cells behind whenever the terminal disagrees).
+            //
+            // Selectors only attach after an emoji base; anywhere else
+            // they are presentation noise and would pollute the cell's
+            // extras (copy, serialize, round-trip) for no render effect.
+            if matches!(c, '\u{FE0F}' | '\u{FE0E}') {
+                let emoji_base = self.prev_cell_col().is_some_and(|col| {
+                    let cell = self.grid[self.grid.cursor.pos.row][Column(col)];
+                    matches!(
+                        cell.content_tag(),
+                        crate::crosswords::square::ContentTag::Codepoint
+                    ) && crate::grapheme_lut::class_of(cell.c())
+                        == rio_unicode::grapheme::GraphemeClass::ExtPic as u8
+                });
+                if !emoji_base {
+                    return;
+                }
+            }
             self.attach_to_prev_cell(c);
             return;
         }
@@ -8669,6 +8686,25 @@ mod tests {
             "extras must ride the wrap with their base"
         );
         assert_eq!(cw.grid[Line(1)][Column(1)].wide(), Wide::Spacer);
+    }
+
+    /// Legacy widths: a selector after a non-emoji base is presentation
+    /// noise and is dropped rather than attached, so copy/serialize and
+    /// the extras table never carry it.
+    #[test]
+    fn legacy_variation_selector_dropped_off_emoji_base() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        cw.set_grapheme_clustering(false);
+
+        cw.input('a');
+        cw.input('\u{FE0F}');
+        assert!(cw.grid[Line(0)][Column(0)].extras_id().is_none());
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Narrow);
+
+        // Ordinary combining marks still attach to anything.
+        cw.input('\u{0301}');
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{0301}']);
     }
 
     /// Legacy widths (clustering opted out): variation selectors attach
