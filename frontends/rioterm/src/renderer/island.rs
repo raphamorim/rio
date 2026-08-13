@@ -195,6 +195,59 @@ fn over(dst: [f32; 4], src: [f32; 4]) -> [f32; 4] {
     ]
 }
 
+#[inline]
+fn relative_luminance(color: [f32; 4]) -> f32 {
+    let linear = |channel: f32| {
+        let channel = channel.clamp(0.0, 1.0);
+        if channel <= 0.04045 {
+            channel / 12.92
+        } else {
+            ((channel + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(color[0]) + 0.7152 * linear(color[1]) + 0.0722 * linear(color[2])
+}
+
+#[inline]
+fn contrast_ratio(a: [f32; 4], b: [f32; 4]) -> f32 {
+    let a = relative_luminance(a);
+    let b = relative_luminance(b);
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+
+/// Keep the configured tab color when it remains legible, otherwise choose
+/// the higher-contrast monochrome foreground. The tab strip can now inherit
+/// a TUI's extended top-row background, so a color selected against Rio's
+/// configured background is no longer guaranteed to be visible.
+#[inline]
+fn readable_tab_text(preferred: [f32; 4], background: [f32; 4]) -> [f32; 4] {
+    const MIN_TEXT_CONTRAST: f32 = 4.5;
+    if preferred[3] > 0.0 && contrast_ratio(preferred, background) >= MIN_TEXT_CONTRAST {
+        return preferred;
+    }
+
+    let dark = [0.0, 0.0, 0.0, 1.0];
+    let light = [1.0, 1.0, 1.0, 1.0];
+    if contrast_ratio(dark, background) >= contrast_ratio(light, background) {
+        dark
+    } else {
+        light
+    }
+}
+
+#[inline]
+fn tab_text_color(
+    preferred: [f32; 4],
+    background: [f32; 4],
+    adaptive_contrast: bool,
+) -> [f32; 4] {
+    if adaptive_contrast {
+        readable_tab_text(preferred, background)
+    } else {
+        preferred
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_island(
     sugarloaf: &mut Sugarloaf,
@@ -738,6 +791,7 @@ impl Island {
         dimensions: (f32, f32, f32),
         context_manager: &ContextManager<EventProxy>,
         bg_color: [f32; 4],
+        adaptive_text_contrast: bool,
     ) {
         let (window_width, _window_height, scale_factor) = dimensions;
         let num_tabs = context_manager.len();
@@ -848,7 +902,26 @@ impl Island {
             };
             let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
 
-            let text_color = if single {
+            let fill = if single {
+                None
+            } else {
+                Some(match context_manager.custom_color(tab_index) {
+                    Some(mut custom) => {
+                        if !is_active {
+                            custom[3] *= INACTIVE_CUSTOM_MUTE;
+                        }
+                        custom
+                    }
+                    None => {
+                        if is_active {
+                            fills.active
+                        } else {
+                            fills.inactive
+                        }
+                    }
+                })
+            };
+            let preferred_text_color = if single {
                 match context_manager.custom_color(tab_index) {
                     Some(mut custom) => {
                         custom[3] = 1.0;
@@ -861,6 +934,12 @@ impl Island {
             } else {
                 self.inactive_text_color
             };
+            let text_background = fill.map_or(bg_color, |fill| over(bg_color, fill));
+            let text_color = tab_text_color(
+                preferred_text_color,
+                text_background,
+                adaptive_text_contrast,
+            );
 
             let title_opts = DrawOpts {
                 font_size: TITLE_FONT_SIZE,
@@ -905,21 +984,7 @@ impl Island {
             // bleach custom colors to pastel on light themes, so the
             // hierarchy is carried by the mute instead.
             let (ix, iy, iw, ih, radius) = island_rect(tab_x, tab_width);
-            let fill = match context_manager.custom_color(tab_index) {
-                Some(mut custom) => {
-                    if !is_active {
-                        custom[3] *= INACTIVE_CUSTOM_MUTE;
-                    }
-                    custom
-                }
-                None => {
-                    if is_active {
-                        fills.active
-                    } else {
-                        fills.inactive
-                    }
-                }
-            };
+            let fill = fill.expect("multi-tab islands always have a fill");
             draw_island(
                 sugarloaf,
                 ix,
@@ -948,13 +1013,7 @@ impl Island {
                             1,
                         );
                     }
-                    draw_close_button(
-                        sugarloaf,
-                        cx,
-                        self.active_text_color,
-                        self.close_hover,
-                        2,
-                    );
+                    draw_close_button(sugarloaf, cx, text_color, self.close_hover, 2);
                 }
             }
 
@@ -991,6 +1050,8 @@ impl Island {
                     over(base, fills.active)
                 }
             };
+            let floating_text_color =
+                tab_text_color(self.active_text_color, fill, adaptive_text_contrast);
             draw_island(
                 sugarloaf,
                 ix,
@@ -1005,7 +1066,7 @@ impl Island {
             );
 
             if let Some(cx) = close_button_center(ix, iw) {
-                draw_close_button(sugarloaf, cx, self.active_text_color, false, 12);
+                draw_close_button(sugarloaf, cx, floating_text_color, false, 12);
             }
 
             let raw_title = self.get_title_for_tab(context_manager, drag_idx);
@@ -1014,7 +1075,7 @@ impl Island {
                 let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
                 let title_opts = DrawOpts {
                     font_size: TITLE_FONT_SIZE,
-                    color: color_u8(self.active_text_color),
+                    color: color_u8(floating_text_color),
                     ..DrawOpts::default()
                 };
                 let ui = sugarloaf.text_mut();
@@ -1575,6 +1636,36 @@ mod tests {
         // Zero-alpha source is a no-op; full-alpha replaces.
         assert_eq!(over(dst, [0.9, 0.1, 0.3, 0.0]), dst);
         assert_eq!(over(dst, [0.9, 0.1, 0.3, 1.0]), [0.9, 0.1, 0.3, 1.0]);
+    }
+
+    #[test]
+    fn tab_text_switches_to_dark_on_light_extended_background() {
+        let color = readable_tab_text([1.0, 1.0, 1.0, 1.0], [0.95, 0.93, 0.88, 1.0]);
+        assert_eq!(color, [0.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn tab_text_switches_to_light_on_dark_extended_background() {
+        let color = readable_tab_text([0.26, 0.25, 0.25, 1.0], [0.06, 0.05, 0.04, 1.0]);
+        assert_eq!(color, [1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn tab_text_keeps_configured_color_when_readable() {
+        let preferred = [0.9, 0.75, 0.25, 1.0];
+        assert_eq!(
+            readable_tab_text(preferred, [0.04, 0.04, 0.04, 1.0]),
+            preferred
+        );
+    }
+
+    #[test]
+    fn tab_text_keeps_configured_color_when_adaptive_contrast_is_disabled() {
+        let preferred = [1.0, 1.0, 1.0, 1.0];
+        assert_eq!(
+            tab_text_color(preferred, [0.95, 0.93, 0.88, 1.0], false),
+            preferred
+        );
     }
 
     #[test]
