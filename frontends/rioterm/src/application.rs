@@ -1183,9 +1183,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // recomputes hints when the pointer crosses a cell
                 // boundary. Without refreshing here the link is never
                 // highlighted, so the click that follows has nothing to
-                // activate.
+                // activate. The refresh runs even with the pointer outside
+                // the text area: a highlight can be set from a clamped
+                // padding position, and skipping the clear half here would
+                // let it outlive its modifier and hijack the next plain
+                // click.
                 if route.path == RoutePath::Terminal
-                    && route.window.screen.mouse.inside_text_area
                     && route.window.screen.update_highlighted_hints()
                 {
                     route
@@ -1380,14 +1383,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // A left click on a highlighted hint bypasses mouse
                         // reporting the same way shift does: the hint's mods
                         // are held, so the user is following the link, not
-                        // clicking inside the application. The decision is
+                        // clicking inside the application. The hint itself is
                         // latched for the release handler: re-evaluating
                         // there would split a press from its release when
-                        // the modifier changes mid-click.
-                        let hint_click = button == MouseButton::Left
-                            && route.window.screen.has_highlighted_hint();
+                        // the modifier changes mid-click, and the release
+                        // must know which hint the press landed on.
+                        let latched = if button == MouseButton::Left {
+                            route.window.screen.highlighted_hint().cloned()
+                        } else {
+                            None
+                        };
+                        let hint_click = latched.is_some();
                         if button == MouseButton::Left {
-                            route.window.screen.mouse.hint_click_latched = hint_click;
+                            route.window.screen.mouse.hint_click_latched = latched;
                         }
 
                         if route.window.screen.select_current_based_on_mouse() {
@@ -1476,14 +1484,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        // Consume the press handler's latched decision so
-                        // press and release always take the same path, even
-                        // when the hint modifier changed mid-click. The
+                        // Consume the press handler's latched hint so press
+                        // and release always take the same path, even when
+                        // the hint modifier changed mid-click. The
                         // application never sees one without the other.
-                        let hint_click = button == MouseButton::Left
-                            && std::mem::take(
-                                &mut route.window.screen.mouse.hint_click_latched,
-                            );
+                        let latched_hint = if button == MouseButton::Left {
+                            route.window.screen.mouse.hint_click_latched.take()
+                        } else {
+                            None
+                        };
+                        let hint_click = latched_hint.is_some();
 
                         if !route.window.screen.modifiers.state().shift_key()
                             && !hint_click
@@ -1511,10 +1521,30 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // plain clicks only, when no selection exists.
                         if route.window.screen.selection_is_empty() {
                             if button == MouseButton::Left {
-                                route
-                                    .window
-                                    .screen
-                                    .trigger_hint(&mut self.router.clipboard);
+                                // A latched press was on a hint; the release
+                                // follows the link only when it lands on the
+                                // same hint. Mouse mode never turns the drag
+                                // into a selection, so without this check a
+                                // press on one link released over another
+                                // would open the wrong one.
+                                let same_hint = match &latched_hint {
+                                    Some(latched) => route
+                                        .window
+                                        .screen
+                                        .highlighted_hint()
+                                        .is_some_and(|h| {
+                                            h.text == latched.text
+                                                && h.start == latched.start
+                                                && h.end == latched.end
+                                        }),
+                                    None => true,
+                                };
+                                if same_hint {
+                                    route
+                                        .window
+                                        .screen
+                                        .trigger_hint(&mut self.router.clipboard);
+                                }
                             }
                         } else if matches!(button, MouseButton::Left | MouseButton::Right)
                             && self.config.copy_on_select
@@ -1826,7 +1856,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 } else if cell_changed && route.window.screen.has_mouse_motion_and_drag()
                 {
                     if lmb_pressed {
-                        route.window.screen.mouse_report(32, ElementState::Pressed);
+                        // A latched hint click hides its press and release
+                        // from the application; a drag report leaking out
+                        // mid-click would arrive with no press around it.
+                        if route.window.screen.mouse.hint_click_latched.is_none() {
+                            route.window.screen.mouse_report(32, ElementState::Pressed);
+                        }
                     } else if route.window.screen.mouse.middle_button_state
                         == ElementState::Pressed
                     {

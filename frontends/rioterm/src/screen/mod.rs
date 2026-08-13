@@ -2238,11 +2238,15 @@ impl Screen<'_> {
     /// it doubles as "the user is following a link right now".
     #[inline]
     pub fn has_highlighted_hint(&self) -> bool {
+        self.highlighted_hint().is_some()
+    }
+
+    pub fn highlighted_hint(&self) -> Option<&crate::hints::HintMatch> {
         self.context_manager
             .current()
             .renderable_content
             .highlighted_hint
-            .is_some()
+            .as_ref()
     }
 
     /// Cursor icon for the current mouse position: a pointer over a

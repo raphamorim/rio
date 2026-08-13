@@ -43,12 +43,13 @@ pub struct Mouse {
     /// within the same cell — replaces the old pixel-equality check
     /// that fired on every subpixel HiDPI jitter.
     pub last_cell: Option<Pos>,
-    /// Whether the in-flight left press bypassed mouse reporting to
-    /// follow a highlighted hint. The release consults this latch
-    /// instead of re-checking the highlight: the modifier can change
-    /// mid-click, and re-evaluating would let an application see a
-    /// press without its release (or the reverse).
-    pub hint_click_latched: bool,
+    /// The hint under an in-flight left press that bypassed mouse
+    /// reporting. The release consults this latch instead of
+    /// re-checking the highlight (the modifier can change mid-click,
+    /// and re-evaluating would let an application see a press without
+    /// its release) and follows the link only when the release lands
+    /// on the same hint.
+    pub hint_click_latched: Option<crate::hints::HintMatch>,
 }
 
 impl Default for Mouse {
@@ -70,7 +71,7 @@ impl Default for Mouse {
             y: 0.0,
             raw_y: 0.0,
             last_cell: None,
-            hint_click_latched: false,
+            hint_click_latched: None,
         }
     }
 }
