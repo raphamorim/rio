@@ -1754,6 +1754,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             delta,
                             &mut route.window.screen.sugarloaf,
                         );
+                    // Dragging a split divider displaces panel origins;
+                    // that is layout, not cursor travel.
+                    route.window.screen.renderer.trail_cursor.snap();
                     let cursor = match border.direction {
                         crate::layout::BorderDirection::Vertical => CursorIcon::ColResize,
                         crate::layout::BorderDirection::Horizontal => {

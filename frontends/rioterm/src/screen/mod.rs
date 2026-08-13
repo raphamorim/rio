@@ -640,6 +640,8 @@ impl Screen<'_> {
         self.context_manager
             .resize_all_grids(width, height, &mut self.sugarloaf);
         self.mark_dirty();
+        // Rescaled cursor displacement is layout, not travel.
+        self.renderer.trail_cursor.snap();
 
         self
     }
