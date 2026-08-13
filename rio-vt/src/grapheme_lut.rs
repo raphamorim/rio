@@ -90,6 +90,73 @@ pub fn start_state(first: u8) -> u8 {
     entry & !BREAK_BIT
 }
 
+/// Measure the first grapheme cluster in `codepoints`: how many
+/// codepoints it spans and how many terminal cells it occupies.
+/// Returns `(len, width)`; `(0, 0)` for an empty slice.
+///
+/// Segmentation and width follow the same rules the mode-2027 input
+/// path applies when printing: a variation selector flips the width
+/// of a valid emoji base (U+FE0F wide, U+FE0E narrow) and is consumed
+/// without effect anywhere else; any other width-bearing continuation
+/// makes the whole cluster wide; zero-width continuations change
+/// nothing.
+///
+/// This is not a streaming call: the slice must contain a complete
+/// first cluster or the logical end of the text, since a continuation
+/// arriving later would have joined it.
+///
+/// Values that are not Unicode scalars (surrogates, above U+10FFFF)
+/// measure as one single-width codepoint when first and terminate the
+/// cluster when later, so untrusted FFI input cannot wedge the walk.
+pub fn cluster_width(codepoints: &[u32]) -> (usize, u8) {
+    let Some(&first) = codepoints.first() else {
+        return (0, 0);
+    };
+    let Some(base) = char::from_u32(first) else {
+        return (1, 1);
+    };
+    let mut width = crate::codepoint_width::codepoint_width(first).unwrap_or(1);
+    let mut prev = class_of(base);
+    let mut state = start_state(prev);
+    let mut last_cp = base;
+    let mut len = 1;
+    while len < codepoints.len() {
+        let Some(c) = char::from_u32(codepoints[len]) else {
+            break;
+        };
+        let class = class_of(c);
+        let state_before = state;
+        if is_break_lut(prev, class, &mut state) {
+            break;
+        }
+        match c {
+            '\u{FE0F}' | '\u{FE0E}' => {
+                if crate::crosswords::vs_is_valid_base(last_cp, c) {
+                    width = if c == '\u{FE0F}' { 2 } else { 1 };
+                    prev = class;
+                    last_cp = c;
+                } else {
+                    // Ignored selector: consumed, but it neither
+                    // advances the state nor becomes the codepoint
+                    // a later selector would judge against.
+                    state = state_before;
+                }
+            }
+            _ => {
+                if crate::codepoint_width::codepoint_width(codepoints[len]).unwrap_or(0)
+                    > 0
+                {
+                    width = 2;
+                }
+                prev = class;
+                last_cp = c;
+            }
+        }
+        len += 1;
+    }
+    (len, width)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,6 +185,33 @@ mod tests {
                     assert_eq!(packed, reference.pack(), "state ({prev},{next},{state})");
                 }
             }
+        }
+    }
+
+    /// One assertion per width rule: plain narrow/wide, combining
+    /// marks, both selector directions, selector validity, ZWJ,
+    /// modifiers, regional indicator pairing and FFI garbage.
+    #[test]
+    fn cluster_width_measures_first_cluster() {
+        // (input, expected len, expected width)
+        let cases: &[(&[u32], usize, u8)] = &[
+            (&[], 0, 0),
+            (&[0x61, 0x62], 1, 1),           // "ab": narrow, breaks
+            (&[0x4E00], 1, 2),               // lone CJK: wide
+            (&[0x65, 0x301, 0x62], 2, 1),    // e + combining acute
+            (&[0x2764, 0xFE0F], 2, 2),       // text heart forced emoji
+            (&[0x231A, 0xFE0E], 2, 1),       // emoji watch forced text
+            (&[0x61, 0xFE0F], 2, 1),         // selector off base: ignored
+            (&[0x61, 0xFE0F, 0x301], 3, 1),  // ignored selector keeps joining
+            (&[0x31, 0xFE0F, 0x20E3], 3, 2), // keycap sequence
+            (&[0x1F468, 0x200D, 0x1F33E], 3, 2), // ZWJ farmer
+            (&[0x1F44D, 0x1F3FB], 2, 2),     // thumbs up + skin tone
+            (&[0x1F1E7, 0x1F1F7, 0x1F1E7, 0x1F1F7], 2, 2), // flag pairs split
+            (&[0x110000, 0x61], 1, 1),       // invalid first: one narrow cell
+            (&[0x65, 0x301, 0xD800], 2, 1),  // invalid later: terminates
+        ];
+        for &(cps, len, width) in cases {
+            assert_eq!(cluster_width(cps), (len, width), "input {cps:04X?}");
         }
     }
 

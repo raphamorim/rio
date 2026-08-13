@@ -685,6 +685,21 @@ impl RioTerm {
     }
 }
 
+/// Measure the first grapheme cluster in a UTF-32 buffer: returns
+/// `[len, width]`, the number of codepoints the cluster spans and its
+/// terminal cell width (1 or 2); `[0, 0]` for an empty buffer. Same
+/// segmentation and width rules as printing under grapheme clustering
+/// (DEC mode 2027), so renderers can size text for cells without
+/// replaying input. The buffer must contain a complete first cluster
+/// or the logical end of the text; values that are not Unicode
+/// scalars measure as one single-width codepoint when first and
+/// terminate the cluster when later.
+#[wasm_bindgen]
+pub fn cluster_width(codepoints: &[u32]) -> Vec<u32> {
+    let (len, width) = librio::cluster_width(codepoints);
+    vec![len as u32, width as u32]
+}
+
 impl RioTerm {
     fn fill_row(&self, line: usize, cols: usize, out: &mut [u32]) {
         for col in 0..cols {

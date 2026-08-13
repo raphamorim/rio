@@ -405,7 +405,7 @@ fn version_number(mut version: &str) -> usize {
 /// Equivalent to kitty's `is_emoji_presentation_base` guard and ghostty's
 /// `emoji_vs_base` property — the actual widen/narrow decision is then
 /// gated on the current cell's `Wide` state by the callers.
-fn vs_is_valid_base(base: char, vs: char) -> bool {
+pub(crate) fn vs_is_valid_base(base: char, vs: char) -> bool {
     use rio_grapheme_width::emoji::Presentation;
     let mut buf = [0u8; 8];
     let n1 = base.encode_utf8(&mut buf).len();
@@ -8686,6 +8686,47 @@ mod tests {
             "extras must ride the wrap with their base"
         );
         assert_eq!(cw.grid[Line(1)][Column(1)].wide(), Wide::Spacer);
+    }
+
+    /// The measurement API must agree with what printing lays out:
+    /// for a cluster printed into a fresh cell under mode 2027,
+    /// `cluster_width` predicts both the codepoint count the cell
+    /// absorbs (base plus extras) and its final cell width. Embedders
+    /// rely on this to size cells without replaying the input path.
+    #[test]
+    fn cluster_width_matches_printed_layout() {
+        use crate::grapheme_lut::cluster_width;
+        use crate::performer::handler::Handler;
+        let corpus: &[&[u32]] = &[
+            &[0x61],                     // plain narrow
+            &[0x4E00],                   // plain wide
+            &[0x65, 0x301],              // combining mark
+            &[0x2764, 0xFE0F],           // VS16 widens
+            &[0x231A, 0xFE0E],           // VS15 narrows
+            &[0x31, 0xFE0F, 0x20E3],     // keycap
+            &[0x1F468, 0x200D, 0x1F33E], // ZWJ farmer
+            &[0x1F44D, 0x1F3FB],         // skin tone
+            &[0x1F1E7, 0x1F1F7],         // flag pair
+            &[0x1F39F, 0xFE0F],          // text-default emoji + VS16
+        ];
+        for cps in corpus {
+            let mut cw = term_2027(10, 3);
+            for &cp in *cps {
+                cw.input(char::from_u32(cp).unwrap());
+            }
+            let (len, width) = cluster_width(cps);
+            assert_eq!(len, cps.len(), "one whole cluster: {cps:04X?}");
+            assert_eq!(
+                1 + extras_of(&cw, 0, 0).len(),
+                len,
+                "printed codepoint count: {cps:04X?}"
+            );
+            let printed = match cw.grid[Line(0)][Column(0)].wide() {
+                Wide::Wide => 2,
+                _ => 1,
+            };
+            assert_eq!(width, printed, "printed cell width: {cps:04X?}");
+        }
     }
 
     /// Legacy widths: a selector after a non-emoji base is presentation

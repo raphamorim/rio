@@ -275,6 +275,17 @@ size_t rio_render_state_cell_cluster(const rio_render_state_t *state,
                                      uint16_t line, uint16_t column,
                                      uint32_t *out, size_t cap);
 
+/* Measure the first grapheme cluster in a UTF-32 buffer: returns the
+ * number of codepoints the cluster spans and writes its terminal cell
+ * width (1 or 2) to `out_width` when non-null; 0 codepoints for a
+ * null or empty buffer. Same segmentation and width rules as printing
+ * under grapheme clustering (DEC mode 2027). The buffer must contain
+ * a complete first cluster or the logical end of the text. Values
+ * that are not Unicode scalars measure as one single-width codepoint
+ * when first and terminate the cluster when later. */
+size_t rio_cluster_width(const uint32_t *codepoints, size_t len,
+                         uint8_t *out_width);
+
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);

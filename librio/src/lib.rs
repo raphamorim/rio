@@ -13,6 +13,7 @@ pub use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
 pub use rio_vt::crosswords::pos::Column;
 pub use rio_vt::crosswords::square::Square;
 pub use rio_vt::crosswords::style::{Style, StyleFlags};
+pub use rio_vt::grapheme_lut::cluster_width;
 pub use rio_vt::selection::SelectionRange;
 
 use rio_vt::ansi::CursorShape;
@@ -1208,6 +1209,27 @@ mod tests {
 
         // Shift is the user asking for the scrollback regardless.
         assert!(!surface.scroll_wheel(3, 0, 0, Modifiers::SHIFT));
+    }
+
+    /// The measurement entry through the C ABI: count plus width via
+    /// out-param, and null tolerance on both pointers.
+    #[test]
+    fn cluster_width_through_c_abi() {
+        let cps: [u32; 3] = [0x1F468, 0x200D, 0x1F33E];
+        let mut width: u8 = 0xFF;
+        let len = unsafe { capi::rio_cluster_width(cps.as_ptr(), cps.len(), &mut width) };
+        assert_eq!((len, width), (3, 2));
+
+        // The width out-param is optional.
+        let len = unsafe {
+            capi::rio_cluster_width(cps.as_ptr(), cps.len(), core::ptr::null_mut())
+        };
+        assert_eq!(len, 3);
+
+        // A null or empty buffer measures as nothing.
+        let mut width: u8 = 0xFF;
+        let len = unsafe { capi::rio_cluster_width(core::ptr::null(), 5, &mut width) };
+        assert_eq!((len, width), (0, 0));
     }
 
     #[test]

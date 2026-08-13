@@ -1019,6 +1019,39 @@ pub unsafe extern "C" fn rio_render_state_cell_cluster(
     .unwrap_or(0)
 }
 
+/// Measure the first grapheme cluster in a UTF-32 buffer: returns the
+/// number of codepoints the cluster spans and writes its terminal
+/// cell width (1 or 2) to `out_width` when non-null. Returns 0 for a
+/// null or empty buffer. Segmentation and width follow the same rules
+/// the terminal applies when printing under grapheme clustering, so
+/// embedders can size text for cells without replaying input. The
+/// buffer must contain a complete first cluster or the logical end of
+/// the text; values that are not Unicode scalars measure as one
+/// single-width codepoint when first and terminate the cluster when
+/// later.
+#[no_mangle]
+pub unsafe extern "C" fn rio_cluster_width(
+    codepoints: *const u32,
+    len: usize,
+    out_width: *mut u8,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if codepoints.is_null() || len == 0 {
+            if !out_width.is_null() {
+                unsafe { *out_width = 0 };
+            }
+            return 0;
+        }
+        let cps = unsafe { core::slice::from_raw_parts(codepoints, len) };
+        let (cluster_len, width) = crate::cluster_width(cps);
+        if !out_width.is_null() {
+            unsafe { *out_width = width };
+        }
+        cluster_len
+    }))
+    .unwrap_or(0)
+}
+
 /// Lines the view is scrolled up into history; 0 means the live screen.
 /// Renderers use this to hide the cursor while scrolled.
 #[no_mangle]
