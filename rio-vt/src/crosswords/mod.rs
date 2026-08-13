@@ -8729,6 +8729,50 @@ mod tests {
         }
     }
 
+    /// Randomized version of the above: for arbitrary sequences over
+    /// an alphabet of joiners, selectors, modifiers and bases, print
+    /// exactly the codepoints `cluster_width` claims form the first
+    /// cluster and demand the grid agrees on both the cell width and
+    /// the cursor advance. Catches width-rule divergence the curated
+    /// corpus misses (selectors after joiners, stacked modifiers).
+    #[test]
+    fn cluster_width_matches_printed_layout_randomized() {
+        use crate::grapheme_lut::cluster_width;
+        use crate::performer::handler::Handler;
+        let alphabet: &[u32] = &[
+            0x61, 0x31, 0x4E00, 0x301, 0x200D, 0xFE0F, 0xFE0E, 0x20E3, 0x1F468, 0x1F469,
+            0x1F33E, 0x1F3FB, 0x1F1E7, 0x1F1F7, 0x2764, 0x231A, 0x1F39F, 0x2620, 0x1F3F4,
+        ];
+        let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = |bound: usize| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            ((seed >> 33) as usize) % bound
+        };
+        for _ in 0..2000 {
+            let cps: Vec<u32> = (0..1 + next(7))
+                .map(|_| alphabet[next(alphabet.len())])
+                .collect();
+            // A cluster only owns a cell when its base takes one.
+            if crate::codepoint_width::codepoint_width(cps[0]).unwrap_or(0) == 0 {
+                continue;
+            }
+            let (len, width) = cluster_width(&cps);
+            let mut cw = term_2027(20, 4);
+            for &cp in &cps[..len] {
+                cw.input(char::from_u32(cp).unwrap());
+            }
+            let printed = match cw.grid[Line(0)][Column(0)].wide() {
+                Wide::Wide => 2,
+                _ => 1,
+            };
+            assert_eq!(width, printed, "cell width for {cps:04X?}");
+            assert_eq!(
+                cw.grid.cursor.pos.col.0, width as usize,
+                "cursor advance for {cps:04X?}"
+            );
+        }
+    }
+
     /// Legacy widths: a selector after a non-emoji base is presentation
     /// noise and is dropped rather than attached, so copy/serialize and
     /// the extras table never carry it.
