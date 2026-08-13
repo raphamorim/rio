@@ -777,7 +777,11 @@ mod tests {
 
     #[test]
     fn test_if_explicit_defaults_match() {
-        let result = create_temporary_config("defaults", &default_config_file_content());
+        let default_config = default_config_file_content();
+        assert!(
+            default_config.contains("extend-terminal-background-into-titlebar = true")
+        );
+        let result = create_temporary_config("defaults", &default_config);
 
         let env_vars: Vec<String> = vec![];
         assert_eq!(result.env_vars, env_vars);
