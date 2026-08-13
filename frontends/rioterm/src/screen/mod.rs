@@ -2279,11 +2279,10 @@ impl Screen<'_> {
         latched: crate::hints::HintMatch,
         clipboard: &mut Clipboard,
     ) {
-        self.context_manager
-            .current_mut()
-            .renderable_content
-            .highlighted_hint
-            .take();
+        // Clear with damage recorded: an action that steals no focus
+        // (Copy) would otherwise leave the underline painted until
+        // unrelated output touches those rows.
+        self.clear_highlighted_hint();
         self.execute_hint_action(&latched, clipboard);
     }
 
