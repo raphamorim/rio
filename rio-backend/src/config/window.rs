@@ -210,6 +210,11 @@ pub struct Window {
     pub macos_use_unified_titlebar: bool,
     /// Let the topmost terminal cells paint through the transparent titlebar.
     /// Off by default so terminal backgrounds stop at the viewport boundary.
+    ///
+    /// ```toml
+    /// [window]
+    /// extend-terminal-background-into-titlebar = true
+    /// ```
     #[serde(
         default = "bool::default",
         rename = "extend-terminal-background-into-titlebar"
