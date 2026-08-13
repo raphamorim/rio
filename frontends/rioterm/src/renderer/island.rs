@@ -222,7 +222,8 @@ fn contrast_ratio(a: [f32; 4], b: [f32; 4]) -> f32 {
 #[inline]
 fn readable_tab_text(preferred: [f32; 4], background: [f32; 4]) -> [f32; 4] {
     const MIN_TEXT_CONTRAST: f32 = 4.5;
-    if preferred[3] > 0.0 && contrast_ratio(preferred, background) >= MIN_TEXT_CONTRAST {
+    let rendered_preferred = over(background, preferred);
+    if contrast_ratio(rendered_preferred, background) >= MIN_TEXT_CONTRAST {
         return preferred;
     }
 
@@ -1654,6 +1655,15 @@ mod tests {
         assert_eq!(
             readable_tab_text(preferred, [0.04, 0.04, 0.04, 1.0]),
             preferred
+        );
+    }
+
+    #[test]
+    fn tab_text_replaces_translucent_color_when_composited_contrast_is_too_low() {
+        let translucent_black = [0.0, 0.0, 0.0, 0.1];
+        assert_eq!(
+            readable_tab_text(translucent_black, [1.0, 1.0, 1.0, 1.0]),
+            [0.0, 0.0, 0.0, 1.0]
         );
     }
 
