@@ -1555,6 +1555,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                             latched,
                                             &mut self.router.clipboard,
                                         );
+                                        // Paint the cleared highlight now: an
+                                        // action that steals no focus (Copy)
+                                        // schedules no frame of its own.
+                                        route
+                                            .window
+                                            .screen
+                                            .context_manager
+                                            .request_render();
                                     }
                                 }
                             }
