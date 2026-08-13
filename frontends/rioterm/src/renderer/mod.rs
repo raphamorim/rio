@@ -167,7 +167,17 @@ impl Renderer {
             is_game_mode_enabled: config.renderer.strategy.is_game(),
             custom_mouse_cursor: config.effects.custom_mouse_cursor,
             trail_cursor_enabled: config.effects.trail_cursor,
-            trail_cursor: trail_cursor::TrailCursor::new(),
+            trail_cursor: trail_cursor::TrailCursor::new(trail_cursor::TrailSettings {
+                color: config
+                    .effects
+                    .trail_cursor_color
+                    .as_deref()
+                    .map(rio_backend::config::colors::hex_to_color_arr),
+                opacity: config.effects.trail_cursor_opacity,
+                decay_fast: config.effects.trail_cursor_decay[0] as f32 / 1000.0,
+                decay_slow: config.effects.trail_cursor_decay[1] as f32 / 1000.0,
+                start_threshold: config.effects.trail_cursor_start_threshold as f32,
+            }),
         }
     }
 

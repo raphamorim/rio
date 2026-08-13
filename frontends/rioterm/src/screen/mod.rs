@@ -3791,8 +3791,6 @@ impl Screen<'_> {
         let (window_update, any_panel_dirty) = self
             .renderer
             .run(&mut self.sugarloaf, &mut self.context_manager);
-        let has_animation = self.renderer.needs_redraw();
-        let should_present = any_panel_dirty || has_animation;
 
         if self.renderer.custom_mouse_cursor {
             let scale = self.sugarloaf.scale_factor();
@@ -3829,14 +3827,15 @@ impl Screen<'_> {
                 let cursor_px_x = origin_x + cursor_col as f32 * cell_width;
                 let cursor_px_y = origin_y + cursor_row as f32 * cell_height;
 
-                self.renderer.trail_cursor.set_route(current.route_id);
-                self.renderer.trail_cursor.set_destination(
+                self.renderer.trail_cursor.update(
                     cursor_px_x,
                     cursor_px_y,
                     cell_width,
                     cell_height,
+                    cursor.state.content,
+                    cursor.state.is_visible(),
+                    current.route_id,
                 );
-                self.renderer.trail_cursor.animate(cell_width, cell_height);
 
                 let cursor_color = self.renderer.named_colors.cursor;
                 self.renderer.trail_cursor.draw(
@@ -3846,6 +3845,13 @@ impl Screen<'_> {
                 );
             }
         }
+
+        // Animation state is read after the trail advanced: a cursor
+        // movement can start animating in this same frame, and reading
+        // it earlier would fail to schedule the continuation frame,
+        // freezing the trail mid-flight until unrelated damage arrives.
+        let has_animation = self.renderer.needs_redraw();
+        let should_present = any_panel_dirty || has_animation;
 
         // Phase 2.2/2.3: per-panel CellBg + CellText emission with
         // per-row dirty gating. Iterates every panel in the active
