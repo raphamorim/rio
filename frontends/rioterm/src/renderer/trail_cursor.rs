@@ -202,7 +202,8 @@ impl TrailCursor {
         cell_width: f32,
         cell_height: f32,
     ) -> bool {
-        // A panel or tab switch is not cursor travel: teleport. A
+        // A panel or tab switch is not cursor travel, and neither is
+        // a layout reflow (`snap` arms this same branch): teleport. A
         // hidden cursor keeps the previous panel's rect, and parking
         // on it would smear from foreign coordinates once the cursor
         // shows, so the teleport waits until a real target exists.

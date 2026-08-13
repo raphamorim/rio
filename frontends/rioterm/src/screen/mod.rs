@@ -1543,6 +1543,8 @@ impl Screen<'_> {
             .move_divider_up(amount, &mut self.sugarloaf)
         {
             self.mark_dirty();
+            // Divider displacement is layout, not cursor travel.
+            self.renderer.trail_cursor.snap();
         }
     }
 
@@ -1553,6 +1555,8 @@ impl Screen<'_> {
             .move_divider_down(amount, &mut self.sugarloaf)
         {
             self.mark_dirty();
+            // Divider displacement is layout, not cursor travel.
+            self.renderer.trail_cursor.snap();
         }
     }
 
@@ -1563,6 +1567,8 @@ impl Screen<'_> {
             .move_divider_left(amount, &mut self.sugarloaf)
         {
             self.mark_dirty();
+            // Divider displacement is layout, not cursor travel.
+            self.renderer.trail_cursor.snap();
         }
     }
 
@@ -1573,6 +1579,8 @@ impl Screen<'_> {
             .move_divider_right(amount, &mut self.sugarloaf)
         {
             self.mark_dirty();
+            // Divider displacement is layout, not cursor travel.
+            self.renderer.trail_cursor.snap();
         }
     }
 
@@ -1689,6 +1697,11 @@ impl Screen<'_> {
             ));
             context_grid.update_dimensions(&mut self.sugarloaf);
         }
+
+        // The tab strip appearing or vanishing shifts every panel;
+        // a background tab can close without a route change, so this
+        // reflow is not covered by the route-switch teleport.
+        self.renderer.trail_cursor.snap();
     }
 
     #[inline]
