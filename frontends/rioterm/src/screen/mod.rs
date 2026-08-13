@@ -545,6 +545,8 @@ impl Screen<'_> {
 
         self.mark_dirty();
         self.resize_all_contexts();
+        // Reflowed cursor displacement is layout, not travel.
+        self.renderer.trail_cursor.snap();
     }
 
     #[inline]
@@ -564,6 +566,10 @@ impl Screen<'_> {
 
         self.context_manager
             .resize_all_grids(width, height, &mut self.sugarloaf);
+
+        // A resize reflows the cursor; that displacement is layout,
+        // not travel, and must not animate a smear.
+        self.renderer.trail_cursor.snap();
 
         self
     }

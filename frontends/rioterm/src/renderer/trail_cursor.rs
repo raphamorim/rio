@@ -389,6 +389,15 @@ impl TrailCursor {
     pub fn is_animating(&self) -> bool {
         self.active
     }
+
+    /// Adopt the next real target without travel. Layout changes
+    /// (window resize, font-size change) displace the cursor without
+    /// the cursor having moved; animating that displacement smears
+    /// across the reflow.
+    #[inline]
+    pub fn snap(&mut self) {
+        self.first_frame = true;
+    }
 }
 
 #[cfg(test)]
@@ -652,6 +661,17 @@ mod tests {
         // from the old panel's coordinates.
         retarget(&mut t, 0.0, 0.0);
         assert!(!t.tick(0.016, true, true, 2, CELL_W, CELL_H));
+        assert!(max_corner_error(&t) <= SETTLE_EPSILON_PX);
+    }
+
+    /// After a layout change (`snap`: resize, font-size change), the
+    /// next target is adopted without travel even at jump distance.
+    #[test]
+    fn snap_adopts_next_target_without_travel() {
+        let mut t = trail(0.0);
+        retarget(&mut t, 40.0, 20.0);
+        t.snap();
+        assert!(!t.tick(0.016, true, true, 1, CELL_W, CELL_H));
         assert!(max_corner_error(&t) <= SETTLE_EPSILON_PX);
     }
 
