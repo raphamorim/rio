@@ -1183,13 +1183,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // recomputes hints when the pointer crosses a cell
                 // boundary. Without refreshing here the link is never
                 // highlighted, so the click that follows has nothing to
-                // activate. The refresh runs even with the pointer outside
-                // the text area: a highlight can be set from a clamped
-                // padding position, and skipping the clear half here would
-                // let it outlive its modifier and hijack the next plain
-                // click.
+                // activate. The set half only runs with the pointer inside
+                // the text area (a clamped chrome position must not light
+                // up a link it is not over), but the clear half always
+                // runs: a highlight left behind would outlive its modifier
+                // and hijack the next plain click.
                 if route.path == RoutePath::Terminal
-                    && route.window.screen.update_highlighted_hints()
+                    && (if route.window.screen.mouse.inside_text_area {
+                        route.window.screen.update_highlighted_hints()
+                    } else {
+                        route.window.screen.clear_highlighted_hint()
+                    })
                 {
                     route
                         .window
@@ -1221,6 +1225,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     {
                         route.window.screen.mouse.left_button_state =
                             ElementState::Released;
+                        // A release swallowed here must also drop the hint
+                        // latch, or a later chrome-consumed press would
+                        // release against a hint it never landed on.
+                        route.window.screen.mouse.hint_click_latched = None;
                         if let Some(ref mut island) = route.window.screen.renderer.island
                         {
                             island.cancel_drag();
@@ -1521,14 +1529,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // plain clicks only, when no selection exists.
                         if route.window.screen.selection_is_empty() {
                             if button == MouseButton::Left {
-                                // A latched press was on a hint; the release
-                                // follows the link only when it lands on the
-                                // same hint. Mouse mode never turns the drag
-                                // into a selection, so without this check a
-                                // press on one link released over another
-                                // would open the wrong one.
-                                let same_hint = match &latched_hint {
-                                    Some(latched) => route
+                                // Only a latched press opens a link, and only
+                                // when the release lands on the same span the
+                                // press did. Mouse mode never turns the drag
+                                // into a selection, so without the span check
+                                // a press on one link released over another
+                                // would open the wrong one; and a press the
+                                // chrome consumed (which never latches) must
+                                // not open a highlight it never touched. The
+                                // latched match is what executes: a modifier
+                                // change mid-click can swap which hint config
+                                // the same span resolves to.
+                                if let Some(latched) = latched_hint {
+                                    let same_span = route
                                         .window
                                         .screen
                                         .highlighted_hint()
@@ -1536,14 +1549,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                             h.text == latched.text
                                                 && h.start == latched.start
                                                 && h.end == latched.end
-                                        }),
-                                    None => true,
-                                };
-                                if same_hint {
-                                    route
-                                        .window
-                                        .screen
-                                        .trigger_hint(&mut self.router.clipboard);
+                                        });
+                                    if same_span {
+                                        route.window.screen.open_latched_hint(
+                                            latched,
+                                            &mut self.router.clipboard,
+                                        );
+                                    }
                                 }
                             }
                         } else if matches!(button, MouseButton::Left | MouseButton::Right)

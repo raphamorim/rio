@@ -1950,17 +1950,7 @@ impl Screen<'_> {
             .is_some();
 
         if !should_highlight {
-            let current = self.context_manager.current_mut();
-
-            // Clear any previous hint damage
-            if current.renderable_content.highlighted_hint.is_some() {
-                let mut terminal = current.terminal.lock();
-                let display_offset = terminal.display_offset();
-                terminal.update_selection_damage(None, display_offset);
-            }
-
-            current.renderable_content.highlighted_hint = None;
-            return had_highlight;
+            return self.clear_highlighted_hint();
         }
 
         let terminal = self.context_manager.current().terminal.lock();
@@ -2018,6 +2008,22 @@ impl Screen<'_> {
             current.renderable_content.highlighted_hint = None;
             had_highlight
         }
+    }
+
+    /// Drop any hint highlight, clearing its damage so the line
+    /// repaints. Returns whether a highlight existed.
+    pub fn clear_highlighted_hint(&mut self) -> bool {
+        let current = self.context_manager.current_mut();
+        let had_highlight = current.renderable_content.highlighted_hint.is_some();
+
+        if had_highlight {
+            let mut terminal = current.terminal.lock();
+            let display_offset = terminal.display_offset();
+            terminal.update_selection_damage(None, display_offset);
+        }
+
+        current.renderable_content.highlighted_hint = None;
+        had_highlight
     }
 
     /// Check if current modifiers match the required modifiers
@@ -2262,23 +2268,23 @@ impl Screen<'_> {
         }
     }
 
-    /// Trigger hint action at mouse position
+    /// Execute a hint latched at press time. The latched match is the
+    /// payload, not the release-time highlight: the modifier can
+    /// change mid-click and swap which hint config the same span
+    /// resolves to, and the action that runs must be the one the
+    /// press landed on.
     #[inline]
-    pub fn trigger_hint(&mut self, clipboard: &mut Clipboard) -> bool {
-        // Take the highlighted hint
-        let hint_match = self
-            .context_manager
+    pub fn open_latched_hint(
+        &mut self,
+        latched: crate::hints::HintMatch,
+        clipboard: &mut Clipboard,
+    ) {
+        self.context_manager
             .current_mut()
             .renderable_content
             .highlighted_hint
             .take();
-
-        if let Some(hint_match) = hint_match {
-            self.execute_hint_action(&hint_match, clipboard);
-            true
-        } else {
-            false
-        }
+        self.execute_hint_action(&latched, clipboard);
     }
 
     /// Hand `target` to the platform's default handler.
