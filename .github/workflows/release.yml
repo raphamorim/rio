@@ -61,6 +61,8 @@ jobs:
             echo "misc/com.rioterm.Rio.metainfo.xml has no <release> entry for $v." >&2
             echo "Run misc/prepare-release.sh $v before tagging (it adds the entry" >&2
             echo "alongside the workspace version bump)." >&2
+            echo "The tag already exists, so after fixing: retag with" >&2
+            echo "  git tag -f v$v && git push -f origin v$v" >&2
             exit 1
           fi
       - uses: actions/cache@v5
