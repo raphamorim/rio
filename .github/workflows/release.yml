@@ -47,6 +47,22 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Metainfo carries this release
+        # Flathub builds from the tag, so the AppStream release entry
+        # must be in the tagged tree; a post-tag fixup is forever one
+        # release behind (the list once drifted 17 releases).
+        # misc/prepare-release.sh adds it together with the version
+        # bump; this gate makes skipping that impossible.
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          if ! grep -q "release version=\"$v\"" misc/com.rioterm.Rio.metainfo.xml; then
+            echo "misc/com.rioterm.Rio.metainfo.xml has no <release> entry for $v." >&2
+            echo "Run misc/prepare-release.sh $v before tagging (it adds the entry" >&2
+            echo "alongside the workspace version bump)." >&2
+            exit 1
+          fi
       - uses: actions/cache@v5
         with:
           path: dist/${{ matrix.cache-subdir }}
