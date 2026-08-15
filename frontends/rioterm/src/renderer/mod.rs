@@ -414,12 +414,18 @@ impl Renderer {
     ///
     /// `highlighted_hint` alone is not enough. It is recomputed only on
     /// cell crossings and modifier changes, so it survives an overlay
-    /// opening on top of it, and every one of these overlays consumes
-    /// the click before the hint handler runs (see the press handler in
-    /// `application.rs`). Showing a target the user cannot open would be
-    /// a lie, so the tooltip is gated on the same conditions the click
-    /// path uses. Checked per frame rather than at highlight time
+    /// opening on top of it, and each modal overlay listed here
+    /// consumes the click before the hint handler runs (see the press
+    /// handler in `application.rs`). Showing a target the user cannot
+    /// open would be a lie, so the tooltip is gated on the same
+    /// conditions. Checked per frame rather than at highlight time
     /// because an overlay can appear without the pointer moving.
+    ///
+    /// Positional click consumers (the scrollbar strip, the tab
+    /// island, panel borders) also swallow presses but depend on
+    /// where the pointer sits, which a per-frame boolean cannot
+    /// express; a stale highlight over those is a pre-existing quirk
+    /// of the highlight lifecycle, not of this gate.
     #[inline]
     fn hint_click_would_land(&self) -> bool {
         !self.assistant.is_active()
