@@ -833,22 +833,21 @@ impl Renderer {
         );
 
         // The hint borrow (context_manager) and the draw target
-        // (sugarloaf) are disjoint, so the target text is passed
-        // through without cloning it every hovered frame.
-        if self.hint_click_would_land() {
-            if let Some(hint) = context_manager
-                .current()
-                .renderable_content
-                .highlighted_hint
-                .as_ref()
-            {
-                draw_hint_tooltip(
-                    sugarloaf,
-                    &hint.text,
-                    (window_size.width, window_size.height),
-                    scale_factor,
-                );
-            }
+        // (sugarloaf) are disjoint, so the target text passes through
+        // by reference; nothing is cloned per hovered frame.
+        if let Some(hint) = context_manager
+            .current()
+            .renderable_content
+            .highlighted_hint
+            .as_ref()
+            .filter(|_| self.hint_click_would_land())
+        {
+            draw_hint_tooltip(
+                sugarloaf,
+                &hint.text,
+                (window_size.width, window_size.height),
+                scale_factor,
+            );
         }
 
         self.command_palette.render(
@@ -1308,14 +1307,18 @@ mod hint_tooltip_tests {
 
     /// Off-by-one guard on the binary search: the result must be the
     /// longest prefix that fits, never one char short or one over.
+    /// With every char 10px wide the expected length is exact: a
+    /// budget of `n` chars fits `n - 1` real chars plus the ellipsis,
+    /// until the whole 24-char text fits untouched.
     #[test]
     fn truncation_takes_the_longest_prefix_that_fits() {
-        for budget in 1..40 {
-            let out =
-                elide_tail("https://example.com/path", budget as f32 * 10.0, measure);
-            assert!(
-                measure(&out) <= budget as f32 * 10.0,
-                "budget {budget} overflowed with {out:?}",
+        let text = "https://example.com/path";
+        for budget in 1..40usize {
+            let out = elide_tail(text, budget as f32 * 10.0, measure);
+            assert_eq!(
+                out.chars().count(),
+                budget.min(text.chars().count()),
+                "budget {budget} produced {out:?}",
             );
         }
     }
