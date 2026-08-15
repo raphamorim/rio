@@ -832,20 +832,23 @@ impl Renderer {
             (window_size.width, window_size.height, scale_factor),
         );
 
-        if let Some(hint) = context_manager
-            .current()
-            .renderable_content
-            .highlighted_hint
-            .as_ref()
-            .map(|h| h.text.clone())
-            .filter(|_| self.hint_click_would_land())
-        {
-            draw_hint_tooltip(
-                sugarloaf,
-                &hint,
-                (window_size.width, window_size.height),
-                scale_factor,
-            );
+        // The hint borrow (context_manager) and the draw target
+        // (sugarloaf) are disjoint, so the target text is passed
+        // through without cloning it every hovered frame.
+        if self.hint_click_would_land() {
+            if let Some(hint) = context_manager
+                .current()
+                .renderable_content
+                .highlighted_hint
+                .as_ref()
+            {
+                draw_hint_tooltip(
+                    sugarloaf,
+                    &hint.text,
+                    (window_size.width, window_size.height),
+                    scale_factor,
+                );
+            }
         }
 
         self.command_palette.render(
