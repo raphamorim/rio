@@ -22,7 +22,105 @@ use rio_backend::config::colors::{
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
 use rio_backend::event::EventProxy;
+use rio_backend::sugarloaf::text::DrawOpts;
 use rio_backend::sugarloaf::Sugarloaf;
+
+// Hint tooltip: browser-style status pill showing where the hovered
+// link goes. Shares the overlay draw order with search / palette.
+const TOOLTIP_FONT_SIZE: f32 = 12.0;
+const TOOLTIP_PADDING_X: f32 = 9.0;
+const TOOLTIP_PADDING_Y: f32 = 5.0;
+const TOOLTIP_MARGIN: f32 = 6.0;
+const TOOLTIP_CORNER_RADIUS: f32 = 5.0;
+const TOOLTIP_MAX_WIDTH_RATIO: f32 = 0.6;
+const TOOLTIP_BG_COLOR: [f32; 4] = [0.12, 0.12, 0.12, 0.96];
+const TOOLTIP_TEXT_COLOR: [u8; 4] = [237, 237, 237, 255];
+const TOOLTIP_DEPTH_BG: f32 = 0.1;
+const TOOLTIP_ORDER: u8 = 20;
+
+/// Longest prefix of `text` that still fits `max_width` once an
+/// ellipsis is appended, or `text` untouched when it already fits.
+///
+/// Truncates the tail, never the head: for a URL the scheme and host
+/// are the part worth reading before clicking, so they must survive.
+/// `measure` is injected so this stays testable without a GPU context.
+fn elide_tail(
+    text: &str,
+    max_width: f32,
+    mut measure: impl FnMut(&str) -> f32,
+) -> String {
+    if measure(text) <= max_width {
+        return text.to_string();
+    }
+
+    let chars: Vec<char> = text.chars().collect();
+    let ellipsis = |n: usize| chars[..n].iter().collect::<String>() + "\u{2026}";
+
+    // Largest `n` whose prefix-plus-ellipsis fits. `lo < hi` keeps
+    // `mid >= 1`, so `mid - 1` cannot wrap.
+    let (mut lo, mut hi) = (0usize, chars.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if measure(&ellipsis(mid)) <= max_width {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    ellipsis(lo)
+}
+
+/// Draw the hovered hint's target at the bottom-left, the way a browser
+/// shows a link destination in its status bar.
+///
+/// Immediate mode: this is called only on frames where a hint is
+/// highlighted, so "not drawn" is "not visible" and there is no
+/// show/hide state to keep anywhere.
+fn draw_hint_tooltip(
+    sugarloaf: &mut Sugarloaf,
+    text: &str,
+    window_size: (f32, f32),
+    scale_factor: f32,
+) {
+    let logical_width = window_size.0 / scale_factor;
+    let logical_height = window_size.1 / scale_factor;
+
+    let opts = DrawOpts {
+        font_size: TOOLTIP_FONT_SIZE,
+        color: TOOLTIP_TEXT_COLOR,
+        ..DrawOpts::default()
+    };
+
+    let max_text_width =
+        (logical_width * TOOLTIP_MAX_WIDTH_RATIO - TOOLTIP_PADDING_X * 2.0).max(0.0);
+
+    let ui = sugarloaf.text_mut();
+    let label = elide_tail(text, max_text_width, |s| ui.measure(s, &opts));
+
+    let text_width = ui.measure(&label, &opts);
+    let height = TOOLTIP_FONT_SIZE + TOOLTIP_PADDING_Y * 2.0;
+    let width = text_width + TOOLTIP_PADDING_X * 2.0;
+    let x = TOOLTIP_MARGIN;
+    let y = (logical_height - height - TOOLTIP_MARGIN).max(0.0);
+
+    sugarloaf.rounded_rect(
+        None,
+        x,
+        y,
+        width,
+        height,
+        TOOLTIP_BG_COLOR,
+        TOOLTIP_DEPTH_BG,
+        TOOLTIP_CORNER_RADIUS,
+        TOOLTIP_ORDER,
+    );
+    sugarloaf.text_mut().draw(
+        x + TOOLTIP_PADDING_X,
+        y + TOOLTIP_PADDING_Y,
+        &label,
+        &opts,
+    );
+}
 
 /// The window-bg clear alpha that flows into sugarloaf's
 /// `set_background_color`. Stored on the renderer and re-applied on
@@ -308,6 +406,32 @@ impl Renderer {
     #[inline]
     pub fn color(&self, color: usize, term_colors: &TermColors) -> ColorArray {
         term_colors[color].unwrap_or(self.colors[color])
+    }
+
+    /// Whether a click on the currently highlighted hint would actually
+    /// reach it, i.e. whether the link under the pointer is genuinely
+    /// clickable right now.
+    ///
+    /// `highlighted_hint` alone is not enough. It is recomputed only on
+    /// cell crossings and modifier changes, so it survives an overlay
+    /// opening on top of it, and each modal overlay listed here
+    /// consumes the click before the hint handler runs (see the press
+    /// handler in `application.rs`). Showing a target the user cannot
+    /// open would be a lie, so the tooltip is gated on the same
+    /// conditions. Checked per frame rather than at highlight time
+    /// because an overlay can appear without the pointer moving.
+    ///
+    /// Positional click consumers (the scrollbar strip, the tab
+    /// island, panel borders) also swallow presses but depend on
+    /// where the pointer sits, which a per-frame boolean cannot
+    /// express; a stale highlight over those is a pre-existing quirk
+    /// of the highlight lifecycle, not of this gate.
+    #[inline]
+    fn hint_click_would_land(&self) -> bool {
+        !self.assistant.is_active()
+            && !self.command_palette.is_enabled()
+            && !self.search.is_active()
+            && !self.confirm_quit.is_active()
     }
 
     #[inline]
@@ -713,6 +837,24 @@ impl Renderer {
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
         );
+
+        // The hint borrow (context_manager) and the draw target
+        // (sugarloaf) are disjoint, so the target text passes through
+        // by reference; nothing is cloned per hovered frame.
+        if let Some(hint) = context_manager
+            .current()
+            .renderable_content
+            .highlighted_hint
+            .as_ref()
+            .filter(|_| self.hint_click_would_land())
+        {
+            draw_hint_tooltip(
+                sugarloaf,
+                &hint.text,
+                (window_size.width, window_size.height),
+                scale_factor,
+            );
+        }
 
         self.command_palette.render(
             sugarloaf,
@@ -1140,5 +1282,62 @@ mod compute_bg_color_tests {
             &colors,
         );
         assert_eq!(inverted, r.colors[9]);
+    }
+}
+
+#[cfg(test)]
+mod hint_tooltip_tests {
+    use super::elide_tail;
+
+    /// Fixed-width stand-in for the shaper: every char is 10 logical px.
+    fn measure(s: &str) -> f32 {
+        s.chars().count() as f32 * 10.0
+    }
+
+    #[test]
+    fn text_that_fits_is_returned_untouched() {
+        assert_eq!(
+            elide_tail("https://example.com", 1000.0, measure),
+            "https://example.com",
+        );
+    }
+
+    /// The head survives, so the scheme and host stay readable. At 100px
+    /// exactly ten chars fit, nine of them real plus the ellipsis.
+    #[test]
+    fn long_text_keeps_its_head_and_fits_the_budget() {
+        let out = elide_tail("https://example.com/a/very/long/path", 100.0, measure);
+        assert_eq!(out, "https://e\u{2026}");
+        assert!(measure(&out) <= 100.0);
+    }
+
+    /// Off-by-one guard on the binary search: the result must be the
+    /// longest prefix that fits, never one char short or one over.
+    /// With every char 10px wide the expected length is exact: a
+    /// budget of `n` chars fits `n - 1` real chars plus the ellipsis,
+    /// until the whole 24-char text fits untouched.
+    #[test]
+    fn truncation_takes_the_longest_prefix_that_fits() {
+        let text = "https://example.com/path";
+        for budget in 1..40usize {
+            let out = elide_tail(text, budget as f32 * 10.0, measure);
+            assert_eq!(
+                out.chars().count(),
+                budget.min(text.chars().count()),
+                "budget {budget} produced {out:?}",
+            );
+        }
+    }
+
+    /// Nothing fits: an ellipsis alone, not a panic and not an empty pill.
+    #[test]
+    fn zero_budget_yields_just_an_ellipsis() {
+        assert_eq!(elide_tail("abc", 0.0, measure), "\u{2026}");
+    }
+
+    /// Slicing is by char, not byte, so multibyte text cannot panic.
+    #[test]
+    fn multibyte_text_is_sliced_on_char_boundaries() {
+        assert_eq!(elide_tail("héllo wörld", 40.0, measure), "hél\u{2026}");
     }
 }
