@@ -10,12 +10,12 @@ set -eu
 
 version="${1:?usage: misc/prepare-release.sh <version, e.g. 0.5.26>}"
 version="${version#v}"
-case "$version" in
-    *[!0-9.]* | *..* | .* | *.)
-        echo "error: '$version' is not a plain X.Y.Z version" >&2
-        exit 1
-        ;;
-esac
+# Validate BEFORE any mutation: a bad version must not leave a
+# half-bumped tree behind.
+if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "error: '$version' is not a plain X.Y.Z version" >&2
+    exit 1
+fi
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"

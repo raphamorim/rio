@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           v="${GITHUB_REF_NAME#v}"
-          if ! grep -q "release version=\"$v\"" misc/com.rioterm.Rio.metainfo.xml; then
+          if ! grep -qF "release version=\"$v\"" misc/com.rioterm.Rio.metainfo.xml; then
             echo "misc/com.rioterm.Rio.metainfo.xml has no <release> entry for $v." >&2
             echo "Run misc/prepare-release.sh $v before tagging (it adds the entry" >&2
             echo "alongside the workspace version bump)." >&2
