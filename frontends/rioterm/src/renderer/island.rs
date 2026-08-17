@@ -26,6 +26,10 @@ const TAB_GAP: f32 = 6.0;
 const TAB_INSET_Y: f32 = 7.0;
 const TAB_RADIUS: f32 = 6.0;
 const TITLE_ELLIPSIS: char = '…';
+/// Bell mark for tabs that rang while in the background, and the gap
+/// between it and the tab title.
+const BELL_MARK: &str = "🔔";
+const BELL_GAP: f32 = 4.0;
 const DRAG_THRESHOLD: f32 = 4.0;
 const DRAG_ANIMATION_LENGTH: f32 = 0.15;
 const DRAG_MAX_DT: f32 = 0.05;
@@ -839,13 +843,6 @@ impl Island {
             // fill to carry a custom colour, which moves to the text.
             let single = num_tabs == 1;
 
-            let max_text_width = if single {
-                single_title_budget(window_width, scale_factor, left_margin)
-            } else {
-                (tab_width - TAB_PADDING_X * 2.0).max(0.0)
-            };
-            let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
-
             let text_color = if single {
                 match context_manager.custom_color(tab_index) {
                     Some(mut custom) => {
@@ -866,6 +863,24 @@ impl Island {
                 ..DrawOpts::default()
             };
 
+            // The bell mark is its own text run: the UI text layer resolves
+            // a single font per draw from the run's first char, so gluing it
+            // onto the title would shape the whole title in the emoji font.
+            let bell = context_manager.bell(tab_index);
+            let bell_width = if bell {
+                sugarloaf.text_mut().measure(BELL_MARK, &title_opts) + BELL_GAP
+            } else {
+                0.0
+            };
+
+            let max_text_width = if single {
+                single_title_budget(window_width, scale_factor, left_margin) - bell_width
+            } else {
+                tab_width - TAB_PADDING_X * 2.0 - bell_width
+            }
+            .max(0.0);
+            let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
+
             // UI text always paints in a final pass above every rect,
             // so the floating tab's opaque background can't occlude
             // titles passing underneath it — skip a title once the
@@ -878,16 +893,20 @@ impl Island {
 
             if !hidden_by_drag {
                 // Measure → centre → draw. Immediate mode, no cached
-                // text_id bookkeeping.
+                // text_id bookkeeping. The bell mark and the title are
+                // centred as one group.
                 let ui = sugarloaf.text_mut();
-                let text_width = ui.measure(&title, &title_opts);
+                let text_width = ui.measure(&title, &title_opts) + bell_width;
                 let text_x = if single {
                     single_title_x(window_width, scale_factor, text_width, left_margin)
                 } else {
                     tab_x + (tab_width - text_width) / 2.0
                 };
                 let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
-                ui.draw(text_x, text_y, &title, &title_opts);
+                if bell {
+                    ui.draw(text_x, text_y, BELL_MARK, &title_opts);
+                }
+                ui.draw(text_x + bell_width, text_y, &title, &title_opts);
             }
 
             // Nothing is drawn behind a lone title.
