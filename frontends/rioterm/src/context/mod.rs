@@ -754,6 +754,41 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
+    /// A pane rang the bell. Flags its tab so the strip can surface it;
+    /// the focused tab is skipped since the user is already looking at it.
+    /// The ringing pane can live in any tab (background split of a
+    /// background tab included), so every tab is searched.
+    #[inline]
+    pub fn ring_bell(&mut self, route_id: usize) -> bool {
+        let Some(tab_index) = self
+            .contexts
+            .iter_mut()
+            .position(|grid| grid.get_by_route_id(route_id).is_some())
+        else {
+            return false;
+        };
+
+        if tab_index == self.current_index {
+            return false;
+        }
+
+        self.contexts[tab_index].bell = true;
+        true
+    }
+
+    #[inline]
+    pub fn bell(&self, index: usize) -> bool {
+        self.contexts.get(index).is_some_and(|grid| grid.bell)
+    }
+
+    /// Clears the focused tab's bell flag. Called every frame so the mark
+    /// drops the moment the tab is shown, whatever brought it to the front.
+    #[inline]
+    pub fn clear_current_bell(&mut self) -> bool {
+        let grid = &mut self.contexts[self.current_index];
+        std::mem::replace(&mut grid.bell, false)
+    }
+
     #[inline]
     pub fn resize_all_grids(
         &mut self,
@@ -1355,6 +1390,35 @@ pub mod test {
 
         context_manager.set_current(8);
         assert_eq!(context_manager.current_index, 3);
+    }
+
+    #[test]
+    fn bell_marks_background_tabs_only_and_clears_on_focus() {
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
+                .unwrap();
+        cm.add_context(true, 0);
+        cm.add_context(true, 0);
+        cm.set_current(0);
+
+        let background_route = cm.contexts[2].current().route_id;
+        let focused_route = cm.contexts[0].current().route_id;
+
+        assert!(cm.ring_bell(background_route));
+        assert!(cm.bell(2));
+
+        // The focused tab is never marked: the user is looking at it.
+        assert!(!cm.ring_bell(focused_route));
+        assert!(!cm.bell(0));
+
+        // Unknown routes (already-closed panes) are a no-op.
+        assert!(!cm.ring_bell(usize::MAX));
+
+        // Focusing the tab drops the mark on the next rendered frame.
+        cm.set_current(2);
+        assert!(cm.bell(2));
+        assert!(cm.clear_current_bell());
+        assert!(!cm.bell(2));
     }
 
     fn set_tab_title(cm: &mut ContextManager<VoidListener>, index: usize, content: &str) {

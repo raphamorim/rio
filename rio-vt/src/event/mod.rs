@@ -247,8 +247,8 @@ pub enum RioEvent {
     /// Progress bar report from OSC 9;4 sequence
     ProgressReport(ProgressReport),
 
-    /// Terminal bell ring.
-    Bell,
+    /// Terminal bell ring, from the PTY identified by `route_id`.
+    Bell(usize),
 
     /// Desktop notification from OSC 9 or OSC 777.
     DesktopNotification {
@@ -340,7 +340,7 @@ impl Debug for RioEvent {
                 write!(f, "GlyphProtocolQuery route {route_id} cp {cp:#x}")
             }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
-            RioEvent::Bell => write!(f, "Bell"),
+            RioEvent::Bell(route_id) => write!(f, "Bell route {route_id}"),
             RioEvent::DesktopNotification { title, body } => {
                 write!(f, "DesktopNotification({title}, {body})")
             }

@@ -4248,7 +4248,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn bell(&mut self) {
-        self.event_proxy.send_event(RioEvent::Bell, self.window_id);
+        self.event_proxy
+            .send_event(RioEvent::Bell(self.route_id), self.window_id);
     }
 
     #[inline]

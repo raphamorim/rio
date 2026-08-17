@@ -729,10 +729,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.request_redraw();
                 }
             }
-            RioEventType::Rio(RioEvent::Bell) => {
+            RioEventType::Rio(RioEvent::Bell(route_id)) => {
                 // Handle audio bell
                 if self.config.bell.audio {
                     self.handle_audio_bell();
+                }
+
+                if self.config.bell.tab_indicator {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        if route.window.screen.context_manager.ring_bell(route_id) {
+                            // The mark is window chrome, not terminal cells:
+                            // a bare redraw request is dropped by the
+                            // `any_panel_dirty` present gate, so the frame
+                            // has to be marked dirty for it to reach screen.
+                            route.request_overlay_redraw();
+                        }
+                    }
                 }
             }
             RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {

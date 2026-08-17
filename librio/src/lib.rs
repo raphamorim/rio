@@ -186,7 +186,7 @@ impl Listener {
                     },
                 );
             }
-            RioEvent::Bell => {
+            RioEvent::Bell(_) => {
                 self.delegate.action(self.surface_id, Action::RingBell);
             }
             RioEvent::CursorBlinkingChange | RioEvent::CursorBlinkingChangeOnRoute(_) => {
