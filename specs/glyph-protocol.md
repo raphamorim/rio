@@ -246,12 +246,16 @@ Parameters:
 - `lh` — authored line height, in upm units. The intended vertical
   extent (descender-to-ascender), NOT the outline's bounding box.
   Optional; default `upm`.
-- `width` — the codepoint's Unicode width, in the `wcwidth` /
-  UAX #11 sense. One of `1` (narrow) or `2` (wide). Optional;
-  default `1`. Authoritative for all terminal layout decisions
-  (cursor advance, wrapping, selection geometry), overriding the
-  codepoint's UAX #11 East Asian Width (all PUA ranges are
-  Ambiguous by default).
+- `width` — the glyph's render span in cells. One of `1` (one
+  cell) or `2` (two cells). Optional; default `1`. Render-level
+  only: the codepoint's logical cell width stays its system
+  `wcwidth` (`1` for every PUA codepoint), so cursor advance,
+  wrapping, and selection never desync from applications that
+  compute column counts with their own `wcwidth` (shells, line
+  editors, multiplexers). A `width=2` glyph paints across its own
+  cell plus the following cell in pixels; the client MUST leave
+  that following cell blank (emit a space after the codepoint) so
+  the overflow lands on empty space. See §8.5.2.
 - `size` — scale policy. One of `height`, `advance`, `contain`,
   `cover`, `stretch`. Optional; default `height`. See §8.5.
 - `align` — placement of the scaled outline within the render span,
@@ -447,6 +451,11 @@ into. Before scaling, the span is:
 W = width × cell_width_px      (cell_width_px from the terminal)
 H = cell_height_px
 ```
+
+The span is a pixel-space quantity. `width=2` widens the pixels
+the outline scales into, not the codepoint's logical cell width
+(§6.1): the cursor still advances one cell and the glyph overflows
+rightward into the following cell, which the client keeps blank.
 
 `pad=<t>,<r>,<b>,<l>` shrinks the span:
 
@@ -717,10 +726,9 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
    graph, resolving palette index `0xFFFF` to the current
    foreground color.
 7. Scales and positions glyphs according to `upm`, `aw`, `lh`,
-   `width`, `size`, `align`, and `pad` as specified in §8.5, and
-   treats the registered codepoint as having the declared `width`
-   (`1` or `2`) for every layout decision, overriding the
-   codepoint's UAX #11 East Asian Width.
+   `width`, `size`, `align`, and `pad` as specified in §8.5,
+   rendering a `width=2` glyph across two cells of pixels while
+   the codepoint's logical cell width stays its system `wcwidth`.
 8. Enforces the cell-buffer authority invariant in §9: selection,
    copy, and search return the raw codepoint.
 9. Ignores unrecognized parameters rather than failing the
@@ -733,6 +741,8 @@ A client (application) is Glyph Protocol v1 conformant if it:
    Protocol."
 3. Emits only the `glyf` subset defined in §8.2.
 4. Handles all `reason=*` error codes without crashing.
+5. Leaves the cell after every `width=2` codepoint blank (emits a
+   space), so the render-span overflow lands on empty space.
 
 ## 12. Reference implementation
 
@@ -847,3 +857,4 @@ rather than serving a stale bitmap.
 | 2026-05-03 | v1.8    | Replaced the `s` reply's `u8` bitfield with a comma-separated list of format names (e.g. `fmt=glyf,colrv0,colrv1`). Names extend without bit-collision worries and stay readable in transcripts; an empty `fmt=` means the terminal advertises no payload formats. Unknown names MUST be ignored by clients, so future formats are forward-compatible. |
 | 2026-05-03 | v1.9    | Replaced the `q` reply's `u8` two-bit `status` field with a comma-separated list of coverage names: `status=system`, `status=glossary`, `status=system,glossary`, or empty for "free". Same motivation as v1.8 for the `s` reply. The `r` and `c` replies still use `status=<u8>` for success/failure since that's a closed boolean, not an extensible set. |
 | 2026-08-17 | v1.10   | Added a decoded-size budget to §8.2: 64 KiB of decoded outline data (12 bytes per point, i.e. 5,461 points), enforced per outline and per registration before point storage is allocated; violations reject with the new `reason=outline_too_large`. Closes a decode-amplification hole: repeat-compressed flags and omitted deltas let a 64 KiB wire payload expand to ~768 KiB per monochrome slot (~768 MiB per session at 1024 slots), and a colour container amplifies further via its up-to-1024 carried outlines. Requested by Mitchell Hashimoto, who hit the expansion while implementing the protocol in Ghostty; the budget follows his survey of Apple Symbols, Noto, and Nerd Fonts, where the largest real glyph decodes to ~40 KiB. |
+| 2026-08-17 | v1.11   | Redefined `width` as a render-level span, matching the reference implementation (rio#1649, rio#1650): the codepoint's logical cell width always stays its system `wcwidth`, because interactive applications (shells, line editors, multiplexers) compute column counts independently and a terminal-only width override desyncs the cursor between terminal and application. A `width=2` glyph overflows into the following cell in pixels, and the client MUST leave that cell blank. v1.7's "authoritative for all layout decisions" wording is withdrawn. |
