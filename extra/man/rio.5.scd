@@ -42,6 +42,18 @@ On Windows, the config file will be looked for in:
 
 	Default: _false_
 
+*padding-color* = _"Background"_ | _"Extend"_
+
+	Determines how pixels outside the terminal grid are colored.
+
+	*Background*
+		Fill padding with Rio's primary background color.
+	*Extend*
+		Extend the nearest grid cell's background color into the padding.
+		This is applied only when the window contains a single panel.
+
+	Default: _"Background"_
+
 *env-vars* = [_"<string>"_,]
 
 	Environment variables to set for spawned processes.

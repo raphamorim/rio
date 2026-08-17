@@ -96,6 +96,18 @@ impl Default for Developer {
     }
 }
 
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PaddingColor {
+    /// Fill the padding with Rio's primary background color.
+    #[default]
+    #[serde(alias = "background")]
+    Background,
+
+    /// Extend the nearest grid cell's background color into the padding.
+    #[serde(alias = "extend")]
+    Extend,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     #[serde(default)]
@@ -118,6 +130,8 @@ pub struct Config {
     pub working_dir: Option<String>,
     #[serde(rename = "line-height", default = "default_line_height")]
     pub line_height: f32,
+    #[serde(rename = "padding-color", default)]
+    pub padding_color: PaddingColor,
     #[serde(default = "String::default")]
     pub theme: String,
     #[serde(default = "Scroll::default")]
@@ -669,6 +683,7 @@ impl Default for Config {
             #[cfg(feature = "renderer")]
             fonts: SugarloafFonts::default(),
             line_height: default_line_height(),
+            padding_color: PaddingColor::default(),
             navigation: Navigation::default(),
             option_as_alt: default_option_as_alt(),
             margin: default_margin(),
@@ -761,6 +776,7 @@ mod tests {
 
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
+        assert_eq!(result.padding_color, PaddingColor::Background);
 
         // Colors
         assert_eq!(result.colors, Colors::default());
@@ -768,6 +784,18 @@ mod tests {
         // Developer
         assert_eq!(result.developer.log_level, default_log_level());
         assert!(!result.developer.enable_fps_counter);
+    }
+
+    #[test]
+    fn test_padding_color() {
+        let result = create_temporary_config(
+            "padding-color",
+            r#"
+            padding-color = "Extend"
+        "#,
+        );
+
+        assert_eq!(result.padding_color, PaddingColor::Extend);
     }
 
     #[test]

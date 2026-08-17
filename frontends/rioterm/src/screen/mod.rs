@@ -36,6 +36,7 @@ use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::layout::Margin;
 use rio_backend::config::renderer::Backend;
+use rio_backend::config::PaddingColor;
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
@@ -75,6 +76,7 @@ pub struct Screen<'screen> {
     pub context_manager: context::ContextManager<EventProxy>,
     last_ime_cursor_pos: Option<(f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
+    padding_color: PaddingColor,
     pub resize_state: Option<crate::layout::ResizeState>,
     #[cfg(target_os = "macos")]
     pub allow_manual_dragging: bool,
@@ -304,6 +306,7 @@ impl Screen<'_> {
                 .iter()
                 .map(|h| std::rc::Rc::new(h.clone()))
                 .collect(),
+            padding_color: config.padding_color,
             mouse_bindings: crate::bindings::default_mouse_bindings(),
             modifiers: Modifiers::default(),
             context_manager,
@@ -420,6 +423,7 @@ impl Screen<'_> {
         font_library: &rio_backend::sugarloaf::font::FontLibrary,
         should_update_font_library: bool,
     ) {
+        self.padding_color = config.padding_color;
         let num_tabs = self.ctx().len();
         let padding_y_top = padding_top_from_config(
             &config.navigation,
@@ -4117,6 +4121,8 @@ impl Screen<'_> {
             }
 
             // --- ensure every panel has a matching GridRenderer ---
+            let extend_single_panel_edges =
+                self.padding_color == PaddingColor::Extend && panels.len() == 1;
             for p in &panels {
                 self.ensure_grid(p.route_id, p.cols, p.rows);
             }
@@ -4424,12 +4430,10 @@ impl Screen<'_> {
                     // grid_padding = (top, right, bottom, left). The
                     // bg shader only reads `.w` (left) + `.x` (top)
                     // to anchor the grid, so right/bottom can stay
-                    // 0. padding_extend is 0 too — each panel's
-                    // grid must stay bounded to its own rect so
-                    // sibling panels / the window margin aren't
-                    // painted by this grid. The full-window bg fill
-                    // (re-enabled in sugarloaf's render_metal) now
-                    // handles the space outside all panels.
+                    // 0. A single panel extends its edge-cell backgrounds
+                    // through the otherwise unused window margin. Multiple
+                    // panels remain bounded so they cannot paint over their
+                    // siblings.
                     grid_padding: [panel_top, 0.0, 0.0, panel_left],
                     cursor_color: cursor_col_u,
                     cursor_bg_color: cursor_bg_u,
@@ -4439,7 +4443,14 @@ impl Screen<'_> {
                     _pad_cursor: [0; 2],
                     min_contrast: 0.0,
                     flags: 0,
-                    padding_extend: 0,
+                    padding_extend: if extend_single_panel_edges {
+                        rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_LEFT
+                            | rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_RIGHT
+                            | rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_UP
+                            | rio_backend::sugarloaf::grid::GridUniforms::PADDING_EXTEND_DOWN
+                    } else {
+                        0
+                    },
                     input_colorspace,
                 };
 
