@@ -5283,39 +5283,62 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
                 glyf_decode::DecodeError::Hinted => RegisterError::HintingUnsupported,
                 glyf_decode::DecodeError::Malformed => RegisterError::MalformedPayload,
+                glyf_decode::DecodeError::TooLarge => RegisterError::OutlineTooLarge,
             }
+        }
+
+        // §8.2: a container's outlines must sum to at most
+        // MAX_DECODED_POINTS. Peeks each record header, no decoding.
+        fn container_budget(glyphs: &[Vec<u8>]) -> Result<(), RegisterError> {
+            let mut total = 0usize;
+            for glyf in glyphs {
+                total += glyf_decode::peek_point_count(glyf).map_err(translate)?;
+                if total > glyf_decode::MAX_DECODED_POINTS {
+                    return Err(RegisterError::OutlineTooLarge);
+                }
+            }
+            Ok(())
         }
 
         // Validate the monochrome `glyf` payload at register time so a
         // bad outline produces a clear error response. For COLR
-        // containers, validation is render-time only — re-decoding
-        // every carried outline (up to 1024 per registration) on the
-        // hot register path costs more than it saves, and the parser
-        // already catches the common-case malformation. A
-        // structurally-broken COLR payload manifests as tofu at first
-        // render rather than a register-time error; that's the
-        // accepted trade-off.
+        // containers, structural validation stays render-time only:
+        // re-decoding every carried outline (up to 1024 per
+        // registration) on the hot register path costs more than it
+        // saves, and the parser already catches the common-case
+        // malformation. A structurally-broken COLR payload manifests
+        // as tofu at first render rather than a register-time error;
+        // that's the accepted trade-off. The one register-time check
+        // containers do get is the §8.2 decoded-size budget, because
+        // it exists precisely to stop hostile payloads from reaching
+        // the decoder's allocations.
         let (stored, upm) = match payload {
             GlyphPayload::Glyf { glyf, upm } => {
                 glyf_decode::decode(&glyf).map_err(translate)?;
                 (StoredPayload::Glyf { glyf }, upm)
             }
-            GlyphPayload::ColrV0 { container, upm } => (
-                StoredPayload::ColrV0 {
-                    glyphs: container.glyphs,
-                    colr: container.colr,
-                    cpal: container.cpal,
-                },
-                upm,
-            ),
-            GlyphPayload::ColrV1 { container, upm } => (
-                StoredPayload::ColrV1 {
-                    glyphs: container.glyphs,
-                    colr: container.colr,
-                    cpal: container.cpal,
-                },
-                upm,
-            ),
+            GlyphPayload::ColrV0 { container, upm } => {
+                container_budget(&container.glyphs)?;
+                (
+                    StoredPayload::ColrV0 {
+                        glyphs: container.glyphs,
+                        colr: container.colr,
+                        cpal: container.cpal,
+                    },
+                    upm,
+                )
+            }
+            GlyphPayload::ColrV1 { container, upm } => {
+                container_budget(&container.glyphs)?;
+                (
+                    StoredPayload::ColrV1 {
+                        glyphs: container.glyphs,
+                        colr: container.colr,
+                        cpal: container.cpal,
+                    },
+                    upm,
+                )
+            }
         };
 
         // Lazily allocate the registry — idle terminals that never see
@@ -5981,6 +6004,90 @@ mod tests {
         // Decode failed before the registry was touched, so it stays
         // uninitialised.
         assert!(cw.glyph_registry.is_none());
+    }
+
+    // A simple glyph declaring `n` points in almost no wire bytes:
+    // the §8.2 decode-amplification payload.
+    #[cfg(feature = "graphics")]
+    fn dense_glyf_bytes(n: usize) -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(&1i16.to_be_bytes()); // numberOfContours
+        v.extend_from_slice(&[0u8; 8]); // bounding box
+        v.extend_from_slice(&((n - 1) as u16).to_be_bytes()); // endPts
+        v.extend_from_slice(&0u16.to_be_bytes()); // instructionLength
+        let flag = 0x01 | 0x08 | 0x10 | 0x20; // on-curve|repeat|x-same|y-same
+        let mut left = n;
+        while left > 0 {
+            let run = left.min(255);
+            v.push(flag);
+            v.push((run - 1) as u8);
+            left -= run;
+        }
+        v
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_register_rejects_oversized_outline() {
+        use crate::ansi::glyph_protocol::RegisterError;
+        use rio_graphics::glyph::glyf_decode::MAX_DECODED_POINTS;
+        let mut cw = make_crosswords();
+
+        let v = dense_glyf_bytes(MAX_DECODED_POINTS + 1);
+        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(v, 1000), 1);
+        assert_eq!(res, Err(RegisterError::OutlineTooLarge));
+        assert!(cw.glyph_registry.is_none());
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_register_rejects_container_over_budget() {
+        use crate::ansi::glyph_protocol::{ColrContainer, GlyphPayload, RegisterError};
+        use rio_graphics::glyph::glyf_decode::MAX_DECODED_POINTS;
+        let mut cw = make_crosswords();
+
+        // Each outline is under the per-outline budget, but together
+        // they blow the per-registration budget. The budget check runs
+        // before COLR validation, so junk table bytes are fine here.
+        let half = MAX_DECODED_POINTS / 2 + 1;
+        let container = ColrContainer {
+            glyphs: vec![dense_glyf_bytes(half), dense_glyf_bytes(half)],
+            colr: vec![0u8; 4],
+            cpal: Vec::new(),
+        };
+        let res = Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            GlyphPayload::ColrV0 {
+                container,
+                upm: 1000,
+            },
+            1,
+        );
+        assert_eq!(res, Err(RegisterError::OutlineTooLarge));
+        assert!(cw.glyph_registry.is_none());
+
+        // The same total spread across outlines that stay within the
+        // budget registers fine.
+        let container = ColrContainer {
+            glyphs: vec![
+                dense_glyf_bytes(MAX_DECODED_POINTS / 2),
+                dense_glyf_bytes(MAX_DECODED_POINTS / 2),
+            ],
+            colr: vec![0u8; 4],
+            cpal: Vec::new(),
+        };
+        let res = Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            GlyphPayload::ColrV0 {
+                container,
+                upm: 1000,
+            },
+            1,
+        );
+        assert!(res.is_ok());
+        assert!(registry_contains(&cw, 0xE0A0));
     }
 
     #[cfg(feature = "graphics")]

@@ -2,7 +2,7 @@
 
 **Author:** Raphael Amorim
 **Year:** 2026
-**Last updated:** 2026-05-03
+**Last updated:** 2026-08-17
 
 **See also:**
 - Blog post introducing the protocol and its rationale:
@@ -294,6 +294,7 @@ Defined error codes:
 | `hinting_unsupported`   | Payload contains hinting instructions. |
 | `malformed_payload`     | Payload failed to parse as `glyf`. |
 | `payload_too_large`     | Payload exceeds 64 KiB post-base64-decode. |
+| `outline_too_large`     | An outline (or a colour container's outlines in aggregate) exceeds the 64 KiB decoded-size budget (§8.2). |
 
 ### 6.3 Overwrite and eviction
 
@@ -376,6 +377,31 @@ subset of `glyf` and MAY reject anything else with
   terminal's own anti-aliasing is what users see.
 - **Coordinate space** defined by `upm`. The terminal maps this
   space onto its cell at render time.
+- **Decoded-size limit.** The wire form is compressed: repeat
+  flags and 8-bit or omitted deltas mean one wire byte can stand
+  for many decoded points. For limit accounting, one decoded
+  point costs **12 bytes** (two expanded coordinates plus an
+  on-curve flag, what a typical in-memory point representation
+  occupies). An outline whose decoded size would exceed **64
+  KiB**, i.e. more than **5,461 points**, MUST be rejected with
+  `reason=outline_too_large`. The same budget applies to a
+  registration as a whole: the decoded sizes of all outlines
+  carried in a `colrv0`/`colrv1` container (§8.6 / §8.7) MUST sum
+  to at most 64 KiB. The point count is known from
+  `endPtsOfContours` before any point storage exists, so
+  terminals MUST validate against the budget before allocating
+  decoded-point storage. The limit is a bound on allocation, not
+  a post-hoc check.
+
+The 64 KiB budget comes from Mitchell Hashimoto's survey of real
+symbol fonts for Ghostty's implementation: across Apple Symbols,
+Noto, and the Nerd Fonts collection, the largest glyph decodes to
+roughly 40 KiB, so every observed real glyph fits with headroom. Without the cap, a crafted 64 KiB wire payload
+(maximally repeat-compressed flags, omitted deltas) expands to
+~768 KiB of decoded points per monochrome slot, and a colour
+container to many times that, turning the 1024-slot glossary
+into a memory-exhaustion vector measured in hundreds of MiB per
+session.
 
 ### 8.3 Contour semantics
 
@@ -548,7 +574,10 @@ colour, per the OpenType spec.
 `COLR` table that fails to parse SHOULD be rejected with
 `reason=malformed_payload`. Every carried outline MUST satisfy the
 `glyf` simple-glyph subset of §8.2; violations use the same error
-codes as `fmt=glyf`.
+codes as `fmt=glyf`. The decoded-size budget of §8.2 applies both
+to each carried outline and to the container's outlines in
+aggregate: a container whose outlines sum past 64 KiB decoded is
+rejected with `reason=outline_too_large`.
 
 ### 8.7 Payload format: `colrv1`
 
@@ -628,9 +657,13 @@ and the cell buffer honestly reports.
 
 Other considerations:
 
-- **Resource bounds.** The 1024-slot cap and 64 KiB per-payload cap
-  give a hard upper bound of 64 MiB on the glossary's memory
-  footprint per session.
+- **Resource bounds.** Three caps bound the glossary: 1024 slots
+  per session, 64 KiB of wire payload per registration, and 64 KiB
+  of decoded outline data per registration (§8.2). Worst case, a
+  session holds 64 MiB of wire bytes plus 64 MiB of decoded
+  points. The decoded cap is load-bearing: the `glyf` wire form is
+  compressed, so a crafted payload expands ~12× on decode and the
+  wire cap alone bounds nothing that matters.
 - **No code execution.** The `glyf` subset defined in §8.2
   excludes hinting instructions, which is the only part of
   TrueType that is executable. Glyph Protocol is purely
@@ -672,9 +705,13 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
    anything else with `reason=out_of_namespace`.
 4. Holds at most 1024 simultaneous registrations per session and
    evicts in FIFO order when full.
-5. Accepts the `glyf` simple-glyph subset defined in §8.2. The
-   `colrv0` and `colrv1` formats are OPTIONAL; terminals that
-   accept them MUST list the corresponding name in the `s` reply.
+5. Accepts the `glyf` simple-glyph subset defined in §8.2 and
+   enforces its 64 KiB decoded-size budget, per outline and per
+   registration, rejecting violations with
+   `reason=outline_too_large` before allocating decoded-point
+   storage. The `colrv0` and `colrv1` formats are OPTIONAL;
+   terminals that accept them MUST list the corresponding name in
+   the `s` reply.
 6. Renders registered `glyf` glyphs in the current foreground
    color; renders `colrv0`/`colrv1` glyphs using the COLR paint
    graph, resolving palette index `0xFFFF` to the current
@@ -809,3 +846,4 @@ rather than serving a stale bitmap.
 | 2026-04-23 | v1.7    | Added a sizing and placement model to the `r` verb: `aw` / `lh` (authored extent in upm units), `width` (Unicode/wcwidth width, `1` or `2`, authoritative), `size` (`height`/`advance`/`contain`/`cover`/`stretch`), `align` (`<h>,<v>` positioning after scale, with `v=baseline` for character-like glyphs), and `pad` (fractional insets from the render span). Pinned the coordinate convention: Y-up, `y=0` at baseline, `lh` measured descender-to-ascender (OpenType). Scale groups are intentionally omitted — coordinated sets align via matching parameters and outline geometry. |
 | 2026-05-03 | v1.8    | Replaced the `s` reply's `u8` bitfield with a comma-separated list of format names (e.g. `fmt=glyf,colrv0,colrv1`). Names extend without bit-collision worries and stay readable in transcripts; an empty `fmt=` means the terminal advertises no payload formats. Unknown names MUST be ignored by clients, so future formats are forward-compatible. |
 | 2026-05-03 | v1.9    | Replaced the `q` reply's `u8` two-bit `status` field with a comma-separated list of coverage names: `status=system`, `status=glossary`, `status=system,glossary`, or empty for "free". Same motivation as v1.8 for the `s` reply. The `r` and `c` replies still use `status=<u8>` for success/failure since that's a closed boolean, not an extensible set. |
+| 2026-08-17 | v1.10   | Added a decoded-size budget to §8.2: 64 KiB of decoded outline data (12 bytes per point, i.e. 5,461 points), enforced per outline and per registration before point storage is allocated; violations reject with the new `reason=outline_too_large`. Closes a decode-amplification hole: repeat-compressed flags and omitted deltas let a 64 KiB wire payload expand to ~768 KiB per monochrome slot (~768 MiB per session at 1024 slots), and a colour container amplifies further via its up-to-1024 carried outlines. Requested by Mitchell Hashimoto, who hit the expansion while implementing the protocol in Ghostty; the budget follows his survey of Apple Symbols, Noto, and Nerd Fonts, where the largest real glyph decodes to ~40 KiB. |
