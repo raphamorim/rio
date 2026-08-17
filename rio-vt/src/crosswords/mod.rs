@@ -7575,6 +7575,48 @@ mod tests {
     }
 
     #[test]
+    fn bell_emits_bell_event_for_its_route() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        #[derive(Clone)]
+        struct TestListener {
+            events: Rc<RefCell<Vec<RioEvent>>>,
+        }
+
+        impl EventListener for TestListener {
+            fn send_event(&self, event: RioEvent, _id: WindowId) {
+                self.events.borrow_mut().push(event);
+            }
+        }
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            7,
+            10,
+        );
+
+        // Drive a real BEL byte through the parser rather than calling the
+        // handler directly, so the C0 dispatch stays covered too.
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut term, b"\x07");
+
+        assert!(
+            events
+                .borrow()
+                .iter()
+                .any(|e| matches!(e, RioEvent::Bell(route) if *route == 7)),
+            "BEL should emit RioEvent::Bell carrying its route id"
+        );
+    }
+
+    #[test]
     fn test_keyboard_mode_syncs_with_mode() {
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
