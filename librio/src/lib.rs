@@ -168,7 +168,7 @@ impl Listener {
             | RioEvent::RenderRoute(_) => {
                 self.delegate.wakeup(self.surface_id);
             }
-            RioEvent::Title(title) => {
+            RioEvent::Title(_, title) => {
                 self.delegate.action(
                     self.surface_id,
                     Action::SetTitle {

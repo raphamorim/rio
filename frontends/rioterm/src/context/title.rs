@@ -90,8 +90,11 @@ pub fn update_title<T: rio_backend::event::EventListener>(
 
     let mut new_template = template.to_owned();
 
-    let re = regex::Regex::new(r"\{\{(.*?)\}\}").unwrap();
-    for (to_replace_str, [variable]) in re.captures_iter(template).map(|c| c.extract()) {
+    // Compiled once: titles are now rendered per OSC title change, not on
+    // a 2s poll, so a per-call `Regex::new` would sit in the hot path.
+    static RE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\{\{(.*?)\}\}").unwrap());
+    for (to_replace_str, [variable]) in RE.captures_iter(template).map(|c| c.extract()) {
         let variables = if to_replace_str.contains("||") {
             variable.split("||").collect()
         } else {

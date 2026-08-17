@@ -190,8 +190,8 @@ pub enum RioEvent {
     /// Grid has changed possibly requiring a mouse cursor shape change.
     MouseCursorDirty,
 
-    /// Window title change.
-    Title(String),
+    /// Terminal title change from the PTY identified by `route_id`.
+    Title(usize, String),
 
     /// Window title change.
     TitleWithSubtitle(String, String),
@@ -306,7 +306,9 @@ impl Debug for RioEvent {
             RioEvent::PtyWrite(route_id, text) => {
                 write!(f, "PtyWrite(route={route_id}, {text})")
             }
-            RioEvent::Title(title) => write!(f, "Title({title})"),
+            RioEvent::Title(route_id, title) => {
+                write!(f, "Title route {route_id} ({title})")
+            }
             RioEvent::TitleWithSubtitle(title, subtitle) => {
                 write!(f, "TitleWithSubtitle({title}, {subtitle})")
             }

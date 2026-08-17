@@ -801,9 +801,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     );
                 }
             }
-            RioEventType::Rio(RioEvent::Title(title)) => {
+            RioEventType::Rio(RioEvent::Title(route_id, title)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route.set_window_title(&title);
+                    // The tab strip is window chrome: a bare redraw request
+                    // is dropped by the `any_panel_dirty` present gate, so
+                    // the new title needs the frame marked dirty to appear
+                    // before the terminal next changes on its own.
+                    if route
+                        .window
+                        .screen
+                        .context_manager
+                        .update_title_for_route(route_id)
+                    {
+                        route.request_overlay_redraw();
+                    }
                 }
             }
             RioEventType::Rio(RioEvent::TitleWithSubtitle(title, subtitle)) => {

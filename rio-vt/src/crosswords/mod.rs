@@ -3439,8 +3439,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let title = title.unwrap_or_default();
         if title != self.title {
             self.title = title;
-            self.event_proxy
-                .send_event(RioEvent::Title(self.title.clone()), self.window_id);
+            self.event_proxy.send_event(
+                RioEvent::Title(self.route_id, self.title.clone()),
+                self.window_id,
+            );
         }
     }
 
@@ -7556,7 +7558,7 @@ mod tests {
                 events: events.clone(),
             },
             WindowId::from(0),
-            0,
+            7,
             10,
         );
 
@@ -7567,8 +7569,8 @@ mod tests {
             events
                 .borrow()
                 .iter()
-                .any(|e| matches!(e, RioEvent::Title(t) if t == "my title")),
-            "set_title should emit RioEvent::Title"
+                .any(|e| matches!(e, RioEvent::Title(route, t) if *route == 7 && t == "my title")),
+            "set_title should emit RioEvent::Title carrying its route id"
         );
     }
 
