@@ -2077,14 +2077,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let focus_changed = route.window.is_focused != focused;
                 route.window.is_focused = focused;
 
-                // Focus is a cheap checkpoint to catch backing-scale changes
-                // whose ScaleFactorChanged never arrived (sleep/wake display
-                // reconfiguration).
+                // Focus is a cheap checkpoint to catch backing-scale or
+                // physical-size changes whose events were missed or arrived
+                // out of order during display reconfiguration.
                 if focused
                     && route
                         .window
                         .screen
-                        .reconcile_scale(&route.window.winit_window)
+                        .reconcile_window_metrics(&route.window.winit_window)
                 {
                     route.window.update_vblank_interval();
                     route.request_redraw();
@@ -2107,7 +2107,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     if route
                         .window
                         .screen
-                        .reconcile_scale(&route.window.winit_window)
+                        .reconcile_window_metrics(&route.window.winit_window)
                     {
                         route.window.update_vblank_interval();
                     }
@@ -2141,6 +2141,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Resized(new_size) => {
+                // A frame-change callback can queue a resize using the old
+                // backing scale immediately before macOS moves the window to
+                // a screen with a different scale. By the time this event is
+                // handled, the window's live physical size is authoritative.
+                #[cfg(target_os = "macos")]
+                let new_size = {
+                    let live_size = route.window.winit_window.inner_size();
+                    if live_size.width > 0 && live_size.height > 0 {
+                        live_size
+                    } else {
+                        new_size
+                    }
+                };
+
                 if new_size.width == 0 || new_size.height == 0 {
                     return;
                 }

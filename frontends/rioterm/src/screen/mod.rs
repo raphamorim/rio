@@ -193,6 +193,42 @@ pub struct ScreenWindowProperties {
     pub window_id: rio_window::window::WindowId,
 }
 
+#[derive(Debug, PartialEq)]
+enum WindowMetricsUpdate {
+    None,
+    Resize(rio_window::dpi::PhysicalSize<u32>),
+    Rescale {
+        scale: f32,
+        size: rio_window::dpi::PhysicalSize<u32>,
+    },
+}
+
+fn window_metrics_update(
+    rendered_size: SugarloafWindowSize,
+    rendered_scale: f32,
+    live_size: rio_window::dpi::PhysicalSize<u32>,
+    live_scale: f32,
+) -> WindowMetricsUpdate {
+    if live_scale <= 0.0 || live_size.width == 0 || live_size.height == 0 {
+        return WindowMetricsUpdate::None;
+    }
+
+    if (live_scale - rendered_scale).abs() > f32::EPSILON {
+        return WindowMetricsUpdate::Rescale {
+            scale: live_scale,
+            size: live_size,
+        };
+    }
+
+    if rendered_size.width != live_size.width as f32
+        || rendered_size.height != live_size.height as f32
+    {
+        return WindowMetricsUpdate::Resize(live_size);
+    }
+
+    WindowMetricsUpdate::None
+}
+
 #[inline]
 fn window_should_be_opaque(config: &rio_backend::config::Config) -> bool {
     config.window.opacity >= 1.0 && !config.window.blur.is_glass()
@@ -662,22 +698,33 @@ impl Screen<'_> {
         self
     }
 
-    /// Re-read the window's live scale factor and re-run the rescale path
-    /// when it diverged from the one being rendered with. Display
-    /// reconfiguration during sleep/wake can change the backing scale
-    /// without a `ScaleFactorChanged` ever being delivered (the macOS
-    /// producer de-dupes on the numeric value and wake notifications
-    /// coalesce), so cheap checkpoints call this instead of trusting
-    /// event delivery. Returns whether a rescale ran.
-    pub fn reconcile_scale(&mut self, winit_window: &rio_window::window::Window) -> bool {
+    /// Re-read the window's live scale and physical size, then repair any
+    /// divergence from the values used by the renderer. Display changes can
+    /// leave a stale `Resized` event queued at the old backing scale even when
+    /// `ScaleFactorChanged` was delivered correctly. Checking scale alone
+    /// misses that half-sized drawable/grid state.
+    pub fn reconcile_window_metrics(
+        &mut self,
+        winit_window: &rio_window::window::Window,
+    ) -> bool {
         let live_scale = winit_window.scale_factor() as f32;
-        if live_scale > 0.0
-            && (live_scale - self.sugarloaf.scale_factor()).abs() > f32::EPSILON
-        {
-            self.set_scale(live_scale, winit_window.inner_size());
-            return true;
+        let live_size = winit_window.inner_size();
+        match window_metrics_update(
+            self.sugarloaf.window_size(),
+            self.sugarloaf.scale_factor(),
+            live_size,
+            live_scale,
+        ) {
+            WindowMetricsUpdate::None => false,
+            WindowMetricsUpdate::Resize(size) => {
+                self.resize(size);
+                true
+            }
+            WindowMetricsUpdate::Rescale { scale, size } => {
+                self.set_scale(scale, size);
+                true
+            }
         }
-        false
     }
 
     #[inline]
@@ -686,6 +733,15 @@ impl Screen<'_> {
         new_scale: f32,
         new_size: rio_window::dpi::PhysicalSize<u32>,
     ) -> &mut Self {
+        #[cfg(target_os = "macos")]
+        let scale_changed =
+            (new_scale - self.sugarloaf.scale_factor()).abs() > f32::EPSILON;
+        #[cfg(target_os = "macos")]
+        if scale_changed {
+            // Finish frames submitted for the previous display before
+            // changing the drawable's scale and physical dimensions.
+            self.sugarloaf.wait_for_gpu_idle();
+        }
         self.sugarloaf.rescale(new_scale);
         self.sugarloaf.resize(new_size.width, new_size.height);
 
@@ -5043,6 +5099,45 @@ fn post_process_hyperlink_uri(uri: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_metrics_reconcile_stale_physical_size_at_current_scale() {
+        let update = window_metrics_update(
+            SugarloafWindowSize {
+                width: 1120.0,
+                height: 720.0,
+            },
+            2.0,
+            rio_window::dpi::PhysicalSize::new(2240, 1440),
+            2.0,
+        );
+
+        assert_eq!(
+            update,
+            WindowMetricsUpdate::Resize(rio_window::dpi::PhysicalSize::new(2240, 1440))
+        );
+    }
+
+    #[test]
+    fn window_metrics_rescale_uses_live_physical_size() {
+        let update = window_metrics_update(
+            SugarloafWindowSize {
+                width: 1120.0,
+                height: 720.0,
+            },
+            1.0,
+            rio_window::dpi::PhysicalSize::new(2240, 1440),
+            2.0,
+        );
+
+        assert_eq!(
+            update,
+            WindowMetricsUpdate::Rescale {
+                scale: 2.0,
+                size: rio_window::dpi::PhysicalSize::new(2240, 1440),
+            }
+        );
+    }
 
     #[test]
     fn panel_clip_rects_extend_only_outer_split_edges() {

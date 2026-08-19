@@ -997,6 +997,11 @@ fn upload_background_image_texture(
 }
 
 impl Renderer {
+    #[cfg(target_os = "macos")]
+    pub fn wait_for_gpu_idle(&self) {
+        crate::grid::metal::wait_for_all_frame_permits(&self.metal_frame_permits);
+    }
+
     pub fn new(context: &Context, colorspace: crate::sugarloaf::Colorspace) -> Self {
         // `colorspace` only matters to the Metal path (macOS); on other
         // platforms the shader doesn't know the sRGB→P3 matrix yet so we
