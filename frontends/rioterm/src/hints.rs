@@ -566,9 +566,7 @@ impl LogicalLine {
 
             // A match ending on a wide character owns its spacer cell
             // too, so the hover underline covers the full glyph.
-            if end.col.0 + 1 < cols
-                && term.grid[end.row][end.col].wide() == Wide::Wide
-            {
+            if end.col.0 + 1 < cols && term.grid[end.row][end.col].wide() == Wide::Wide {
                 end.col = Column(end.col.0 + 1);
             }
 
@@ -1180,10 +1178,7 @@ mod tests {
         // Unmatched closing paren ends the match.
         assert_eq!(trim_match_tail("http://a.b/c)x"), "http://a.b/c".len());
         // Balanced pairs survive.
-        assert_eq!(
-            trim_match_tail("http://a.b/(c)"),
-            "http://a.b/(c)".len()
-        );
+        assert_eq!(trim_match_tail("http://a.b/(c)"), "http://a.b/(c)".len());
         // Trailing prose delimiters are dropped.
         assert_eq!(trim_match_tail("http://a.b/c,."), "http://a.b/c".len());
     }

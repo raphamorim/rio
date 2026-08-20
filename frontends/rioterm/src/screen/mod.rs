@@ -2007,7 +2007,8 @@ impl Screen<'_> {
 
         let terminal = self.context_manager.current().terminal.lock();
         let display_offset = terminal.display_offset();
-        let mouse_point = Pos::new(viewport_point.row - display_offset, viewport_point.col);
+        let mouse_point =
+            Pos::new(viewport_point.row - display_offset, viewport_point.col);
 
         // Find hint at mouse position
         let highlighted_hint = self.find_hint_at_point(&terminal, mouse_point, mods);
@@ -2022,16 +2023,15 @@ impl Screen<'_> {
             // match is the same one already displayed there is nothing
             // to redraw, and re-marking full damage per pixel would
             // rebuild the grid for the whole hover.
-            let unchanged =
-                current
-                    .renderable_content
-                    .highlighted_hint
-                    .as_ref()
-                    .is_some_and(|shown| {
-                        shown.start == hint_match.start
-                            && shown.end == hint_match.end
-                            && shown.text == hint_match.text
-                    });
+            let unchanged = current
+                .renderable_content
+                .highlighted_hint
+                .as_ref()
+                .is_some_and(|shown| {
+                    shown.start == hint_match.start
+                        && shown.end == hint_match.end
+                        && shown.text == hint_match.text
+                });
             if unchanged {
                 return false;
             }
