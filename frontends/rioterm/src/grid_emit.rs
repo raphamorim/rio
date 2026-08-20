@@ -1143,7 +1143,7 @@ const RUN_BUCKET_SIZE: usize = 8;
 /// (non-macOS). `cluster` is the shaping-buffer offset of the source
 /// cell: UTF-16 code units on macOS (CoreText string indices), UTF-8
 /// bytes elsewhere (swash `cluster.source.start`).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[allow(dead_code)] // `x` / `y` / `advance` kept for future kerning-aware layout
 struct ShapedGlyph {
     id: u16,
@@ -1518,6 +1518,111 @@ fn run_cache_put(buckets: &mut [Vec<RunCacheEntry>], entry: RunCacheEntry) {
         bucket.remove(0);
     }
     bucket.push(entry);
+}
+
+/// Per-glyph placement from a shaped run.
+#[derive(Clone, Copy, Debug)]
+struct GlyphPlace {
+    id: u16,
+    /// Grid column to emit the glyph quad at.
+    grid_col: u16,
+    /// Extra sub-cell x offset in pixels (RTL tight packing only).
+    extra_x: f32,
+    /// Logical column whose cell colour applies (fg / selection /
+    /// hint lookup). Equals `grid_col` except in RTL pen layout,
+    /// where the glyph's visual column may differ from the logical
+    /// cell its cluster belongs to.
+    color_col: u16,
+}
+
+/// Walk shaped glyphs (visual order) alongside the per-cell start
+/// table to produce per-glyph placements. `cell_starts` is in logical
+/// (grid) order, in the platform's cluster coordinate space (UTF-16
+/// units on macOS, UTF-8 bytes elsewhere); `cell_columns[i]` is the
+/// grid column of appended cell `i`.
+///
+/// LTR runs use a monotonic forward cursor with one glyph per cell —
+/// existing behaviour.
+///
+/// RTL runs (Arabic, Farsi, Hebrew…) arrive from the shaper in visual
+/// order with non-increasing clusters — glyph 0 is the *logically-
+/// last* character. Visual glyph order already matches left-to-right
+/// columns, but Arabic is proportional: snapping each glyph to its
+/// own monospace cell origin leaves gaps before narrow glyphs (e.g.
+/// alef in آیا). Instead the run is laid out pen-relative: a pen
+/// advances by each glyph's shaped advance from the run's left edge,
+/// the cell the pen is in becomes `grid_col`, and the remainder
+/// becomes a sub-cell pixel offset (`extra_x`) — tight packing with
+/// no inter-glyph gaps. `color_col` stays the cluster's logical cell
+/// so per-cell fg / selection colouring is unaffected.
+///
+/// Pen layout handles pure-RTL runs only; mixed
+/// Latin-inside-RTL lines require full UAX#9 bidi reordering.
+fn attribute_glyphs_to_cells(
+    glyphs: &[ShapedGlyph],
+    cell_starts: &[u32],
+    cell_columns: &[u16],
+    run_start: u16,
+    cell_w: f32,
+) -> SmallVec<[GlyphPlace; 64]> {
+    let mut out: SmallVec<[GlyphPlace; 64]> = SmallVec::new();
+    if cell_starts.is_empty() {
+        return out;
+    }
+    let col = |i: usize| {
+        cell_columns
+            .get(i)
+            .copied()
+            .unwrap_or_else(|| run_start.saturating_add(i as u16))
+    };
+    let rtl = matches!(
+        (glyphs.first(), glyphs.last()),
+        (Some(f), Some(l)) if f.cluster > l.cluster
+    );
+    if !rtl {
+        let mut cell_idx: usize = 0;
+        for g in glyphs {
+            while (cell_idx + 1) < cell_starts.len()
+                && cell_starts[cell_idx + 1] <= g.cluster
+            {
+                cell_idx = cell_idx.saturating_add(1);
+            }
+            let c = col(cell_idx);
+            out.push(GlyphPlace {
+                id: g.id,
+                grid_col: c,
+                extra_x: 0.0,
+                color_col: c,
+            });
+        }
+        return out;
+    }
+    let n = cell_starts.len();
+    let last = n - 1;
+    let mut pen = 0.0f32;
+    for g in glyphs {
+        // Logical cell for colouring: largest logical cell whose
+        // start precedes the cluster (marks cluster with their base).
+        let logical = cell_starts
+            .iter()
+            .rposition(|&s| s <= g.cluster)
+            .unwrap_or(0);
+        // Visual cell the pen is in (visual order is left-to-right,
+        // so visual cell v maps directly to cell_columns[v]).
+        let visual = if cell_w > 0.0 {
+            ((pen / cell_w) as usize).min(last)
+        } else {
+            0
+        };
+        out.push(GlyphPlace {
+            id: g.id,
+            grid_col: col(visual),
+            extra_x: pen - visual as f32 * cell_w,
+            color_col: col(logical),
+        });
+        pen += g.advance;
+    }
+    out
 }
 
 // Platform-specific shape + ascent helpers
@@ -2131,41 +2236,29 @@ pub fn build_row_fg(
         // (ASCII identifiers, short bursts of non-ligature text)
         // entirely on the stack — no heap touch. Ligature-heavy or
         // shaped emoji runs that outgrow 64 slots spill to heap once.
-        let mut glyph_emits: SmallVec<[(u16, u16); 64]> = SmallVec::new();
-        {
+        // Attribute glyphs to cells. RTL runs arrive from the shaper
+        // in visual order with decreasing clusters — the helper
+        // detects this and consumes cells in reverse so every glyph
+        // lands on its own cell instead of pinning to the run's last
+        // cell (all glyphs crammed into one column).
+        let glyph_emits = {
             let glyphs =
                 run_cache_get(&mut rasterizer.run_cache, hash).expect("just inserted");
-            let mut cell_idx_in_run: u16 = 0;
-            // Both platforms record explicit per-cell starts into the
-            // shaping buffer (UTF-16 units on macOS, UTF-8 bytes on
-            // swash), so one walk serves both. A per-char cursor would
-            // miscount: cells with combining marks contribute several
-            // chars each.
-            let cell_starts = &rasterizer.run_cell_starts;
-            for g in glyphs {
-                while (cell_idx_in_run as usize + 1) < cell_starts.len()
-                    && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
-                {
-                    cell_idx_in_run = cell_idx_in_run.saturating_add(1);
-                }
-                glyph_emits.push((g.id, cell_idx_in_run));
-            }
-        }
+            attribute_glyphs_to_cells(
+                glyphs,
+                &rasterizer.run_cell_starts,
+                &rasterizer.run_cell_columns,
+                run_start as u16,
+                cell_w,
+            )
+        };
 
-        for &(glyph_id, cell_idx_in_run) in &glyph_emits {
-            // Map the appended-cell index back to its actual grid
-            // column. Spacer cells were skipped from the run text so
-            // `cell_idx_in_run` no longer equals `column - run_start`;
-            // the parallel `run_cell_columns` table records the source
-            // column for each appended cell.
-            let grid_col = rasterizer
-                .run_cell_columns
-                .get(cell_idx_in_run as usize)
-                .copied()
-                .unwrap_or((run_start as u16).saturating_add(cell_idx_in_run));
+        for place in &glyph_emits {
+            let grid_col = place.grid_col;
             if (grid_col as usize) >= cols {
                 continue;
             }
+            let glyph_id = place.id;
 
             let Some((_, slot, is_color)) = ensure_glyph_by_id(
                 rasterizer,
@@ -2186,12 +2279,10 @@ pub fn build_row_fg(
                 continue;
             }
 
-            // Pull fg from the cluster's first cell. Non-ligature runs
-            // end up with one cluster per cell (per-cell colour);
-            // ligatures take the first cluster cell's colour. Mapped
-            // through `run_cell_columns` for the same reason as
-            // `grid_col` above.
-            let src_col = (grid_col as usize).min(cols.saturating_sub(1));
+            // Pull fg from the cluster's logical cell. Non-ligature
+            // runs end up with one cluster per cell (per-cell colour);
+            // RTL pen layout decouples visual column from logical cell.
+            let src_col = (place.color_col as usize).min(cols.saturating_sub(1));
             let src_sq = row[Column(src_col)];
             let src_style = resolve_style(style_table, src_sq);
             let (atlas, color) = if is_color {
@@ -2231,10 +2322,15 @@ pub fn build_row_fg(
                 }
             };
 
+            // RTL pen layout packs glyphs tighter than the monospace
+            // cell grid: the sub-cell remainder goes into the x
+            // bearing so the quad shifts within its cell.
+            let bearing_x = slot.bearing_x as f32 + place.extra_x;
+            let bearing_x = bearing_x.clamp(i16::MIN as f32, i16::MAX as f32) as i16;
             fg_scratch.push(CellText {
                 glyph_pos: [slot.x as u32, slot.y as u32],
                 glyph_size: [slot.w as u32, slot.h as u32],
-                bearings: [slot.bearing_x, slot.bearing_y],
+                bearings: [bearing_x, slot.bearing_y],
                 grid_pos: [grid_col, y],
                 color,
                 atlas,
@@ -2815,6 +2911,224 @@ mod cluster_text_tests {
             out.push(cell_idx);
         }
         assert_eq!(out, [0, 0, 1]);
+    }
+
+    /// RTL runs (Arabic/Farsi/Hebrew) arrive from the shaper in
+    /// visual order with decreasing clusters. The pen-relative layout
+    /// places each glyph at `pen / cell_w` with sub-cell `extra_x` —
+    /// tight packing, no gaps before narrow glyphs (alef in آیا).
+    /// Monospace-ish advances (cell_w each) map one glyph per cell in
+    /// visual order.
+    #[test]
+    fn rtl_run_pen_layout_places_by_advance() {
+        // 3-cell RTL run, cell_w = 10px. Shaper returns visual order,
+        // clusters 2, 1, 0; advances 10, 10, 10.
+        let cell_starts = vec![0u32, 1, 2];
+        let cell_columns = vec![5u16, 6, 7]; // run starts at column 5
+        let glyphs = [
+            ShapedGlyph {
+                id: 30,
+                cluster: 2,
+                advance: 10.0,
+                ..Default::default()
+            },
+            ShapedGlyph {
+                id: 20,
+                cluster: 1,
+                advance: 10.0,
+                ..Default::default()
+            },
+            ShapedGlyph {
+                id: 10,
+                cluster: 0,
+                advance: 10.0,
+                ..Default::default()
+            },
+        ];
+        let out =
+            attribute_glyphs_to_cells(&glyphs, &cell_starts, &cell_columns, 5, 10.0);
+        let cols: Vec<u16> = out.iter().map(|p| p.grid_col).collect();
+        assert_eq!(cols, [5, 6, 7]);
+        assert!(out.iter().all(|p| p.extra_x == 0.0));
+        assert_eq!(
+            out.iter().map(|p| p.color_col).collect::<Vec<_>>(),
+            [7, 6, 5]
+        );
+    }
+
+    /// Proportional advances (narrow alef) pack tighter than cells:
+    /// glyph 2's pen position straddles a cell boundary → sub-cell
+    /// offset in `extra_x`, column follows the pen.
+    #[test]
+    fn rtl_run_proportional_advances_use_subcell_offset() {
+        // cell_w = 10. Advances: 6 (alef), 10, 10. Pen: 0, 6, 16.
+        // Visual glyph 2 (pen 16) is in cell 1 with extra 6px.
+        let cell_starts = vec![0u32, 1, 2];
+        let cell_columns = vec![0u16, 1, 2];
+        let glyphs = [
+            ShapedGlyph {
+                id: 30,
+                cluster: 2,
+                advance: 6.0,
+                ..Default::default()
+            },
+            ShapedGlyph {
+                id: 20,
+                cluster: 1,
+                advance: 10.0,
+                ..Default::default()
+            },
+            ShapedGlyph {
+                id: 10,
+                cluster: 0,
+                advance: 10.0,
+                ..Default::default()
+            },
+        ];
+        // Pen: 0 → 6 → 16. Glyph 2 starts in cell 1 (pen 16) with 6px extra.
+        let out =
+            attribute_glyphs_to_cells(&glyphs, &cell_starts, &cell_columns, 0, 10.0);
+        assert_eq!(
+            out.iter().map(|p| p.grid_col).collect::<Vec<_>>(),
+            [0, 0, 1]
+        );
+        assert_eq!(out[2].extra_x, 6.0);
+        // Cluster 0 is logical cell 0 even though drawn rightmost.
+        assert_eq!(out[2].color_col, 0);
+    }
+
+    /// LTR runs keep the forward cursor: visual order == logical
+    /// order, clusters increasing, no sub-cell offsets.
+    #[test]
+    fn ltr_run_keeps_forward_attribution() {
+        let cell_starts = vec![0u32, 1, 2];
+        let cell_columns = vec![0u16, 1, 2];
+        let glyphs = [
+            ShapedGlyph {
+                id: 10,
+                cluster: 0,
+                ..Default::default()
+            },
+            ShapedGlyph {
+                id: 20,
+                cluster: 1,
+                ..Default::default()
+            },
+            ShapedGlyph {
+                id: 30,
+                cluster: 2,
+                ..Default::default()
+            },
+        ];
+        let out =
+            attribute_glyphs_to_cells(&glyphs, &cell_starts, &cell_columns, 0, 10.0);
+        assert_eq!(
+            out.iter().map(|p| p.grid_col).collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
+        assert!(out.iter().all(|p| p.extra_x == 0.0));
+    }
+
+    /// RTL marks cluster with their base → same visual cell as the
+    /// base glyph, colour from the base's logical cell.
+    #[test]
+    fn rtl_marks_attribute_with_base() {
+        // Buffer (UTF-8 bytes): س=0..2, mark=2..5, ل=5..7.
+        // Visual order: ل (cluster 5) then س+mark (cluster 0).
+        let cell_starts = vec![0u32, 5];
+        let cell_columns = vec![0u16, 1];
+        let glyphs = [
+            ShapedGlyph {
+                id: 40,
+                cluster: 5,
+                advance: 10.0,
+                ..Default::default()
+            },
+            ShapedGlyph {
+                id: 10,
+                cluster: 0,
+                advance: 10.0,
+                ..Default::default()
+            },
+            ShapedGlyph {
+                id: 11,
+                cluster: 2,
+                advance: 0.0,
+                ..Default::default()
+            },
+        ];
+        let out =
+            attribute_glyphs_to_cells(&glyphs, &cell_starts, &cell_columns, 0, 10.0);
+        assert_eq!(
+            out.iter().map(|p| p.grid_col).collect::<Vec<_>>(),
+            [0, 1, 1]
+        );
+    }
+
+    /// End-to-end against the real shaper: shape actual Farsi text
+    /// via CoreText, confirm the decreasing-cluster convention holds,
+    /// and the helper spreads glyphs across distinct cells
+    /// (the pre-fix bug pinned them all to one cell).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn farsi_coretext_run_spreads_across_cells() {
+        let handle = rio_backend::sugarloaf::font::macos::FontHandle::from_bytes(
+            rio_backend::sugarloaf::font::constants::FONT_CASCADIA_CODE_NF,
+        )
+        .expect("load font (CoreText cascades Arabic to a system font)");
+        let text: Vec<u16> = "سلام".encode_utf16().collect();
+        // One cell per UTF-16 unit, matching how build_row_fg records
+        // run_cell_starts for simple (non-combining) cells.
+        let cell_starts: Vec<u32> = (0..text.len() as u32).collect();
+        let raw =
+            rio_backend::sugarloaf::font::macos::shape_text_utf16(&handle, &text, 14.0);
+        let shaped: Vec<ShapedGlyph> = raw
+            .iter()
+            .map(|g| ShapedGlyph {
+                id: g.id,
+                x: g.x,
+                y: g.y,
+                advance: g.advance,
+                cluster: g.cluster,
+            })
+            .collect();
+        assert!(
+            shaped.first().map(|g| g.cluster) > shaped.last().map(|g| g.cluster),
+            "CoreText should return decreasing clusters for RTL, got {:?}",
+            shaped.iter().map(|g| g.cluster).collect::<Vec<_>>()
+        );
+        let out = attribute_glyphs_to_cells(
+            &shaped,
+            &cell_starts,
+            &(0..4).collect::<Vec<u16>>(),
+            0,
+            8.4,
+        );
+        let adv: Vec<f32> = shaped.iter().map(|g| g.advance).collect();
+        let total: f32 = adv.iter().sum();
+        // True contract of pen layout: each glyph's reconstructed
+        // position `grid_col * cell_w + extra_x` equals its pen
+        // offset, and glyphs are NOT all pinned to one column (the
+        // pre-fix bug). Exact column count depends on the cascade
+        // font's real metrics (zero-advance ligature glyphs share
+        // cells) so no fixed count is asserted.
+        let mut pen = 0.0f32;
+        let mut cols_seen = std::collections::HashSet::new();
+        for (i, p) in out.iter().enumerate() {
+            let x = p.grid_col as f32 * 8.4 + p.extra_x;
+            assert!(
+                (x - pen).abs() < 0.01,
+                "glyph {i} at col {} extra {:.2} reconstructs {x:.2}, expected pen {pen:.2}",
+                p.grid_col,
+                p.extra_x
+            );
+            cols_seen.insert(p.grid_col);
+            pen += adv[i];
+        }
+        assert!(
+            cols_seen.len() >= 2,
+            "glyphs must not all pin to one column"
+        );
     }
 }
 
