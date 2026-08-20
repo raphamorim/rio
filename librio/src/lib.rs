@@ -1708,6 +1708,29 @@ mod tests {
         assert!(surface.url_at(1, 10).is_none());
     }
 
+    // A scheme URL mid-line followed by a parenthesized note: the hover
+    // run must sit exactly under the URL, not drift into the scheme or
+    // the note.
+    #[test]
+    fn urls_underline_alignment_mid_line() {
+        let surface = quiet_surface(90, 5);
+        surface.inject_output(
+            b"Dev server is listening at http://localhost:1313/ (bind address 127.0.0.1)",
+        );
+
+        // "Dev server is listening at " is 27 cells, so the URL occupies
+        // cols 27..=48 and the note after it is prose.
+        for col in [27, 31, 35, 48] {
+            let (uri, start, end) = surface
+                .url_at(0, col)
+                .unwrap_or_else(|| panic!("hover at col {col} misses the url"));
+            assert_eq!(uri, "http://localhost:1313/");
+            assert_eq!((start, end), (27, 48), "hover at col {col}");
+        }
+        assert!(surface.url_at(0, 26).is_none(), "space before the scheme");
+        assert!(surface.url_at(0, 50).is_none(), "note after the url");
+    }
+
     // OSC 9;4 (ConEmu progress) must reach the embedder as an action:
     // set with a value, then remove.
     #[test]
