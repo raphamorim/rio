@@ -75,6 +75,19 @@ pub struct Screen<'screen> {
     pub context_manager: context::ContextManager<EventProxy>,
     last_ime_cursor_pos: Option<(f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
+    /// Hint regexes compiled on first use, keyed by pattern. Hover
+    /// hit-testing runs on every mouse move; recompiling the URL
+    /// pattern each time is measurable jank.
+    hint_regex_cache:
+        std::cell::RefCell<std::collections::HashMap<String, std::rc::Rc<onig::Regex>>>,
+    /// The viewport cell and modifiers of the last hover-hint probe
+    /// that found nothing. Mouse events arrive per pixel; re-probing
+    /// the same cell would re-extract and re-scan the logical line for
+    /// every one of them. Viewport coordinates so the check needs no
+    /// terminal lock, and only an unchanged probe that was not over a
+    /// link is skippable, so text changing under a shown underline
+    /// still refreshes it. Reset on wheel scroll and highlight clears.
+    last_hint_probe: Option<(Pos, rio_window::keyboard::ModifiersState)>,
     pub resize_state: Option<crate::layout::ResizeState>,
     #[cfg(target_os = "macos")]
     pub allow_manual_dragging: bool,
@@ -304,6 +317,8 @@ impl Screen<'_> {
                 .iter()
                 .map(|h| std::rc::Rc::new(h.clone()))
                 .collect(),
+            hint_regex_cache: Default::default(),
+            last_hint_probe: None,
             mouse_bindings: crate::bindings::default_mouse_bindings(),
             modifiers: Modifiers::default(),
             context_manager,
@@ -1974,18 +1989,53 @@ impl Screen<'_> {
             return self.clear_highlighted_hint();
         }
 
+        let mods = self.modifiers.state();
+
+        // Mouse events arrive per pixel; when the last probe of this
+        // viewport cell with these modifiers found nothing, there is
+        // nothing new to learn until one of them changes. The cell is
+        // pure geometry, so an unchanged probe skips without even
+        // taking the terminal lock. While a highlight is shown the
+        // probe always reruns, so text changing under the underline
+        // still refreshes it. Wheel scrolling resets the probe in
+        // `Self::scroll`; content sliding under a stationary cursor
+        // without one is stale until the mouse crosses a cell.
+        let viewport_point = self.mouse_position(0);
+        if !had_highlight && self.last_hint_probe == Some((viewport_point, mods)) {
+            return false;
+        }
+
         let terminal = self.context_manager.current().terminal.lock();
         let display_offset = terminal.display_offset();
-        let mouse_point = self.mouse_position(display_offset);
+        let mouse_point = Pos::new(viewport_point.row - display_offset, viewport_point.col);
 
         // Find hint at mouse position
-        let highlighted_hint =
-            self.find_hint_at_point(&terminal, mouse_point, self.modifiers.state());
+        let highlighted_hint = self.find_hint_at_point(&terminal, mouse_point, mods);
         drop(terminal);
+        self.last_hint_probe = Some((viewport_point, mods));
 
         let current = self.context_manager.current_mut();
 
         if let Some(hint_match) = highlighted_hint {
+            // Reprobes run on every mouse event while a highlight is
+            // shown (so text changing under it refreshes); when the
+            // match is the same one already displayed there is nothing
+            // to redraw, and re-marking full damage per pixel would
+            // rebuild the grid for the whole hover.
+            let unchanged =
+                current
+                    .renderable_content
+                    .highlighted_hint
+                    .as_ref()
+                    .is_some_and(|shown| {
+                        shown.start == hint_match.start
+                            && shown.end == hint_match.end
+                            && shown.text == hint_match.text
+                    });
+            if unchanged {
+                return false;
+            }
+
             // Mark the hint range as damaged so it gets re-rendered.
             //
             // Two damage signals are required:
@@ -2032,8 +2082,11 @@ impl Screen<'_> {
     }
 
     /// Drop any hint highlight, clearing its damage so the line
-    /// repaints. Returns whether a highlight existed.
+    /// repaints. Returns whether a highlight existed. Also forgets the
+    /// last probed cell: clears run on context switches, where a stale
+    /// probe could suppress the first probe of the new panel.
     pub fn clear_highlighted_hint(&mut self) -> bool {
+        self.last_hint_probe = None;
         let current = self.context_manager.current_mut();
         let had_highlight = current.renderable_content.highlighted_hint.is_some();
 
@@ -2079,6 +2132,11 @@ impl Screen<'_> {
         point: rio_backend::crosswords::pos::Pos,
         _modifiers: rio_window::keyboard::ModifiersState,
     ) -> Option<crate::hints::HintMatch> {
+        // The logical line under the point is rule-independent:
+        // extracted lazily on the first regex rule, then shared across
+        // the remaining rules.
+        let mut logical_line: Option<Option<crate::hints::LogicalLine>> = None;
+
         // Check each enabled hint configuration
         for hint_config in &self.hints_config {
             // Check if mouse highlighting is enabled for this hint
@@ -2102,14 +2160,24 @@ impl Screen<'_> {
 
             // Check regex patterns if specified
             if let Some(regex_pattern) = &hint_config.regex {
-                if let Ok(regex) = onig::Regex::new(regex_pattern) {
-                    if let Some(regex_match) = self.find_regex_match_at_point(
-                        terminal,
-                        point,
-                        &regex,
-                        hint_config.clone(),
-                    ) {
-                        return Some(regex_match);
+                if let Some(regex) = self.compiled_hint_regex(regex_pattern) {
+                    let line = logical_line.get_or_insert_with(|| {
+                        crate::hints::LogicalLine::extract(terminal, point)
+                    });
+                    if let Some(m) = line.as_ref().and_then(|line| {
+                        line.match_at(
+                            terminal,
+                            point,
+                            &regex,
+                            hint_config.post_processing,
+                        )
+                    }) {
+                        return Some(crate::hints::HintMatch {
+                            text: m.text,
+                            start: m.start,
+                            end: m.end,
+                            hint: hint_config.clone(),
+                        });
                     }
                 }
             }
@@ -2187,77 +2255,19 @@ impl Screen<'_> {
         })
     }
 
-    /// Find regex match at the specified point
-    fn find_regex_match_at_point(
-        &self,
-        terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
-        point: rio_backend::crosswords::pos::Pos,
-        regex: &onig::Regex,
-        hint_config: std::rc::Rc<rio_backend::config::hints::Hint>,
-    ) -> Option<crate::hints::HintMatch> {
-        let grid = &terminal.grid;
-
-        // Check if the point is within grid bounds
-        if point.row >= grid.total_lines() as i32 || point.col.0 >= grid.columns() {
-            return None;
+    /// Compiled regex for a hint pattern, from the cache when possible.
+    /// A pattern that fails to compile is cached as absent implicitly:
+    /// the failed compile repeats, but invalid patterns are a config
+    /// error and rare.
+    fn compiled_hint_regex(&self, pattern: &str) -> Option<std::rc::Rc<onig::Regex>> {
+        if let Some(regex) = self.hint_regex_cache.borrow().get(pattern) {
+            return Some(regex.clone());
         }
-
-        // Extract text from the line
-        let mut line_text = String::new();
-        for col in 0..grid.columns() {
-            let cell = &grid[point.row][rio_backend::crosswords::pos::Column(col)];
-            line_text.push(cell.c());
-        }
-        let line_text = line_text.trim_end();
-
-        // Find all matches in this line and check if point is within any of them.
-        // Onig yields (byte_start, byte_end); we slice the source ourselves.
-        for (start, end) in regex.find_iter(line_text) {
-            let start_col = rio_backend::crosswords::pos::Column(start);
-            let end_col = rio_backend::crosswords::pos::Column(end.saturating_sub(1));
-
-            // Check if the point is within this match
-            if point.col >= start_col && point.col <= end_col {
-                let original_match_text = line_text[start..end].to_string();
-                let mut match_text = original_match_text.clone();
-
-                // Apply grid-based post-processing
-                let (processed_start, processed_end) = if hint_config.post_processing {
-                    self.hint_post_processing(
-                        terminal,
-                        start_col,
-                        end_col,
-                        rio_backend::crosswords::pos::Line(point.row.0),
-                    )
-                    .unwrap_or((start_col, end_col))
-                } else {
-                    (start_col, end_col)
-                };
-
-                // Extract the processed text
-                if hint_config.post_processing {
-                    let mut processed_text = String::new();
-                    for col in processed_start.0..=processed_end.0 {
-                        let cell =
-                            &grid[point.row][rio_backend::crosswords::pos::Column(col)];
-                        processed_text.push(cell.c());
-                    }
-                    match_text = processed_text.trim_end().to_string();
-                }
-
-                return Some(crate::hints::HintMatch {
-                    text: match_text,
-                    start: rio_backend::crosswords::pos::Pos::new(
-                        point.row,
-                        processed_start,
-                    ),
-                    end: rio_backend::crosswords::pos::Pos::new(point.row, processed_end),
-                    hint: hint_config,
-                });
-            }
-        }
-
-        None
+        let regex = std::rc::Rc::new(onig::Regex::new(pattern).ok()?);
+        self.hint_regex_cache
+            .borrow_mut()
+            .insert(pattern.to_string(), regex.clone());
+        Some(regex)
     }
 
     /// Whether a hint (regex match or OSC 8 link) is currently highlighted
@@ -3515,6 +3525,11 @@ impl Screen<'_> {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
+        // Scrolling slides different text under the pointer while the
+        // viewport cell stays the same, so the hover-probe dedup key
+        // must not suppress the next probe.
+        self.last_hint_probe = None;
+
         let dim = self.context_manager.current().dimension.dimension;
         let width = dim.width as f64;
         let height = dim.height as f64;
@@ -4842,100 +4857,6 @@ impl Screen<'_> {
             .current_mut()
             .renderable_content
             .hint_labels = hint_labels;
-    }
-
-    /// Apply grid-based hint post-processing.
-    ///
-    /// This iterates through the terminal grid character by character and adjusts
-    /// the match bounds based on bracket balance and trailing delimiters.
-    fn hint_post_processing(
-        &self,
-        terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
-        start_col: rio_backend::crosswords::pos::Column,
-        end_col: rio_backend::crosswords::pos::Column,
-        row: rio_backend::crosswords::pos::Line,
-    ) -> Option<(
-        rio_backend::crosswords::pos::Column,
-        rio_backend::crosswords::pos::Column,
-    )> {
-        use rio_backend::crosswords::grid::BidirectionalIterator;
-
-        let grid = &terminal.grid;
-        let start_pos = rio_backend::crosswords::pos::Pos::new(row, start_col);
-        let end_pos = rio_backend::crosswords::pos::Pos::new(row, end_col);
-
-        let mut iter = grid.iter_from(start_pos);
-        let mut current_pos = start_pos;
-        let mut open_parents = 0;
-        let mut open_brackets = 0;
-
-        // First pass: handle uneven brackets/parentheses
-        while current_pos <= end_pos {
-            if let Some(indexed) = iter.next() {
-                let c = indexed.square.c();
-                current_pos = indexed.pos;
-
-                match c {
-                    '(' => open_parents += 1,
-                    '[' => open_brackets += 1,
-                    ')' => {
-                        if open_parents == 0 {
-                            // Unmatched closing parenthesis, truncate here
-                            if iter.prev().is_some() {
-                                return Some((start_col, iter.pos().col));
-                            }
-                            break;
-                        } else {
-                            open_parents -= 1;
-                        }
-                    }
-                    ']' => {
-                        if open_brackets == 0 {
-                            // Unmatched closing bracket, truncate here
-                            if iter.prev().is_some() {
-                                return Some((start_col, iter.pos().col));
-                            }
-                            break;
-                        } else {
-                            open_brackets -= 1;
-                        }
-                    }
-                    _ => (),
-                }
-
-                if current_pos == end_pos {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        // Second pass: remove trailing delimiters
-        let mut final_end = end_pos;
-        let mut iter = grid.iter_from(end_pos);
-
-        while final_end > start_pos {
-            if let Some(indexed) = iter.next() {
-                let c = indexed.square.c();
-                if !matches!(c, '.' | ',' | ':' | ';' | '?' | '!' | '(' | '[' | '\'') {
-                    break;
-                }
-
-                if let Some(prev_indexed) = iter.prev() {
-                    final_end = prev_indexed.pos;
-                    if iter.prev().is_some() {
-                        // Move iterator back one more position for next iteration
-                    }
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        Some((start_col, final_end.col))
     }
 }
 

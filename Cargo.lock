@@ -4036,6 +4036,7 @@ dependencies = [
  "notify",
  "objc-rs 0.3.2",
  "onig",
+ "onig_sys",
  "parking_lot",
  "pretty_assertions",
  "rapidhash",
