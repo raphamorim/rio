@@ -3788,6 +3788,7 @@ impl Screen<'_> {
 
     pub(crate) fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
         self.update_close_button_hover(self.mouse.x, self.mouse.y);
+        self.context_manager.clear_current_bell();
 
         let is_search_active = self.search_active();
         if is_search_active {
