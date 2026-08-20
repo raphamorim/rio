@@ -1,6 +1,8 @@
 use rio_backend::config::hints::Hint;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::crosswords::pos::{Column, Line, Pos};
+use rio_backend::crosswords::square::Wide;
+use rio_backend::crosswords::Crosswords;
 use rio_backend::event::EventListener;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -382,6 +384,235 @@ impl LabelGenerator {
             self.indices.push(0);
         }
     }
+}
+
+/// A regex match resolved against the grid: inclusive cell bounds plus
+/// the matched text.
+#[derive(Debug, PartialEq, Eq)]
+pub struct GridMatch {
+    pub start: Pos,
+    pub end: Pos,
+    pub text: String,
+}
+
+/// The logical (unwrapped) line under a point: its text plus the source
+/// cell of every byte, so regex byte offsets anchor back to cells.
+///
+/// Extraction is separate from matching so a probe with several hint
+/// rules extracts once and runs every regex against the same buffer.
+pub struct LogicalLine {
+    text: String,
+    map: Vec<Pos>,
+}
+
+impl LogicalLine {
+    /// Extract the logical line containing `point`, following soft
+    /// wraps in both directions.
+    pub fn extract<T: EventListener>(term: &Crosswords<T>, point: Pos) -> Option<Self> {
+        /// How many cells of the logical line are followed across soft
+        /// wraps on each side of the hovered row. Only matches
+        /// containing the hovered cell matter, so nothing hoverable is
+        /// lost for matches shorter than this. An unbounded scan is
+        /// quadratic in oniguruma on a wrapped wall of word characters
+        /// (the URL pattern rescans ahead at every start position),
+        /// measured at ~90ms per probe; bounded it stays single-digit ms.
+        const SCAN_CELLS: usize = 2048;
+
+        let cols = term.columns();
+        let topmost = -(term.history_size() as i32);
+        let bottommost = term.bottommost_line().0;
+        if cols == 0
+            || point.row.0 < topmost
+            || point.row.0 > bottommost
+            || point.col.0 >= cols
+        {
+            return None;
+        }
+
+        let wraps = |line: i32| term.grid[Line(line)][Column(cols - 1)].wrapline();
+        let max_rows = (SCAN_CELLS / cols).max(1) as i32;
+
+        let mut start_line = point.row.0;
+        while start_line > topmost
+            && point.row.0 - start_line < max_rows
+            && wraps(start_line - 1)
+        {
+            start_line -= 1;
+        }
+        let mut end_line = point.row.0;
+        while end_line < bottommost
+            && end_line - point.row.0 < max_rows
+            && wraps(end_line)
+        {
+            end_line += 1;
+        }
+
+        // Record the source cell of every byte. Wide-char spacers are
+        // skipped so the text holds each character once; blank (`\0`)
+        // cells read as spaces, matching what is on screen; zero-width
+        // marks are emitted with their base character, every byte
+        // mapping back to the same cell.
+        let rows = (end_line - start_line + 1) as usize;
+        let mut text = String::with_capacity(rows * cols);
+        let mut map: Vec<Pos> = Vec::with_capacity(rows * cols);
+        for l in start_line..=end_line {
+            let line = Line(l);
+            for c in 0..cols {
+                let col = Column(c);
+                let pos = Pos::new(line, col);
+                let square = &term.grid[line][col];
+                if matches!(square.wide(), Wide::Spacer | Wide::LeadingSpacer) {
+                    continue;
+                }
+                for (i, ch) in term.grid.cell_text(pos).enumerate() {
+                    let ch = if i == 0 && ch == '\0' { ' ' } else { ch };
+                    text.push(ch);
+                    for _ in 0..ch.len_utf8() {
+                        map.push(pos);
+                    }
+                }
+            }
+        }
+        while text.ends_with(' ') {
+            text.pop();
+            map.pop();
+        }
+
+        Some(LogicalLine { text, map })
+    }
+
+    /// Find the regex match covering `point` in this line.
+    ///
+    /// Cell bounds come through the byte-to-cell map, never from byte
+    /// offsets used as columns: the previous implementation did the
+    /// latter, so any multi-byte character left of the match (a `│`
+    /// prefix, CJK, emoji) dragged the hover underline that many bytes
+    /// to the right, and its single-row search matched soft-wrapped
+    /// URLs truncated or not at all.
+    pub fn match_at<T: EventListener>(
+        &self,
+        term: &Crosswords<T>,
+        point: Pos,
+        regex: &onig::Regex,
+        post_processing: bool,
+    ) -> Option<GridMatch> {
+        let cols = term.columns();
+        let text = &self.text;
+        let map = &self.map;
+
+        // Manual search loop instead of `find_iter` so each attempt
+        // carries a retry budget. The text is terminal output, i.e.
+        // attacker-controlled, the pattern is user-config, and this
+        // runs on mouse movement: unbounded backtracking here is a
+        // denial of service. Hitting the budget reads as "no more
+        // matches".
+        const RETRY_LIMIT: u32 = 100_000;
+
+        let mut region = onig::Region::new();
+        let mut offset = 0;
+        while offset < text.len() {
+            region.clear();
+            let match_param = onig::MatchParam::default();
+            // The in-search limit bounds the whole call, every start
+            // position included; the in-match limit the safe wrapper
+            // exposes is per attempt, which a long pathological line
+            // multiplies by its length. Safety: `as_raw` is a live
+            // pointer for the parameter owned just above.
+            unsafe {
+                onig_sys::onig_set_retry_limit_in_search_of_match_param(
+                    match_param.as_raw(),
+                    RETRY_LIMIT.into(),
+                );
+            }
+            match regex.search_with_param(
+                text.as_str(),
+                offset,
+                text.len(),
+                onig::SearchOptions::SEARCH_OPTION_NONE,
+                Some(&mut region),
+                match_param,
+            ) {
+                Ok(Some(_)) => (),
+                Ok(None) | Err(_) => break,
+            }
+            let Some((m_start, m_end)) = region.pos(0) else {
+                break;
+            };
+            // Guard against a stalled loop on an empty match.
+            offset = m_end.max(m_start + 1);
+
+            if m_start >= m_end || m_end > map.len() {
+                continue;
+            }
+            let start = map[m_start];
+            if point < start {
+                // Matches arrive in order; everything further is past
+                // the point.
+                break;
+            }
+
+            let trimmed_len = if post_processing {
+                trim_match_tail(&text[m_start..m_end])
+            } else {
+                m_end - m_start
+            };
+            if trimmed_len == 0 {
+                continue;
+            }
+            let mut end = map[m_start + trimmed_len - 1];
+            if point > end {
+                continue;
+            }
+
+            // A match ending on a wide character owns its spacer cell
+            // too, so the hover underline covers the full glyph.
+            if end.col.0 + 1 < cols && term.grid[end.row][end.col].wide() == Wide::Wide {
+                end.col = Column(end.col.0 + 1);
+            }
+
+            return Some(GridMatch {
+                start,
+                end,
+                text: text[m_start..m_start + trimmed_len].to_string(),
+            });
+        }
+
+        None
+    }
+}
+
+/// How many leading bytes of a regex match survive post-processing: an
+/// unmatched `)` or `]` ends the match, then trailing prose delimiters
+/// are dropped. Same rules the grid-walking `hint_post_processing` used,
+/// applied to the matched text instead of cells.
+fn trim_match_tail(text: &str) -> usize {
+    let mut open_parens = 0i32;
+    let mut open_brackets = 0i32;
+    let mut cut = text.len();
+    for (idx, ch) in text.char_indices() {
+        match ch {
+            '(' => open_parens += 1,
+            '[' => open_brackets += 1,
+            ')' => {
+                if open_parens == 0 {
+                    cut = idx;
+                    break;
+                }
+                open_parens -= 1;
+            }
+            ']' => {
+                if open_brackets == 0 {
+                    cut = idx;
+                    break;
+                }
+                open_brackets -= 1;
+            }
+            _ => (),
+        }
+    }
+    text[..cut]
+        .trim_end_matches(['.', ',', ':', ';', '?', '!', '(', '[', '\''])
+        .len()
 }
 
 /// URI scheme prefixes that should never be resolved as file paths.
@@ -785,5 +1016,170 @@ mod tests {
         unsafe {
             std::env::remove_var("RIO_TEST_PATH_VAR");
         }
+    }
+
+    use rio_backend::ansi::CursorShape;
+    use rio_backend::config::hints::DEFAULT_URL_REGEX;
+    use rio_backend::crosswords::CrosswordsSize;
+    use rio_backend::event::{VoidListener, WindowId};
+    use rio_unicode::UnicodeWidthChar;
+
+    /// Build a terminal from literal content, the same way rio-vt's
+    /// search tests do: `\n` continues a soft-wrapped line, `\r\n` is a
+    /// hard line break. Soft-wrapped rows must be written full width,
+    /// as they are in a live grid.
+    fn mock_term(content: &str) -> Crosswords<VoidListener> {
+        let lines: Vec<&str> = content.split('\n').collect();
+        let num_cols = lines
+            .iter()
+            .map(|line| {
+                line.chars()
+                    .filter(|c| *c != '\r')
+                    .map(|c| c.width().unwrap())
+                    .sum()
+            })
+            .max()
+            .unwrap_or(0);
+
+        let size = CrosswordsSize::new(num_cols, lines.len());
+        let mut term = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            WindowId::from(0),
+            0,
+            10_000,
+        );
+
+        for (line, text) in lines.iter().enumerate() {
+            let line = Line(line as i32);
+            if !text.ends_with('\r') && line + 1 != lines.len() {
+                term.grid[line][Column(num_cols - 1)].set_wrapline(true);
+            }
+
+            let mut index = 0;
+            for c in text.chars().take_while(|c| *c != '\r') {
+                term.grid[line][Column(index)].set_c(c);
+                let width = c.width().unwrap();
+                if width == 2 {
+                    term.grid[line][Column(index)].set_wide(Wide::Wide);
+                    term.grid[line][Column(index + 1)].set_wide(Wide::Spacer);
+                }
+                index += width;
+            }
+        }
+
+        term
+    }
+
+    fn url_regex() -> onig::Regex {
+        onig::Regex::new(DEFAULT_URL_REGEX).unwrap()
+    }
+
+    fn match_at(
+        term: &Crosswords<VoidListener>,
+        row: i32,
+        col: usize,
+    ) -> Option<GridMatch> {
+        let point = Pos::new(Line(row), Column(col));
+        LogicalLine::extract(term, point)?.match_at(term, point, &url_regex(), true)
+    }
+
+    // Hovering anywhere on a mid-line URL yields exactly the URL's
+    // cells, and the parenthesized note after it stays prose.
+    #[test]
+    fn test_match_at_point_plain_ascii_line() {
+        let term = mock_term(
+            "Dev server is listening at http://localhost:1313/ (bind address 127.0.0.1)",
+        );
+
+        // "Dev server is listening at " is 27 cells; the URL is 22 more.
+        for col in [27, 35, 48] {
+            let m = match_at(&term, 0, col)
+                .unwrap_or_else(|| panic!("no match at col {col}"));
+            assert_eq!(m.text, "http://localhost:1313/");
+            assert_eq!(m.start, Pos::new(Line(0), Column(27)));
+            assert_eq!(m.end, Pos::new(Line(0), Column(48)));
+        }
+        assert!(match_at(&term, 0, 26).is_none(), "space before the url");
+        assert!(match_at(&term, 0, 50).is_none(), "note after the url");
+    }
+
+    // Multi-byte characters left of the match must not drag the bounds
+    // to the right. The old byte-offset code returned cols shifted by
+    // one per extra UTF-8 byte: two box-drawing characters shifted the
+    // hover underline four cells.
+    #[test]
+    fn test_match_at_point_multibyte_prefix() {
+        let term = mock_term("\u{2502}\u{2502} see http://a.b/c after");
+
+        let m = match_at(&term, 0, 10).expect("hover on the url");
+        assert_eq!(m.text, "http://a.b/c");
+        assert_eq!(m.start, Pos::new(Line(0), Column(7)));
+        assert_eq!(m.end, Pos::new(Line(0), Column(18)));
+    }
+
+    // Wide characters occupy two cells but one char: bounds are cells,
+    // not chars, and hovering the spacer half still hits.
+    #[test]
+    fn test_match_at_point_wide_prefix() {
+        let term = mock_term("\u{65e5}\u{672c} http://a.b/c");
+
+        let m = match_at(&term, 0, 8).expect("hover on the url");
+        assert_eq!(m.text, "http://a.b/c");
+        assert_eq!(m.start, Pos::new(Line(0), Column(5)));
+        assert_eq!(m.end, Pos::new(Line(0), Column(16)));
+    }
+
+    // A soft-wrapped URL matches whole from either row, with bounds
+    // spanning the wrap. The old single-row code matched a truncated
+    // URL on the first row and nothing on the second.
+    #[test]
+    fn test_match_at_point_wrapped_url() {
+        let term = mock_term("see http://examp\nle.com/path here");
+
+        let from_first = match_at(&term, 0, 6).expect("hover on first row");
+        assert_eq!(from_first.text, "http://example.com/path");
+        assert_eq!(from_first.start, Pos::new(Line(0), Column(4)));
+        assert_eq!(from_first.end, Pos::new(Line(1), Column(10)));
+
+        let from_second = match_at(&term, 1, 3).expect("hover on second row");
+        assert_eq!(from_second, from_first);
+
+        assert!(match_at(&term, 1, 13).is_none(), "prose after the url");
+    }
+
+    // A URL deep inside a huge fully-wrapped logical line still
+    // resolves with exact bounds: the extraction clips to a byte
+    // window around the point, and the window must land on the match.
+    #[test]
+    fn test_match_at_point_clipped_long_line() {
+        let url = "http://example.com/path";
+        let mut rows: Vec<String> = (0..201).map(|_| "x".repeat(300)).collect();
+        rows[100] = format!(
+            "{} {} {}",
+            "x".repeat(99),
+            url,
+            "x".repeat(300 - 99 - url.len() - 2)
+        );
+        let term = mock_term(&rows.join("\n"));
+
+        let m = match_at(&term, 100, 110).expect("hover on the url");
+        assert_eq!(m.text, url);
+        assert_eq!(m.start, Pos::new(Line(100), Column(100)));
+        assert_eq!(m.end, Pos::new(Line(100), Column(122)));
+
+        assert!(match_at(&term, 100, 95).is_none(), "filler is not a link");
+    }
+
+    #[test]
+    fn test_trim_match_tail() {
+        assert_eq!(trim_match_tail("http://a.b/c"), "http://a.b/c".len());
+        // Unmatched closing paren ends the match.
+        assert_eq!(trim_match_tail("http://a.b/c)x"), "http://a.b/c".len());
+        // Balanced pairs survive.
+        assert_eq!(trim_match_tail("http://a.b/(c)"), "http://a.b/(c)".len());
+        // Trailing prose delimiters are dropped.
+        assert_eq!(trim_match_tail("http://a.b/c,."), "http://a.b/c".len());
     }
 }
