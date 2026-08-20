@@ -3,8 +3,12 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+//! `rio-grid`: shared grid-emit crate.
+//!
 //! Translates terminal `Square` cells into `CellBg` / `CellText`
-//! instances for the grid GPU renderer.
+//! instances for the grid GPU renderer. Decoupled from any frontend
+//! via the [`GridPalette`] trait, so both rioterm and libsugarloaf can
+//! drive it.
 //!
 //! `build_row_bg` is one CellBg per cell; `build_row_fg` does
 //! **run-level shaping** so ligatures (`=>`, `!=`, `fi`) form
@@ -37,12 +41,44 @@ use smallvec::SmallVec;
 /// Snapshot's per-frame extras map. Keyed by the cell's `extras_id`,
 /// populated by `Crosswords::snapshot_visible` from a walk of visible
 /// cells. The renderer reads via `extras.get(&id)`.
-pub(crate) type ExtrasMap = FxHashMap<u16, Extras>;
+pub type ExtrasMap = FxHashMap<u16, Extras>;
 
-use crate::renderer::Renderer;
+/// Color/palette operations the emit code needs from its host
+/// renderer. Implemented by the frontend (e.g. rioterm's `Renderer`)
+/// and passed by generic reference into the per-cell hot path, so the
+/// calls monomorphize with no vtable cost.
+pub trait GridPalette {
+    fn named_colors(&self) -> &rio_backend::config::colors::Colors;
+    fn compute_color(
+        &self,
+        color: &AnsiColor,
+        flags: StyleFlags,
+        term_colors: &TermColors,
+    ) -> rio_backend::config::colors::ColorArray;
+    fn compute_bg_color(
+        &self,
+        cell_style: &Style,
+        term_colors: &TermColors,
+    ) -> rio_backend::config::colors::ColorArray;
+    fn color(&self, idx: usize, term_colors: &TermColors)
+        -> rio_backend::config::colors::ColorArray;
+    fn use_drawable_chars(&self) -> bool;
+    fn opacity_cells(&self) -> bool;
+    fn cell_bg_alpha(&self) -> u8;
+    fn ignore_selection_fg_color(&self) -> bool;
+}
+
+/// A single hint-mode label overlaid on a cell (leader-key jump
+/// target). Mirrors the frontend's own `HintLabel`; the frontend
+/// copies its fields into this at the call sites.
+pub struct HintLabel {
+    pub position: Pos,
+    pub label: char,
+    pub is_first: bool,
+}
 
 #[inline(always)]
-pub(crate) fn resolve_style(style_table: &[Style], sq: Square) -> Style {
+pub fn resolve_style(style_table: &[Style], sq: Square) -> Style {
     if sq.is_bg_only() {
         return Style::default();
     }
@@ -261,7 +297,7 @@ pub fn push_hint_label_styles(
 
 pub fn overlay_hint_labels(
     row: &Row<Square>,
-    labels: &[crate::context::renderable::HintLabel],
+    labels: &[HintLabel],
     y: usize,
     display_offset: i32,
     label_style_base: u16,
@@ -322,13 +358,13 @@ fn cell_in_hover_underline(row_hints: &[RowHint], col: u16) -> bool {
 /// `search_focused_match_foreground` from
 /// `colors::Colors` (`rio-backend/src/config/colors/mod.rs:287,299`).
 #[inline]
-fn cell_fg_hinted(tag: HintTag, renderer: &Renderer) -> [u8; 4] {
+fn cell_fg_hinted<P: GridPalette>(tag: HintTag, palette: &P) -> [u8; 4] {
     match tag {
         HintTag::Focused => {
-            normalized_to_u8(renderer.named_colors.search_focused_match_foreground)
+            normalized_to_u8(palette.named_colors().search_focused_match_foreground)
         }
-        HintTag::Match => normalized_to_u8(renderer.named_colors.search_match_foreground),
-        HintTag::Label => normalized_to_u8(renderer.named_colors.hint_foreground),
+        HintTag::Match => normalized_to_u8(palette.named_colors().search_match_foreground),
+        HintTag::Label => normalized_to_u8(palette.named_colors().hint_foreground),
         // Hover doesn't change fg color; defensive — `cell_in_row_hints`
         // already filters this tag out, so this arm shouldn't fire.
         HintTag::HyperlinkHover => [0, 0, 0, 0],
@@ -342,20 +378,20 @@ use rio_backend::sugarloaf::grid::{
 
 // Bg + shared helpers
 
-pub fn cell_fg(
+pub fn cell_fg<P: GridPalette>(
     sq: Square,
     style: Style,
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
 ) -> [u8; 4] {
     if sq.is_bg_only() {
-        return normalized_to_u8(renderer.named_colors.foreground);
+        return normalized_to_u8(palette.named_colors().foreground);
     }
     let mut style = style;
     if style.flags.contains(StyleFlags::INVERSE) {
         std::mem::swap(&mut style.fg, &mut style.bg);
     }
-    let color = renderer.compute_color(&style.fg, style.flags, term_colors);
+    let color = palette.compute_color(&style.fg, style.flags, term_colors);
     normalized_to_u8(color)
 }
 
@@ -367,16 +403,16 @@ pub fn cell_fg(
 /// has a default selection_foreground populated in its theme, so we
 /// use it directly.
 #[inline]
-pub fn cell_fg_selected(
+pub fn cell_fg_selected<P: GridPalette>(
     sq: Square,
     style: Style,
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
 ) -> [u8; 4] {
-    if renderer.ignore_selection_fg_color {
-        cell_fg(sq, style, renderer, term_colors)
+    if palette.ignore_selection_fg_color() {
+        cell_fg(sq, style, palette, term_colors)
     } else {
-        normalized_to_u8(renderer.named_colors.selection_foreground)
+        normalized_to_u8(palette.named_colors().selection_foreground)
     }
 }
 
@@ -538,7 +574,7 @@ impl CursorRenderStyle {
 /// cell height. Capped at 2 px so deeply-zoomed cells don't get a
 /// chunky frame / fat bar instead of a cursor hint.
 #[inline]
-pub(crate) fn cursor_thickness(cell_h: u32) -> u32 {
+pub fn cursor_thickness(cell_h: u32) -> u32 {
     (cell_h / 16).clamp(1, 2)
 }
 
@@ -752,7 +788,7 @@ fn decoration_thickness(size_px: f32) -> u32 {
 /// below. Mirrors the spirit of `underline_position` but
 /// simplified — we don't have per-font metrics here.
 #[inline]
-pub(crate) fn underline_gap_below(cell_h: u32) -> u32 {
+pub fn underline_gap_below(cell_h: u32) -> u32 {
     (cell_h / 20).max(1)
 }
 
@@ -947,16 +983,16 @@ fn underline_style_from_flags(flags: StyleFlags) -> Option<DecorationStyle> {
 /// Decoration color: SGR 58 `underline_color` if set, else the cell's
 /// computed fg. `generic.zig:2968`.
 #[inline]
-fn decoration_color(
+fn decoration_color<P: GridPalette>(
     sq: Square,
     style: &rio_backend::crosswords::style::Style,
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
 ) -> [u8; 4] {
     if let Some(uc) = style.underline_color {
-        normalized_to_u8(renderer.compute_color(&uc, style.flags, term_colors))
+        normalized_to_u8(palette.compute_color(&uc, style.flags, term_colors))
     } else {
-        cell_fg(sq, *style, renderer, term_colors)
+        cell_fg(sq, *style, palette, term_colors)
     }
 }
 
@@ -982,10 +1018,10 @@ fn decoration_color(
 /// Selection / hint highlights are applied at the `build_row_bg` slow
 /// path with their own (always opaque) bg colors, so they don't go
 /// through this function.
-pub fn cell_bg(
+pub fn cell_bg<P: GridPalette>(
     sq: Square,
     style: Style,
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
 ) -> [u8; 4] {
     // Alpha for cells that paint an explicit bg. Default = fully
@@ -993,8 +1029,8 @@ pub fn cell_bg(
     // and a transparent window, we multiply by the window opacity so
     // the explicit-bg cells stay proportionally translucent. INVERSE
     // always uses 255.
-    let explicit_bg_alpha = if renderer.opacity_cells {
-        renderer.cell_bg_alpha
+    let explicit_bg_alpha = if palette.opacity_cells() {
+        palette.cell_bg_alpha()
     } else {
         255
     };
@@ -1006,7 +1042,7 @@ pub fn cell_bg(
         }
         ContentTag::BgPalette => {
             let idx = sq.bg_palette_index() as usize;
-            let color = renderer.color(idx, term_colors);
+            let color = palette.color(idx, term_colors);
             let [r, g, b, _] = normalized_to_u8(color);
             [r, g, b, explicit_bg_alpha]
         }
@@ -1030,7 +1066,7 @@ pub fn cell_bg(
             if inverse {
                 std::mem::swap(&mut resolved.fg, &mut resolved.bg);
             }
-            let color = renderer.compute_bg_color(&resolved, term_colors);
+            let color = palette.compute_bg_color(&resolved, term_colors);
             let [r, g, b, _] = normalized_to_u8(color);
             // INVERSE always opaque — keep cursor / inverted text
             // readable regardless of the opacity-cells flag.
@@ -1051,11 +1087,11 @@ fn normalized_to_u8(c: [f32; 4]) -> [u8; 4] {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_row_bg(
+pub fn build_row_bg<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
     style_table: &[Style],
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
@@ -1075,7 +1111,7 @@ pub fn build_row_bg(
         for x in 0..cols {
             let sq = row[Column(x)];
             bg_scratch.push(CellBg {
-                rgba: cell_bg(sq, resolve_style(style_table, sq), renderer, term_colors),
+                rgba: cell_bg(sq, resolve_style(style_table, sq), palette, term_colors),
             });
         }
         return;
@@ -1083,17 +1119,17 @@ pub fn build_row_bg(
 
     // Slow path: selection and/or hint highlighting present.
     let sel_bg = if has_sel {
-        Some(normalized_to_u8(renderer.named_colors.selection_background))
+        Some(normalized_to_u8(palette.named_colors().selection_background))
     } else {
         None
     };
     let (match_bg, focused_bg) = if has_color_hints {
         (
             Some(normalized_to_u8(
-                renderer.named_colors.search_match_background,
+                palette.named_colors().search_match_background,
             )),
             Some(normalized_to_u8(
-                renderer.named_colors.search_focused_match_background,
+                palette.named_colors().search_focused_match_background,
             )),
         )
     } else {
@@ -1107,22 +1143,22 @@ pub fn build_row_bg(
             // Selection bg wins over hint bg and the cell's own bg,
             // matching `generic.zig:2775-2800` (selection check
             // runs before highlight check).
-            sel_bg.unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors))
+            sel_bg.unwrap_or_else(|| cell_bg(sq, style, palette, term_colors))
         } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
             match tag {
                 HintTag::Focused => focused_bg
-                    .unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors)),
+                    .unwrap_or_else(|| cell_bg(sq, style, palette, term_colors)),
                 HintTag::Match => {
-                    match_bg.unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors))
+                    match_bg.unwrap_or_else(|| cell_bg(sq, style, palette, term_colors))
                 }
-                HintTag::Label => cell_bg(sq, style, renderer, term_colors),
+                HintTag::Label => cell_bg(sq, style, palette, term_colors),
                 // `cell_in_row_hints` filters HyperlinkHover out, but
                 // make the match exhaustive so a future caller can't
                 // accidentally hit a panic.
-                HintTag::HyperlinkHover => cell_bg(sq, style, renderer, term_colors),
+                HintTag::HyperlinkHover => cell_bg(sq, style, palette, term_colors),
             }
         } else {
-            cell_bg(sq, style, renderer, term_colors)
+            cell_bg(sq, style, palette, term_colors)
         };
         bg_scratch.push(CellBg { rgba });
     }
@@ -1659,13 +1695,13 @@ fn shape_run_swash(
 /// underlines first (drawn under glyphs), glyphs, then strikethroughs
 /// (drawn on top).
 #[allow(clippy::too_many_arguments)]
-pub fn build_row_fg(
+pub fn build_row_fg<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
     y: u16,
     style_table: &[Style],
     extras_table: &ExtrasMap,
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
     rasterizer: &mut GridGlyphRasterizer,
     grid: &mut GridRenderer,
@@ -1702,7 +1738,7 @@ pub fn build_row_fg(
     let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
     let needs_per_cell_check = has_sel || has_color_hints;
     // Consulted in the per-cell sprite hook and the run-extension break.
-    let use_drawable_chars = renderer.use_drawable_chars();
+    let use_drawable_chars = palette.use_drawable_chars();
 
     // Glyph Protocol registry for *this pane*. One Arc clone per row;
     // the per-cell custom-glyph helper then uses the local handle so
@@ -1720,7 +1756,7 @@ pub fn build_row_fg(
         cols,
         y,
         style_table,
-        renderer,
+        palette,
         term_colors,
         grid,
         cell_w_u32,
@@ -1781,7 +1817,7 @@ pub fn build_row_fg(
             // selection / hint precedence.
             let style = resolve_style(style_table, sq);
             let color = if !needs_per_cell_check {
-                cell_fg(sq, style, renderer, term_colors)
+                cell_fg(sq, style, palette, term_colors)
             } else {
                 let is_sel = cell_in_row_sel(row_sel, x as u16);
                 let hint_tag = if is_sel {
@@ -1790,11 +1826,11 @@ pub fn build_row_fg(
                     cell_in_row_hints(row_hints, x as u16)
                 };
                 if is_sel {
-                    cell_fg_selected(sq, style, renderer, term_colors)
+                    cell_fg_selected(sq, style, palette, term_colors)
                 } else if let Some(tag) = hint_tag {
-                    cell_fg_hinted(tag, renderer)
+                    cell_fg_hinted(tag, palette)
                 } else {
-                    cell_fg(sq, style, renderer, term_colors)
+                    cell_fg(sq, style, palette, term_colors)
                 }
             };
 
@@ -1867,7 +1903,7 @@ pub fn build_row_fg(
                     // selection / hint precedence.
                     let style = resolve_style(style_table, sq);
                     let color = if !needs_per_cell_check {
-                        cell_fg(sq, style, renderer, term_colors)
+                        cell_fg(sq, style, palette, term_colors)
                     } else {
                         let is_sel = cell_in_row_sel(row_sel, x as u16);
                         let hint_tag = if is_sel {
@@ -1876,11 +1912,11 @@ pub fn build_row_fg(
                             cell_in_row_hints(row_hints, x as u16)
                         };
                         if is_sel {
-                            cell_fg_selected(sq, style, renderer, term_colors)
+                            cell_fg_selected(sq, style, palette, term_colors)
                         } else if let Some(tag) = hint_tag {
-                            cell_fg_hinted(tag, renderer)
+                            cell_fg_hinted(tag, palette)
                         } else {
-                            cell_fg(sq, style, renderer, term_colors)
+                            cell_fg(sq, style, palette, term_colors)
                         }
                     };
                     fg_scratch.push(CellText {
@@ -2204,7 +2240,7 @@ pub fn build_row_fg(
                 // this row.
                 (
                     CellText::ATLAS_GRAYSCALE,
-                    cell_fg(src_sq, src_style, renderer, term_colors),
+                    cell_fg(src_sq, src_style, palette, term_colors),
                 )
             } else {
                 let is_sel = cell_in_row_sel(row_sel, src_col as u16);
@@ -2216,17 +2252,17 @@ pub fn build_row_fg(
                 if is_sel {
                     (
                         CellText::ATLAS_GRAYSCALE,
-                        cell_fg_selected(src_sq, src_style, renderer, term_colors),
+                        cell_fg_selected(src_sq, src_style, palette, term_colors),
                     )
                 } else if let Some(tag) = hint_tag {
                     // Hint-fg wins over the cell's own fg, matching
                     // `.search` / `.search_selected` branches at
                     // `generic.zig:2829-2833` (the fg picker mirrors bg).
-                    (CellText::ATLAS_GRAYSCALE, cell_fg_hinted(tag, renderer))
+                    (CellText::ATLAS_GRAYSCALE, cell_fg_hinted(tag, palette))
                 } else {
                     (
                         CellText::ATLAS_GRAYSCALE,
-                        cell_fg(src_sq, src_style, renderer, term_colors),
+                        cell_fg(src_sq, src_style, palette, term_colors),
                     )
                 }
             };
@@ -2254,7 +2290,7 @@ pub fn build_row_fg(
         cols,
         y,
         style_table,
-        renderer,
+        palette,
         term_colors,
         grid,
         cell_w_u32,
@@ -2267,12 +2303,12 @@ pub fn build_row_fg(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn emit_underlines(
+fn emit_underlines<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
     y: u16,
     style_table: &[Style],
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
     grid: &mut GridRenderer,
     cell_w: u32,
@@ -2310,18 +2346,18 @@ fn emit_underlines(
             // it stays visible against the selection bg. SGR 58 is
             // suppressed here — a theme's selection_foreground
             // overrides per-cell decoration color.
-            cell_fg_selected(sq, style, renderer, term_colors)
+            cell_fg_selected(sq, style, palette, term_colors)
         } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
             // Same reasoning as selection: underline inside a hint
             // should stay legible on the hint bg.
-            cell_fg_hinted(tag, renderer)
+            cell_fg_hinted(tag, palette)
         } else if hover_force {
             // Hover-only forced underline: use the cell fg so the
             // underline tracks the hyperlink text color (matches
             // hyperlink hover affordance).
-            cell_fg(sq, style, renderer, term_colors)
+            cell_fg(sq, style, palette, term_colors)
         } else {
-            decoration_color(sq, &style, renderer, term_colors)
+            decoration_color(sq, &style, palette, term_colors)
         };
         fg_scratch.push(CellText {
             glyph_pos: [slot.x as u32, slot.y as u32],
@@ -2338,12 +2374,12 @@ fn emit_underlines(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn emit_strikethroughs(
+fn emit_strikethroughs<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
     y: u16,
     style_table: &[Style],
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
     grid: &mut GridRenderer,
     cell_w: u32,
@@ -2375,11 +2411,11 @@ fn emit_strikethroughs(
         // Strikethrough always uses the cell fg (there's no SGR for
         // a separate strike color, matching ).
         let color = if cell_in_row_sel(row_sel, col) {
-            cell_fg_selected(sq, style, renderer, term_colors)
+            cell_fg_selected(sq, style, palette, term_colors)
         } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
-            cell_fg_hinted(tag, renderer)
+            cell_fg_hinted(tag, palette)
         } else {
-            cell_fg(sq, style, renderer, term_colors)
+            cell_fg(sq, style, palette, term_colors)
         };
         fg_scratch.push(CellText {
             glyph_pos: [slot.x as u32, slot.y as u32],
@@ -2698,7 +2734,6 @@ fn rasterize_glyph_native(
 #[cfg(test)]
 mod hint_label_tests {
     use super::*;
-    use crate::context::renderable::HintLabel;
 
     fn label(row: i32, col: usize, ch: char, is_first: bool) -> HintLabel {
         HintLabel {
@@ -2815,63 +2850,5 @@ mod cluster_text_tests {
             out.push(cell_idx);
         }
         assert_eq!(out, [0, 0, 1]);
-    }
-}
-
-#[cfg(test)]
-mod cell_bg_tests {
-    use super::*;
-    use rio_backend::config::colors::ColorRgb;
-    use rio_backend::config::Config;
-
-    /// End-to-end guard for the tmux faint-text regression: tmux
-    /// re-emits the pane's OSC 11 as an explicit SGR 48 on every cell,
-    /// so a faint cell arrived as `Spec(bg) + DIM` and was painted at
-    /// `bg * DIM_FACTOR`, a dark block against the field around it.
-    #[test]
-    fn dim_cell_paints_its_explicit_background_unchanged() {
-        let renderer = Renderer::new(&Config::default());
-        let colors = TermColors::default();
-        let sq = Square::from_char('x');
-        let bg = ColorRgb {
-            r: 0x28,
-            g: 0x2c,
-            b: 0x34,
-        };
-        let style = Style {
-            bg: AnsiColor::Spec(bg),
-            ..Style::default()
-        };
-
-        let plain = cell_bg(sq, style, &renderer, &colors);
-        let dimmed = cell_bg(
-            sq,
-            Style {
-                flags: StyleFlags::DIM,
-                ..style
-            },
-            &renderer,
-            &colors,
-        );
-
-        assert_eq!(plain, [0x28, 0x2c, 0x34, 255]);
-        assert_eq!(dimmed, plain);
-    }
-
-    /// A faint cell that never had its background set still paints
-    /// nothing, so window transparency keeps showing through.
-    #[test]
-    fn dim_cell_with_default_background_stays_unpainted() {
-        let renderer = Renderer::new(&Config::default());
-        let colors = TermColors::default();
-        let style = Style {
-            flags: StyleFlags::DIM,
-            ..Style::default()
-        };
-
-        assert_eq!(
-            cell_bg(Square::from_char('x'), style, &renderer, &colors),
-            [0, 0, 0, 0]
-        );
     }
 }

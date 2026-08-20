@@ -7,6 +7,7 @@ use rio_vt::ansi::kitty_virtual::{
     compute_run_geometry, IncompletePlacement, PlaceholderRun, PLACEHOLDER,
 };
 use rio_vt::ansi::CursorShape;
+use rio_vt::config::colors::term::TermColors;
 use rio_vt::config::colors::{AnsiColor, ColorRgb};
 use rio_vt::crosswords::grid::row::Row;
 use rio_vt::crosswords::grid::Dimensions;
@@ -70,6 +71,11 @@ pub struct RenderState {
     cursor_line: usize,
     cursor_column: usize,
     cursor_visible: bool,
+    cursor_shape: CursorShape,
+    /// Terminal palette (OSC-set / dynamic colors), snapshotted under
+    /// the same lock as the grid so the GPU emit path resolves indexed
+    /// and named colors against the exact frame it draws.
+    term_colors: TermColors,
     display_offset: usize,
     selection: Option<ViewportSelection>,
     history_size: i64,
@@ -86,9 +92,9 @@ pub struct RenderState {
 impl RenderState {
     pub fn new(surface: &Surface) -> Self {
         let terminal = surface.terminal();
-        let columns = {
+        let (columns, term_colors) = {
             let term = terminal.lock();
-            term.grid.columns()
+            (term.grid.columns(), *term.colors())
         };
         Self {
             terminal,
@@ -99,6 +105,8 @@ impl RenderState {
             cursor_line: 0,
             cursor_column: 0,
             cursor_visible: true,
+            cursor_shape: CursorShape::Block,
+            term_colors,
             display_offset: 0,
             selection: None,
             history_size: 0,
@@ -150,9 +158,11 @@ impl RenderState {
         // under-text (z < 0), then over-text: drawing in order layers
         // correctly, and the host can split the list at those bounds.
         self.kitty.sort_by_key(KittyEntry::z_index);
+        self.term_colors = *term.colors();
         let cursor = term.cursor();
         self.cursor_line = cursor.pos.row.0.max(0) as usize;
         self.cursor_column = cursor.pos.col.0;
+        self.cursor_shape = cursor.content;
         // Hidden covers both DECTCEM (CSI ?25l) and a scrolled viewport;
         // renderers must not paint a cursor in either case.
         self.cursor_visible = cursor.content != CursorShape::Hidden;
@@ -272,6 +282,30 @@ impl RenderState {
 
     pub fn styles(&self) -> &[Style] {
         &self.styles
+    }
+
+    /// The snapshot's visible rows. Parallel to `styles()` / `extras()`:
+    /// the GPU emit path (rio-grid) walks these, resolving each cell's
+    /// style id against `styles()` and its extras id against `extras()`.
+    pub fn rows(&self) -> &[Row<Square>] {
+        &self.rows
+    }
+
+    /// Per-frame extras (grapheme clusters, hyperlinks), keyed by a
+    /// cell's `extras_id`.
+    pub fn extras(&self) -> &FxHashMap<u16, Extras> {
+        &self.extras
+    }
+
+    /// Terminal palette captured with this frame's grid snapshot.
+    pub fn term_colors(&self) -> &TermColors {
+        &self.term_colors
+    }
+
+    /// The terminal-side configured cursor shape (block / underline /
+    /// beam / hidden) for this frame.
+    pub fn cursor_shape(&self) -> CursorShape {
+        self.cursor_shape
     }
 
     pub fn cursor(&self) -> (usize, usize) {

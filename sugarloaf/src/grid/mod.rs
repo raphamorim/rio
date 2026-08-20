@@ -390,4 +390,18 @@ impl GridRenderer {
             GridRenderer::Cpu(r) => r.mark_full_rebuild_done(),
         }
     }
+
+    /// Force the next frame to rebuild every row, even when nothing dirtied
+    /// the cells (e.g. after a color-theme change).
+    pub fn request_full_rebuild(&mut self) {
+        match self {
+            #[cfg(target_os = "macos")]
+            GridRenderer::Metal(r) => r.request_full_rebuild(),
+            #[cfg(feature = "wgpu")]
+            GridRenderer::Wgpu(r) => r.request_full_rebuild(),
+            #[cfg(target_os = "linux")]
+            GridRenderer::Vulkan(r) => r.request_full_rebuild(),
+            GridRenderer::Cpu(r) => r.request_full_rebuild(),
+        }
+    }
 }

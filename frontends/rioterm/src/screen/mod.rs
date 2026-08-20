@@ -94,7 +94,7 @@ pub struct Screen<'screen> {
     last_chrome_press: Option<ChromePress>,
     last_close_press: Option<(std::time::Instant, f32)>,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
-    pub grid_rasterizer: crate::grid_emit::GridGlyphRasterizer,
+    pub grid_rasterizer: rio_grid::GridGlyphRasterizer,
 }
 
 pub struct ChromePress {
@@ -334,7 +334,7 @@ impl Screen<'_> {
             last_chrome_press: None,
             last_close_press: None,
             grids: rustc_hash::FxHashMap::default(),
-            grid_rasterizer: crate::grid_emit::GridGlyphRasterizer::new(),
+            grid_rasterizer: rio_grid::GridGlyphRasterizer::new(),
         })
     }
 
@@ -4080,7 +4080,7 @@ impl Screen<'_> {
                     .as_deref()
                     .filter(|labels| !labels.is_empty())
                     .map(|_| {
-                        crate::grid_emit::push_hint_label_styles(
+                        rio_grid::push_hint_label_styles(
                             &mut style_table,
                             self.renderer.named_colors.hint_foreground,
                             self.renderer.named_colors.hint_background,
@@ -4199,7 +4199,7 @@ impl Screen<'_> {
                     Vec::with_capacity(cols);
                 let mut fg_scratch: Vec<rio_backend::sugarloaf::grid::CellText> =
                     Vec::with_capacity(cols);
-                let mut hint_scratch: Vec<crate::grid_emit::RowHint> = Vec::new();
+                let mut hint_scratch: Vec<rio_grid::RowHint> = Vec::new();
 
                 // Small helper: rebuild one row into the grid's
                 // buffers. Closure-style to avoid duplicating the
@@ -4215,18 +4215,18 @@ impl Screen<'_> {
                     |p: &PanelFrame,
                      y: usize,
                      grid: &mut rio_backend::sugarloaf::grid::GridRenderer,
-                     rasterizer: &mut crate::grid_emit::GridGlyphRasterizer| {
+                     rasterizer: &mut rio_grid::GridGlyphRasterizer| {
                         let Some(row) = p.visible_rows.get(y) else {
                             return;
                         };
                         let style_table = p.style_table.as_slice();
-                        let row_sel = crate::grid_emit::row_selection_for(
+                        let row_sel = rio_grid::row_selection_for(
                             p.selection,
                             y,
                             cols,
                             p.display_offset,
                         );
-                        crate::grid_emit::row_hints_for(
+                        rio_grid::row_hints_for(
                             p.hint_matches.as_deref(),
                             p.focused_match.as_ref(),
                             p.hovered_hyperlink,
@@ -4238,9 +4238,17 @@ impl Screen<'_> {
                         let label_row;
                         let row = match (p.hint_labels.as_deref(), p.label_style_base) {
                             (Some(labels), Some(style_base)) => {
-                                match crate::grid_emit::overlay_hint_labels(
+                                let labels: Vec<rio_grid::HintLabel> = labels
+                                    .iter()
+                                    .map(|l| rio_grid::HintLabel {
+                                        position: l.position,
+                                        label: l.label,
+                                        is_first: l.is_first,
+                                    })
+                                    .collect();
+                                match rio_grid::overlay_hint_labels(
                                     row,
-                                    labels,
+                                    &labels,
                                     y,
                                     p.display_offset,
                                     style_base,
@@ -4255,7 +4263,7 @@ impl Screen<'_> {
                             }
                             _ => row,
                         };
-                        crate::grid_emit::build_row_bg(
+                        rio_grid::build_row_bg(
                             row,
                             cols,
                             style_table,
@@ -4273,7 +4281,7 @@ impl Screen<'_> {
                         } else {
                             None
                         };
-                        crate::grid_emit::build_row_fg(
+                        rio_grid::build_row_fg(
                             row,
                             cols,
                             y as u16,
@@ -4354,8 +4362,8 @@ impl Screen<'_> {
                 // frame and only dirties cursor buffers on
                 // change — do NOT clear the slots beforehand,
                 // that would dirty them every frame.
-                let render_style = crate::grid_emit::cursor_render_style(
-                    crate::grid_emit::CursorRenderInputs {
+                let render_style = rio_grid::cursor_render_style(
+                    rio_grid::CursorRenderInputs {
                         visible: p.cursor_visible,
                         focused: p.is_active && self.renderer.is_window_focused,
                         blink_visible: p.cursor_blink_visible,
@@ -4377,7 +4385,7 @@ impl Screen<'_> {
                         (p.cursor_color[2].clamp(0.0, 1.0) * 255.0) as u8,
                         255,
                     ];
-                    if let Some((is_block, cell)) = crate::grid_emit::cursor_sprite_cell(
+                    if let Some((is_block, cell)) = rio_grid::cursor_sprite_cell(
                         grid,
                         style,
                         p.cursor_col,
@@ -4419,7 +4427,7 @@ impl Screen<'_> {
                 // .
                 let (cursor_pos, cursor_col_u, cursor_bg_u) = if matches!(
                     render_style,
-                    Some(crate::grid_emit::CursorRenderStyle::Block)
+                    Some(rio_grid::CursorRenderStyle::Block)
                 ) {
                     (
                         [p.cursor_col as u32, p.cursor_row as u32],

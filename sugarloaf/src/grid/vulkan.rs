@@ -796,6 +796,11 @@ impl VulkanGridRenderer {
         self.needs_full_rebuild = false;
     }
 
+    #[inline]
+    pub fn request_full_rebuild(&mut self) {
+        self.needs_full_rebuild = true;
+    }
+
     pub fn resize(&mut self, cols: u32, rows: u32) {
         if cols == self.cols && rows == self.rows {
             return;

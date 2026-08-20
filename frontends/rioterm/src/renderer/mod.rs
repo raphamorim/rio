@@ -1019,7 +1019,7 @@ impl Renderer {
                     continue;
                 }
 
-                let style = crate::grid_emit::resolve_style(&rc.style_table, *square);
+                let style = rio_grid::resolve_style(&rc.style_table, *square);
                 let combining: &[char] = square
                     .extras_id()
                     .and_then(|eid| rc.extras.get(&eid))
@@ -1154,6 +1154,59 @@ impl Renderer {
                 overlays.push(overlay);
             }
         }
+    }
+}
+
+/// Bridges the frontend `Renderer` to the shared `rio-grid` emit code,
+/// delegating each palette operation to the existing methods/fields.
+impl rio_grid::GridPalette for Renderer {
+    #[inline]
+    fn named_colors(&self) -> &Colors {
+        &self.named_colors
+    }
+
+    #[inline]
+    fn compute_color(
+        &self,
+        color: &AnsiColor,
+        flags: StyleFlags,
+        term_colors: &TermColors,
+    ) -> ColorArray {
+        Renderer::compute_color(self, color, flags, term_colors)
+    }
+
+    #[inline]
+    fn compute_bg_color(
+        &self,
+        cell_style: &CellStyle,
+        term_colors: &TermColors,
+    ) -> ColorArray {
+        Renderer::compute_bg_color(self, cell_style, term_colors)
+    }
+
+    #[inline]
+    fn color(&self, idx: usize, term_colors: &TermColors) -> ColorArray {
+        Renderer::color(self, idx, term_colors)
+    }
+
+    #[inline]
+    fn use_drawable_chars(&self) -> bool {
+        Renderer::use_drawable_chars(self)
+    }
+
+    #[inline]
+    fn opacity_cells(&self) -> bool {
+        self.opacity_cells
+    }
+
+    #[inline]
+    fn cell_bg_alpha(&self) -> u8 {
+        self.cell_bg_alpha
+    }
+
+    #[inline]
+    fn ignore_selection_fg_color(&self) -> bool {
+        self.ignore_selection_fg_color
     }
 }
 
@@ -1339,5 +1392,68 @@ mod hint_tooltip_tests {
     #[test]
     fn multibyte_text_is_sliced_on_char_boundaries() {
         assert_eq!(elide_tail("héllo wörld", 40.0, measure), "hél\u{2026}");
+    }
+}
+
+/// End-to-end guards for `rio_grid::cell_bg` driven through the
+/// `Renderer` palette impl. These moved out of `grid_emit` when it
+/// became the standalone `rio-grid` crate (which can't depend on the
+/// frontend `Renderer`); they live here now that `Renderer` provides
+/// the `GridPalette` the emit code needs.
+#[cfg(test)]
+mod grid_cell_bg_tests {
+    use super::*;
+    use rio_backend::config::colors::ColorRgb;
+    use rio_backend::crosswords::square::Square;
+
+    /// End-to-end guard for the tmux faint-text regression: tmux
+    /// re-emits the pane's OSC 11 as an explicit SGR 48 on every cell,
+    /// so a faint cell arrived as `Spec(bg) + DIM` and was painted at
+    /// `bg * DIM_FACTOR`, a dark block against the field around it.
+    #[test]
+    fn dim_cell_paints_its_explicit_background_unchanged() {
+        let renderer = Renderer::new(&Config::default());
+        let colors = TermColors::default();
+        let sq = Square::from_char('x');
+        let bg = ColorRgb {
+            r: 0x28,
+            g: 0x2c,
+            b: 0x34,
+        };
+        let style = CellStyle {
+            bg: AnsiColor::Spec(bg),
+            ..CellStyle::default()
+        };
+
+        let plain = rio_grid::cell_bg(sq, style, &renderer, &colors);
+        let dimmed = rio_grid::cell_bg(
+            sq,
+            CellStyle {
+                flags: StyleFlags::DIM,
+                ..style
+            },
+            &renderer,
+            &colors,
+        );
+
+        assert_eq!(plain, [0x28, 0x2c, 0x34, 255]);
+        assert_eq!(dimmed, plain);
+    }
+
+    /// A faint cell that never had its background set still paints
+    /// nothing, so window transparency keeps showing through.
+    #[test]
+    fn dim_cell_with_default_background_stays_unpainted() {
+        let renderer = Renderer::new(&Config::default());
+        let colors = TermColors::default();
+        let style = CellStyle {
+            flags: StyleFlags::DIM,
+            ..CellStyle::default()
+        };
+
+        assert_eq!(
+            rio_grid::cell_bg(Square::from_char('x'), style, &renderer, &colors),
+            [0, 0, 0, 0]
+        );
     }
 }

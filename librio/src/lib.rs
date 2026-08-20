@@ -9,14 +9,16 @@ pub use key::{
 };
 pub use render_state::{RenderState, ViewportSelection};
 pub use rio_vt::clipboard::ClipboardType;
+pub use rio_vt::config::colors::term::TermColors;
 pub use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
+pub use rio_vt::crosswords::grid::row::Row;
 pub use rio_vt::crosswords::pos::Column;
-pub use rio_vt::crosswords::square::Square;
+pub use rio_vt::crosswords::square::{Extras, Square};
 pub use rio_vt::crosswords::style::{Style, StyleFlags};
 pub use rio_vt::grapheme_lut::cluster_width;
 pub use rio_vt::selection::SelectionRange;
 
-use rio_vt::ansi::CursorShape;
+pub use rio_vt::ansi::CursorShape;
 pub use rio_vt::crosswords::pos::Side;
 use rio_vt::crosswords::pos::{Column as PosColumn, Line, Pos};
 use rio_vt::crosswords::{Crosswords, Mode};

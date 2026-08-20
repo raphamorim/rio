@@ -11,9 +11,11 @@ members = [
     "rio-unicode",
     "rio-window",
     "rio-notifier",
+    "rio-grid",
     "frontends/rioterm",
     "librio",
     "librio-wasm",
+    "libsugarloaf",
 ]
 resolver = "2"
 
@@ -43,6 +45,7 @@ corcovado = { path = "corcovado", version = "0.5.25" }
 rio-graphics = { path = "rio-graphics", version = "0.5.25" }
 rio-fonts = { path = "rio-fonts", version = "0.5.25" }
 rio-vt = { path = "rio-vt", version = "0.5.25" }
+rio-grid = { path = "rio-grid", version = "0.5.25" }
 
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.5", features = [

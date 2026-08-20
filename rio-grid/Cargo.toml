@@ -1,0 +1,19 @@
+[package]
+name = "rio-grid"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+repository = "https://github.com/raphamorim/rio"
+description = "Translates terminal Square cells into CellBg / CellText instances for the grid GPU renderer, decoupled from any frontend via the GridPalette trait"
+readme = "README.md"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+rio-backend = { workspace = true }
+rustc-hash = { workspace = true }
+smallvec = { workspace = true }
+rapidhash = { version = "4.4.1", default-features = false }

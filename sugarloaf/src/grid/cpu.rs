@@ -338,6 +338,14 @@ impl CpuGridRenderer {
         self.needs_full_rebuild = false;
     }
 
+    /// Force the next frame to rebuild every row, even when nothing dirtied
+    /// the cells. Used when state outside the grid (e.g. the color theme)
+    /// changed and every cell must re-resolve.
+    #[inline]
+    pub fn request_full_rebuild(&mut self) {
+        self.needs_full_rebuild = true;
+    }
+
     /// Hash all state that affects what `render` will paint. The CPU
     /// rasterizer's frame-skip path uses this to short-circuit when
     /// the previous frame's output is still valid.

@@ -430,6 +430,11 @@ impl MetalGridRenderer {
         self.needs_full_rebuild = false;
     }
 
+    #[inline]
+    pub fn request_full_rebuild(&mut self) {
+        self.needs_full_rebuild = true;
+    }
+
     /// Lookup a glyph in the grayscale atlas.
     pub fn lookup_glyph(&self, key: GlyphKey) -> Option<AtlasSlot> {
         self.atlas_grayscale.lookup(key)

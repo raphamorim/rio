@@ -120,7 +120,7 @@ fn target_rect(
     cell_height: f32,
     shape: CursorShape,
 ) -> Option<[[f32; 2]; 4]> {
-    let t = crate::grid_emit::cursor_thickness(cell_height.max(1.0) as u32);
+    let t = rio_grid::cursor_thickness(cell_height.max(1.0) as u32);
     let thickness = t as f32;
     let (x0, y0, w, h) = match shape {
         CursorShape::Block => (x, y, cell_width, cell_height),
@@ -130,7 +130,7 @@ fn target_rect(
         // The underline sits at the SGR-underline baseline: `gap`
         // empty rows below it.
         CursorShape::Underline => {
-            let gap = crate::grid_emit::underline_gap_below(cell_height.max(1.0) as u32);
+            let gap = rio_grid::underline_gap_below(cell_height.max(1.0) as u32);
             (
                 x,
                 y + cell_height - thickness - gap as f32,
@@ -704,8 +704,8 @@ mod tests {
     /// the underline's baseline gap.
     #[test]
     fn thin_shapes_match_drawn_cursor_geometry() {
-        let t = crate::grid_emit::cursor_thickness(CELL_H as u32) as f32;
-        let gap = crate::grid_emit::underline_gap_below(CELL_H as u32) as f32;
+        let t = rio_grid::cursor_thickness(CELL_H as u32) as f32;
+        let gap = rio_grid::underline_gap_below(CELL_H as u32) as f32;
 
         let beam = target_rect(50.0, 40.0, CELL_W, CELL_H, CursorShape::Beam).unwrap();
         assert_eq!(beam[0][0], 50.0 - (t as u32).div_ceil(2) as f32);
