@@ -209,43 +209,42 @@ impl HintState {
         regex: &onig::Regex,
         hint: Rc<Hint>,
     ) {
-        // Get the visible area of the terminal
         let grid = &term.grid;
-        let display_offset = grid.display_offset();
-        let visible_lines = grid.screen_lines();
+        let cols = grid.columns();
+        if cols == 0 {
+            return;
+        }
+        let display_offset = grid.display_offset() as i32;
+        let top = -display_offset;
+        let bottom = grid.screen_lines() as i32 - 1 - display_offset;
 
-        // Scan each visible line for matches
-        for line_idx in 0..visible_lines {
-            let line = Line(line_idx as i32 - display_offset as i32);
-            if line < Line(0) || line.0 >= grid.total_lines() as i32 {
-                continue;
-            }
+        let wraps = |l: i32| grid[Line(l)][Column(cols - 1)].wrapline();
+        let max_rows = (SCAN_CELLS / cols).max(1) as i32;
 
-            // Extract text from the line
-            let line_text = self.extract_line_text(term, line);
-
-            // Find all matches in this line. Onig yields (byte_start, byte_end);
-            for (start, end) in regex.find_iter(&line_text) {
-                let start_col = Column(line_text[..start].chars().count());
-                let mut match_text = line_text[start..end].to_string();
-
-                // Apply post-processing if enabled
-                if hint.post_processing {
-                    match_text = post_process_hyperlink_uri(&match_text);
+        // Walk the viewport one logical line at a time. Each anchor's
+        // extraction reaches `max_rows` past it, so long wrap chains
+        // are re-anchored in tiles of that size; overlapping tiles can
+        // yield the same match twice, which the sort plus dedup in
+        // `update_matches` collapses.
+        let mut line = top;
+        while line <= bottom {
+            let anchor = Pos::new(Line(line), Column(0));
+            if let Some(logical_line) = LogicalLine::extract(term, anchor) {
+                for m in logical_line.matches(term, regex, hint.post_processing) {
+                    self.matches.push(HintMatch {
+                        text: m.text,
+                        start: m.start,
+                        end: m.end,
+                        hint: hint.clone(),
+                    });
                 }
-
-                let end_col =
-                    Column(start_col.0 + match_text.chars().count().saturating_sub(1));
-
-                let hint_match = HintMatch {
-                    text: match_text,
-                    start: Pos::new(line, start_col),
-                    end: Pos::new(line, end_col),
-                    hint: hint.clone(),
-                };
-
-                self.matches.push(hint_match);
             }
+
+            let mut next = line + 1;
+            while next <= bottom && next - line < max_rows && wraps(next - 1) {
+                next += 1;
+            }
+            line = next;
         }
     }
 
@@ -310,22 +309,6 @@ impl HintState {
                 col = end_col;
             }
         }
-    }
-
-    fn extract_line_text<T: EventListener>(
-        &self,
-        term: &rio_backend::crosswords::Crosswords<T>,
-        line: Line,
-    ) -> String {
-        let grid = &term.grid;
-        let mut text = String::new();
-
-        for col in 0..grid.columns() {
-            let cell = &grid[line][Column(col)];
-            text.push(cell.c());
-        }
-
-        text.trim_end().to_string()
     }
 
     fn generate_labels(&mut self) {
@@ -395,6 +378,14 @@ pub struct GridMatch {
     pub text: String,
 }
 
+/// How many cells of a logical line are followed across soft wraps on
+/// each side of an extraction's anchor. An unbounded scan is quadratic
+/// in oniguruma on a wrapped wall of word characters (the URL pattern
+/// rescans ahead at every start position), measured at ~90ms per
+/// probe; bounded it stays single-digit ms, and nothing is lost for
+/// matches shorter than the bound.
+const SCAN_CELLS: usize = 2048;
+
 /// The logical (unwrapped) line under a point: its text plus the source
 /// cell of every byte, so regex byte offsets anchor back to cells.
 ///
@@ -407,17 +398,8 @@ pub struct LogicalLine {
 
 impl LogicalLine {
     /// Extract the logical line containing `point`, following soft
-    /// wraps in both directions.
+    /// wraps in both directions up to `SCAN_CELLS` each way.
     pub fn extract<T: EventListener>(term: &Crosswords<T>, point: Pos) -> Option<Self> {
-        /// How many cells of the logical line are followed across soft
-        /// wraps on each side of the hovered row. Only matches
-        /// containing the hovered cell matter, so nothing hoverable is
-        /// lost for matches shorter than this. An unbounded scan is
-        /// quadratic in oniguruma on a wrapped wall of word characters
-        /// (the URL pattern rescans ahead at every start position),
-        /// measured at ~90ms per probe; bounded it stays single-digit ms.
-        const SCAN_CELLS: usize = 2048;
-
         let cols = term.columns();
         let topmost = -(term.history_size() as i32);
         let bottommost = term.bottommost_line().0;
@@ -481,24 +463,24 @@ impl LogicalLine {
         Some(LogicalLine { text, map })
     }
 
-    /// Find the regex match covering `point` in this line.
+    /// All regex matches in this line, in order.
     ///
     /// Cell bounds come through the byte-to-cell map, never from byte
     /// offsets used as columns: the previous implementation did the
     /// latter, so any multi-byte character left of the match (a `│`
-    /// prefix, CJK, emoji) dragged the hover underline that many bytes
-    /// to the right, and its single-row search matched soft-wrapped
-    /// URLs truncated or not at all.
-    pub fn match_at<T: EventListener>(
+    /// prefix, CJK, emoji) dragged the bounds that many bytes to the
+    /// right, and its single-row search matched soft-wrapped URLs
+    /// truncated or not at all.
+    pub fn matches<T: EventListener>(
         &self,
         term: &Crosswords<T>,
-        point: Pos,
         regex: &onig::Regex,
         post_processing: bool,
-    ) -> Option<GridMatch> {
+    ) -> Vec<GridMatch> {
         let cols = term.columns();
         let text = &self.text;
         let map = &self.map;
+        let mut out = Vec::new();
 
         // Manual search loop instead of `find_iter` so each attempt
         // carries a retry budget. The text is terminal output, i.e.
@@ -544,12 +526,6 @@ impl LogicalLine {
             if m_start >= m_end || m_end > map.len() {
                 continue;
             }
-            let start = map[m_start];
-            if point < start {
-                // Matches arrive in order; everything further is past
-                // the point.
-                break;
-            }
 
             let trimmed_len = if post_processing {
                 trim_match_tail(&text[m_start..m_end])
@@ -559,25 +535,36 @@ impl LogicalLine {
             if trimmed_len == 0 {
                 continue;
             }
+            let start = map[m_start];
             let mut end = map[m_start + trimmed_len - 1];
-            if point > end {
-                continue;
-            }
 
             // A match ending on a wide character owns its spacer cell
-            // too, so the hover underline covers the full glyph.
+            // too, so the underline covers the full glyph.
             if end.col.0 + 1 < cols && term.grid[end.row][end.col].wide() == Wide::Wide {
                 end.col = Column(end.col.0 + 1);
             }
 
-            return Some(GridMatch {
+            out.push(GridMatch {
                 start,
                 end,
                 text: text[m_start..m_start + trimmed_len].to_string(),
             });
         }
 
-        None
+        out
+    }
+
+    /// The regex match covering `point` in this line, if any.
+    pub fn match_at<T: EventListener>(
+        &self,
+        term: &Crosswords<T>,
+        point: Pos,
+        regex: &onig::Regex,
+        post_processing: bool,
+    ) -> Option<GridMatch> {
+        self.matches(term, regex, post_processing)
+            .into_iter()
+            .find(|m| m.start <= point && point <= m.end)
     }
 }
 
@@ -1083,6 +1070,52 @@ mod tests {
     ) -> Option<GridMatch> {
         let point = Pos::new(Line(row), Column(col));
         LogicalLine::extract(term, point)?.match_at(term, point, &url_regex(), true)
+    }
+
+    fn url_hint() -> Rc<Hint> {
+        Rc::new(Hint {
+            regex: Some(DEFAULT_URL_REGEX.to_string()),
+            hyperlinks: false,
+            post_processing: true,
+            persist: false,
+            action: HintAction::Action {
+                action: HintInternalAction::Open,
+            },
+            mouse: rio_backend::config::hints::HintMouse::default(),
+            binding: None,
+        })
+    }
+
+    // Hint mode (keyboard labels) shares the logical-line matching: a
+    // soft-wrapped URL yields one match with cell-exact bounds, not a
+    // truncated per-row pair.
+    #[test]
+    fn test_hint_mode_matches_wrapped_url() {
+        let term = mock_term("see http://examp\nle.com/path here");
+        let mut state = HintState::new("abc".to_string());
+        state.start(url_hint());
+        state.update_matches(&term);
+
+        let matches = state.matches();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].text, "http://example.com/path");
+        assert_eq!(matches[0].start, Pos::new(Line(0), Column(4)));
+        assert_eq!(matches[0].end, Pos::new(Line(1), Column(10)));
+    }
+
+    // Multi-byte characters left of a match must not shift hint label
+    // positions either.
+    #[test]
+    fn test_hint_mode_multibyte_alignment() {
+        let term = mock_term("\u{2502}\u{2502} see http://a.b/c after");
+        let mut state = HintState::new("abc".to_string());
+        state.start(url_hint());
+        state.update_matches(&term);
+
+        let matches = state.matches();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].start, Pos::new(Line(0), Column(7)));
+        assert_eq!(matches[0].end, Pos::new(Line(0), Column(18)));
     }
 
     // Hovering anywhere on a mid-line URL yields exactly the URL's
