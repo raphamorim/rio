@@ -1003,6 +1003,11 @@ fn upload_background_image_texture(
 }
 
 impl Renderer {
+    #[cfg(target_os = "macos")]
+    pub fn wait_for_gpu_idle(&self) {
+        crate::grid::metal::wait_for_all_frame_permits(&self.metal_frame_permits);
+    }
+
     pub fn new(context: &Context, colorspace: crate::sugarloaf::Colorspace) -> Self {
         // `colorspace` only matters to the Metal path (macOS); on other
         // platforms the shader doesn't know the sRGB→P3 matrix yet so we
@@ -2234,14 +2239,10 @@ impl Renderer {
             let has_images = !self.image_draws.is_empty();
 
             let ok = (|| {
-                // Always draw the window bg fill. With the grid
-                // owning per-cell bg, `padding_extend` in the grid
-                // shader was initially used to extend edge cell
-                // colors into the window margin — but that only
-                // works for a single full-window grid. Once splits
-                // exist, each panel's grid covers only its own rect,
-                // so the window margin + gutters between panels
-                // rely on this fullscreen fill again.
+                // Always draw the window bg fill. Grid backgrounds
+                // extend edge-cell colors inside their panel clips;
+                // transparent edge cells and configured split gutters
+                // still reveal this fill underneath.
                 if let Some(rgba) = bg_color {
                     if !Self::draw_bg_fill_metal(
                         brush,

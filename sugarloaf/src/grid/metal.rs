@@ -83,6 +83,19 @@ pub fn release_frame_permit(p: &FramePermits) {
     c.notify_one();
 }
 
+/// Wait until every submitted Metal frame has completed.
+///
+/// Scale transitions replace the drawable geometry while command buffers
+/// from the previous display may still be using it. The main thread is the
+/// only permit consumer, so observing the full count is an idle barrier.
+pub fn wait_for_all_frame_permits(p: &FramePermits) {
+    let (m, c) = &**p;
+    let mut g = m.lock();
+    while *g < FRAMES_IN_FLIGHT {
+        c.wait(&mut g);
+    }
+}
+
 /// Extra slots appended to the per-row fg storage for cursor glyphs.
 /// `rows + 2` layout (block cursor at slot 0,
 /// non-block-style cursor at the tail).

@@ -546,6 +546,11 @@ impl Config {
             if let Some(macos_unified) = window_overwrite.macos_use_unified_titlebar {
                 self.window.macos_use_unified_titlebar = macos_unified;
             }
+            if let Some(extend_titlebar) =
+                window_overwrite.extend_terminal_background_into_titlebar
+            {
+                self.window.extend_terminal_background_into_titlebar = extend_titlebar;
+            }
             if let Some(macos_shadow) = window_overwrite.macos_use_shadow {
                 self.window.macos_use_shadow = macos_shadow;
             }
@@ -772,7 +777,11 @@ mod tests {
 
     #[test]
     fn test_if_explicit_defaults_match() {
-        let result = create_temporary_config("defaults", &default_config_file_content());
+        let default_config = default_config_file_content();
+        assert!(
+            default_config.contains("extend-terminal-background-into-titlebar = true")
+        );
+        let result = create_temporary_config("defaults", &default_config);
 
         let env_vars: Vec<String> = vec![];
         assert_eq!(result.env_vars, env_vars);
@@ -1006,6 +1015,21 @@ mod tests {
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
         assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_titlebar_background_extension_is_opt_in() {
+        let default = create_temporary_config("titlebar-background-default", "");
+        assert!(!default.window.extend_terminal_background_into_titlebar);
+
+        let enabled = create_temporary_config(
+            "titlebar-background-enabled",
+            r#"
+            [window]
+            extend-terminal-background-into-titlebar = true
+        "#,
+        );
+        assert!(enabled.window.extend_terminal_background_into_titlebar);
     }
 
     #[test]

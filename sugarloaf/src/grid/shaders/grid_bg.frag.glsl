@@ -11,8 +11,8 @@
 // Metal `Uniforms` struct in grid.metal — std140 layout naturally
 // matches the hand-packed byte layout used over there.
 
-// `Uniforms` mirrors `GridUniforms` (144B + pad to 160B = 10 × vec4
-// blocks under std140). See cell.rs for offsets / sizes; the fields
+// `Uniforms` mirrors `GridUniforms` (176B = 11 × vec4 blocks under
+// std140). See cell.rs for offsets / sizes; the fields
 // here are listed in the same order.
 layout(set = 0, binding = 0, std140) uniform Uniforms {
     mat4 projection;        // offset   0
@@ -27,6 +27,7 @@ layout(set = 0, binding = 0, std140) uniform Uniforms {
     uint flags;             // offset 148
     uint padding_extend;    // offset 152
     uint input_colorspace;  // offset 156
+    vec4 panel_clip;        // offset 160  (top, right, bottom, left)
 } uniforms;
 
 // `CellBg` is 4 bytes (uchar4 rgba) in cell.rs. We expose the storage
@@ -85,6 +86,16 @@ vec3 grid_prepare_output_rgb(vec3 srgb, uint input_colorspace) {
 }
 
 void main() {
+    // Keep this fullscreen pass inside the panel that owns the grid.
+    if (gl_FragCoord.x < uniforms.panel_clip.w
+        || gl_FragCoord.x >= uniforms.panel_clip.y
+        || gl_FragCoord.y < uniforms.panel_clip.x
+        || gl_FragCoord.y >= uniforms.panel_clip.z)
+    {
+        out_color = vec4(0.0);
+        return;
+    }
+
     // `gl_FragCoord.xy` is the pixel center in framebuffer pixels.
     // Locate the owning grid cell relative to the grid origin
     // (top-left = grid_padding.w / .x).

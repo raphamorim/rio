@@ -14,7 +14,7 @@
 // come in already sRGB-encoded from the CPU).
 //
 // Bindings:
-// @group(0) @binding(0) Uniforms (140+4 = 144 bytes)
+// @group(0) @binding(0) Uniforms (176 bytes)
 // @group(0) @binding(1) CellBg[] (cols * rows entries)
 //
 // Must match `WgpuGridRenderer`'s bind group layout in
@@ -33,6 +33,7 @@ struct Uniforms {
     flags:            u32,           //       148
     padding_extend:   u32,           //       152
     input_colorspace: u32,           //       156
+    panel_clip:       vec4<f32>,     //       160
 };
 
 // Color space / transfer curve helpers. Matrices match the Metal
@@ -124,6 +125,15 @@ fn load_cell_bg(idx: u32) -> vec4<f32> {
 
 @fragment
 fn grid_bg_fragment(in: VsOut) -> @location(0) vec4<f32> {
+ // Keep this fullscreen pass inside the panel that owns the grid.
+ // Bounds are (top, right, bottom, left) in physical pixels.
+    if (in.position.x < uniforms.panel_clip.w
+        || in.position.x >= uniforms.panel_clip.y
+        || in.position.y < uniforms.panel_clip.x
+        || in.position.y >= uniforms.panel_clip.z) {
+        return vec4<f32>(0.0);
+    }
+
  // `grid_padding` is (top, right, bottom, left).
  // Use .w (left) + .x (top) to find the grid origin, same as Metal port.
     let cell_fx = (in.position.xy - vec2<f32>(uniforms.grid_padding.w, uniforms.grid_padding.x))
@@ -309,4 +319,3 @@ fn grid_text_fragment(in: TextVsOut) -> @location(0) vec4<f32> {
         return textureLoad(atlas_color, ic, 0);
     }
 }
-

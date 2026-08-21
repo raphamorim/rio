@@ -827,6 +827,11 @@ impl Sugarloaf<'_> {
         self.state.style.scale_factor
     }
 
+    #[cfg(target_os = "macos")]
+    pub fn wait_for_gpu_idle(&self) {
+        self.renderer.wait_for_gpu_idle();
+    }
+
     #[inline]
     pub fn resize(&mut self, width: u32, height: u32) {
         self.ctx.resize(width, height);
