@@ -8,6 +8,7 @@ use std::io::{self};
 use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::process::CommandExt;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc::TryRecvError;
 
@@ -254,16 +255,21 @@ pub fn win32_string<S: AsRef<OsStr> + ?Sized>(value: &S) -> Vec<u16> {
     OsStr::new(value).encode_wide().chain(once(0)).collect()
 }
 
-pub fn spawn_daemon<I, S>(program: &str, args: I) -> io::Result<()>
+pub fn spawn_daemon<I, S>(program: &str, args: I, cwd: Option<&Path>) -> io::Result<()>
 where
     I: IntoIterator<Item = S> + Copy,
     S: AsRef<OsStr>,
 {
-    Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    command
         .creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
         .spawn()
         .map(|_| ())
