@@ -1,4 +1,4 @@
-use rio_backend::config::hints::Hint;
+use rio_backend::config::hints::{hint_key_matches, Hint};
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::crosswords::pos::{Column, Line, Pos};
 use rio_backend::crosswords::square::Wide;
@@ -117,7 +117,7 @@ impl HintState {
         &mut self,
         term: &rio_backend::crosswords::Crosswords<T>,
         c: char,
-    ) -> Option<HintMatch> {
+    ) -> Option<(HintMatch, bool)> {
         match c {
             // Use backspace to remove the last character pressed
             '\x08' | '\x1f' => {
@@ -134,29 +134,38 @@ impl HintState {
             _ => (),
         }
 
-        let hint = self.active_hint.as_ref()?;
+        self.select_key(c)
+    }
 
-        // Get visible labels (labels filtered by keys pressed so far)
-        let visible_labels = self.visible_labels();
+    fn select_key(&mut self, c: char) -> Option<(HintMatch, bool)> {
+        let persist = self.active_hint.as_ref()?.persist;
 
-        // Find the last label starting with the input character
-        let mut matching_labels = visible_labels.iter().rev();
-        let (index, remaining_label) = matching_labels
-            .find(|(_, remaining)| !remaining.is_empty() && remaining[0] == c)?;
+        let (index, remaining_label) =
+            self.visible_labels().rev().find(|(_, label)| {
+                label
+                    .first()
+                    .is_some_and(|&label| hint_key_matches(label, c))
+            })?;
 
         // Check if this completes the label (only one character remaining)
         if remaining_label.len() == 1 {
-            let hint_match = self.matches.get(*index)?.clone();
-            let hint_config = hint.clone();
+            let hint_match = self.matches.get(index)?.clone();
+            let label = &self.labels[index];
+            let paste = label
+                .iter()
+                .zip(self.keys.iter().copied().chain([c]))
+                .filter(|(label, _)| label.is_lowercase())
+                .all(|(&label, input)| label != input && hint_key_matches(label, input))
+                && label.iter().any(|label| label.is_lowercase());
 
             // Exit hint mode unless it requires explicit dismissal
-            if hint_config.persist {
+            if persist {
                 self.keys.clear();
             } else {
                 self.stop();
             }
 
-            Some(hint_match)
+            Some((hint_match, paste))
         } else {
             // Store character to preserve the selection
             self.keys.push(c);
@@ -176,29 +185,19 @@ impl HintState {
     }
 
     /// Get visible labels (filtered by current input)
-    pub fn visible_labels(&self) -> Vec<(usize, Vec<char>)> {
+    pub fn visible_labels(&self) -> impl DoubleEndedIterator<Item = (usize, &[char])> {
         let keys_len = self.keys.len();
         self.labels
             .iter()
             .enumerate()
-            .filter_map(|(i, label)| {
-                if label.len() >= keys_len && label[..keys_len] == self.keys[..] {
-                    let remaining: Vec<char> = label[keys_len..].to_vec();
-                    Some((i, remaining))
-                } else {
-                    None
-                }
+            .filter_map(move |(i, label)| {
+                (label.len() >= keys_len
+                    && label
+                        .iter()
+                        .zip(&self.keys)
+                        .all(|(&label, &input)| hint_key_matches(label, input)))
+                .then(|| (i, &label[keys_len..]))
             })
-            .collect()
-    }
-
-    /// Update the alphabet used for hint labels
-    #[allow(dead_code)]
-    pub fn update_alphabet(&mut self, alphabet: &str) {
-        if self.alphabet != alphabet {
-            self.alphabet = alphabet.to_string();
-            self.keys.clear();
-        }
     }
 
     // Private helper methods
@@ -760,6 +759,70 @@ mod tests {
     use super::*;
     use rio_backend::config::hints::{HintAction, HintInternalAction};
 
+    fn copy_hint(persist: bool) -> Rc<Hint> {
+        Rc::new(Hint {
+            regex: Some("test".to_string()),
+            hyperlinks: false,
+            post_processing: true,
+            persist,
+            action: HintAction::Action {
+                action: HintInternalAction::Copy,
+            },
+            mouse: Default::default(),
+            binding: None,
+        })
+    }
+
+    fn state_with_label(label: &str, persist: bool) -> HintState {
+        let hint = copy_hint(persist);
+        let mut state = HintState::new(label.to_string());
+        state.start(hint.clone());
+        state.labels = vec![label.chars().collect()];
+        state.matches = vec![HintMatch {
+            text: "test".to_string(),
+            start: Pos::new(Line(0), Column(0)),
+            end: Pos::new(Line(0), Column(3)),
+            hint,
+        }];
+        state
+    }
+
+    #[test]
+    fn hint_selection_case_controls_paste() {
+        for (label, input, expected_paste) in [
+            ("ab", "AB", true),
+            ("ab", "ab", false),
+            ("ab", "Ab", false),
+            ("ab", "aB", false),
+            ("a;", "A;", true),
+            (";;", ";;", false),
+            ("ß", "ẞ", true),
+            ("ς", "Σ", true),
+        ] {
+            let mut state = state_with_label(label, false);
+            let mut selection = None;
+            for key in input.chars() {
+                selection = state.select_key(key);
+            }
+
+            let (hint_match, paste) = selection.unwrap();
+            assert_eq!(hint_match.text, "test");
+            assert_eq!(paste, expected_paste, "label {label:?}, input {input:?}");
+            assert!(!state.is_active());
+        }
+    }
+
+    #[test]
+    fn persistent_hint_remains_active_after_uppercase_selection() {
+        let mut state = state_with_label("ab", true);
+
+        assert!(state.select_key('A').is_none());
+        let (_, paste) = state.select_key('B').unwrap();
+        assert!(paste);
+        assert!(state.is_active());
+        assert!(state.keys.is_empty());
+    }
+
     #[test]
     fn test_label_generator() {
         let mut gen = LabelGenerator::new("abc");
@@ -777,19 +840,7 @@ mod tests {
         let mut state = HintState::new("abc".to_string());
         assert!(!state.is_active());
 
-        let hint = Rc::new(Hint {
-            regex: Some("test".to_string()),
-            hyperlinks: false,
-            post_processing: true,
-            persist: false,
-            action: HintAction::Action {
-                action: HintInternalAction::Copy,
-            },
-            mouse: Default::default(),
-            binding: None,
-        });
-
-        state.start(hint);
+        state.start(copy_hint(false));
         assert!(state.is_active());
 
         state.stop();
@@ -802,121 +853,16 @@ mod tests {
         state.labels = vec![vec!['a'], vec!['b'], vec!['a', 'b'], vec!['a', 'c']];
 
         // No input - all labels visible
-        let visible = state.visible_labels();
+        let visible: Vec<_> = state.visible_labels().collect();
         assert_eq!(visible.len(), 4);
 
         // Input "a" - should show labels that start with "a"
         state.keys = vec!['a'];
-        let visible = state.visible_labels();
+        let visible: Vec<_> = state.visible_labels().collect();
         assert_eq!(visible.len(), 3); // "a", "ab", "ac"
-        assert_eq!(visible[0].1, Vec::<char>::new()); // "a" with "a" removed = []
-        assert_eq!(visible[1].1, vec!['b']); // "ab" with "a" removed = ['b']
-        assert_eq!(visible[2].1, vec!['c']); // "ac" with "a" removed = ['c']
-    }
-
-    #[test]
-    fn test_keyboard_input_logic() {
-        let mut state = HintState::new("jfkdls".to_string());
-
-        // Simulate having some labels
-        state.labels = vec![
-            vec!['j'], // index 0
-            vec!['f'], // index 1
-            vec!['k'], // index 2
-            vec!['d'], // index 3
-            vec!['l'], // index 4
-            vec!['s'], // index 5
-        ];
-
-        // Simulate having matches (we'll use dummy matches)
-        state.matches = vec![
-            HintMatch {
-                text: "match0".to_string(),
-                start: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(0),
-                ),
-                end: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(5),
-                ),
-                hint: Rc::new(Hint {
-                    regex: Some("test".to_string()),
-                    hyperlinks: false,
-                    post_processing: true,
-                    persist: false,
-                    action: HintAction::Action {
-                        action: HintInternalAction::Copy,
-                    },
-                    mouse: Default::default(),
-                    binding: None,
-                }),
-            },
-            HintMatch {
-                text: "match1".to_string(),
-                start: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(10),
-                ),
-                end: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(15),
-                ),
-                hint: Rc::new(Hint {
-                    regex: Some("test".to_string()),
-                    hyperlinks: false,
-                    post_processing: true,
-                    persist: false,
-                    action: HintAction::Action {
-                        action: HintInternalAction::Copy,
-                    },
-                    mouse: Default::default(),
-                    binding: None,
-                }),
-            },
-        ];
-
-        let hint = Rc::new(Hint {
-            regex: Some("test".to_string()),
-            hyperlinks: false,
-            post_processing: true,
-            persist: false,
-            action: HintAction::Action {
-                action: HintInternalAction::Copy,
-            },
-            mouse: Default::default(),
-            binding: None,
-        });
-
-        state.active_hint = Some(hint);
-
-        // Test keyboard input logic without needing a terminal
-        // Test that 'j' should match the first label
-        let mut test_keys = state.keys.clone();
-        test_keys.push('j');
-
-        let mut matching_indices = Vec::new();
-        for (i, label) in state.labels.iter().enumerate() {
-            if label.len() >= test_keys.len() && label[..test_keys.len()] == test_keys[..]
-            {
-                matching_indices.push(i);
-            }
-        }
-
-        assert!(
-            !matching_indices.is_empty(),
-            "Should find matching labels for 'j'"
-        );
-        assert_eq!(matching_indices, vec![0], "Should match index 0 for 'j'");
-
-        // Test that the label should be completed (single character)
-        let index = *matching_indices.last().unwrap();
-        let label = &state.labels[index];
-        assert_eq!(
-            label.len(),
-            test_keys.len(),
-            "Label should be completed with single character"
-        );
+        assert!(visible[0].1.is_empty()); // "a" with "a" removed = []
+        assert_eq!(visible[1].1, ['b']); // "ab" with "a" removed = ['b']
+        assert_eq!(visible[2].1, ['c']); // "ac" with "a" removed = ['c']
     }
 
     #[test]

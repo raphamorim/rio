@@ -785,13 +785,11 @@ impl Screen<'_> {
             let text = key.text_with_all_modifiers().unwrap_or_default();
             for character in text.chars() {
                 let terminal = self.context_manager.current().terminal.lock();
-                if let Some(hint_match) =
+                if let Some((hint_match, paste)) =
                     self.hint_state.keyboard_input(&*terminal, character)
                 {
                     drop(terminal);
-                    self.execute_hint_action(&hint_match, clipboard);
-                    // Stop hint mode and update state with proper damage tracking
-                    self.hint_state.stop();
+                    self.execute_hint_action(&hint_match, clipboard, paste);
                     self.update_hint_state();
                     self.mark_dirty();
                     return;
@@ -2314,7 +2312,7 @@ impl Screen<'_> {
         // (Copy) would otherwise leave the underline painted until
         // unrelated output touches those rows.
         self.clear_highlighted_hint();
-        self.execute_hint_action(&latched, clipboard);
+        self.execute_hint_action(&latched, clipboard, false);
     }
 
     /// Hand `target` to the platform's default handler.
@@ -4362,16 +4360,15 @@ impl Screen<'_> {
                 // frame and only dirties cursor buffers on
                 // change — do NOT clear the slots beforehand,
                 // that would dirty them every frame.
-                let render_style = rio_grid::cursor_render_style(
-                    rio_grid::CursorRenderInputs {
+                let render_style =
+                    rio_grid::cursor_render_style(rio_grid::CursorRenderInputs {
                         visible: p.cursor_visible,
                         focused: p.is_active && self.renderer.is_window_focused,
                         blink_visible: p.cursor_blink_visible,
                         blinking: p.cursor_blinking,
                         preedit: p.cursor_preedit,
                         shape: p.cursor_shape,
-                    },
-                );
+                    });
                 let mut block_cursor: Option<rio_backend::sugarloaf::grid::CellText> =
                     None;
                 let mut tail_cursor: Option<rio_backend::sugarloaf::grid::CellText> =
@@ -4425,18 +4422,21 @@ impl Screen<'_> {
                 // underline / hollow) draw via the sprite emitted
                 // above; their bg/text stays untouched. Same gate as
                 // .
-                let (cursor_pos, cursor_col_u, cursor_bg_u) = if matches!(
-                    render_style,
-                    Some(rio_grid::CursorRenderStyle::Block)
-                ) {
-                    (
-                        [p.cursor_col as u32, p.cursor_row as u32],
-                        [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
-                        [p.cursor_color[0], p.cursor_color[1], p.cursor_color[2], 1.0],
-                    )
-                } else {
-                    ([u32::MAX; 2], [0.0; 4], [0.0; 4])
-                };
+                let (cursor_pos, cursor_col_u, cursor_bg_u) =
+                    if matches!(render_style, Some(rio_grid::CursorRenderStyle::Block)) {
+                        (
+                            [p.cursor_col as u32, p.cursor_row as u32],
+                            [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
+                            [
+                                p.cursor_color[0],
+                                p.cursor_color[1],
+                                p.cursor_color[2],
+                                1.0,
+                            ],
+                        )
+                    } else {
+                        ([u32::MAX; 2], [0.0; 4], [0.0; 4])
+                    };
 
                 let uniforms = rio_backend::sugarloaf::grid::GridUniforms {
                     projection:
@@ -4635,11 +4635,9 @@ impl Screen<'_> {
     #[allow(dead_code)]
     pub fn hint_input(&mut self, c: char, clipboard: &mut Clipboard) {
         let terminal = self.context_manager.current().terminal.lock();
-        if let Some(hint_match) = self.hint_state.keyboard_input(&*terminal, c) {
+        if let Some((hint_match, paste)) = self.hint_state.keyboard_input(&*terminal, c) {
             drop(terminal);
-            self.execute_hint_action(&hint_match, clipboard);
-            // Stop hint mode and update state with proper damage tracking
-            self.hint_state.stop();
+            self.execute_hint_action(&hint_match, clipboard, paste);
             self.update_hint_state();
         } else {
             drop(terminal);
@@ -4688,6 +4686,7 @@ impl Screen<'_> {
         &mut self,
         hint_match: &crate::hints::HintMatch,
         clipboard: &mut Clipboard,
+        paste: bool,
     ) {
         use rio_backend::config::hints::{HintAction, HintCommand, HintInternalAction};
 
@@ -4695,6 +4694,9 @@ impl Screen<'_> {
             HintAction::Action { action } => match action {
                 HintInternalAction::Copy => {
                     clipboard.set(ClipboardType::Clipboard, hint_match.text.clone());
+                    if paste {
+                        self.paste(&hint_match.text, true);
+                    }
                 }
                 HintInternalAction::Paste => {
                     self.paste(&hint_match.text, true);
