@@ -132,7 +132,6 @@ const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 pub struct ContextManager<T: EventListener> {
     contexts: SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]>,
     current_index: usize,
-    current_route: usize,
     #[allow(unused)]
     capacity: usize,
     event_proxy: T,
@@ -141,12 +140,13 @@ pub struct ContextManager<T: EventListener> {
     last_title_update: Option<Instant>,
 }
 
-pub fn create_dead_context<T: rio_backend::event::EventListener>(
+fn create_dead_context<T: rio_backend::event::EventListener>(
     event_proxy: T,
     window_id: WindowId,
     route_id: usize,
     rich_text_id: usize,
     dimension: ContextDimension,
+    title_template: &str,
 ) -> Context<T> {
     let terminal = Crosswords::new(
         dimension,
@@ -160,7 +160,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
     let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
     let (sender, _receiver) = corcovado::channel::channel();
 
-    Context {
+    let mut context = Context {
         route_id,
         #[cfg(not(target_os = "windows"))]
         main_fd: Arc::new(-1),
@@ -174,7 +174,13 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         title: ContextTitle::default(),
         ime: Ime::new(),
         _io_thread: None,
-    }
+    };
+    refresh_title(&mut context, title_template);
+    context
+}
+
+fn refresh_title<T: EventListener>(context: &mut Context<T>, template: &str) {
+    context.title.content = update_title(template, context);
 }
 
 #[cfg(test)]
@@ -235,6 +241,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 route_id,
                 rich_text_id,
                 dimension,
+                &config.title.content,
             ));
         }
 
@@ -334,7 +341,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let messenger = Messenger::new(channel);
 
-        Ok(Context {
+        let mut context = Context {
             route_id,
             #[cfg(not(target_os = "windows"))]
             main_fd,
@@ -348,7 +355,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title: ContextTitle::default(),
             ime: Ime::new(),
             _io_thread: io_thread,
-        })
+        };
+        refresh_title(&mut context, &config.title.content);
+        Ok(context)
     }
 
     #[inline]
@@ -392,6 +401,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     route_id,
                     0,
                     ContextDimension::default(),
+                    &ctx_config.title.content,
                 )
             }
         };
@@ -413,7 +423,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         Ok(ContextManager {
             current_index: 0,
-            current_route: 0,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 scaled_margin,
@@ -451,7 +460,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         Ok(ContextManager {
             current_index: 0,
-            current_route: 0,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 Margin::default(),
@@ -487,14 +495,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         else {
             return self.contexts.is_empty();
         };
+        let requires_change_route = self.current().route_id == route_id;
 
         // A split dies: remove just that panel, keep the tab. When
         // the tab is focused and its focused panel was the one that
         // died, the sibling selection becomes the current route.
         if self.contexts[tab_index].len() > 1 {
             self.contexts[tab_index].remove_by_route(route_id, sugarloaf);
-            if tab_index == self.current_index {
-                self.current_route = self.contexts[tab_index].current().route_id;
+            if tab_index == self.current_index && requires_change_route {
+                self.publish_current_title();
             }
             return false;
         }
@@ -517,6 +526,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         } else {
             self.current_index = new_index;
         }
+        if requires_change_route {
+            self.publish_current_title();
+        }
 
         self.keep_only_active_context_visible(sugarloaf);
         false
@@ -524,8 +536,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn request_render(&mut self) {
-        self.event_proxy
-            .send_event(RioEvent::RenderRoute(self.current_route), self.window_id);
+        self.event_proxy.send_event(
+            RioEvent::RenderRoute(self.current().route_id),
+            self.window_id,
+        );
     }
 
     #[inline]
@@ -533,7 +547,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // PrepareRender will force a render for any route that is focused on window
         // PrepareRenderOnRoute only call render function for specific route ids.
         self.event_proxy.send_event(
-            RioEvent::BlinkCursor(scheduled_time, self.current_route),
+            RioEvent::BlinkCursor(scheduled_time, self.current().route_id),
             self.window_id,
         );
     }
@@ -541,7 +555,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn schedule_render_on_route(&mut self, millis: u64) {
         self.event_proxy.send_event(
-            RioEvent::PrepareRenderOnRoute(millis, self.current_route),
+            RioEvent::PrepareRenderOnRoute(millis, self.current().route_id),
             self.window_id,
         );
     }
@@ -578,7 +592,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let current_route_id = self.current().route_id;
         self.contexts
             .retain(|ctx| ctx.current().route_id == current_route_id);
-        self.current_route = self.contexts[0].current().route_id;
         self.set_current(0);
     }
 
@@ -590,44 +603,58 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn select_next_split(&mut self) {
         self.contexts[self.current_index].select_next_split();
-        self.current_route = self.current().route_id;
+        self.publish_current_title();
     }
 
     #[inline]
     pub fn select_prev_split(&mut self) {
         self.contexts[self.current_index].select_prev_split();
-        self.current_route = self.current().route_id;
+        self.publish_current_title();
     }
 
     #[inline]
     pub fn switch_to_next_split_or_tab(&mut self) {
         if self.contexts[self.current_index].select_next_split_no_loop() {
-            self.current_route = self.current().route_id;
+            self.publish_current_title();
             return;
         }
-        self.switch_to_next();
-        // Make sure first split is selected - get the root key
-        let current_tab = &mut self.contexts[self.current_index];
-        if let Some(root) = current_tab.root {
-            current_tab.current = root;
+
+        if self.config.is_native {
+            self.switch_to_next();
+            return;
         }
-        self.current_route = self.current().route_id;
+
+        let next = (self.current_index + 1) % self.contexts.len();
+        // Make sure first split is selected - get the root key
+        if let Some(root) = self.contexts[next].root {
+            self.contexts[next].current = root;
+        }
+        self.set_current(next);
     }
 
     #[inline]
     pub fn switch_to_prev_split_or_tab(&mut self) {
         if self.contexts[self.current_index].select_prev_split_no_loop() {
-            self.current_route = self.current().route_id;
+            self.publish_current_title();
             return;
         }
-        self.switch_to_prev();
+
+        if self.config.is_native {
+            self.switch_to_prev();
+            return;
+        }
+
+        let previous = self
+            .current_index
+            .checked_sub(1)
+            .unwrap_or(self.contexts.len() - 1);
         // Make sure last split is selected - get the last key in order
-        let current_tab = &mut self.contexts[self.current_index];
+        let current_tab = &mut self.contexts[previous];
         let ordered_keys = current_tab.get_ordered_keys();
         if let Some(&last_key) = ordered_keys.last() {
             current_tab.current = last_key;
         }
-        self.current_route = self.current().route_id;
+        self.set_current(previous);
     }
 
     #[inline]
@@ -714,11 +741,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn select_route_from_current_grid(&mut self) {
-        self.current_route = self.current().route_id;
-    }
-
-    #[inline]
     pub fn len(&self) -> usize {
         self.contexts.len()
     }
@@ -775,19 +797,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         {
             self.last_title_update = Some(Instant::now());
             for grid in self.contexts.iter_mut() {
-                let content = update_title(&self.config.title.content, grid.current());
-
-                self.event_proxy
-                    .send_event(RioEvent::Title(content.to_owned()), self.window_id);
-
+                refresh_title(grid.current_mut(), &self.config.title.content);
                 let extra = if self.config.should_update_title_extra {
                     create_title_extra_from_context(grid.current())
                 } else {
                     None
                 };
-
-                grid.current_mut().title = ContextTitle { content, extra };
+                grid.current_mut().title.extra = extra;
             }
+            self.publish_current_title();
         }
     }
 
@@ -796,19 +814,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         &mut self,
         route_id: usize,
     ) -> Option<&mut ContextGridItem<T>> {
-        // Search every tab, current first: per-route events (damage marks,
-        // titles, color/size requests) must reach panes in background tabs,
-        // otherwise their state is silently dropped until the pane's own
-        // PTY speaks again.
-        let current = self.current_index;
-        if self.contexts[current].get_by_route_id(route_id).is_some() {
-            return self.contexts[current].get_by_route_id(route_id);
-        }
         self.contexts
             .iter_mut()
-            .enumerate()
-            .filter(|(i, _)| *i != current)
-            .find_map(|(_, grid)| grid.get_by_route_id(route_id))
+            .find_map(|grid| grid.get_by_route_id(route_id))
     }
 
     #[inline]
@@ -826,7 +834,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn remove_current_grid(&mut self, sugarloaf: &mut Sugarloaf) {
         self.contexts[self.current_index].remove_current(sugarloaf);
-        self.current_route = self.contexts[self.current_index].current().route_id;
+        self.publish_current_title();
     }
 
     #[inline]
@@ -858,8 +866,33 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn set_current(&mut self, context_id: usize) {
         if context_id < self.contexts.len() {
             self.current_index = context_id;
-            self.current_route = self.current().route_id;
+            self.publish_current_title();
         }
+    }
+
+    pub fn publish_current_title(&mut self) {
+        let current_index = self.current_index;
+        refresh_title(
+            self.contexts[current_index].current_mut(),
+            &self.config.title.content,
+        );
+        let route_id = self.current().route_id;
+        self.event_proxy.send_event(
+            RioEvent::Title(route_id, self.current().title.content.clone()),
+            self.window_id,
+        );
+    }
+
+    pub fn refresh_route_title(&mut self, route_id: usize) -> Option<bool> {
+        let is_current = self.current().route_id == route_id;
+        let template = self.config.title.content.clone();
+        let Some(item) = self.get_by_route_id(route_id) else {
+            tracing::warn!(route_id, "received title for unknown terminal route");
+            return None;
+        };
+
+        refresh_title(item.context_mut(), &template);
+        Some(is_current)
     }
 
     #[inline]
@@ -876,20 +909,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         let index_to_remove = self.current_index;
-        let mut should_set_current = false;
-        if index_to_remove > 1 {
-            self.set_current(self.current_index - 1);
-        } else {
-            should_set_current = true;
-        }
-
         // Remove all rich text from the grid before removing the context
         self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
         self.contexts.remove(index_to_remove);
 
-        if should_set_current {
-            self.set_current(0);
-        }
+        self.current_index = self.current_index.saturating_sub(1);
+        self.publish_current_title();
 
         self.keep_only_active_context_visible(sugarloaf);
     }
@@ -901,7 +926,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn current_route(&self) -> usize {
-        self.current_route
+        self.current().route_id
     }
 
     #[inline]
@@ -922,13 +947,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        if self.contexts.len() - 1 == self.current_index {
-            self.current_index = 0;
+        let next = if self.contexts.len() - 1 == self.current_index {
+            0
         } else {
-            self.current_index += 1;
-        }
-
-        self.current_route = self.current().route_id;
+            self.current_index + 1
+        };
+        self.set_current(next);
     }
 
     #[inline]
@@ -939,13 +963,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        if self.current_index == 0 {
-            self.current_index = self.contexts.len() - 1;
+        let previous = if self.current_index == 0 {
+            self.contexts.len() - 1
         } else {
-            self.current_index -= 1;
-        }
-
-        self.current_route = self.current().route_id;
+            self.current_index - 1
+        };
+        self.set_current(previous);
     }
 
     #[inline]
@@ -1036,14 +1059,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &cloned_config,
         ) {
             Ok(new_context) => {
-                let new_route_id = new_context.route_id;
                 if split_down {
                     self.contexts[self.current_index].split_down(new_context, sugarloaf);
                 } else {
                     self.contexts[self.current_index].split_right(new_context, sugarloaf);
                 }
 
-                self.current_route = new_route_id;
+                self.publish_current_title();
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1099,14 +1121,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &context_manager_config,
         ) {
             Ok(new_context) => {
-                let new_route_id = new_context.route_id;
                 if split_down {
                     self.contexts[self.current_index].split_down(new_context, sugarloaf);
                 } else {
                     self.contexts[self.current_index].split_right(new_context, sugarloaf);
                 }
 
-                self.current_route = new_route_id;
+                self.publish_current_title();
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1182,8 +1203,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         self.config.panel,
                     ));
                     if redirect {
-                        self.current_index = last_index;
-                        self.current_route = self.current().route_id;
+                        self.set_current(last_index);
                     }
                 }
                 Err(..) => {
@@ -1258,6 +1278,18 @@ pub fn process_open_url(
 pub mod test {
     use super::*;
     use crate::event::VoidListener;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct TitleListener(Arc<Mutex<Vec<(usize, String)>>>);
+
+    impl EventListener for TitleListener {
+        fn send_event(&self, event: RioEvent, _id: WindowId) {
+            if let RioEvent::Title(route_id, title) = event {
+                self.0.lock().unwrap().push((route_id, title));
+            }
+        }
+    }
 
     #[test]
     fn test_capacity() {
@@ -1357,8 +1389,64 @@ pub mod test {
         assert_eq!(context_manager.current_index, 3);
     }
 
+    #[test]
+    fn update_titles_emits_only_the_current_tab() {
+        let listener = TitleListener::default();
+        let events = Arc::clone(&listener.0);
+        let mut manager =
+            ContextManager::start_with_capacity(3, listener, WindowId::from(0)).unwrap();
+        manager.add_context(true, 0);
+        manager.config.title.content = "{{columns}}".into();
+        manager.contexts[0].current_mut().dimension.columns = 80;
+        manager.contexts[1].current_mut().dimension.columns = 120;
+        events.lock().unwrap().clear();
+
+        manager.update_titles();
+
+        assert_eq!(manager.title(0).unwrap().content, "80");
+        assert_eq!(manager.title(1).unwrap().content, "120");
+        assert_eq!(
+            *events.lock().unwrap(),
+            [(manager.current().route_id, "120".into())]
+        );
+    }
+
+    #[test]
+    fn switching_or_reselecting_tabs_replays_the_cached_title() {
+        let listener = TitleListener::default();
+        let events = Arc::clone(&listener.0);
+        let mut manager =
+            ContextManager::start_with_capacity(2, listener, WindowId::from(0)).unwrap();
+        manager.add_context(false, 0);
+        manager.config.title.content = "recomputed {{title}}".into();
+        let first_route = manager.contexts[0].current().route_id;
+        let second_route = manager.contexts[1].current().route_id;
+
+        manager.contexts[0].current().terminal.lock().title = "first".into();
+        manager.contexts[1].current().terminal.lock().title = "second".into();
+        assert_eq!(manager.refresh_route_title(first_route), Some(true));
+        assert_eq!(manager.refresh_route_title(second_route), Some(false));
+        events.lock().unwrap().clear();
+
+        manager.switch_to_next();
+        manager.switch_to_prev();
+        manager.set_current(0);
+
+        assert_eq!(manager.current_index(), 0);
+        assert_eq!(
+            *events.lock().unwrap(),
+            [
+                (second_route, "recomputed second".into()),
+                (first_route, "recomputed first".into()),
+                (first_route, "recomputed first".into()),
+            ]
+        );
+    }
+
     fn set_tab_title(cm: &mut ContextManager<VoidListener>, index: usize, content: &str) {
-        cm.contexts[index].current_mut().title.content = content.to_string();
+        let context = cm.contexts[index].current_mut();
+        context.terminal.lock().title = content.to_string();
+        context.title.content = content.to_string();
     }
 
     fn tab_titles(cm: &ContextManager<VoidListener>) -> Vec<String> {

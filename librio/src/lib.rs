@@ -135,10 +135,10 @@ pub enum Action {
 /// nothing rather than forcing unsafe impls on the embedder.
 #[cfg(not(target_arch = "wasm32"))]
 pub trait MaybeSendSync: Send + Sync {}
-#[cfg(not(target_arch = "wasm32"))]
-impl<T: Send + Sync> MaybeSendSync for T {}
 #[cfg(target_arch = "wasm32")]
 pub trait MaybeSendSync {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Send + Sync> MaybeSendSync for T {}
 #[cfg(target_arch = "wasm32")]
 impl<T> MaybeSendSync for T {}
 
@@ -170,21 +170,12 @@ impl Listener {
             | RioEvent::RenderRoute(_) => {
                 self.delegate.wakeup(self.surface_id);
             }
-            RioEvent::Title(title) => {
+            RioEvent::Title(_, title) => {
                 self.delegate.action(
                     self.surface_id,
                     Action::SetTitle {
                         title,
                         subtitle: None,
-                    },
-                );
-            }
-            RioEvent::TitleWithSubtitle(title, subtitle) => {
-                self.delegate.action(
-                    self.surface_id,
-                    Action::SetTitle {
-                        title,
-                        subtitle: Some(subtitle),
                     },
                 );
             }
