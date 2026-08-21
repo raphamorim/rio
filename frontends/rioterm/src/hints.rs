@@ -77,6 +77,25 @@ impl HintState {
         &mut self,
         term: &rio_backend::crosswords::Crosswords<T>,
     ) {
+        self.rebuild_matches(term);
+        if self.matches.is_empty() {
+            self.stop();
+        }
+    }
+
+    /// Refresh matches without leaving hint mode when none are visible.
+    pub(crate) fn refresh_matches<T: EventListener>(
+        &mut self,
+        term: &rio_backend::crosswords::Crosswords<T>,
+    ) {
+        self.keys.clear();
+        self.rebuild_matches(term);
+    }
+
+    fn rebuild_matches<T: EventListener>(
+        &mut self,
+        term: &rio_backend::crosswords::Crosswords<T>,
+    ) {
         self.matches.clear();
 
         let hint = match &self.active_hint {
@@ -98,9 +117,8 @@ impl HintState {
             self.find_hyperlink_matches(term, hint.clone());
         }
 
-        // Cancel hint mode if no matches found
         if self.matches.is_empty() {
-            self.stop();
+            self.labels.clear();
             return;
         }
 
@@ -217,9 +235,6 @@ impl HintState {
         // Scan each visible line for matches
         for line_idx in 0..visible_lines {
             let line = Line(line_idx as i32 - display_offset as i32);
-            if line < Line(0) || line.0 >= grid.total_lines() as i32 {
-                continue;
-            }
 
             // Extract text from the line
             let line_text = self.extract_line_text(term, line);
@@ -268,9 +283,6 @@ impl HintState {
 
         for line_idx in 0..visible_lines {
             let line = Line(line_idx as i32 - display_offset as i32);
-            if line < Line(0) || line.0 >= grid.total_lines() as i32 {
-                continue;
-            }
 
             let mut col = 0usize;
             let cols = grid.columns();
@@ -760,6 +772,20 @@ mod tests {
     use super::*;
     use rio_backend::config::hints::{HintAction, HintInternalAction};
 
+    fn test_hint() -> Rc<Hint> {
+        Rc::new(Hint {
+            regex: Some("test".to_string()),
+            hyperlinks: false,
+            post_processing: true,
+            persist: false,
+            action: HintAction::Action {
+                action: HintInternalAction::Copy,
+            },
+            mouse: Default::default(),
+            binding: None,
+        })
+    }
+
     #[test]
     fn test_label_generator() {
         let mut gen = LabelGenerator::new("abc");
@@ -777,23 +803,32 @@ mod tests {
         let mut state = HintState::new("abc".to_string());
         assert!(!state.is_active());
 
-        let hint = Rc::new(Hint {
-            regex: Some("test".to_string()),
-            hyperlinks: false,
-            post_processing: true,
-            persist: false,
-            action: HintAction::Action {
-                action: HintInternalAction::Copy,
-            },
-            mouse: Default::default(),
-            binding: None,
-        });
-
-        state.start(hint);
+        state.start(test_hint());
         assert!(state.is_active());
 
         state.stop();
         assert!(!state.is_active());
+    }
+
+    #[test]
+    fn scrolling_keeps_hint_mode_active_until_matches_reappear() {
+        let mut term = mock_term("test\nx");
+        let screen_lines = term.grid.screen_lines();
+        term.grid
+            .scroll_up(&(Line(0)..Line(screen_lines as i32)), 1);
+
+        let mut state = HintState::new("ab".to_string());
+        state.start(test_hint());
+
+        state.refresh_matches(&term);
+        assert!(state.is_active());
+        assert!(state.matches().is_empty());
+
+        term.scroll_display(rio_backend::crosswords::grid::Scroll::Delta(1));
+        state.refresh_matches(&term);
+        assert!(state.is_active());
+        assert_eq!(state.matches().len(), 1);
+        assert_eq!(state.visible_labels().len(), 1);
     }
 
     #[test]
@@ -840,17 +875,7 @@ mod tests {
                     rio_backend::crosswords::pos::Line(0),
                     rio_backend::crosswords::pos::Column(5),
                 ),
-                hint: Rc::new(Hint {
-                    regex: Some("test".to_string()),
-                    hyperlinks: false,
-                    post_processing: true,
-                    persist: false,
-                    action: HintAction::Action {
-                        action: HintInternalAction::Copy,
-                    },
-                    mouse: Default::default(),
-                    binding: None,
-                }),
+                hint: test_hint(),
             },
             HintMatch {
                 text: "match1".to_string(),
@@ -862,33 +887,11 @@ mod tests {
                     rio_backend::crosswords::pos::Line(0),
                     rio_backend::crosswords::pos::Column(15),
                 ),
-                hint: Rc::new(Hint {
-                    regex: Some("test".to_string()),
-                    hyperlinks: false,
-                    post_processing: true,
-                    persist: false,
-                    action: HintAction::Action {
-                        action: HintInternalAction::Copy,
-                    },
-                    mouse: Default::default(),
-                    binding: None,
-                }),
+                hint: test_hint(),
             },
         ];
 
-        let hint = Rc::new(Hint {
-            regex: Some("test".to_string()),
-            hyperlinks: false,
-            post_processing: true,
-            persist: false,
-            action: HintAction::Action {
-                action: HintInternalAction::Copy,
-            },
-            mouse: Default::default(),
-            binding: None,
-        });
-
-        state.active_hint = Some(hint);
+        state.active_hint = Some(test_hint());
 
         // Test keyboard input logic without needing a terminal
         // Test that 'j' should match the first label
