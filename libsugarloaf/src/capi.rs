@@ -58,6 +58,14 @@ pub struct Sl {
     /// Same, for search highlights: the frame after the matches clear must
     /// repaint to drop the highlight from rows the dirty bits won't flag.
     had_search: bool,
+    /// Padding (physical px) between the drawable edges and the cell grid:
+    /// top, right, bottom, left. Fed into `GridUniforms.grid_padding` by
+    /// `sl_render_surface`; hosts driving `sl_render_grid` directly pass
+    /// their own uniforms and ignore this.
+    grid_padding: [f32; 4],
+    /// Bitmask of edges whose row/column background colors extend into the
+    /// padding band (bit0 left, bit1 right, bit2 up, bit3 down).
+    padding_extend: u32,
 }
 
 /// The selected column interval on visible row `y`, from the render state's
@@ -207,6 +215,8 @@ pub unsafe extern "C" fn sl_new(
             palette: HostPalette::new(),
             had_selection: false,
             had_search: false,
+            grid_padding: [0.0; 4],
+            padding_extend: 0,
         }))
     }))
     .unwrap_or(std::ptr::null_mut())
@@ -462,6 +472,26 @@ pub unsafe extern "C" fn sl_set_background_color(
             b: b as f64,
             a: a as f64,
         }));
+    }
+}
+
+/// Padding (physical px) between the drawable edges and the cell grid:
+/// top, right, bottom, left. `extend` is a bitmask of edges whose
+/// row/column background colors extend into the padding band (bit0 left,
+/// bit1 right, bit2 up, bit3 down). Applies to `sl_render_surface`; the
+/// low-level `sl_render_grid` path takes padding through its uniforms.
+#[no_mangle]
+pub unsafe extern "C" fn sl_set_grid_padding(
+    sl: *mut Sl,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    left: f32,
+    extend: u32,
+) {
+    if let Some(sl) = sl.as_mut() {
+        sl.grid_padding = [top, right, bottom, left];
+        sl.padding_extend = extend;
     }
 }
 
@@ -1273,7 +1303,7 @@ pub unsafe extern "C" fn sl_render_surface(
                 window_size.width,
                 window_size.height,
             ),
-            grid_padding: [0.0, 0.0, 0.0, 0.0],
+            grid_padding: sl.grid_padding,
             cursor_color: cursor_col_u,
             cursor_bg_color: cursor_bg_u,
             cell_size: [cell_w, cell_h],
@@ -1282,7 +1312,7 @@ pub unsafe extern "C" fn sl_render_surface(
             _pad_cursor: [0; 2],
             min_contrast: 0.0,
             flags: 0,
-            padding_extend: 0,
+            padding_extend: sl.padding_extend,
             input_colorspace,
         };
 
@@ -1310,12 +1340,14 @@ pub unsafe extern "C" fn sl_render_surface(
                     ..Default::default()
                 };
                 let text_w = sl.text_mut().measure(preedit, &opts).max(cell_w_l);
-                let grid_right = cols as f32 * cell_w_l;
-                let mut x = cursor_col as f32 * cell_w_l;
+                let pad_left_l = sl.grid_padding[3] / scale_f;
+                let pad_top_l = sl.grid_padding[0] / scale_f;
+                let grid_right = pad_left_l + cols as f32 * cell_w_l;
+                let mut x = pad_left_l + cursor_col as f32 * cell_w_l;
                 if x + text_w > grid_right {
                     x = (grid_right - text_w).max(0.0);
                 }
-                let y = cursor_line as f32 * cell_h_l;
+                let y = pad_top_l + cursor_line as f32 * cell_h_l;
                 sl.rect(None, x, y, text_w, cell_h_l, fg_col, 0.0, 0);
                 let underline_h = (cell_h_l * 0.09).max(1.0);
                 sl.rect(

@@ -173,6 +173,13 @@ void sl_image_set_overlays(sl_sugarloaf_t *sl, const sl_image_overlay_t *overlay
                            size_t len);
 /* Components 0..1. Shown where a cell's bg alpha is 0. */
 void sl_set_background_color(sl_sugarloaf_t *sl, float r, float g, float b, float a);
+/* Padding (physical px) between the drawable edges and the cell grid.
+ * `extend` is a bitmask of edges whose row/column background colors
+ * extend into the padding band: bit0 left, bit1 right, bit2 up, bit3
+ * down. Applies to sl_render_surface; sl_render_grid takes padding
+ * through its uniforms. */
+void sl_set_grid_padding(sl_sugarloaf_t *sl, float top, float right, float bottom,
+                         float left, uint32_t extend);
 void sl_set_window_opaque(sl_sugarloaf_t *sl, bool opaque);
 /* Set the color theme the terminal grid resolves cells against. Takes effect
  * on the next sl_render_surface; mark the grid for a full rebuild so every
