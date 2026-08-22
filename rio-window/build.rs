@@ -47,6 +47,23 @@ fn main() {
     load_app_icon();
 }
 
+#[cfg(target_os = "windows")]
+fn load_app_icon() {
+    let mut res = winres::WindowsResource::new();
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let icon_path = manifest_dir
+        .parent()
+        .expect("rio-window must not be at the filesystem root")
+        .join("misc")
+        .join("windows")
+        .join("rio-2024.ico");
+
+    println!("cargo:rerun-if-changed={}", icon_path.display());
+    res.set_icon(&icon_path.to_string_lossy());
+    res.compile()
+        .expect("Failed to compile Window icon resource");
+}
+
 #[cfg(target_os = "macos")]
 fn generate_dispatch_bindings() {
     use std::{env, path::PathBuf};
@@ -74,12 +91,4 @@ fn generate_dispatch_bindings() {
     bindings
         .write_to_file(out_path.join("dispatch_sys.rs"))
         .expect("couldn't write dispatch bindings");
-}
-
-#[cfg(target_os = "windows")]
-fn load_app_icon() {
-    let mut res = winres::WindowsResource::new();
-    res.set_icon("../misc/windows/rio-2024.ico");
-    res.compile()
-        .expect("Failed to compile Window icon resource");
 }
