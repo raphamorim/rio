@@ -427,3 +427,81 @@ fn grow_reflow_remap_tracks_unmerged_wide_char() {
     assert_eq!(remap.new_pos, vec![0, 1]);
     assert_eq!(grid[Line(1)][Column(0)], wide_cell('W'));
 }
+
+#[test]
+fn extras_sweep_resets_reclaim_cadence() {
+    use crate::crosswords::square::{Extras, Hyperlink};
+
+    let mut table = ExtrasTable::new();
+    for i in 0..EXTRAS_RECLAIM_CADENCE {
+        table.alloc(Extras {
+            zerowidth: Vec::new(),
+            hyperlink: Some(Hyperlink::new(Some(i.to_string()), i.to_string())),
+        });
+    }
+    assert!(table.should_reclaim());
+
+    // A sweep resets the cadence even when every slot stays live, so a
+    // fully-live table can't re-walk the ring on every allocation.
+    let live = vec![u64::MAX; ID_BITSET_WORDS];
+    table.sweep_unmarked(&live);
+    assert!(!table.should_reclaim());
+}
+
+#[test]
+fn style_sweep_marks_cursor_template() {
+    use crate::config::colors::{AnsiColor, NamedColor};
+    use crate::crosswords::style::Style;
+
+    let mut grid: Grid<Square> = Grid::new(4, 4, 10);
+
+    // Intern a style that ends up referenced by nothing once the
+    // template moves on: it must be swept.
+    grid.set_template_style(Style {
+        fg: AnsiColor::Named(NamedColor::Blue),
+        ..Style::default()
+    });
+    grid.sync_template_style();
+    let dead_id = grid.template_style_id();
+
+    // The template's current style is a live root even when no cell
+    // references it.
+    grid.set_template_style(Style {
+        fg: AnsiColor::Named(NamedColor::Red),
+        ..Style::default()
+    });
+    grid.sync_template_style();
+    let live_id = grid.template_style_id();
+
+    grid.reclaim_styles();
+    assert_eq!(
+        grid.style_set.get(live_id).fg,
+        AnsiColor::Named(NamedColor::Red)
+    );
+    assert_eq!(grid.style_set.get(dead_id), Style::default());
+}
+
+#[test]
+fn extras_reclaim_keeps_ids_of_hidden_cached_rows() {
+    use crate::crosswords::square::Extras;
+
+    let mut grid: Grid<Square> = Grid::new(4, 2, 10);
+    let id = grid.alloc_extras(Extras {
+        zerowidth: vec!['\u{301}'],
+        hyperlink: None,
+    });
+    grid[Line(3)][Column(0)].set_extras_id(Some(id));
+    grid[Line(3)].has_extras = true;
+    let dead = grid.alloc_extras(Extras {
+        zerowidth: vec!['\u{302}'],
+        hyperlink: None,
+    });
+
+    // Shrinking with the cursor at the top drops the bottom rows into
+    // Storage's hidden cache; their extras must stay live while the
+    // unreferenced slot is freed.
+    grid.resize(false, 2, 2);
+    grid.reclaim_extras();
+    assert!(grid.extras_table.get(id).is_some());
+    assert!(grid.extras_table.get(dead).is_none());
+}

@@ -377,8 +377,15 @@ pub fn create_termp(utf8: bool) -> libc::termios {
     // reader a ~150-byte sliver through a read+poll round trip each,
     // capping PTY drain throughput at a fraction of what the kernel can
     // move. B230400 saturates the clamp and yields the maximum queue.
+    // Linux ptys size their buffers independently of baud; there the
+    // speed is report-only (stty, ncurses baudrate()), and a zero would
+    // read as "0 baud", so it is set everywhere.
     unsafe {
-        libc::cfsetspeed(&mut term, libc::B230400);
+        if libc::cfsetspeed(&mut term, libc::B230400) != 0 {
+            tracing::warn!(
+                "cfsetspeed(B230400) failed; pty output queue stays at the minimum"
+            );
+        }
     }
 
     term
@@ -1149,5 +1156,21 @@ mod login_argv_tests {
     fn quotes_in_shell_path_are_escaped() {
         let argv = login_argv(false, "rapha", "/tmp/it's a shell", &[]);
         assert_eq!(argv.last().unwrap(), "exec -l '/tmp/it'\\''s a shell'");
+    }
+}
+
+#[cfg(test)]
+mod termp_tests {
+    use super::*;
+
+    // The pty output-queue watermark is derived from the baud rate on
+    // BSD/XNU; a zero speed clamps it to a ~100-byte floor and caps
+    // drain throughput.
+    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[test]
+    fn create_termp_sets_pty_speed() {
+        let term = create_termp(true);
+        assert_eq!(term.c_ospeed, libc::B230400);
+        assert_eq!(term.c_ispeed, libc::B230400);
     }
 }

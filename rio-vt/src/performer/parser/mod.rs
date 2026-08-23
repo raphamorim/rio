@@ -1325,7 +1325,7 @@ fn maximal_subpart(p: &[u8]) -> usize {
 /// Length of `input` excluding any trailing valid-so-far UTF-8 sequence.
 /// Bytes that form an invalid lead (`<C2` or `>F4`) at the tail are NOT
 /// trimmed — they're left in place so the MSP-aware decode loop can
-/// replace them with U+FFFD. Mirrors ghostty's `TrimValidPartialUTF8`.
+/// replace them with U+FFFD.
 fn trim_valid_partial_utf8(input: &[u8]) -> usize {
     if input.is_empty() {
         return 0;
@@ -1700,7 +1700,6 @@ mod tests {
     /// to the per-byte state machine for every chunking of the input:
     /// the same stream is fed whole, byte-at-a-time, and split at
     /// random boundaries, and all three must dispatch the same events.
-    /// (Same discipline as ghostty's "simd matches scalar" test.)
     #[test]
     fn string_state_runs_match_per_byte() {
         let big = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=".repeat(300);
@@ -2174,7 +2173,7 @@ mod tests {
         match &dispatcher.dispatched[0] {
             Sequence::Csi(params, intermediates, ignore, _) => {
                 assert_eq!(params, &[vec![38, 2, 255, 0, 255], vec![1]]);
-                assert_eq!(intermediates, &[]);
+                assert!(intermediates.is_empty());
                 assert!(!ignore);
             }
             _ => panic!("expected csi sequence"),
@@ -2305,7 +2304,7 @@ mod tests {
         assert_eq!(dispatcher.dispatched.len(), 1);
         match &dispatcher.dispatched[0] {
             Sequence::Csi(params, intermediates, ignore, c) => {
-                assert_eq!(intermediates, &[]);
+                assert!(intermediates.is_empty());
                 assert_eq!(params, &[[0; 32]]);
                 assert_eq!(c, &'x');
                 assert!(ignore);

@@ -953,7 +953,7 @@ pub unsafe extern "C" fn rio_render_state_cell(
         let Some(square) = state.square(line as usize, column as usize) else {
             return empty;
         };
-        let style = state.style_of(square);
+        let style = state.style_at(line as usize, column as usize, square);
         let cluster = if state.cluster_of(square).is_some() {
             RIO_CELL_HAS_CLUSTER
         } else {
@@ -1068,7 +1068,7 @@ pub unsafe extern "C" fn rio_render_state_display_offset(
     .unwrap_or(0)
 }
 
-/// Symbols-only Nerd Font, embedded the way libghostty embeds it, so every
+/// Symbols-only Nerd Font, embedded in the library itself, so every
 /// embedder can offer icon glyphs (Powerline, Font Awesome, Material, ...)
 /// without shipping a font file or requiring one installed. Pair with
 /// [`rio_nerd_constrain`] for patched-font-quality scaling.
@@ -1095,7 +1095,7 @@ pub struct rio_glyph_box_s {
 }
 
 /// Apply the Nerd Fonts patcher's scaling/alignment rules to a glyph
-/// (the same generated table ghostty and sugarloaf use). `glyph` is the
+/// (the same generated table sugarloaf uses). `glyph` is the
 /// glyph's bounding box; `constraint_width` is how many cells are
 /// horizontally free (1 or 2). Writes the adjusted box to `out` and
 /// returns true when the codepoint has a rule; returns false (out

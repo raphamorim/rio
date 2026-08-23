@@ -100,7 +100,7 @@ bitflags! {
         const MOUSE_REPORT_X10        = 1 << 23;
         /// DEC private mode 2027: grapheme cluster processing. Shared
         /// across main/alt screens (the mode lives on the terminal,
-        /// not the grid), matching ghostty and contour.
+        /// not the grid), matching contour.
         const GRAPHEME_CLUSTER        = 1 << 24;
         const MOUSE_MODE = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits() | Self::MOUSE_REPORT_X10.bits();
         const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
@@ -402,8 +402,8 @@ fn version_number(mut version: &str) -> usize {
 
 /// True when (`base`, `vs`) appears in Unicode's `emoji-variation-sequences.txt`,
 /// i.e. `vs` (U+FE0F or U+FE0E) is defined to have an effect on this base.
-/// Equivalent to kitty's `is_emoji_presentation_base` guard and ghostty's
-/// `emoji_vs_base` property — the actual widen/narrow decision is then
+/// Equivalent to kitty's `is_emoji_presentation_base` guard — the
+/// actual widen/narrow decision is then
 /// gated on the current cell's `Wide` state by the callers.
 pub(crate) fn vs_is_valid_base(base: char, vs: char) -> bool {
     use rio_grapheme_width::emoji::Presentation;
@@ -468,8 +468,8 @@ where
 
     /// What DECRQM callers see after a full reset: the
     /// consumer-configured default for grapheme clustering (mode
-    /// 2027). On by default, like ghostty's `grapheme-width-method =
-    /// unicode`; embedders serving legacy wcwidth consumers flip it
+    /// 2027). On by default; embedders serving legacy wcwidth
+    /// consumers flip it
     /// via [`set_grapheme_clustering`](Self::set_grapheme_clustering).
     grapheme_clustering_default: bool,
 
@@ -1490,7 +1490,7 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     /// Clear the wide pair that a cell boundary before `col` would
     /// split, plus the cross-row links a mutation at that boundary
-    /// severs. The ghostty model (`Screen.splitCellBoundary`): each
+    /// severs: each
     /// range mutation names the exact seams it cuts, O(1) per seam,
     /// instead of sweeping the row afterwards.
     ///
@@ -1542,7 +1542,7 @@ impl<U: EventListener> Crosswords<U> {
 
         // Interior boundary: splitting between col-1 and col cuts a
         // pair whose lead sits at col-1. Erasing half a wide char
-        // erases the whole char (the xterm/ghostty convention).
+        // erases the whole char (the xterm convention).
         if matches!(self.grid[line][Column(col - 1)].wide(), Wide::Wide) {
             self.clear_pair_preserving_wrapline(line, col - 1, blank);
         }
@@ -1622,8 +1622,8 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Mode-2027 cluster continuation. `true` means `c` was consumed:
     /// appended to the previous cell's cluster (possibly widening it),
-    /// or deliberately ignored (an invalid variation selector, the
-    /// ghostty `.ignore` contract). `false` means a grapheme break:
+    /// or deliberately ignored (an invalid variation
+    /// selector). `false` means a grapheme break:
     /// the caller writes `c` through the normal paths.
     ///
     /// There is no cross-call segmentation state. Any no-break
@@ -1656,7 +1656,7 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // Reconstruct the segmentation state from the cluster itself.
-        // Flat-table hops (ghostty devlog-006): one class lookup per
+        // Flat-table hops: one class lookup per
         // codepoint and one transition index per step, no rule chain.
         let mut prev = class_of(base);
         let mut state = start_state(prev);
@@ -1675,8 +1675,7 @@ impl<U: EventListener> Crosswords<U> {
             return false;
         }
 
-        // Joined. Decide the width effect (ghostty
-        // `graphemeWidthEffect`): variation selectors flip a valid
+        // Joined. Decide the width effect: variation selectors flip a valid
         // base's width and are otherwise ignored outright; any other
         // width-bearing continuation makes the whole cluster wide
         // (the base already contributed one column); zero-width
@@ -1685,8 +1684,7 @@ impl<U: EventListener> Crosswords<U> {
             '\u{FE0F}' => {
                 // A selector modifies the codepoint immediately before
                 // it, so validity is judged against the *last* codepoint
-                // of the cluster, not its base (ghostty checks `prev`
-                // in `graphemeWidthEffect`). The width helpers are
+                // of the cluster, not its base. The width helpers are
                 // no-ops when the cell is already in the target state.
                 if vs_is_valid_base(last_cp, c) {
                     self.widen_prev_cell();
@@ -1783,8 +1781,7 @@ impl<U: EventListener> Crosswords<U> {
         // A one-column grid can never hold a wide pair, and the wrap-for-room
         // branch below cannot create room on it: wrapping lands back on
         // column 0, which is still the last column. Drop the glyph and leave
-        // a blank narrow cell, as ghostty does for the same degenerate size
-        // (`Terminal.zig`, the else branch of the `width == 2` arm), rather
+        // a blank narrow cell, rather
         // than running the Spacer off the end of the row. Embedders are
         // entitled to such a grid: drag-resize and tiling layouts produce
         // them transiently.
@@ -2031,7 +2028,7 @@ impl<U: EventListener> Crosswords<U> {
         if spacer_col >= columns {
             // Base is at the final column → no room for a Spacer on this
             // row. Mirror kitty's `move_widened_char_past_multiline_chars`
-            // (screen.c) and ghostty's wrap branch (Terminal.zig:414): turn
+            // (screen.c): turn
             // the trailing cell into a `LeadingSpacer` (signals "wide char
             // continues on next line"), wrap, and re-place the wide base
             // on the new row, preserving the original cell's style and
@@ -2169,41 +2166,31 @@ impl<U: EventListener> Crosswords<U> {
         &mut self,
         damage: &crate::event::TerminalDamage,
         dst: &mut Vec<Row<Square>>,
-        style_table: &mut Vec<crate::crosswords::style::Style>,
-        style_table_rev: &mut u64,
+        row_styles: &mut Vec<Vec<crate::crosswords::style::Style>>,
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
     ) {
         use crate::event::TerminalDamage;
         let (start, end) = self.visible_line_bounds();
         let count = (end - start) as usize;
 
-        let needs_full = matches!(damage, TerminalDamage::Full) || dst.len() != count;
+        let needs_full = matches!(damage, TerminalDamage::Full)
+            || dst.len() != count
+            || row_styles.len() != count;
 
-        // The style table only changes when a novel style is interned or
-        // a sweep runs, both of which bump the per-instance revision, so
-        // steady-state frames skip the copy. Revisions are NOT unique
-        // across `StyleSet` instances; the copy is unconditional on
-        // full-damage frames instead, and every path that changes which
-        // style set is visible (`swap_alt`, `reset_state`, resize) marks
-        // fully damaged, which makes the revision comparison safe on
-        // every partial frame. This also assumes one snapshot consumer
-        // per terminal, since damage is consumed once.
-        let rev = self.grid.style_set.revision();
-        if needs_full || *style_table_rev != rev {
-            style_table.clear();
-            style_table.extend_from_slice(self.grid.style_set.styles());
-            *style_table_rev = rev;
-        }
-
+        // Styles are resolved to values per copied row, so the snapshot
+        // holds no style ids at all: sweeps reusing ids, table growth,
+        // and grid swaps can't affect rows copied on earlier frames.
         if needs_full {
             dst.clear();
             dst.reserve(count);
+            row_styles.resize_with(count, Vec::new);
             extras.clear();
-            for row_idx in start..end {
+            for (i, row_idx) in (start..end).enumerate() {
                 let src = &self.grid[Line(row_idx)];
                 let mut copied = src.clone();
                 copied.dirty = true;
                 dst.push(copied);
+                self.grid.resolve_row_styles(src, &mut row_styles[i]);
                 self.refresh_row_extras(src, extras);
             }
             for row_idx in start..end {
@@ -2232,6 +2219,7 @@ impl<U: EventListener> Crosswords<U> {
             let src = &self.grid[Line(row_idx)];
             dst[y].copy_from(src);
             dst[y].dirty = true;
+            self.grid.resolve_row_styles(src, &mut row_styles[y]);
             self.refresh_row_extras(src, extras);
         }
         for row_idx in start..end {
@@ -2257,12 +2245,7 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
         for sq in &row.inner {
-            // Bg-only cells reuse the extras_id bits for the bg color;
-            // reading them would insert junk map entries.
-            if sq.is_bg_only() {
-                continue;
-            }
-            if let Some(id) = sq.extras_id() {
+            if let Some(id) = sq.extras_id_checked() {
                 if let Some(live) = self.grid.extras_table.get(id) {
                     extras.insert(id, live.clone());
                 }
@@ -2634,7 +2617,7 @@ impl<U: EventListener> Crosswords<U> {
             }
 
             let c = cell.c();
-            let has_extras = cell.extras_id().is_some();
+            let has_extras = cell.has_extras();
 
             // Buffer blank cells. They only get emitted as real spaces if a
             // non-blank cell follows (on this row or a wrap continuation).
@@ -2649,7 +2632,7 @@ impl<U: EventListener> Crosswords<U> {
             *blank_cells = 0;
 
             text.push(c);
-            if let Some(extras_id) = cell.extras_id() {
+            if let Some(extras_id) = cell.extras_id_checked() {
                 if let Some(extras) = self.grid.extras_table.get(extras_id) {
                     for c in &extras.zerowidth {
                         text.push(*c);
@@ -3292,7 +3275,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.split_wide_seam(line, self.grid.columns(), blank);
         // The last shifted cell lands on the row's final column; if it
         // is a wide lead its spacer will not survive the shift, so
-        // clear the pair up front (ghostty `insertBlanks`).
+        // clear the pair up front.
         if num_cells > 0 {
             let last_src = source.0 + num_cells - 1;
             if matches!(
@@ -3561,8 +3544,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // through to the legacy paths: zero-width codepoints attach
         // wcwidth-style, everything else writes a fresh cell.
         //
-        // Codepoints <= 0xFF never continue a cluster (matching
-        // ghostty; the only UAX29 rule this waives is Prepend x
+        // Codepoints <= 0xFF never continue a cluster (the only
+        // UAX29 rule this waives is Prepend x
         // Latin-1, which the bulk ASCII writer already waives; this
         // keeps scalar and bulk agreeing regardless of how the parser
         // chunks the stream) and are the common case, so that check
@@ -3580,8 +3563,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             // attach. Reaching here means there was no base to join:
             // a column-0 orphan, an empty or bg-only previous cell.
             // Attaching wcwidth-style would contradict the boundary
-            // the mode just computed, so drop the codepoint (matching
-            // ghostty).
+            // the mode just computed, so drop the codepoint.
             if self.mode.contains(Mode::GRAPHEME_CLUSTER) {
                 return;
             }
@@ -3631,8 +3613,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
 
         // Set the per-row kitty placeholder flag so the renderer can
-        // skip the U+10EEEE scan on rows that don't have any. Mirrors
-        // ghostty's `page.zig:1953-1958` approach.
+        // skip the U+10EEEE scan on rows that don't have any.
         if c == crate::ansi::kitty_virtual::PLACEHOLDER {
             let line = self.grid.cursor.pos.row;
             self.grid[line].kitty_virtual_placeholder = true;
@@ -3642,8 +3623,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // wrap-for-room branch below cannot create room on it: wrapping
         // lands back on column 0, still the last column, and the Spacer
         // write runs off the end of the row. Drop the glyph for a blank
-        // narrow cell, matching `write_codepoint_cell` and ghostty on
-        // the same degenerate size.
+        // narrow cell, matching `write_codepoint_cell` on the same
+        // degenerate size.
         let (c, width) = if width == 2 && columns < 2 {
             (' ', 1)
         } else {
@@ -5813,6 +5794,165 @@ mod tests {
         let size = CrosswordsSize::new(4, 4);
         let window_id = crate::event::WindowId::from(0);
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
+    }
+
+    #[test]
+    fn swap_alt_reinterns_cursor_style_into_alt_table() {
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        let mut cw = make_crosswords();
+
+        // Pad the primary table so the carried style's id differs from
+        // what a fresh alt-table intern will assign; a foreign id would
+        // then resolve to the default fallback instead of the carried
+        // style.
+        for r in 1..4 {
+            cw.terminal_attribute(Attr::Background(AnsiColor::Spec(ColorRgb {
+                r,
+                g: 0,
+                b: 0,
+            })));
+            cw.input('x');
+        }
+        let red = AnsiColor::Spec(ColorRgb {
+            r: 200,
+            g: 10,
+            b: 10,
+        });
+        cw.terminal_attribute(Attr::Background(red));
+        cw.input('x');
+
+        cw.swap_alt();
+
+        // The alt cursor template must resolve, in the ALT table, to the
+        // style value carried over from the primary screen.
+        let style = cw.grid.style_of(&cw.grid.cursor.template);
+        assert_eq!(style.bg, red);
+        // And the cleared alt cells were stamped with a local id too.
+        let sq = cw.grid[Line(0)][Column(0)];
+        assert_eq!(cw.grid.style_of(&sq).bg, red);
+    }
+
+    #[test]
+    fn snapshot_resolves_styles_per_row() {
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        use crate::crosswords::style::Style;
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut rows = Vec::new();
+        let mut row_styles = Vec::new();
+        let mut extras = rustc_hash::FxHashMap::default();
+
+        let red = AnsiColor::Spec(ColorRgb { r: 250, g: 0, b: 0 });
+        cw.terminal_attribute(Attr::Background(red));
+        cw.input('x');
+        let damage = cw.peek_damage_event().unwrap();
+        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+        cw.reset_damage();
+        assert_eq!(row_styles.len(), rows.len());
+        assert_eq!(row_styles[0][0].bg, red);
+        assert_eq!(row_styles[0][1].bg, Style::default().bg);
+
+        // Rows copied on earlier frames hold resolved values, so table
+        // mutations between frames cannot retint them: only the row the
+        // new style landed on changes.
+        let blue = AnsiColor::Spec(ColorRgb { r: 0, g: 0, b: 250 });
+        cw.goto(Line(1), Column(0));
+        cw.terminal_attribute(Attr::Background(blue));
+        cw.input('z');
+        let damage = cw.peek_damage_event().unwrap();
+        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+        cw.reset_damage();
+        assert_eq!(row_styles[0][0].bg, red);
+        assert_eq!(row_styles[1][0].bg, blue);
+
+        // An instance switch arrives as Full damage and re-resolves
+        // everything against the newly active grid's table.
+        cw.swap_alt();
+        let damage = cw.peek_damage_event().unwrap();
+        assert!(matches!(damage, TerminalDamage::Full));
+        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+        cw.reset_damage();
+        // The alt screen was cleared with the carried blue bg template.
+        assert_eq!(row_styles[0][0].bg, blue);
+    }
+
+    #[test]
+    fn style_sweep_bounds_table_under_unique_style_churn() {
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        let mut cw = make_crosswords();
+
+        // Overwrite one cell with tens of thousands of distinct styles;
+        // only a handful stay referenced, so the sweep must keep the
+        // table well below the number of styles ever interned.
+        let total = 40_000u32;
+        for i in 0..total {
+            cw.goto(Line(0), Column(0));
+            cw.terminal_attribute(Attr::Background(AnsiColor::Spec(ColorRgb {
+                r: (i & 0xFF) as u8,
+                g: ((i >> 8) & 0xFF) as u8,
+                b: ((i >> 16) & 0xFF) as u8,
+            })));
+            cw.input('x');
+        }
+        assert!(
+            cw.grid.styles().len() < 35_000,
+            "sweep never reclaimed ids: table has {} entries after {} interns",
+            cw.grid.styles().len(),
+            total,
+        );
+
+        // The last style written is still live and resolves correctly.
+        let last = total - 1;
+        let sq = cw.grid[Line(0)][Column(0)];
+        assert_eq!(
+            cw.grid.style_of(&sq).bg,
+            AnsiColor::Spec(ColorRgb {
+                r: (last & 0xFF) as u8,
+                g: ((last >> 8) & 0xFF) as u8,
+                b: ((last >> 16) & 0xFF) as u8,
+            }),
+        );
+    }
+
+    #[test]
+    fn sweep_keeps_styles_of_rows_cached_by_a_shrink() {
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        let mut cw = make_crosswords();
+
+        // Style the bottom row, then move the cursor to the top and
+        // reset the SGR state so no cursor template keeps the style
+        // alive on its own.
+        let green = AnsiColor::Spec(ColorRgb {
+            r: 0,
+            g: 200,
+            b: 50,
+        });
+        cw.goto(Line(3), Column(0));
+        cw.terminal_attribute(Attr::Background(green));
+        cw.input('x');
+        cw.terminal_attribute(Attr::Reset);
+        cw.goto(Line(0), Column(0));
+        cw.input('y');
+
+        // Shrinking the window drops the bottom rows into Storage's
+        // hidden cache (content intact, re-exposed verbatim by a later
+        // grow), so the sweep must keep their style ids live.
+        cw.resize(CrosswordsSize::new(4, 2));
+        cw.grid.reclaim_styles();
+        assert!(
+            cw.grid.styles().iter().any(|s| s.bg == green),
+            "sweep freed a style still referenced by a cached row",
+        );
+
+        // Growing back keeps the row (visible or in history) with its
+        // style still resolving against the swept table.
+        cw.resize(CrosswordsSize::new(4, 4));
+        let found = cw.grid.raw.rows().any(|row| {
+            row.inner
+                .iter()
+                .any(|sq| !sq.is_bg_only() && cw.grid.style_of(sq).bg == green)
+        });
+        assert!(found, "cached row lost its style across shrink/grow");
     }
 
     // Minimum-valid simple glyph: one contour, one on-curve point.
@@ -8156,8 +8296,7 @@ mod tests {
     }
 
     /// Indic conjuncts join across the linker (GB9c) and the cluster
-    /// goes wide the moment a second width-bearing codepoint joins
-    /// (the ghostty width rule).
+    /// goes wide the moment a second width-bearing codepoint joins.
     #[test]
     fn mode_2027_indic_conjunct_joins() {
         use crate::performer::handler::Handler;
@@ -8172,7 +8311,7 @@ mod tests {
     }
 
     /// A valid emoji variation sequence widens within the cluster; an
-    /// invalid selector is ignored outright (ghostty `.ignore`) rather
+    /// invalid selector is ignored outright rather
     /// than attached like the legacy path does.
     #[test]
     fn mode_2027_variation_selectors() {
@@ -8648,8 +8787,7 @@ mod tests {
 
     /// Mode 2027: a zero-width codepoint with no base to join (orphan
     /// at column 0) is dropped, never legacy-attached: the mode just
-    /// computed a boundary and wcwidth-attaching would contradict it
-    /// (ghostty Terminal.zig, print width==0 branch).
+    /// computed a boundary and wcwidth-attaching would contradict it.
     #[test]
     fn mode_2027_orphan_zero_width_dropped() {
         use crate::ansi::mode::PrivateMode;
@@ -8665,8 +8803,8 @@ mod tests {
 
     /// Mode 2027: variation-selector validity is judged against the
     /// cluster's *last* codepoint, not its base: a selector modifies
-    /// the character immediately before it (ghostty checks `prev` in
-    /// `graphemeWidthEffect`). U+261D is a valid VS16 base but the
+    /// the character immediately before it. U+261D is a valid VS16
+    /// base but the
     /// skin tone that joined after it is not, so the trailing VS16 is
     /// ignored outright.
     #[test]
@@ -8698,8 +8836,7 @@ mod tests {
         use crate::performer::handler::Handler;
         let mut cw = new_term(6, 3);
 
-        // Default: set, like ghostty's `grapheme-width-method =
-        // unicode` (the consumer knob below configures it).
+        // Default: set (the consumer knob below configures it).
         assert!(cw.mode().contains(Mode::GRAPHEME_CLUSTER));
 
         // DECRST / DECSET round-trip: the program wins at runtime.
@@ -8811,7 +8948,7 @@ mod tests {
     /// A width-bearing continuation joining a cluster whose base sits
     /// at the last column widens through the row edge: the base moves
     /// to the next row as a wide pair and its earlier extras move with
-    /// it (matches ghostty's grapheme transfer block).
+    /// it.
     #[test]
     fn cluster_widen_at_last_column_preserves_base_extras() {
         use crate::performer::handler::Handler;
@@ -9066,7 +9203,6 @@ mod tests {
         // Each cell of the placement carries U+10EEEE + the right fg
         // RGB + the right two diacritics (zerowidth). The third
         // diacritic encodes image_id_high.
-        let style_set = cw.grid.style_set.clone();
         let extras = cw.grid.extras_table.clone();
         let _ = columns;
         for (row, &row_diac) in DIACRITICS.iter().enumerate().take(rows as usize) {
@@ -9078,7 +9214,7 @@ mod tests {
                     "expected U+10EEEE at ({row},{col}), got {:#X}",
                     sq.c() as u32
                 );
-                let style = style_set.get(sq.style_id());
+                let style = cw.grid.style_of(&sq);
                 match style.fg {
                     crate::config::colors::AnsiColor::Spec(rgb) => {
                         assert_eq!(rgb.r as u32, r);
@@ -9108,8 +9244,7 @@ mod tests {
         }
 
         // Per-row dirty flag: rows that received placeholder cells must
-        // have it set; other rows must not. Mirrors ghostty's
-        // `page.zig:1953-1958` `kitty_virtual_placeholder`.
+        // have it set; other rows must not.
         for row in 0..(rows as i32) {
             assert!(
                 cw.grid[Line(row)].kitty_virtual_placeholder,
@@ -9615,8 +9750,7 @@ mod tests {
         };
 
         // The reported repro: one wide char, one column. The glyph cannot be
-        // represented, so it is dropped for a blank narrow cell, matching
-        // ghostty on the same degenerate size.
+        // represented, so it is dropped for a blank narrow cell.
         let term = feed(1, "你".as_bytes());
         let cell = term.grid[Pos::new(Line(0), Column(0))];
         assert!(!cell.is_wide(), "nothing to pair a wide cell with");

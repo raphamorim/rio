@@ -516,17 +516,15 @@ impl Renderer {
 
                 terminal.reset_damage();
 
-                let snapshot_cols = terminal.columns();
                 terminal.snapshot_visible(
                     &damage,
                     &mut context.renderable_content.visible_rows,
-                    &mut context.renderable_content.style_table,
-                    &mut context.renderable_content.style_table_rev,
+                    &mut context.renderable_content.row_styles,
                     &mut context.renderable_content.extras,
                 );
                 context.renderable_content.term_colors = terminal.colors;
                 context.renderable_content.display_offset = terminal.display_offset();
-                context.renderable_content.columns = snapshot_cols;
+                context.renderable_content.columns = terminal.columns();
                 context.renderable_content.screen_lines = terminal.screen_lines();
                 context.renderable_content.history_size = terminal.history_size();
                 context.renderable_content.lines_evicted = terminal.lines_evicted();
@@ -998,6 +996,11 @@ impl Renderer {
             // discontinuity, etc.) we flush the run as one overlay and
             // start a new one. Mirrors `PlacementIterator.next`.
             let mut run: Option<(IncompletePlacement, usize)> = None;
+            let row_styles = rc
+                .row_styles
+                .get(line_idx)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
 
             for (col_idx, square) in row.inner.iter().enumerate() {
                 if square.c() != PLACEHOLDER {
@@ -1019,7 +1022,7 @@ impl Renderer {
                     continue;
                 }
 
-                let style = rio_grid::resolve_style(&rc.style_table, *square);
+                let style = rio_grid::resolve_style(row_styles, col_idx);
                 let combining: &[char] = square
                     .extras_id()
                     .and_then(|eid| rc.extras.get(&eid))

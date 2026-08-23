@@ -37,6 +37,11 @@ pub struct Row<T> {
     /// placeholder scan on rows where this is `false`.
     pub kitty_virtual_placeholder: bool,
 
+    /// Conservative "some cell in this row may carry an extras id"
+    /// hint. Load-bearing for correctness, not just a fast path: the
+    /// extras mark-and-sweep skips rows where this is `false`, so a
+    /// write path that stamps an extras id without setting it lets the
+    /// sweep free a live slot.
     pub has_extras: bool,
 
     /// OSC 133 semantic prompt mark. Travels with the row into

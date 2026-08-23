@@ -1224,7 +1224,7 @@ pub unsafe extern "C" fn sl_render_surface(
                 rio_grid::build_row_bg(
                     row,
                     cols,
-                    rs.styles(),
+                    rs.row_styles(y),
                     palette,
                     &term_colors,
                     row_sel,
@@ -1246,7 +1246,7 @@ pub unsafe extern "C" fn sl_render_surface(
                     row,
                     cols,
                     y as u16,
-                    rs.styles(),
+                    rs.row_styles(y),
                     rs.extras(),
                     palette,
                     &term_colors,

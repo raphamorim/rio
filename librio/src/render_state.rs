@@ -65,10 +65,8 @@ impl KittyEntry {
 pub struct RenderState {
     terminal: Arc<FairMutex<Crosswords<Listener>>>,
     rows: Vec<Row<Square>>,
-    styles: Vec<Style>,
-    /// `StyleSet` revision `styles` was copied at; lets
-    /// `snapshot_visible` skip the copy while the table is unchanged.
-    styles_rev: u64,
+    /// Per-row resolved cell styles, index-parallel to `rows`.
+    row_styles: Vec<Vec<Style>>,
     extras: FxHashMap<u16, Extras>,
     columns: usize,
     cursor_line: usize,
@@ -102,8 +100,7 @@ impl RenderState {
         Self {
             terminal,
             rows: Vec::new(),
-            styles: Vec::new(),
-            styles_rev: 0,
+            row_styles: Vec::new(),
             extras: FxHashMap::default(),
             columns,
             cursor_line: 0,
@@ -133,8 +130,7 @@ impl RenderState {
         term.snapshot_visible(
             &damage,
             &mut self.rows,
-            &mut self.styles,
-            &mut self.styles_rev,
+            &mut self.row_styles,
             &mut self.extras,
         );
         term.reset_damage();
@@ -260,14 +256,14 @@ impl RenderState {
         Some(&row[Column(column)])
     }
 
-    pub fn style_of(&self, square: &Square) -> Style {
+    pub fn style_at(&self, line: usize, column: usize, square: &Square) -> Style {
         // Bg-only cells (erase fills, blank lines after `clear`) encode
-        // their background inline instead of carrying a style id; reading
-        // `style_id()` on one would misinterpret the color bits as an index.
+        // their background inline instead of carrying a style id; the
+        // resolved per-row styles hold the default for them.
         match square.content_tag() {
             ContentTag::Codepoint => self
-                .styles
-                .get(square.style_id() as usize)
+                .row_styles(line)
+                .get(column)
                 .copied()
                 .unwrap_or_default(),
             ContentTag::BgPalette => Style {
@@ -284,13 +280,15 @@ impl RenderState {
         }
     }
 
-    pub fn styles(&self) -> &[Style] {
-        &self.styles
+    /// Resolved styles for one visible row, index-parallel to its
+    /// cells. Empty for an out-of-range line.
+    pub fn row_styles(&self, line: usize) -> &[Style] {
+        self.row_styles.get(line).map(Vec::as_slice).unwrap_or(&[])
     }
 
-    /// The snapshot's visible rows. Parallel to `styles()` / `extras()`:
-    /// the GPU emit path (rio-grid) walks these, resolving each cell's
-    /// style id against `styles()` and its extras id against `extras()`.
+    /// The snapshot's visible rows. Index-parallel to the resolved
+    /// per-row styles served by `style_at` / `row_styles`, and to
+    /// `extras()`: the GPU emit path (rio-grid) walks these.
     pub fn rows(&self) -> &[Row<Square>] {
         &self.rows
     }
@@ -343,8 +341,7 @@ impl RenderState {
     /// Scan the snapshot rows for U+10EEEE placeholder cells and collapse
     /// them into row-runs (kitty virtual placements). One entry per run,
     /// resolved against the virtual placement registry and image store.
-    /// The walk mirrors rioterm's renderer (itself mirroring ghostty's
-    /// `PlacementIterator` in `graphics_unicode.zig`): a cell with missing
+    /// The walk mirrors rioterm's renderer: a cell with missing
     /// diacritics inherits from its left neighbour, and consecutive cells
     /// showing sequential image columns collapse into one run.
     fn collect_virtual_runs(&self, term: &Crosswords<Listener>) -> Vec<KittyEntry> {
@@ -389,7 +386,7 @@ impl RenderState {
                     continue;
                 }
 
-                let style = self.style_of(square);
+                let style = self.style_at(line, col, square);
                 let combining: &[char] = square
                     .extras_id()
                     .and_then(|eid| self.extras.get(&eid))
@@ -555,7 +552,7 @@ impl RenderState {
     /// The OSC 8 hyperlink under a viewport cell, if any.
     pub fn link_at(&self, line: usize, column: usize) -> Option<&str> {
         let square = self.square(line, column)?;
-        let eid = square.extras_id()?;
+        let eid = square.extras_id_checked()?;
         self.extras
             .get(&eid)?
             .hyperlink

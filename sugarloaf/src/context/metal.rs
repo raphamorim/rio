@@ -57,13 +57,11 @@ impl MetalContext {
 
         // Create Metal layer.
         //
-        // Plain `BGRA8Unorm` + DisplayP3 colorspace tag — matches ghostty's
-        // default `alpha-blending = native` on macOS (see
-        // `ghostty/src/renderer/Metal.zig:208-211` and `Target.zig:44-60`).
+        // Plain `BGRA8Unorm` + DisplayP3 colorspace tag.
         // No `_sRGB` suffix: we don't want Metal to apply a transfer curve
         // on read/write, so alpha blending stays in gamma-encoded space —
         // which is what Apple's native widgets do and what keeps text
-        // weight identical to Terminal.app / ghostty. The fragment shaders
+        // weight identical to Terminal.app. The fragment shaders
         // compensate by emitting *already* sRGB-encoded DisplayP3 values
         // (`prepare_output_rgb`), and the clear color goes through the
         // same encode chain on the Rust side (see `sugarloaf.rs`).
@@ -80,8 +78,8 @@ impl MetalContext {
         // Triple buffering: allow 3 drawables in flight so CPU/GPU/compositor
         // can pipeline. `next_drawable` is the natural backpressure — it
         // blocks the main thread once 3 drawables are out, capping how far
-        // ahead the CPU can run. Default is 2; ghostty/zed both bump this
-        // to 3 to match the standard Apple sample pattern.
+        // ahead the CPU can run. Default is 2; 3 is the standard Apple
+        // sample pattern.
         layer.set_maximum_drawable_count(3);
         // Disable the 1-second wait timeout on `next_drawable` — under load
         // the default behaviour is to time out and return nil, which would
@@ -141,8 +139,8 @@ impl MetalContext {
         // sleep/wake or a move to a differently-scaled screen, the stale
         // frame smears to fill the window until a fresh frame is drawn.
         // Top-left leaves it correctly-sized-but-cropped instead, which
-        // reads as a static frame rather than a giant blurry one. Matches
-        // ghostty's IOSurfaceLayer. The `metal` crate doesn't wrap this
+        // reads as a static frame rather than a giant blurry one. The
+        // `metal` crate doesn't wrap this
         // setter, so go through the Obj-C runtime with QuartzCore's
         // `kCAGravityTopLeft` string constant.
         #[link(name = "QuartzCore", kind = "framework")]

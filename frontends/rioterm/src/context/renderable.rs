@@ -71,10 +71,10 @@ pub struct RenderableContent {
     /// virtual-placement overlay path. Single source of truth — only
     /// one terminal lock + one materialize pass per frame per panel.
     pub visible_rows: Vec<Row<Square>>,
-    pub style_table: Vec<rio_backend::crosswords::style::Style>,
-    /// `StyleSet` revision `style_table` was copied at; lets
-    /// `snapshot_visible` skip the copy while the table is unchanged.
-    pub style_table_rev: u64,
+    /// Per-row resolved cell styles, index-parallel to `visible_rows`.
+    /// Values, not ids: rows copied on earlier frames can't be
+    /// retinted by later style-table mutations.
+    pub row_styles: Vec<Vec<rio_backend::crosswords::style::Style>>,
     /// Per-frame snapshot of extras (zero-width chars, hyperlinks,
     /// sixel/iterm graphics) actually referenced by visible cells —
     /// keyed by the cell's `extras_id`. Refreshed per-dirty-row by
@@ -124,8 +124,7 @@ impl RenderableContent {
             background: None,
             frame_damage: TerminalDamage::Full,
             visible_rows: Vec::new(),
-            style_table: Vec::new(),
-            style_table_rev: 0,
+            row_styles: Vec::new(),
             extras: rustc_hash::FxHashMap::default(),
             term_colors: TermColors::default(),
             display_offset: 0,
@@ -288,8 +287,7 @@ mod pipeline_tests {
     /// painted mirror standing in for the GPU grid.
     struct Frame {
         visible_rows: Vec<Row<Square>>,
-        style_table: Vec<rio_backend::crosswords::style::Style>,
-        style_table_rev: u64,
+        row_styles: Vec<Vec<rio_backend::crosswords::style::Style>>,
         extras: FxHashMap<u16, Extras>,
         painted: Vec<String>,
     }
@@ -298,8 +296,7 @@ mod pipeline_tests {
         fn new() -> Self {
             Self {
                 visible_rows: Vec::new(),
-                style_table: Vec::new(),
-                style_table_rev: 0,
+                row_styles: Vec::new(),
                 extras: FxHashMap::default(),
                 painted: vec![String::new(); ROWS],
             }
@@ -327,8 +324,7 @@ mod pipeline_tests {
             term.snapshot_visible(
                 &damage,
                 &mut self.visible_rows,
-                &mut self.style_table,
-                &mut self.style_table_rev,
+                &mut self.row_styles,
                 &mut self.extras,
             );
             self.painted.resize(rows, String::new());

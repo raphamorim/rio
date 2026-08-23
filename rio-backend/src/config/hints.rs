@@ -5,7 +5,7 @@ pub const DEFAULT_HINTS_ALPHABET: &str = "jfkdls;ahgurieowpq";
 
 /// Default URL/path regex pattern.
 ///
-/// Ported verbatim from ghostty's `src/config/url.zig`. Requires a regex
+/// Requires a regex
 /// engine with lookbehind support — rio uses oniguruma via the `onig`
 /// crate. Three alternations:
 ///
@@ -401,7 +401,7 @@ mod tests {
 
         // Non-dotted (directory-like): absorbs trailing spaces+words because
         // the path could be a directory whose name contains spaces (e.g.
-        // `~/Desktop please/...`). This matches ghostty's behavior.
+        // `~/Desktop please/...`).
         assert_eq!(find_all("open ~/Desktop please"), vec!["~/Desktop please"]);
         assert_eq!(find_all("cd /tmp/foo"), vec!["/tmp/foo"]);
         assert_eq!(find_all("logs at $HOME/logs"), vec!["$HOME/logs"]);

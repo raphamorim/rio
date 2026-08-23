@@ -418,8 +418,7 @@ fn color_to_id(color: AnsiColor) -> u32 {
 }
 
 /// Per-cell decode of a U+10EEEE placeholder, before continuation rules
-/// resolve missing diacritics. Mirrors ghostty's `IncompletePlacement`
-///: row / col / `image_id_high` are
+/// resolve missing diacritics: row / col / `image_id_high` are
 /// `Option` because kitty allows applications to omit later diacritics
 /// when they would inherit from the previous cell.
 ///
@@ -440,8 +439,7 @@ impl IncompletePlacement {
     /// Decode a single cell. The combining marks are the cell's grapheme
     /// zerowidth chars (rio's `Extras.zerowidth`); kitty puts up to 3:
     /// `[row, col, image_id_high]`. All three are optional; invalid
-    /// diacritics are silently dropped (matches ghostty's "treat as if
-    /// they don't exist" comment in `graphics_unicode.zig:453-455`).
+    /// diacritics are silently dropped, treated as if they don't exist.
     pub fn from_cell(
         fg: AnsiColor,
         underline: Option<AnsiColor>,
@@ -465,7 +463,7 @@ impl IncompletePlacement {
     }
 
     /// True if `other` (the next cell in the same row) can extend this
-    /// run. Mirrors ghostty's `canAppend`:
+    /// run:
     /// - same `image_id_low` and `placement_id`
     /// - `other.row` is missing (inherit) or matches `self.row`
     /// - `other.col` is missing (inherit + auto-increment) or equals
@@ -489,7 +487,7 @@ impl IncompletePlacement {
     }
 
     /// Resolve the run into a final placement, defaulting any still-`None`
-    /// fields. Mirrors ghostty's `complete()`.
+    /// fields.
     pub fn complete(&self) -> PlaceholderRun {
         PlaceholderRun {
             image_id: ((self.image_id_high.unwrap_or(0) as u32) << 24)
@@ -534,8 +532,7 @@ pub struct RunGeometry {
 
 /// Compute the screen rect + source rect for one row-run, taking the
 /// placement's grid size, the image's pixel size, and the cell metrics.
-/// Mirrors ghostty's `Placement.renderPlacement`
-///, specialised for a single row of
+/// Specialised for a single row of
 /// cells (height = 1 cell). Returns `None` if the run lies entirely in
 /// the centering padding (no pixels to draw).
 ///
