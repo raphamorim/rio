@@ -29,6 +29,11 @@ pub enum Scroll {
 pub trait GridSquare: Sized {
     fn is_empty(&self) -> bool;
     fn reset(&mut self, template: &Self);
+    /// True when the value carries a non-default style id; drives the
+    /// per-row `has_styles` hint.
+    fn carries_style(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -719,6 +724,10 @@ impl Grid<Square> {
     /// sweep can never affect rows copied on earlier frames.
     pub fn resolve_row_styles(&self, src: &Row<Square>, out: &mut Vec<Style>) {
         out.clear();
+        if !src.has_styles {
+            out.resize(src.inner.len(), Style::default());
+            return;
+        }
         out.extend(src.inner.iter().map(|sq| {
             sq.style_id_checked()
                 .map(|id| self.style_set.get(id))
@@ -794,13 +803,28 @@ impl Grid<Square> {
     /// u16 id space. Mark every id referenced by a live row (visible +
     /// history) or a cursor template, then free the rest for reuse.
     pub fn reclaim_styles(&mut self) {
-        let live = self.collect_live_ids(|sq| sq.style_id_checked(), |_| false);
+        // Id 0 (the default style) is never swept, so it needs no
+        // marking; filtering it also makes the skip contract exact: an
+        // unstyled row yields no ids at all.
+        let live = self.collect_live_ids(
+            |sq| {
+                sq.style_id_checked()
+                    .filter(|&id| id != crate::crosswords::style::DEFAULT_STYLE_ID)
+            },
+            |row| !row.has_styles,
+        );
         // Scale the post-sweep re-arm floor with the walk cost, so a big
         // ring cannot be re-walked more than once per ~256 cells of it.
         // Clamped well under the id space: a floor larger than the ids a
         // sweep can recover would strand novel styles on the default
-        // fallback for the whole window.
-        let walked_cells = self.raw.rows().len() * self.columns;
+        // fallback for the whole window. Counts styled rows only, since
+        // the walk skips the rest.
+        let walked_cells = self
+            .raw
+            .rows()
+            .filter(|row| row.has_styles)
+            .map(|row| row.inner.len())
+            .sum::<usize>();
         let min_novel = (walked_cells / 256).min(u16::MAX as usize / 4);
         self.style_set.sweep_unmarked(&live, min_novel);
     }

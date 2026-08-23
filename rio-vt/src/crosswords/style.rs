@@ -103,12 +103,11 @@ const MEMO_SLOTS: usize = 1 << MEMO_BITS;
 const TOMBSTONE_KEY: u128 = 1 << 127;
 
 /// Lower bound for the novel-intern count between sweeps. The mark
-/// walks every cell of the ring (rows carry no has-styles hint); with
-/// a 10k-line scrollback that is on the order of a million cell reads
-/// per sweep, so the floor bounds how often a near-fruitless sweep can
-/// recur. Counting misses that failed at the id cap keeps sweeps, and
-/// therefore recovery, coming even while interns fall back to the
-/// default style.
+/// walks every cell of the ring's styled rows (`Row::has_styles`), so
+/// a style-heavy scrollback can still mean a large walk per sweep; the
+/// floor bounds how often a near-fruitless sweep can recur. Counting
+/// misses that failed at the id cap keeps sweeps, and therefore
+/// recovery, coming even while interns fall back to the default style.
 const SWEEP_MIN_NOVEL: usize = 4096;
 
 /// No sweep runs while the table is smaller than this, no matter the

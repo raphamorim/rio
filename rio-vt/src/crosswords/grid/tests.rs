@@ -505,3 +505,110 @@ fn extras_reclaim_keeps_ids_of_hidden_cached_rows() {
     assert!(grid.extras_table.get(id).is_some());
     assert!(grid.extras_table.get(dead).is_none());
 }
+
+#[test]
+fn row_hint_follows_reset_template() {
+    use crate::config::colors::{AnsiColor, NamedColor};
+    use crate::crosswords::style::Style;
+
+    let mut grid: Grid<Square> = Grid::new(2, 4, 0);
+    grid.set_template_style(Style {
+        fg: AnsiColor::Named(NamedColor::Red),
+        ..Style::default()
+    });
+    grid.sync_template_style();
+    let styled_template = grid.cursor.template;
+    assert!(styled_template.carries_style());
+
+    let mut row: Row<Square> = Row::new(4);
+    assert!(!row.has_styles);
+    row.reset(&styled_template);
+    assert!(row.has_styles);
+
+    row.reset(&Square::default());
+    assert!(!row.has_styles);
+}
+
+#[test]
+fn row_hint_propagates_and_clears() {
+    let mut styled: Row<Square> = Row::new(4);
+    styled[Column(0)].set_style_id(9);
+    styled.has_styles = true;
+
+    let mut dst: Row<Square> = Row::new(4);
+    dst.copy_from(&styled);
+    assert!(dst.has_styles);
+
+    dst.recycle(4);
+    assert!(!dst.has_styles);
+}
+
+#[test]
+fn row_splices_recompute_hint_exactly() {
+    // Unstyled cells moving in must not pin the row into the sweep walk.
+    let mut dst: Row<Square> = Row::new(2);
+    let mut plain = vec![Square::default(), Square::default()];
+    dst.append(&mut plain);
+    assert!(!dst.has_styles);
+
+    let mut styled_vec = vec![Square::default().with_style_id(3)];
+    dst.append(&mut styled_vec);
+    assert!(dst.has_styles);
+
+    // append_front_of scans only the moved span.
+    let mut src: Row<Square> = Row::new(4);
+    src[Column(3)].set_style_id(5);
+    src.has_styles = true;
+    let mut dst2: Row<Square> = Row::new(1);
+    dst2.append_front_of(&mut src, 2);
+    assert!(!dst2.has_styles);
+    let mut dst3: Row<Square> = Row::new(1);
+    dst3.append_front_of(&mut src, 2);
+    assert!(dst3.has_styles);
+
+    // from_vec derives the hint from its contents.
+    assert!(!Row::from_vec(vec![Square::default(); 3], 0).has_styles);
+    assert!(Row::from_vec(vec![Square::default().with_style_id(1)], 1).has_styles);
+}
+
+#[test]
+fn bg_only_cells_do_not_count_as_styled() {
+    let mut bg = Square::default();
+    bg.set_bg_rgb(10, 20, 30);
+    assert!(!bg.carries_style());
+
+    let mut row: Row<Square> = Row::new(2);
+    let mut moved = vec![bg];
+    row.append(&mut moved);
+    assert!(!row.has_styles);
+}
+
+#[test]
+fn resolver_fast_path_matches_slow_path() {
+    use crate::config::colors::{AnsiColor, NamedColor};
+    use crate::crosswords::style::Style;
+
+    let mut grid: Grid<Square> = Grid::new(2, 3, 0);
+    grid.set_template_style(Style {
+        fg: AnsiColor::Named(NamedColor::Blue),
+        ..Style::default()
+    });
+    grid.sync_template_style();
+    let id = grid.template_style_id();
+
+    // Styled row: full resolution.
+    let mut styled: Row<Square> = Row::new(3);
+    styled[Column(1)].set_style_id(id);
+    styled.has_styles = true;
+    let mut out = Vec::new();
+    grid.resolve_row_styles(&styled, &mut out);
+    assert_eq!(out.len(), 3);
+    assert_eq!(out[0], Style::default());
+    assert_eq!(out[1].fg, AnsiColor::Named(NamedColor::Blue));
+
+    // Unstyled row: fast fill must be indistinguishable.
+    let plain: Row<Square> = Row::new(3);
+    let mut fast = Vec::new();
+    grid.resolve_row_styles(&plain, &mut fast);
+    assert_eq!(fast, vec![Style::default(); 3]);
+}

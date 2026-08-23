@@ -512,6 +512,11 @@ impl Square {
 
 impl GridSquare for Square {
     #[inline]
+    fn carries_style(&self) -> bool {
+        matches!(self.style_id_checked(), Some(id) if id != DEFAULT_STYLE_ID)
+    }
+
+    #[inline]
     fn is_empty(&self) -> bool {
         if self.0 == 0 {
             return true;

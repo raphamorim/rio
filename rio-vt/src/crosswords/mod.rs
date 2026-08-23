@@ -37,7 +37,7 @@ use crate::ansi::{
 use crate::clipboard::ClipboardType;
 use crate::config::colors::{self, ColorRgb};
 use crate::crosswords::colors::term::TermColors;
-use crate::crosswords::grid::{Dimensions, Grid, Scroll};
+use crate::crosswords::grid::{Dimensions, Grid, GridSquare, Scroll};
 use crate::crosswords::square::{CellFlags, Wide};
 use crate::event::WindowId;
 use crate::event::{EventListener, RioEvent, TerminalDamage};
@@ -1725,14 +1725,16 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         let has_extras = template.extras_id().is_some();
+        let styled = template.carries_style();
         let cursor_square = self.grid.cursor_square();
 
         // Fast path: overwriting a narrow cell. One resolve, one packed store.
         if !matches!(cursor_square.wide(), Wide::Wide | Wide::Spacer) {
             *cursor_square = Square::from_template(template, c);
-            if has_extras {
+            if has_extras || styled {
                 let row = self.grid.cursor.pos.row;
-                self.grid[row].has_extras = true;
+                self.grid[row].has_extras |= has_extras;
+                self.grid[row].has_styles |= styled;
             }
             return;
         }
@@ -1755,9 +1757,10 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         *self.grid.cursor_cell() = Square::from_template(template, c);
-        if has_extras {
+        if has_extras || styled {
             let row = self.grid.cursor.pos.row;
-            self.grid[row].has_extras = true;
+            self.grid[row].has_extras |= has_extras;
+            self.grid[row].has_styles |= styled;
         }
     }
 
@@ -1872,6 +1875,9 @@ impl<U: EventListener> Crosswords<U> {
                     if template_has_extras {
                         row.has_extras = true;
                     }
+                    if template.carries_style() {
+                        row.has_styles = true;
+                    }
                     wrote_bulk = true;
                 }
             }
@@ -1948,6 +1954,9 @@ impl<U: EventListener> Crosswords<U> {
                     }
                     if template_has_extras {
                         row.has_extras = true;
+                    }
+                    if template.carries_style() {
+                        row.has_styles = true;
                     }
                     wrote_bulk = true;
                 }
@@ -2053,10 +2062,13 @@ impl<U: EventListener> Crosswords<U> {
             let mut moved = base_snapshot;
             moved.set_wide(Wide::Wide);
             self.grid[new_row][Column(0)] = moved;
-            // IndexMut doesn't maintain the row's extras hint; without
-            // it, reclaim would sweep this cell's live slot.
+            // IndexMut doesn't maintain the row hints; without them,
+            // reclaim would sweep this cell's live slots.
             if moved.extras_id().is_some() {
                 self.grid[new_row].has_extras = true;
+            }
+            if moved.carries_style() {
+                self.grid[new_row].has_styles = true;
             }
 
             self.grid.cursor.pos.col = Column(1);
@@ -3197,6 +3209,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.split_wide_seam(line, start.0, blank);
         self.split_wide_seam(line, end.0, blank);
         let row = &mut self.grid[line];
+        row.has_styles |= blank.carries_style();
         for cell in &mut row[start..end] {
             *cell = blank;
         }
@@ -3224,6 +3237,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.split_wide_seam(line, start, blank);
         self.split_wide_seam(line, (start + count).min(columns), blank);
         self.split_wide_seam(line, columns, blank);
+        self.grid[line].has_styles |= blank.carries_style();
         let row = &mut self.grid[line][..];
 
         for offset in 0..num_cells {
@@ -3286,6 +3300,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         }
 
+        self.grid[line].has_styles |= blank.carries_style();
         let row = &mut self.grid[line][..];
 
         for offset in (0..num_cells).rev() {
@@ -3858,6 +3873,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     if template_has_extras {
                         row.has_extras = true;
                     }
+                    if template.carries_style() {
+                        row.has_styles = true;
+                    }
                     wrote_bulk = true;
                 }
             }
@@ -4043,6 +4061,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let end = std::cmp::min(cursor.col + 1, Column(self.grid.columns()));
                 self.split_wide_seam(cursor.row, 0, blank);
                 self.split_wide_seam(cursor.row, end.0, blank);
+                self.grid[cursor.row].has_styles |= blank.carries_style();
                 for cell in &mut self.grid[cursor.row][..end] {
                     *cell = blank;
                 }
@@ -4058,6 +4077,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             ClearMode::Below => {
                 let cursor = self.grid.cursor.pos;
                 self.split_wide_seam(cursor.row, cursor.col.0, blank);
+                self.grid[cursor.row].has_styles |= blank.carries_style();
                 for cell in &mut self.grid[cursor.row][cursor.col..] {
                     *cell = blank;
                 }
@@ -4384,6 +4404,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.split_wide_seam(point.row, left.0, blank);
         self.split_wide_seam(point.row, right.0, blank);
         let row = &mut self.grid[point.row];
+        row.has_styles |= blank.carries_style();
         for cell in &mut row[left..right] {
             *cell = blank;
         }
@@ -5912,6 +5933,125 @@ mod tests {
                 b: ((last >> 16) & 0xFF) as u8,
             }),
         );
+    }
+
+    #[test]
+    fn styled_write_sets_row_hint() {
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        let mut cw = make_crosswords();
+        cw.input('a');
+        assert!(!cw.grid[Line(0)].has_styles);
+
+        cw.terminal_attribute(Attr::Background(AnsiColor::Spec(ColorRgb {
+            r: 1,
+            g: 2,
+            b: 3,
+        })));
+        cw.input('b');
+        assert!(cw.grid[Line(0)].has_styles);
+        assert!(!cw.grid[Line(1)].has_styles);
+    }
+
+    #[test]
+    fn wide_wrap_carries_row_hint_to_next_row() {
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        let mut cw = make_crosswords();
+        cw.terminal_attribute(Attr::Background(AnsiColor::Spec(ColorRgb {
+            r: 9,
+            g: 9,
+            b: 9,
+        })));
+        // Styled wide char at the last column wraps the base onto the
+        // next row; the hint must travel with it.
+        cw.goto(Line(0), Column(3));
+        cw.input('你');
+        assert!(cw.grid[Line(1)].has_styles);
+    }
+
+    #[test]
+    fn styled_blank_fills_flag_rows_and_bg_only_fills_do_not() {
+        use crate::config::colors::{AnsiColor, NamedColor};
+        let mut cw = make_crosswords();
+
+        // Truecolor / palette backgrounds erase via bg-only cells, which
+        // carry no style id: the hint must stay clear.
+        cw.terminal_attribute(Attr::Background(AnsiColor::Indexed(42)));
+        cw.erase_chars(Column(2));
+        assert!(!cw.grid[Line(0)].has_styles);
+
+        // Special named backgrounds fall back to an interned style, so
+        // the fill must flag the row.
+        cw.terminal_attribute(Attr::Background(AnsiColor::Named(NamedColor::DimRed)));
+        cw.goto(Line(1), Column(0));
+        cw.erase_chars(Column(2));
+        assert!(cw.grid[Line(1)].has_styles);
+    }
+
+    #[test]
+    fn scrolled_styled_rows_keep_hint_in_history() {
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        let mut cw = make_crosswords();
+        let teal = AnsiColor::Spec(ColorRgb { r: 0, g: 90, b: 90 });
+        cw.terminal_attribute(Attr::Background(teal));
+        cw.input('x');
+        cw.terminal_attribute(Attr::Reset);
+
+        // Scroll the styled row into history; the flag must travel with
+        // it so the sweep keeps its id live.
+        for _ in 0..8 {
+            cw.goto(Line(3), Column(0));
+            cw.linefeed();
+        }
+        cw.grid.reclaim_styles();
+        assert!(cw.grid.styles().iter().any(|s| s.bg == teal));
+    }
+
+    #[test]
+    fn unstyled_session_never_flags_rows() {
+        let mut cw = make_crosswords();
+        for _ in 0..3 {
+            cw.input('a');
+            cw.linefeed();
+        }
+        let styled_rows = cw.grid.raw.rows().filter(|r| r.has_styles).count();
+        assert_eq!(styled_rows, 0);
+        // And the sweep over such a grid frees nothing and trips no
+        // skip-contract assertion.
+        let len = cw.grid.styles().len();
+        cw.grid.reclaim_styles();
+        assert_eq!(cw.grid.styles().len(), len);
+    }
+
+    #[test]
+    fn sweep_keeps_styles_through_column_reflow() {
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        let mut cw = make_crosswords();
+        let purple = AnsiColor::Spec(ColorRgb {
+            r: 120,
+            g: 0,
+            b: 200,
+        });
+        cw.terminal_attribute(Attr::Background(purple));
+        for _ in 0..4 {
+            cw.input('x');
+        }
+        cw.terminal_attribute(Attr::Reset);
+
+        // Reflow to narrower and back: styled cells splice across rows,
+        // and the conservative row hints must keep their ids live
+        // through both sweeps.
+        cw.resize(CrosswordsSize::new(2, 4));
+        cw.grid.reclaim_styles();
+        assert!(cw.grid.styles().iter().any(|s| s.bg == purple));
+
+        cw.resize(CrosswordsSize::new(4, 4));
+        cw.grid.reclaim_styles();
+        let found = cw.grid.raw.rows().any(|row| {
+            row.inner
+                .iter()
+                .any(|sq| !sq.is_bg_only() && cw.grid.style_of(sq).bg == purple)
+        });
+        assert!(found, "reflowed styled cells lost their style after sweeps");
     }
 
     #[test]
