@@ -50,6 +50,20 @@ const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
 #[cfg(feature = "pty")]
 const MAX_LOCKED_READ: usize = u16::MAX as usize;
+/// Max bytes per read(2). Draining the kernel tty queue in one giant
+/// read empties it instantly, parks this thread in poll, and puts the
+/// writer to sleep on the queue's water marks — the two sides then
+/// alternate through serialized scheduler wakeups instead of streaming
+/// concurrently. Reading in small chunks (with a parse between chunks)
+/// keeps the queue non-empty so neither side ever blocks.
+/// Max bytes per read(2). Draining the whole tty queue in one giant
+/// read and then parking in poll serializes against the writer;
+/// reading in bounded chunks, with a parse between chunks, keeps the
+/// queue non-empty so the slave's writer and this reader stream
+/// concurrently. (The queue itself is sized by the pty's baud rate —
+/// see `create_termp`.)
+#[cfg(feature = "pty")]
+const READ_CHUNK: usize = 65536;
 
 #[cfg(feature = "pty")]
 struct PeekableReceiver<T> {
@@ -209,7 +223,8 @@ where
 
         loop {
             // Read from the PTY.
-            match self.pty.reader().read(&mut buf[unprocessed..]) {
+            let cap = (unprocessed + READ_CHUNK).min(buf.len());
+            match self.pty.reader().read(&mut buf[unprocessed..cap]) {
                 // This is received on Windows/macOS when no more data is readable from the PTY.
                 Ok(0) if unprocessed == 0 => break,
                 Ok(got) => unprocessed += got,

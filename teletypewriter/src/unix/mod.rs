@@ -371,6 +371,16 @@ pub fn create_termp(utf8: bool) -> libc::termios {
         term.c_cc[libc::VSTATUS] = 20;
     }
 
+    // The BSD/XNU tty layer sizes the output-queue water marks from the
+    // baud rate (`ttsetwater`: cps = ospeed / 10). A zero speed clamps
+    // the queue to its ~100-byte floor, so every slave write hands the
+    // reader a ~150-byte sliver through a read+poll round trip each —
+    // capping PTY drain throughput at a fraction of what the kernel can
+    // move. B230400 saturates the clamp and yields the maximum queue.
+    unsafe {
+        libc::cfsetspeed(&mut term, libc::B230400);
+    }
+
     term
 }
 

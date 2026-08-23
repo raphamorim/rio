@@ -647,9 +647,10 @@ impl Grid<Square> {
             }
         }
 
-        let mut live = vec![0u64; (u16::MAX as usize).div_ceil(64)];
-        for l in self.topmost_line().0..=self.bottommost_line().0 {
-            let row = &self.raw[Line(l)];
+        // Raw storage walk for the same reason as `reclaim_styles`: rows
+        // hidden by a scrollback shrink come back verbatim on grow.
+        let mut live = vec![0u64; (u16::MAX as usize + 1).div_ceil(64)];
+        for row in self.raw.rows() {
             if !row.has_extras {
                 continue;
             }
@@ -749,10 +750,13 @@ impl Grid<Square> {
             }
         }
 
+        // Walk the raw storage, not the Line-indexed window: shrinking the
+        // scrollback keeps up to `MAX_CACHE_SIZE` rows' content intact
+        // beyond `len` and a later grow re-exposes them verbatim, so their
+        // style ids must stay live too.
         let mut live = vec![0u64; (u16::MAX as usize + 1).div_ceil(64)];
-        live[0] |= 1;
-        for l in self.topmost_line().0..=self.bottommost_line().0 {
-            for sq in &self.raw[Line(l)].inner {
+        for row in self.raw.rows() {
+            for sq in &row.inner {
                 mark(&mut live, sq);
             }
         }

@@ -2396,6 +2396,12 @@ impl<U: EventListener> Crosswords<U> {
             // Set alt screen cursor to the current primary screen cursor.
             self.inactive_grid.cursor = self.grid.cursor.clone();
 
+            // Style ids are local to a grid's table too: the cloned
+            // template carries a primary-table id, so force the
+            // `sync_template_style` below to re-intern `pending_style`
+            // (the id-independent value) into the alt table.
+            self.inactive_grid.cursor.style_dirty = true;
+
             // Extras ids are local to a grid's table. If the template
             // carries a hyperlink (OSC 8 open across the screen
             // switch), re-intern it into the alt table; a foreign id

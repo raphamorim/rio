@@ -108,11 +108,16 @@ const TOMBSTONE_KEY: u128 = 1 << 127;
 /// One `Grid::reclaim_styles` mark-and-sweep per this many novel
 /// interns. The mark walks every cell of the ring (rows carry no
 /// has-styles hint), so the cadence is set high enough that the
-/// amortized cost per novel style stays at a few cell reads; sessions
-/// that never intern this many distinct styles never sweep. Counting
+/// amortized cost per novel style stays at a few cell reads. Counting
 /// misses that failed at the id cap keeps the cadence — and therefore
 /// recovery — alive even while interns fall back to the default style.
 const STYLE_SWEEP_CADENCE: usize = 16384;
+
+/// No sweep runs while the table is smaller than this, no matter the
+/// cadence: sessions with modest style sets never pay the ring walk,
+/// and after a spike the trailing-tombstone truncation can drop the
+/// table back below it.
+const SWEEP_HIGH_WATER: usize = 32768;
 
 /// Pack a style into a unique `u128`: 32 bits per color (tag + payload),
 /// 32 for the optional underline color, the flag bits on top. Injective,
@@ -267,12 +272,15 @@ impl StyleSet {
     }
 
     /// Whether the caller should run a mark-and-sweep before the next
-    /// intern: the novel-intern cadence elapsed. Purely cadence-driven so
-    /// a sweep that frees nothing (every id genuinely live) cannot
-    /// re-trigger on the very next intern.
+    /// intern: the novel-intern cadence elapsed, freed ids ran out, and
+    /// the table is past the high-water mark. Cadence-gated so a sweep
+    /// that frees nothing (every id genuinely live) cannot re-trigger on
+    /// the very next intern.
     #[inline]
     pub fn should_sweep(&self) -> bool {
         self.novel_since_sweep >= STYLE_SWEEP_CADENCE
+            && self.free.is_empty()
+            && self.styles.len() >= SWEEP_HIGH_WATER
     }
 
     /// Free every non-default id whose bit is unset in `live`, making it
@@ -282,7 +290,7 @@ impl StyleSet {
     /// stale read renders defensively rather than garbage.
     pub fn sweep_unmarked(&mut self, live: &[u64]) {
         self.novel_since_sweep = 0;
-        let mut freed = false;
+        let mut changed = false;
         for id in 1..self.styles.len() {
             if live[id / 64] & (1 << (id % 64)) != 0 {
                 continue;
@@ -295,9 +303,19 @@ impl StyleSet {
             self.packed[id] = TOMBSTONE_KEY;
             self.styles[id] = Style::default();
             self.free.push(id as StyleId);
-            freed = true;
+            changed = true;
         }
-        if freed {
+        // Drop trailing tombstoned slots so a one-off style spike doesn't
+        // permanently inflate every later table copy. Ids past the new
+        // length resolve through `get`'s default fallback, and a stale
+        // memo candidate past the length fails the `packed.get` verify.
+        while self.styles.len() > 1 && *self.packed.last().unwrap() == TOMBSTONE_KEY {
+            self.styles.pop();
+            self.packed.pop();
+            changed = true;
+        }
+        if changed {
+            self.free.retain(|&id| (id as usize) < self.styles.len());
             self.revision += 1;
         }
     }
@@ -369,13 +387,14 @@ mod tests {
             fg: AnsiColor::Named(NamedColor::Blue),
             ..Style::default()
         };
-        let red_id = set.intern(red);
+        // Blue first so the swept slot is interior (red stays live at the
+        // tail) and exercises tombstone + reuse rather than truncation.
         let blue_id = set.intern(blue);
+        let red_id = set.intern(red);
         let rev = set.revision();
 
         // Keep red alive, sweep blue.
         let mut live = vec![0u64; (u16::MAX as usize + 1).div_ceil(64)];
-        live[0] |= 1;
         live[red_id as usize / 64] |= 1u64 << (red_id % 64);
         set.sweep_unmarked(&live);
         assert_ne!(set.revision(), rev);
@@ -399,11 +418,44 @@ mod tests {
     }
 
     #[test]
+    fn sweep_truncates_trailing_tombstones() {
+        let mut set = StyleSet::new();
+        let red = Style {
+            fg: AnsiColor::Named(NamedColor::Red),
+            ..Style::default()
+        };
+        let blue = Style {
+            fg: AnsiColor::Named(NamedColor::Blue),
+            ..Style::default()
+        };
+        let red_id = set.intern(red);
+        let blue_id = set.intern(blue);
+
+        // Keep red alive; blue is the trailing slot and gets truncated.
+        let mut live = vec![0u64; (u16::MAX as usize + 1).div_ceil(64)];
+        live[red_id as usize / 64] |= 1u64 << (red_id % 64);
+        set.sweep_unmarked(&live);
+        assert_eq!(set.len(), 2);
+        assert_eq!(set.get(blue_id), Style::default());
+        assert_eq!(set.get(red_id), red);
+
+        // Fresh interns regrow from the truncated end.
+        let green = Style {
+            fg: AnsiColor::Named(NamedColor::Green),
+            ..Style::default()
+        };
+        assert_eq!(set.intern(green), blue_id);
+        assert_eq!(set.len(), 3);
+    }
+
+    #[test]
     fn sweep_cadence_counts_novel_interns() {
         use crate::config::colors::ColorRgb;
         let mut set = StyleSet::new();
         assert!(!set.should_sweep());
-        for i in 0..STYLE_SWEEP_CADENCE {
+        // Past both gates: enough novel interns AND past the high-water
+        // table size, with no freed ids available.
+        for i in 0..SWEEP_HIGH_WATER {
             set.intern(Style {
                 fg: AnsiColor::Spec(ColorRgb {
                     r: (i >> 8) as u8,

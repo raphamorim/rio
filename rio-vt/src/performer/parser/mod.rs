@@ -1048,9 +1048,17 @@ impl Parser {
         }
     }
 
-    #[cfg(target_arch = "wasm32")]
+    /// Transcode a UTF-8 byte slice into [`Self::decode_buf`] as `u32`
+    /// codepoints. SGR-dense streams produce a ground run of one glyph
+    /// between escapes, where the FFI call into simdutf costs more than
+    /// decoding in place — so short runs (and all of wasm, where simdutf
+    /// cannot build) go scalar.
     #[inline]
     fn decode_codepoints(&mut self, src: &[u8]) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if src.len() >= SIMD_DECODE_MIN {
+            return self.decode_codepoints_simd(src);
+        }
         self.decode_codepoints_scalar(src)
     }
 
@@ -1059,13 +1067,7 @@ impl Parser {
     /// U+FFFD inline (W3C/Unicode "Substitution of Maximal Subparts").
     #[cfg(not(target_arch = "wasm32"))]
     #[inline]
-    fn decode_codepoints(&mut self, src: &[u8]) {
-        // SGR-dense streams produce a ground run of one glyph between
-        // escapes; the FFI call into simdutf costs more than decoding a
-        // handful of bytes in place.
-        if src.len() < SIMD_DECODE_MIN {
-            return self.decode_codepoints_scalar(src);
-        }
+    fn decode_codepoints_simd(&mut self, src: &[u8]) {
         self.decode_buf.clear();
         // Worst case: 1 codepoint per source byte. Reserve up-front so the
         // raw pointer writes simdutf does are always in-bounds.
@@ -1273,6 +1275,7 @@ fn find_dcs_boundary(bytes: &[u8]) -> usize {
 const DECODE_CHUNK: usize = 4096;
 
 /// Runs shorter than this decode scalar instead of through simdutf.
+#[cfg(not(target_arch = "wasm32"))]
 const SIMD_DECODE_MIN: usize = 16;
 
 /// Length of the maximal valid subpart of a UTF-8 sequence starting at
@@ -1560,6 +1563,42 @@ pub trait Perform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The scalar and simdutf decoders implement the maximal-subpart /
+    /// U+FFFD / lone-C1 contract independently; with short runs routed
+    /// scalar, only inputs >= SIMD_DECODE_MIN reach the simdutf error
+    /// loop. Feed the same invalid corpus through both, below and above
+    /// the threshold, and require identical output.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn scalar_and_simd_decode_agree() {
+        let invalid_cases: &[&[u8]] = &[
+            b"\x80",                     // lone continuation (C1: keeps value)
+            b"\xBF",                     // lone continuation (non-C1: U+FFFD)
+            b"\xE2\x96",                 // truncated 3-byte sequence
+            b"\xF0\x9F\x92",             // truncated 4-byte sequence
+            b"\xC0\xAF",                 // overlong encoding
+            b"\xED\xA0\x80",             // UTF-16 surrogate
+            b"\xF5\x80\x80\x80",         // above U+10FFFF
+            b"a\xE2\x96b\x80c",          // interleaved with ASCII
+            "▀\u{45}\u{300}".as_bytes(), // valid multibyte control
+        ];
+        for case in invalid_cases {
+            for pad in [0usize, SIMD_DECODE_MIN + 4] {
+                let mut input = case.to_vec();
+                input.extend(vec![b'x'; pad]);
+
+                let mut scalar = Parser::new();
+                scalar.decode_codepoints_scalar(&input);
+                let mut simd = Parser::new();
+                simd.decode_codepoints_simd(&input);
+                assert_eq!(
+                    scalar.decode_buf, simd.decode_buf,
+                    "decoder divergence on {case:?} pad {pad}",
+                );
+            }
+        }
+    }
 
     const OSC_BYTES: &[u8] = &[
         0x1B, 0x5D, // Begin OSC
