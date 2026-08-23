@@ -60,8 +60,11 @@ pub trait GridPalette {
         cell_style: &Style,
         term_colors: &TermColors,
     ) -> rio_backend::config::colors::ColorArray;
-    fn color(&self, idx: usize, term_colors: &TermColors)
-        -> rio_backend::config::colors::ColorArray;
+    fn color(
+        &self,
+        idx: usize,
+        term_colors: &TermColors,
+    ) -> rio_backend::config::colors::ColorArray;
     fn use_drawable_chars(&self) -> bool;
     fn opacity_cells(&self) -> bool;
     fn cell_bg_alpha(&self) -> u8;
@@ -363,7 +366,9 @@ fn cell_fg_hinted<P: GridPalette>(tag: HintTag, palette: &P) -> [u8; 4] {
         HintTag::Focused => {
             normalized_to_u8(palette.named_colors().search_focused_match_foreground)
         }
-        HintTag::Match => normalized_to_u8(palette.named_colors().search_match_foreground),
+        HintTag::Match => {
+            normalized_to_u8(palette.named_colors().search_match_foreground)
+        }
         HintTag::Label => normalized_to_u8(palette.named_colors().hint_foreground),
         // Hover doesn't change fg color; defensive — `cell_in_row_hints`
         // already filters this tag out, so this arm shouldn't fire.
@@ -1119,7 +1124,9 @@ pub fn build_row_bg<P: GridPalette>(
 
     // Slow path: selection and/or hint highlighting present.
     let sel_bg = if has_sel {
-        Some(normalized_to_u8(palette.named_colors().selection_background))
+        Some(normalized_to_u8(
+            palette.named_colors().selection_background,
+        ))
     } else {
         None
     };
@@ -1139,27 +1146,27 @@ pub fn build_row_bg<P: GridPalette>(
         let sq = row[Column(x)];
         let style = resolve_style(style_table, sq);
         let col = x as u16;
-        let rgba = if cell_in_row_sel(row_sel, col) {
-            // Selection bg wins over hint bg and the cell's own bg,
-            // matching `generic.zig:2775-2800` (selection check
-            // runs before highlight check).
-            sel_bg.unwrap_or_else(|| cell_bg(sq, style, palette, term_colors))
-        } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
-            match tag {
-                HintTag::Focused => focused_bg
-                    .unwrap_or_else(|| cell_bg(sq, style, palette, term_colors)),
-                HintTag::Match => {
-                    match_bg.unwrap_or_else(|| cell_bg(sq, style, palette, term_colors))
+        let rgba =
+            if cell_in_row_sel(row_sel, col) {
+                // Selection bg wins over hint bg and the cell's own bg,
+                // matching `generic.zig:2775-2800` (selection check
+                // runs before highlight check).
+                sel_bg.unwrap_or_else(|| cell_bg(sq, style, palette, term_colors))
+            } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
+                match tag {
+                    HintTag::Focused => focused_bg
+                        .unwrap_or_else(|| cell_bg(sq, style, palette, term_colors)),
+                    HintTag::Match => match_bg
+                        .unwrap_or_else(|| cell_bg(sq, style, palette, term_colors)),
+                    HintTag::Label => cell_bg(sq, style, palette, term_colors),
+                    // `cell_in_row_hints` filters HyperlinkHover out, but
+                    // make the match exhaustive so a future caller can't
+                    // accidentally hit a panic.
+                    HintTag::HyperlinkHover => cell_bg(sq, style, palette, term_colors),
                 }
-                HintTag::Label => cell_bg(sq, style, palette, term_colors),
-                // `cell_in_row_hints` filters HyperlinkHover out, but
-                // make the match exhaustive so a future caller can't
-                // accidentally hit a panic.
-                HintTag::HyperlinkHover => cell_bg(sq, style, palette, term_colors),
-            }
-        } else {
-            cell_bg(sq, style, palette, term_colors)
-        };
+            } else {
+                cell_bg(sq, style, palette, term_colors)
+            };
         bg_scratch.push(CellBg { rgba });
     }
 }

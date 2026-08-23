@@ -90,8 +90,16 @@ fn row_selection_from(
             hi: sel.start_col.max(sel.end_col).min(cols_max),
         });
     }
-    let lo = if y == sel.start_line { sel.start_col } else { 0 };
-    let hi = if y == sel.end_line { sel.end_col } else { cols_max };
+    let lo = if y == sel.start_line {
+        sel.start_col
+    } else {
+        0
+    };
+    let hi = if y == sel.end_line {
+        sel.end_col
+    } else {
+        cols_max
+    };
     Some(rio_grid::RowSelection {
         lo: lo.min(cols_max),
         hi: hi.min(cols_max),
@@ -409,8 +417,10 @@ pub unsafe extern "C" fn sl_image_upload(
         display_height: None,
         transmit_time: std::time::Instant::now(),
     };
-    sl.image_data
-        .insert(kitty_image_key(id), GraphicDataEntry::from_graphic_data(data));
+    sl.image_data.insert(
+        kitty_image_key(id),
+        GraphicDataEntry::from_graphic_data(data),
+    );
 }
 
 /// Drop every uploaded image and placement. Used when the terminal reports no
@@ -603,7 +613,9 @@ pub unsafe extern "C" fn sl_grid_set_cursor(
 
 #[no_mangle]
 pub unsafe extern "C" fn sl_grid_needs_full_rebuild(grid: *const GridRenderer) -> bool {
-    grid.as_ref().map(|g| g.needs_full_rebuild()).unwrap_or(false)
+    grid.as_ref()
+        .map(|g| g.needs_full_rebuild())
+        .unwrap_or(false)
 }
 
 #[no_mangle]
@@ -645,7 +657,11 @@ pub unsafe extern "C" fn sl_grid_lookup_glyph(
     let (Some(grid), Some(out)) = (grid.as_ref(), out.as_mut()) else {
         return false;
     };
-    match grid.lookup_glyph(GlyphKey { font_id, glyph_id, size_bucket }) {
+    match grid.lookup_glyph(GlyphKey {
+        font_id,
+        glyph_id,
+        size_bucket,
+    }) {
         Some(slot) => {
             *out = to_slot(slot);
             true
@@ -680,7 +696,14 @@ pub unsafe extern "C" fn sl_grid_insert_glyph(
         bearing_y,
         bytes: slice_or_empty(bytes, bytes_len),
     };
-    match grid.insert_glyph(GlyphKey { font_id, glyph_id, size_bucket }, glyph) {
+    match grid.insert_glyph(
+        GlyphKey {
+            font_id,
+            glyph_id,
+            size_bucket,
+        },
+        glyph,
+    ) {
         Some(slot) => {
             *out = to_slot(slot);
             true

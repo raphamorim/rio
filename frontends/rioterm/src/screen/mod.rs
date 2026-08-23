@@ -4362,16 +4362,15 @@ impl Screen<'_> {
                 // frame and only dirties cursor buffers on
                 // change — do NOT clear the slots beforehand,
                 // that would dirty them every frame.
-                let render_style = rio_grid::cursor_render_style(
-                    rio_grid::CursorRenderInputs {
+                let render_style =
+                    rio_grid::cursor_render_style(rio_grid::CursorRenderInputs {
                         visible: p.cursor_visible,
                         focused: p.is_active && self.renderer.is_window_focused,
                         blink_visible: p.cursor_blink_visible,
                         blinking: p.cursor_blinking,
                         preedit: p.cursor_preedit,
                         shape: p.cursor_shape,
-                    },
-                );
+                    });
                 let mut block_cursor: Option<rio_backend::sugarloaf::grid::CellText> =
                     None;
                 let mut tail_cursor: Option<rio_backend::sugarloaf::grid::CellText> =
@@ -4425,18 +4424,21 @@ impl Screen<'_> {
                 // underline / hollow) draw via the sprite emitted
                 // above; their bg/text stays untouched. Same gate as
                 // .
-                let (cursor_pos, cursor_col_u, cursor_bg_u) = if matches!(
-                    render_style,
-                    Some(rio_grid::CursorRenderStyle::Block)
-                ) {
-                    (
-                        [p.cursor_col as u32, p.cursor_row as u32],
-                        [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
-                        [p.cursor_color[0], p.cursor_color[1], p.cursor_color[2], 1.0],
-                    )
-                } else {
-                    ([u32::MAX; 2], [0.0; 4], [0.0; 4])
-                };
+                let (cursor_pos, cursor_col_u, cursor_bg_u) =
+                    if matches!(render_style, Some(rio_grid::CursorRenderStyle::Block)) {
+                        (
+                            [p.cursor_col as u32, p.cursor_row as u32],
+                            [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
+                            [
+                                p.cursor_color[0],
+                                p.cursor_color[1],
+                                p.cursor_color[2],
+                                1.0,
+                            ],
+                        )
+                    } else {
+                        ([u32::MAX; 2], [0.0; 4], [0.0; 4])
+                    };
 
                 let uniforms = rio_backend::sugarloaf::grid::GridUniforms {
                     projection:
