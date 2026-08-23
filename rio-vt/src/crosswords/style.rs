@@ -12,6 +12,7 @@
 use crate::config::colors::{AnsiColor, NamedColor};
 use bitflags::bitflags;
 use rustc_hash::FxHashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Index into the per-grid `StyleSet`. Id `0` is always the default style
 /// (`Style::default()`), so a freshly-zeroed cell renders correctly without
@@ -81,10 +82,42 @@ pub struct StyleSet {
     /// Direct-mapped cache of candidate ids fronting `lookup`; slots are
     /// verified against `packed`, so a stale slot misses, never lies.
     memo: [StyleId; MEMO_SLOTS],
+    /// Ids freed by `sweep_unmarked`, reused before growing `styles`.
+    free: Vec<StyleId>,
+    /// Novel interns (lookup misses, including ones that failed at the
+    /// id cap) since the last sweep. Drives the sweep cadence.
+    novel_since_sweep: usize,
+    /// Changes whenever the id→style mapping changes (new intern, slot
+    /// reuse, sweep). Drawn from a process-wide counter so two distinct
+    /// `StyleSet` instances can never share a revision — a consumer that
+    /// caches a copy of the table keyed by revision stays correct even
+    /// across a grid swap.
+    revision: u64,
 }
 
 const MEMO_BITS: u32 = 10;
 const MEMO_SLOTS: usize = 1 << MEMO_BITS;
+
+/// `pack_style` output never sets bits above 111 (flags occupy 96..112),
+/// so this can never collide with a real key. Freed slots hold it so a
+/// stale memo candidate verifies against it and misses.
+const TOMBSTONE_KEY: u128 = 1 << 127;
+
+/// One `Grid::reclaim_styles` mark-and-sweep per this many novel
+/// interns. The mark walks every cell of the ring (rows carry no
+/// has-styles hint), so the cadence is set high enough that the
+/// amortized cost per novel style stays at a few cell reads; sessions
+/// that never intern this many distinct styles never sweep. Counting
+/// misses that failed at the id cap keeps the cadence — and therefore
+/// recovery — alive even while interns fall back to the default style.
+const STYLE_SWEEP_CADENCE: usize = 16384;
+
+static REVISION_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+#[inline]
+fn next_revision() -> u64 {
+    REVISION_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
 
 /// Pack a style into a unique `u128`: 32 bits per color (tag + payload),
 /// 32 for the optional underline color, the flag bits on top. Injective,
@@ -139,6 +172,9 @@ impl StyleSet {
             packed: vec![key],
             lookup,
             memo: [DEFAULT_STYLE_ID; MEMO_SLOTS],
+            free: Vec::new(),
+            novel_since_sweep: 0,
+            revision: next_revision(),
         }
     }
 
@@ -184,11 +220,13 @@ impl StyleSet {
     }
 
     /// Intern a style and return its id. If the style already exists,
-    /// returns the existing id. If not, inserts it.
+    /// returns the existing id. If not, inserts it, reusing a swept id
+    /// when one is free.
     ///
     /// Saturates at `u16::MAX` styles per grid: any attempt to intern beyond
-    /// that returns `DEFAULT_STYLE_ID`. In practice rio sessions use < 100
-    /// distinct styles so this is purely defensive.
+    /// that returns `DEFAULT_STYLE_ID`. `Grid::reclaim_styles` sweeps
+    /// unreferenced ids before the cap is reached, so hitting it means the
+    /// grid genuinely displays 65k distinct styles at once.
     pub fn intern(&mut self, style: Style) -> StyleId {
         let key = pack_style(&style);
         let slot = memo_index(key);
@@ -207,18 +245,74 @@ impl StyleSet {
         if let Some(&id) = self.lookup.get(&key) {
             return id;
         }
-        if self.styles.len() >= u16::MAX as usize {
-            tracing::warn!(
-                "StyleSet hit u16::MAX styles ({}); falling back to default",
-                self.styles.len()
-            );
-            return DEFAULT_STYLE_ID;
-        }
-        let id = self.styles.len() as StyleId;
-        self.styles.push(style);
-        self.packed.push(key);
+        self.novel_since_sweep += 1;
+        let id = match self.free.pop() {
+            Some(id) => {
+                self.styles[id as usize] = style;
+                self.packed[id as usize] = key;
+                id
+            }
+            None => {
+                if self.styles.len() >= u16::MAX as usize {
+                    tracing::warn!(
+                        "StyleSet hit u16::MAX styles ({}); falling back to default",
+                        self.styles.len()
+                    );
+                    return DEFAULT_STYLE_ID;
+                }
+                let id = self.styles.len() as StyleId;
+                self.styles.push(style);
+                self.packed.push(key);
+                id
+            }
+        };
         self.lookup.insert(key, id);
+        self.revision = next_revision();
         id
+    }
+
+    /// Whether the caller should run a mark-and-sweep before the next
+    /// intern: the novel-intern cadence elapsed. Purely cadence-driven so
+    /// a sweep that frees nothing (every id genuinely live) cannot
+    /// re-trigger on the very next intern.
+    #[inline]
+    pub fn should_sweep(&self) -> bool {
+        self.novel_since_sweep >= STYLE_SWEEP_CADENCE
+    }
+
+    /// Free every non-default id whose bit is unset in `live`, making it
+    /// reusable by later interns. `live` is a bitset indexed by id;
+    /// callers mark every id still referenced by a cell or cursor
+    /// template before calling. Freed slots keep the default style so a
+    /// stale read renders defensively rather than garbage.
+    pub fn sweep_unmarked(&mut self, live: &[u64]) {
+        self.novel_since_sweep = 0;
+        let mut freed = false;
+        for id in 1..self.styles.len() {
+            if live[id / 64] & (1 << (id % 64)) != 0 {
+                continue;
+            }
+            let key = self.packed[id];
+            if key == TOMBSTONE_KEY {
+                continue;
+            }
+            self.lookup.remove(&key);
+            self.packed[id] = TOMBSTONE_KEY;
+            self.styles[id] = Style::default();
+            self.free.push(id as StyleId);
+            freed = true;
+        }
+        if freed {
+            self.revision = next_revision();
+        }
+    }
+
+    /// Current revision of the id→style mapping. Stable while no new
+    /// style is interned and no sweep runs, and never shared between two
+    /// `StyleSet` instances.
+    #[inline]
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     #[inline]
@@ -267,6 +361,86 @@ mod tests {
         assert_eq!(id1, id2);
         assert_ne!(id1, DEFAULT_STYLE_ID);
         assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn sweep_frees_and_reuses_ids() {
+        let mut set = StyleSet::new();
+        let red = Style {
+            fg: AnsiColor::Named(NamedColor::Red),
+            ..Style::default()
+        };
+        let blue = Style {
+            fg: AnsiColor::Named(NamedColor::Blue),
+            ..Style::default()
+        };
+        let red_id = set.intern(red);
+        let blue_id = set.intern(blue);
+        let rev = set.revision();
+
+        // Keep red alive, sweep blue.
+        let mut live = vec![0u64; (u16::MAX as usize + 1).div_ceil(64)];
+        live[0] |= 1;
+        live[red_id as usize / 64] |= 1u64 << (red_id % 64);
+        set.sweep_unmarked(&live);
+        assert_ne!(set.revision(), rev);
+
+        // Red survives with its id; blue's slot reads as default.
+        assert_eq!(set.intern(red), red_id);
+        assert_eq!(set.get(blue_id), Style::default());
+
+        // The freed id is reused before the table grows.
+        let len = set.len();
+        let green = Style {
+            fg: AnsiColor::Named(NamedColor::Green),
+            ..Style::default()
+        };
+        assert_eq!(set.intern(green), blue_id);
+        assert_eq!(set.get(blue_id), green);
+        assert_eq!(set.len(), len);
+
+        // Re-interning the swept style allocates a fresh id.
+        assert_ne!(set.intern(blue), blue_id);
+    }
+
+    #[test]
+    fn sweep_cadence_counts_novel_interns() {
+        use crate::config::colors::ColorRgb;
+        let mut set = StyleSet::new();
+        assert!(!set.should_sweep());
+        for i in 0..STYLE_SWEEP_CADENCE {
+            set.intern(Style {
+                fg: AnsiColor::Spec(ColorRgb {
+                    r: (i >> 8) as u8,
+                    g: (i & 0xFF) as u8,
+                    b: 0,
+                }),
+                ..Style::default()
+            });
+        }
+        assert!(set.should_sweep());
+
+        // A sweep resets the cadence even when nothing is freed, so a
+        // fully-live table can't re-trigger a sweep per intern.
+        let live = vec![u64::MAX; (u16::MAX as usize + 1).div_ceil(64)];
+        set.sweep_unmarked(&live);
+        assert!(!set.should_sweep());
+    }
+
+    #[test]
+    fn revision_changes_only_on_mutation() {
+        let mut set = StyleSet::new();
+        let s = Style {
+            fg: AnsiColor::Named(NamedColor::Red),
+            ..Style::default()
+        };
+        let rev0 = set.revision();
+        set.intern(s);
+        let rev1 = set.revision();
+        assert_ne!(rev0, rev1);
+        set.intern(s);
+        assert_eq!(set.revision(), rev1);
+        assert_ne!(StyleSet::new().revision(), rev1);
     }
 
     #[test]

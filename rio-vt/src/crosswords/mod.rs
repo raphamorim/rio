@@ -2171,6 +2171,7 @@ impl<U: EventListener> Crosswords<U> {
         cols: usize,
         dst: &mut Vec<Row<Square>>,
         style_table: &mut Vec<crate::crosswords::style::Style>,
+        style_table_rev: &mut u64,
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
     ) {
         use crate::event::TerminalDamage;
@@ -2178,8 +2179,16 @@ impl<U: EventListener> Crosswords<U> {
         let count = (end - start) as usize;
 
         let _ = cols;
-        style_table.clear();
-        style_table.extend_from_slice(self.grid.style_set.styles());
+        // The style table only changes when a novel style is interned or
+        // a sweep runs, both of which bump the revision. Steady-state
+        // frames skip the copy entirely; `StyleSet` revisions are unique
+        // across instances so a grid swap can't alias a stale copy.
+        let rev = self.grid.style_set.revision();
+        if *style_table_rev != rev {
+            style_table.clear();
+            style_table.extend_from_slice(self.grid.style_set.styles());
+            *style_table_rev = rev;
+        }
 
         let needs_full = matches!(damage, TerminalDamage::Full) || dst.len() != count;
 

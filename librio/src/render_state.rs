@@ -66,6 +66,9 @@ pub struct RenderState {
     terminal: Arc<FairMutex<Crosswords<Listener>>>,
     rows: Vec<Row<Square>>,
     styles: Vec<Style>,
+    /// `StyleSet` revision `styles` was copied at; lets
+    /// `snapshot_visible` skip the copy while the table is unchanged.
+    styles_rev: u64,
     extras: FxHashMap<u16, Extras>,
     columns: usize,
     cursor_line: usize,
@@ -100,6 +103,7 @@ impl RenderState {
             terminal,
             rows: Vec::new(),
             styles: Vec::new(),
+            styles_rev: 0,
             extras: FxHashMap::default(),
             columns,
             cursor_line: 0,
@@ -131,6 +135,7 @@ impl RenderState {
             self.columns,
             &mut self.rows,
             &mut self.styles,
+            &mut self.styles_rev,
             &mut self.extras,
         );
         term.reset_damage();

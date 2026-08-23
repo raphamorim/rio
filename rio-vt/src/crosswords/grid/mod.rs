@@ -711,10 +711,54 @@ impl Grid<Square> {
     #[inline]
     pub fn sync_template_style(&mut self) {
         if self.cursor.style_dirty {
-            let id = self.style_set.intern(self.cursor.pending_style);
+            let id = self.intern_style(self.cursor.pending_style);
             self.cursor.template.set_style_id(id);
             self.cursor.style_dirty = false;
         }
+    }
+
+    /// Intern a style, transparently running the mark-and-sweep when the
+    /// id space is close to exhausted. Same contract as `alloc_extras`:
+    /// callers never orchestrate reclamation.
+    #[inline]
+    fn intern_style(&mut self, style: Style) -> StyleId {
+        if self.style_set.should_sweep() {
+            self.reclaim_styles();
+        }
+        self.style_set.intern(style)
+    }
+
+    /// Free style ids no longer referenced by any cell.
+    ///
+    /// Cells are overwritten and rows drop off the scrollback ring without
+    /// freeing their style id, so a session that keeps generating novel
+    /// truecolor pairs (gradients, animations) eventually exhausts the
+    /// u16 id space. Mark every id referenced by a live row (visible +
+    /// history) or a cursor template, then free the rest for reuse.
+    pub fn reclaim_styles(&mut self) {
+        #[inline]
+        fn mark(live: &mut [u64], sq: &Square) {
+            // Only Codepoint cells carry a style id; bg-only cells reuse
+            // those bits for their inline color.
+            if matches!(
+                sq.content_tag(),
+                crate::crosswords::square::ContentTag::Codepoint
+            ) {
+                let id = sq.style_id();
+                live[id as usize / 64] |= 1 << (id % 64);
+            }
+        }
+
+        let mut live = vec![0u64; (u16::MAX as usize + 1).div_ceil(64)];
+        live[0] |= 1;
+        for l in self.topmost_line().0..=self.bottommost_line().0 {
+            for sq in &self.raw[Line(l)].inner {
+                mark(&mut live, sq);
+            }
+        }
+        mark(&mut live, &self.cursor.template);
+        mark(&mut live, &self.saved_cursor.template);
+        self.style_set.sweep_unmarked(&live);
     }
 
     /// Build a "blank cell with this bg color" using the default style for
@@ -767,7 +811,7 @@ impl Grid<Square> {
             bg,
             ..Style::default()
         };
-        let id = self.style_set.intern(style);
+        let id = self.intern_style(style);
         Square::default().with_style_id(id)
     }
 }

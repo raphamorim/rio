@@ -522,6 +522,7 @@ impl Renderer {
                     snapshot_cols,
                     &mut context.renderable_content.visible_rows,
                     &mut context.renderable_content.style_table,
+                    &mut context.renderable_content.style_table_rev,
                     &mut context.renderable_content.extras,
                 );
                 context.renderable_content.term_colors = terminal.colors;

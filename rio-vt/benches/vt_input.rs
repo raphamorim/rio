@@ -70,6 +70,28 @@ fn ansi_two_styles(total: usize) -> Vec<u8> {
     line.repeat(total / line.len() + 1).into_bytes()
 }
 
+/// Full-screen repaint with a distinct truecolor fg+bg pair on every
+/// cell, the half-block gradient shape unthrottled fps benchmarks
+/// produce. Every cell interns its own style, so this is the worst case
+/// for the style table (memo thrash, table growth toward the id cap)
+/// on top of SGR-dense parsing.
+fn truecolor_unique(total: usize) -> Vec<u8> {
+    let mut out = String::new();
+    let mut frame = 0usize;
+    while out.len() < total {
+        for y in 0..ROWS {
+            out += &format!("\x1b[{};1H", y + 1);
+            for x in 0..COLS {
+                let v = (x * 7 + y * 13 + frame * 31) % 253;
+                let w = (x * 11 + y * 3 + frame * 17) % 251;
+                out += &format!("\x1b[38;2;{v};{v};{v}m\x1b[48;2;{w};{w};{w}m\u{2580}");
+            }
+        }
+        frame += 1;
+    }
+    out.into_bytes()
+}
+
 /// Escape density without SGR payloads: bare reset sequences between
 /// words, measuring the state-machine and dispatch floor.
 fn ansi_bare_csi(total: usize) -> Vec<u8> {
@@ -105,11 +127,12 @@ impl rio_vt::performer::parser::Perform for NoopPerform {
 
 fn bench(c: &mut Criterion) {
     const BYTES: usize = 4 * 1024 * 1024;
-    let cases: [(&str, Vec<u8>); 4] = [
+    let cases: [(&str, Vec<u8>); 5] = [
         ("plain", plain(BYTES)),
         ("ansi_mixed", ansi_mixed(BYTES)),
         ("ansi_two_styles", ansi_two_styles(BYTES)),
         ("ansi_bare_csi", ansi_bare_csi(BYTES)),
+        ("truecolor_unique", truecolor_unique(BYTES)),
     ];
 
     let mut group = c.benchmark_group("vt_input");

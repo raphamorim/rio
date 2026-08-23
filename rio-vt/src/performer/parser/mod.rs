@@ -1011,13 +1011,14 @@ impl Parser {
         }
     }
 
-    /// Scalar transcode for wasm, where the C++-backed `simdutf` cannot
-    /// build. Same contract as the SIMD path below: each invalid maximal
-    /// subpart becomes one U+FFFD, except a lone C1 byte, which keeps its
-    /// execute semantics through decode.
-    #[cfg(target_arch = "wasm32")]
+    /// Scalar transcode. Used for every input on wasm, where the
+    /// C++-backed `simdutf` cannot build, and for short runs everywhere
+    /// else, where the out-of-line simdutf call costs more than the
+    /// decode itself. Same contract as the SIMD path below: each invalid
+    /// maximal subpart becomes one U+FFFD, except a lone C1 byte, which
+    /// keeps its execute semantics through decode.
     #[inline]
-    fn decode_codepoints(&mut self, src: &[u8]) {
+    fn decode_codepoints_scalar(&mut self, src: &[u8]) {
         self.decode_buf.clear();
         self.decode_buf.reserve(src.len());
 
@@ -1047,12 +1048,24 @@ impl Parser {
         }
     }
 
+    #[cfg(target_arch = "wasm32")]
+    #[inline]
+    fn decode_codepoints(&mut self, src: &[u8]) {
+        self.decode_codepoints_scalar(src)
+    }
+
     /// SIMD-transcode a UTF-8 byte slice into [`Self::decode_buf`] as `u32`
     /// codepoints, replacing each invalid UTF-8 maximal subpart with one
     /// U+FFFD inline (W3C/Unicode "Substitution of Maximal Subparts").
     #[cfg(not(target_arch = "wasm32"))]
     #[inline]
     fn decode_codepoints(&mut self, src: &[u8]) {
+        // SGR-dense streams produce a ground run of one glyph between
+        // escapes; the FFI call into simdutf costs more than decoding a
+        // handful of bytes in place.
+        if src.len() < SIMD_DECODE_MIN {
+            return self.decode_codepoints_scalar(src);
+        }
         self.decode_buf.clear();
         // Worst case: 1 codepoint per source byte. Reserve up-front so the
         // raw pointer writes simdutf does are always in-bounds.
@@ -1258,6 +1271,9 @@ fn find_dcs_boundary(bytes: &[u8]) -> usize {
 /// Byte cap per decode chunk in `ground_dispatch`, bounding `decode_buf`
 /// growth. Chunks never split a UTF-8 sequence.
 const DECODE_CHUNK: usize = 4096;
+
+/// Runs shorter than this decode scalar instead of through simdutf.
+const SIMD_DECODE_MIN: usize = 16;
 
 /// Length of the maximal valid subpart of a UTF-8 sequence starting at
 /// `p[0]`, per Unicode Table 3-7 / W3C "U+FFFD Substitution of Maximal
