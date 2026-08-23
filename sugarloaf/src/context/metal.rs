@@ -135,6 +135,25 @@ impl MetalContext {
         layer.set_drawable_size(drawable_size);
         layer.set_contents_scale(scale as f64);
 
+        // Pin the layer's contents to the top-left. CALayer's default
+        // `contentsGravity` is `kCAGravityResize`, which stretches the
+        // last presented drawable to fill new bounds — so after a display
+        // sleep/wake or a move to a differently-scaled screen, the stale
+        // frame smears to fill the window until a fresh frame is drawn.
+        // Top-left leaves it correctly-sized-but-cropped instead, which
+        // reads as a static frame rather than a giant blurry one. Matches
+        // ghostty's IOSurfaceLayer. The `metal` crate doesn't wrap this
+        // setter, so go through the Obj-C runtime with QuartzCore's
+        // `kCAGravityTopLeft` string constant.
+        #[link(name = "QuartzCore", kind = "framework")]
+        extern "C" {
+            static kCAGravityTopLeft: *const Object;
+        }
+        unsafe {
+            let layer_obj = layer.as_ptr() as *mut Object;
+            let _: () = msg_send![layer_obj, setContentsGravity: kCAGravityTopLeft];
+        }
+
         // Attach layer to window
         unsafe {
             match sugarloaf_window.window_handle().unwrap().as_raw() {
