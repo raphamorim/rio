@@ -2179,18 +2179,23 @@ impl<U: EventListener> Crosswords<U> {
         let count = (end - start) as usize;
 
         let _ = cols;
+        let needs_full = matches!(damage, TerminalDamage::Full) || dst.len() != count;
+
         // The style table only changes when a novel style is interned or
-        // a sweep runs, both of which bump the revision. Steady-state
-        // frames skip the copy entirely; `StyleSet` revisions are unique
-        // across instances so a grid swap can't alias a stale copy.
+        // a sweep runs, both of which bump the per-instance revision, so
+        // steady-state frames skip the copy. Revisions are NOT unique
+        // across `StyleSet` instances; the copy is unconditional on
+        // full-damage frames instead, and every path that changes which
+        // style set is visible (`swap_alt`, `reset_state`, resize) marks
+        // fully damaged, which makes the revision comparison safe on
+        // every partial frame. This also assumes one snapshot consumer
+        // per terminal — damage is consumed once.
         let rev = self.grid.style_set.revision();
-        if *style_table_rev != rev {
+        if needs_full || *style_table_rev != rev {
             style_table.clear();
             style_table.extend_from_slice(self.grid.style_set.styles());
             *style_table_rev = rev;
         }
-
-        let needs_full = matches!(damage, TerminalDamage::Full) || dst.len() != count;
 
         if needs_full {
             dst.clear();

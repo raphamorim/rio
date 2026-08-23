@@ -12,7 +12,6 @@
 use crate::config::colors::{AnsiColor, NamedColor};
 use bitflags::bitflags;
 use rustc_hash::FxHashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Index into the per-grid `StyleSet`. Id `0` is always the default style
 /// (`Style::default()`), so a freshly-zeroed cell renders correctly without
@@ -87,11 +86,14 @@ pub struct StyleSet {
     /// Novel interns (lookup misses, including ones that failed at the
     /// id cap) since the last sweep. Drives the sweep cadence.
     novel_since_sweep: usize,
-    /// Changes whenever the id→style mapping changes (new intern, slot
-    /// reuse, sweep). Drawn from a process-wide counter so two distinct
-    /// `StyleSet` instances can never share a revision — a consumer that
-    /// caches a copy of the table keyed by revision stays correct even
-    /// across a grid swap.
+    /// Bumped whenever the id→style mapping changes (new intern, slot
+    /// reuse, sweep). Only meaningful within this instance: two
+    /// `StyleSet`s can carry equal revisions with different content, so
+    /// a consumer caching a copy keyed by revision must re-copy on any
+    /// frame that can follow a switch of the visible instance.
+    /// `snapshot_visible` does that by copying unconditionally on
+    /// full-damage frames; every instance switch (`swap_alt`,
+    /// `reset_state`, resize) marks fully damaged.
     revision: u64,
 }
 
@@ -111,13 +113,6 @@ const TOMBSTONE_KEY: u128 = 1 << 127;
 /// misses that failed at the id cap keeps the cadence — and therefore
 /// recovery — alive even while interns fall back to the default style.
 const STYLE_SWEEP_CADENCE: usize = 16384;
-
-static REVISION_COUNTER: AtomicU64 = AtomicU64::new(1);
-
-#[inline]
-fn next_revision() -> u64 {
-    REVISION_COUNTER.fetch_add(1, Ordering::Relaxed)
-}
 
 /// Pack a style into a unique `u128`: 32 bits per color (tag + payload),
 /// 32 for the optional underline color, the flag bits on top. Injective,
@@ -174,7 +169,7 @@ impl StyleSet {
             memo: [DEFAULT_STYLE_ID; MEMO_SLOTS],
             free: Vec::new(),
             novel_since_sweep: 0,
-            revision: next_revision(),
+            revision: 1,
         }
     }
 
@@ -267,7 +262,7 @@ impl StyleSet {
             }
         };
         self.lookup.insert(key, id);
-        self.revision = next_revision();
+        self.revision += 1;
         id
     }
 
@@ -303,13 +298,13 @@ impl StyleSet {
             freed = true;
         }
         if freed {
-            self.revision = next_revision();
+            self.revision += 1;
         }
     }
 
     /// Current revision of the id→style mapping. Stable while no new
-    /// style is interned and no sweep runs, and never shared between two
-    /// `StyleSet` instances.
+    /// style is interned and no sweep runs. Per-instance only — see the
+    /// field doc for the cross-instance contract.
     #[inline]
     pub fn revision(&self) -> u64 {
         self.revision
@@ -440,7 +435,6 @@ mod tests {
         assert_ne!(rev0, rev1);
         set.intern(s);
         assert_eq!(set.revision(), rev1);
-        assert_ne!(StyleSet::new().revision(), rev1);
     }
 
     #[test]
