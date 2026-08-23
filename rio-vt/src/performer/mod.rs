@@ -63,6 +63,15 @@ const READ_CHUNK: usize = 65536;
 #[cfg(feature = "pty")]
 const MAX_LOCKED_READ: usize = READ_CHUNK * 4;
 
+// Guards the pairing that once regressed: a MAX_LOCKED_READ below
+// READ_CHUNK ends the burst loop after a single partial chunk.
+#[cfg(feature = "pty")]
+const _: () = {
+    assert!(MAX_LOCKED_READ >= READ_CHUNK);
+    assert!(MAX_LOCKED_READ.is_multiple_of(READ_CHUNK));
+    assert!(READ_BUFFER_SIZE >= MAX_LOCKED_READ);
+};
+
 #[cfg(feature = "pty")]
 struct PeekableReceiver<T> {
     rx: channel::Receiver<T>,
@@ -511,19 +520,5 @@ where
 
             (self, state)
         })
-    }
-}
-
-#[cfg(all(test, feature = "pty"))]
-mod read_loop_tests {
-    use super::*;
-
-    // Guards the pairing that once regressed: a MAX_LOCKED_READ below
-    // READ_CHUNK ends the burst loop after a single partial chunk.
-    #[test]
-    fn locked_read_covers_whole_chunks() {
-        assert!(MAX_LOCKED_READ >= READ_CHUNK);
-        assert_eq!(MAX_LOCKED_READ % READ_CHUNK, 0);
-        assert!(READ_BUFFER_SIZE >= MAX_LOCKED_READ);
     }
 }

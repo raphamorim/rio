@@ -203,8 +203,10 @@ pub unsafe extern "C" fn sl_new(
         // The host rasterizes its own glyphs into the atlas, so this font
         // library only backs sugarloaf's (unused-by-us) UI text. A default
         // is enough; `Sugarloaf` holds its own Arc clone, so it can drop.
-        let mut fonts = SugarloafFonts::default();
-        fonts.size = font_size;
+        let fonts = SugarloafFonts {
+            size: font_size,
+            ..Default::default()
+        };
         let (font_library, _errors) = FontLibrary::new(fonts);
         let layout = RootStyle::new(scale, font_size, line_height);
 
@@ -1345,10 +1347,7 @@ pub unsafe extern "C" fn sl_render_surface(
         // renderer's `drawPreedit`. The box isn't in the terminal buffer, so
         // it rides the UI-text pass rather than the cell grid.
         if let Some(preedit) = preedit_str {
-            if cursor_visible
-                && (cursor_line as usize) < rows
-                && (cursor_col as usize) < cols
-            {
+            if cursor_visible && cursor_line < rows && cursor_col < cols {
                 let scale_f = scale.max(f32::MIN_POSITIVE);
                 let cell_w_l = cell_w / scale_f;
                 let cell_h_l = cell_h / scale_f;
