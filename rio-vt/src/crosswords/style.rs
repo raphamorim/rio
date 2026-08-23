@@ -86,6 +86,12 @@ pub struct StyleSet {
     /// Novel interns (lookup misses, including ones that failed at the
     /// id cap) since the last sweep. Drives the sweep cadence.
     novel_since_sweep: usize,
+    /// Novel interns required before the next sweep. Re-armed by each
+    /// sweep to the number of ids it freed (with a floor), so a sweep
+    /// that reclaimed plenty allows the next one as soon as those ids
+    /// are used up, instead of stranding novel styles on the default
+    /// fallback for the remainder of a fixed cadence.
+    novel_needed: usize,
     /// Bumped whenever the id→style mapping changes (new intern, slot
     /// reuse, sweep). Only meaningful within this instance: two
     /// `StyleSet`s can carry equal revisions with different content, so
@@ -105,13 +111,17 @@ const MEMO_SLOTS: usize = 1 << MEMO_BITS;
 /// stale memo candidate verifies against it and misses.
 const TOMBSTONE_KEY: u128 = 1 << 127;
 
-/// One `Grid::reclaim_styles` mark-and-sweep per this many novel
-/// interns. The mark walks every cell of the ring (rows carry no
-/// has-styles hint), so the cadence is set high enough that the
-/// amortized cost per novel style stays at a few cell reads. Counting
-/// misses that failed at the id cap keeps the cadence — and therefore
-/// recovery — alive even while interns fall back to the default style.
+/// Novel interns before the first sweep, and the re-arm floor after a
+/// sweep that freed little. The mark walks every cell of the ring
+/// (rows carry no has-styles hint); with a 10k-line scrollback that
+/// is on the order of a million cell reads per sweep, so the floor
+/// bounds how often a near-fruitless sweep can recur. Counting misses
+/// that failed at the id cap keeps sweeps, and therefore recovery,
+/// coming even while interns fall back to the default style.
 const STYLE_SWEEP_CADENCE: usize = 16384;
+
+/// Lower bound for the post-sweep re-arm.
+const SWEEP_MIN_NOVEL: usize = 4096;
 
 /// No sweep runs while the table is smaller than this, no matter the
 /// cadence: sessions with modest style sets never pay the ring walk,
@@ -174,6 +184,7 @@ impl StyleSet {
             memo: [DEFAULT_STYLE_ID; MEMO_SLOTS],
             free: Vec::new(),
             novel_since_sweep: 0,
+            novel_needed: STYLE_SWEEP_CADENCE,
             revision: 1,
         }
     }
@@ -198,25 +209,6 @@ impl StyleSet {
             .get(id as usize)
             .copied()
             .unwrap_or_else(Style::default)
-    }
-
-    /// Unchecked variant of `get`. Skips both the default-style early
-    /// return AND the bounds check on `self.styles`. Used by the renderer
-    /// hot loop after the caller has already verified the id is non-zero
-    /// and in range (which is always true for ids produced by `intern`).
-    ///
-    /// # Safety
-    /// `id` must be a valid index into `self.styles` (i.e. less than
-    /// `self.len()`). Ids returned by `intern` always satisfy this.
-    #[inline(always)]
-    pub unsafe fn get_unchecked(&self, id: StyleId) -> Style {
-        debug_assert!(
-            (id as usize) < self.styles.len(),
-            "StyleSet::get_unchecked called with out-of-range id {} (len {})",
-            id,
-            self.styles.len(),
-        );
-        *self.styles.get_unchecked(id as usize)
     }
 
     /// Intern a style and return its id. If the style already exists,
@@ -272,13 +264,13 @@ impl StyleSet {
     }
 
     /// Whether the caller should run a mark-and-sweep before the next
-    /// intern: the novel-intern cadence elapsed, freed ids ran out, and
-    /// the table is past the high-water mark. Cadence-gated so a sweep
-    /// that frees nothing (every id genuinely live) cannot re-trigger on
-    /// the very next intern.
+    /// intern: enough novel interns since the last sweep, freed ids ran
+    /// out, and the table is past the high-water mark. The re-armed
+    /// `novel_needed` floor keeps a sweep that frees nothing (every id
+    /// genuinely live) from re-triggering on the very next intern.
     #[inline]
     pub fn should_sweep(&self) -> bool {
-        self.novel_since_sweep >= STYLE_SWEEP_CADENCE
+        self.novel_since_sweep >= self.novel_needed
             && self.free.is_empty()
             && self.styles.len() >= SWEEP_HIGH_WATER
     }
@@ -290,6 +282,7 @@ impl StyleSet {
     /// stale read renders defensively rather than garbage.
     pub fn sweep_unmarked(&mut self, live: &[u64]) {
         self.novel_since_sweep = 0;
+        let mut freed = 0usize;
         let mut changed = false;
         for id in 1..self.styles.len() {
             if live[id / 64] & (1 << (id % 64)) != 0 {
@@ -303,8 +296,10 @@ impl StyleSet {
             self.packed[id] = TOMBSTONE_KEY;
             self.styles[id] = Style::default();
             self.free.push(id as StyleId);
+            freed += 1;
             changed = true;
         }
+        self.novel_needed = freed.max(SWEEP_MIN_NOVEL);
         // Drop trailing tombstoned slots so a one-off style spike doesn't
         // permanently inflate every later table copy. Ids past the new
         // length resolve through `get`'s default fallback, and a stale
@@ -321,7 +316,7 @@ impl StyleSet {
     }
 
     /// Current revision of the id→style mapping. Stable while no new
-    /// style is interned and no sweep runs. Per-instance only — see the
+    /// style is interned and no sweep runs. Per-instance only; see the
     /// field doc for the cross-instance contract.
     #[inline]
     pub fn revision(&self) -> u64 {

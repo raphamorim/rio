@@ -132,7 +132,6 @@ impl RenderState {
         };
         term.snapshot_visible(
             &damage,
-            self.columns,
             &mut self.rows,
             &mut self.styles,
             &mut self.styles_rev,

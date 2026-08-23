@@ -326,7 +326,6 @@ mod pipeline_tests {
                 matches!(damage, TerminalDamage::Full) || self.visible_rows.len() != rows;
             term.snapshot_visible(
                 &damage,
-                cols,
                 &mut self.visible_rows,
                 &mut self.style_table,
                 &mut self.style_table_rev,

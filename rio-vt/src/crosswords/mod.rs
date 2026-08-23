@@ -2168,7 +2168,6 @@ impl<U: EventListener> Crosswords<U> {
     pub fn snapshot_visible(
         &mut self,
         damage: &crate::event::TerminalDamage,
-        cols: usize,
         dst: &mut Vec<Row<Square>>,
         style_table: &mut Vec<crate::crosswords::style::Style>,
         style_table_rev: &mut u64,
@@ -2178,7 +2177,6 @@ impl<U: EventListener> Crosswords<U> {
         let (start, end) = self.visible_line_bounds();
         let count = (end - start) as usize;
 
-        let _ = cols;
         let needs_full = matches!(damage, TerminalDamage::Full) || dst.len() != count;
 
         // The style table only changes when a novel style is interned or
@@ -2189,7 +2187,7 @@ impl<U: EventListener> Crosswords<U> {
         // style set is visible (`swap_alt`, `reset_state`, resize) marks
         // fully damaged, which makes the revision comparison safe on
         // every partial frame. This also assumes one snapshot consumer
-        // per terminal — damage is consumed once.
+        // per terminal, since damage is consumed once.
         let rev = self.grid.style_set.revision();
         if needs_full || *style_table_rev != rev {
             style_table.clear();

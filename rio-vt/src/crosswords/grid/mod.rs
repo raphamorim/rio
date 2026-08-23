@@ -71,7 +71,10 @@ pub struct Grid<T> {
     /// the actual fg/bg/underline_color/sgr-flags live here and are looked up
     /// at render/SGR-mutation time. The renderer snapshots a clone under the
     /// terminal lock so post-unlock reads don't race PTY writes.
-    pub style_set: crate::crosswords::style::StyleSet,
+    /// Crate-visible read-only in practice: interning must go through
+    /// [`Self::intern_style`]/[`Self::sync_template_style`] so the
+    /// mark-and-sweep cadence can't be bypassed.
+    pub(crate) style_set: crate::crosswords::style::StyleSet,
 
     /// Per-grid storage for the rare per-cell data that used to live inside
     /// `CellExtra` (zero-width chars, hyperlinks, sixel/iterm graphics).
@@ -118,6 +121,10 @@ impl ReflowRemap {
         Some(self.base_abs as i64 + new)
     }
 }
+
+/// Words in a live-id bitset covering the full u16 id space, shared by
+/// the styles and extras mark-and-sweeps.
+const ID_BITSET_WORDS: usize = (u16::MAX as usize + 1).div_ceil(64);
 
 /// Slot table for `square::Extras`. Index `0` is reserved as the "no extras"
 /// sentinel — `Square::extras_id() == None` corresponds to id 0. Slots are
@@ -637,10 +644,9 @@ impl Grid<Square> {
         self.extras_table.reset_reclaim_cadence();
         #[inline]
         fn mark(live: &mut [u64], sq: &Square) {
-            if matches!(
-                sq.content_tag(),
-                crate::crosswords::square::ContentTag::Codepoint
-            ) {
+            // Bg-only cells reuse the extras-id bits for their inline
+            // color; only Codepoint cells carry a real extras id.
+            if !sq.is_bg_only() {
                 if let Some(eid) = sq.extras_id() {
                     live[eid as usize / 64] |= 1 << (eid % 64);
                 }
@@ -649,7 +655,7 @@ impl Grid<Square> {
 
         // Raw storage walk for the same reason as `reclaim_styles`: rows
         // hidden by a scrollback shrink come back verbatim on grow.
-        let mut live = vec![0u64; (u16::MAX as usize + 1).div_ceil(64)];
+        let mut live = vec![0u64; ID_BITSET_WORDS];
         for row in self.raw.rows() {
             if !row.has_extras {
                 continue;
@@ -739,12 +745,9 @@ impl Grid<Square> {
     pub fn reclaim_styles(&mut self) {
         #[inline]
         fn mark(live: &mut [u64], sq: &Square) {
-            // Only Codepoint cells carry a style id; bg-only cells reuse
-            // those bits for their inline color.
-            if matches!(
-                sq.content_tag(),
-                crate::crosswords::square::ContentTag::Codepoint
-            ) {
+            // Bg-only cells reuse the style-id bits for their inline
+            // color; only Codepoint cells carry a real style id.
+            if !sq.is_bg_only() {
                 let id = sq.style_id();
                 live[id as usize / 64] |= 1 << (id % 64);
             }
@@ -754,7 +757,7 @@ impl Grid<Square> {
         // scrollback keeps up to `MAX_CACHE_SIZE` rows' content intact
         // beyond `len` and a later grow re-exposes them verbatim, so their
         // style ids must stay live too.
-        let mut live = vec![0u64; (u16::MAX as usize + 1).div_ceil(64)];
+        let mut live = vec![0u64; ID_BITSET_WORDS];
         for row in self.raw.rows() {
             for sq in &row.inner {
                 mark(&mut live, sq);

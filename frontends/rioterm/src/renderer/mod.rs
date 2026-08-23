@@ -519,7 +519,6 @@ impl Renderer {
                 let snapshot_cols = terminal.columns();
                 terminal.snapshot_visible(
                     &damage,
-                    snapshot_cols,
                     &mut context.renderable_content.visible_rows,
                     &mut context.renderable_content.style_table,
                     &mut context.renderable_content.style_table_rev,

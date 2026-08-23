@@ -1051,7 +1051,7 @@ impl Parser {
     /// Transcode a UTF-8 byte slice into [`Self::decode_buf`] as `u32`
     /// codepoints. SGR-dense streams produce a ground run of one glyph
     /// between escapes, where the FFI call into simdutf costs more than
-    /// decoding in place — so short runs (and all of wasm, where simdutf
+    /// decoding in place, so short runs (and all of wasm, where simdutf
     /// cannot build) go scalar.
     #[inline]
     fn decode_codepoints(&mut self, src: &[u8]) {
