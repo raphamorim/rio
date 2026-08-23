@@ -69,7 +69,7 @@ onig = { version = "6.5.3", default-features = false }
 onig_sys = { version = "69.9.3", default-features = false }
 bytemuck = { version = "1.25.2", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
-wgpu = "30.0.0"
+wgpu = "30.0.1"
 libc = "0.2.189"
 smol_str = "0.3.2"
 futures = "0.3.31"
