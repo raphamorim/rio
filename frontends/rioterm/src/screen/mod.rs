@@ -2150,36 +2150,40 @@ impl Screen<'_> {
                 continue;
             }
 
+            let regex = match hint_config.regex.as_deref() {
+                Some(pattern) => match self.compiled_hint_regex(pattern) {
+                    Some(regex) => Some(regex),
+                    None => continue,
+                },
+                None => None,
+            };
+
             // Check hyperlinks if enabled
             if hint_config.hyperlinks {
-                if let Some(hyperlink_match) =
-                    self.find_hyperlink_at_point(terminal, point)
-                {
+                if let Some(hyperlink_match) = self.find_hyperlink_at_point(
+                    terminal,
+                    point,
+                    regex.as_deref(),
+                    hint_config.clone(),
+                ) {
                     return Some(hyperlink_match);
                 }
             }
 
             // Check regex patterns if specified
-            if let Some(regex_pattern) = &hint_config.regex {
-                if let Some(regex) = self.compiled_hint_regex(regex_pattern) {
-                    let line = logical_line.get_or_insert_with(|| {
-                        crate::hints::LogicalLine::extract(terminal, point)
+            if let Some(regex) = &regex {
+                let line = logical_line.get_or_insert_with(|| {
+                    crate::hints::LogicalLine::extract(terminal, point)
+                });
+                if let Some(m) = line.as_ref().and_then(|line| {
+                    line.match_at(terminal, point, regex, hint_config.post_processing)
+                }) {
+                    return Some(crate::hints::HintMatch {
+                        text: m.text,
+                        start: m.start,
+                        end: m.end,
+                        hint: hint_config.clone(),
                     });
-                    if let Some(m) = line.as_ref().and_then(|line| {
-                        line.match_at(
-                            terminal,
-                            point,
-                            &regex,
-                            hint_config.post_processing,
-                        )
-                    }) {
-                        return Some(crate::hints::HintMatch {
-                            text: m.text,
-                            start: m.start,
-                            end: m.end,
-                            hint: hint_config.clone(),
-                        });
-                    }
                 }
             }
         }
@@ -2192,6 +2196,8 @@ impl Screen<'_> {
         &self,
         terminal: &rio_backend::crosswords::Crosswords<EventProxy>,
         point: rio_backend::crosswords::pos::Pos,
+        regex: Option<&onig::Regex>,
+        hint_config: std::rc::Rc<rio_backend::config::hints::Hint>,
     ) -> Option<crate::hints::HintMatch> {
         let grid = &terminal.grid;
 
@@ -2207,6 +2213,9 @@ impl Screen<'_> {
         // a different id while belonging to the same link) to find the
         // span boundaries.
         let hyperlink = terminal.cell_hyperlink(point.row, point.col)?;
+        if !crate::hints::hyperlink_matches_rule(regex, hyperlink.uri()) {
+            return None;
+        }
 
         let mut start_col = point.col;
         let mut end_col = point.col;
@@ -2227,21 +2236,6 @@ impl Screen<'_> {
                 break;
             }
         }
-
-        // Build a synthetic hint config so the rest of the hint
-        // pipeline (highlighting, click action) treats this just like
-        // a regex/url match.
-        let hint_config = std::rc::Rc::new(rio_backend::config::hints::Hint {
-            regex: None,
-            hyperlinks: true,
-            post_processing: true,
-            persist: false,
-            action: rio_backend::config::hints::HintAction::Action {
-                action: rio_backend::config::hints::HintInternalAction::Open,
-            },
-            mouse: rio_backend::config::hints::HintMouse::default(),
-            binding: None,
-        });
 
         let mut uri = hyperlink.uri().to_string();
         if hint_config.post_processing {
