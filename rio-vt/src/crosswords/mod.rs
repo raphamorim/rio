@@ -5535,20 +5535,14 @@ impl<U: EventListener> Crosswords<U> {
         image_id: u32,
         placement: &crate::ansi::kitty_graphics_protocol::PlacementRequest,
     ) {
-        // Read image data from the store (clone needed: one copy for
-        // metadata/dimensions, consumed by pending push for GPU upload)
-        let stored = match self.graphics.get_kitty_image(image_id) {
-            Some(s) => s,
-            None => {
-                warn!("place_kitty_overlay: image {} not found", image_id);
-                return;
-            }
-        };
-        let mut graphic_data = stored.data.clone();
-        let texture_current = self.graphics.is_kitty_uploaded(image_id);
-
-        let image_width = graphic_data.width;
-        let image_height = graphic_data.height;
+        let (image_width, image_height, transmit_time) =
+            match self.graphics.get_kitty_image(image_id) {
+                Some(s) => (s.data.width, s.data.height, s.transmission_time),
+                None => {
+                    warn!("place_kitty_overlay: image {} not found", image_id);
+                    return;
+                }
+            };
         if image_width == 0 || image_height == 0 {
             return;
         }
@@ -5594,18 +5588,6 @@ impl<U: EventListener> Crosswords<U> {
         {
             return;
         }
-
-        // Set display dimensions for GPU scaling
-        graphic_data.display_width = Some(display_w);
-        graphic_data.display_height = Some(display_h);
-
-        // Get transmit_time from stored image for cache invalidation
-        let transmit_time = self
-            .graphics
-            .get_kitty_image(image_id)
-            .map(|s| s.transmission_time)
-            .unwrap_or_else(crate::time::Instant::now);
-        graphic_data.transmit_time = transmit_time;
 
         // Memory is managed in store_kitty_image (eviction happens there)
 
@@ -5685,30 +5667,12 @@ impl<U: EventListener> Crosswords<U> {
             transmit_time,
         };
 
-        // Check if this placement already exists with the same transmit_time
-        // (avoids re-uploading identical pixel data to GPU every frame)
-        let needs_upload = !texture_current
-            || match self
-                .graphics
-                .kitty_placements
-                .get(&(image_id, placement_id))
-            {
-                Some(existing) => existing.transmit_time != transmit_time,
-                None => true,
-            };
-
         self.graphics
             .kitty_placements
             .insert((image_id, placement_id), kitty_placement);
         self.graphics.kitty_graphics_dirty = true;
 
-        // Only push pixel data when image data actually changed
-        if needs_upload {
-            self.graphics
-                .kitty_texture_contents
-                .insert(image_id, transmit_time);
-            self.graphics.pending_images.push((image_id, graphic_data));
-        }
+        self.graphics.queue_kitty_upload(image_id);
         self.send_graphics_updates();
 
         // Handle cursor movement per kitty spec
@@ -9855,7 +9819,7 @@ mod tests {
         cw.graphics.pending_images.clear();
 
         // And the alt screen's image 1 is stale again when it returns;
-        // its unplaced image 2 only gets marked, not resent.
+        // its unplaced image 2 is not resent.
         assert!(cw.graphics.swap_kitty_screen_state());
         let queued: Vec<u32> = cw
             .graphics
@@ -9873,8 +9837,8 @@ mod tests {
             .kitty_virtual_placements
             .clear();
 
-        // Without a placement on the incoming screen nothing is resent,
-        // but the marker is dropped so a later placement uploads.
+        // Without a placement on the incoming screen nothing is resent;
+        // the record still mismatches, so a later placement uploads.
         assert!(!cw.graphics.swap_kitty_screen_state());
         assert!(cw.graphics.pending_images.is_empty());
         assert!(!uploaded(&cw, 1));
@@ -9968,12 +9932,19 @@ mod tests {
         cw.swap_alt();
         assert!(uploaded(&cw, 1));
 
-        // Storing image 2 has to evict; the inactive image 1 goes first
-        // and frees texture 1, which the active screen still draws.
+        // Storing image 2 has to evict; the inactive image 1 goes first.
+        // The texture holds the active copy, so it is neither freed nor
+        // resent.
         cw.store_graphic(kitty_test_image(2, 100, 100));
         assert!(cw.graphics.kitty_inactive_screen.kitty_images.is_empty());
         assert!(cw.graphics.get_kitty_image(1).is_some());
         assert!(uploaded(&cw, 1));
+        assert!(cw
+            .graphics
+            .texture_operations
+            .lock()
+            .iter()
+            .all(|key| *key != rio_graphics::kitty_image_key(1)));
     }
 
     #[test]

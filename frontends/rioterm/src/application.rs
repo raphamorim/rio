@@ -483,6 +483,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         );
                     }
 
+                    // Removals arrive as final image keys (atlas refs
+                    // dropped off scrollback, kitty evictions) and free
+                    // both the pixel store and the cached GPU texture.
+                    // They run before the kitty uploads so a batch that
+                    // frees a key and resends it keeps the new pixels.
+                    for key in queues.remove_queue {
+                        sugarloaf.remove_image(key);
+                    }
+
                     // Image textures (kitty) → separate store, no clone
                     for (image_id, graphic_data) in queues.pending_images {
                         sugarloaf.image_data.insert(
@@ -491,13 +500,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 graphic_data,
                             ),
                         );
-                    }
-
-                    // Removals arrive as final image keys (atlas refs
-                    // dropped off scrollback, kitty evictions) and free
-                    // both the pixel store and the cached GPU texture.
-                    for key in queues.remove_queue {
-                        sugarloaf.remove_image(key);
                     }
 
                     // Mark the panel dirty: the renderer skips non-dirty
