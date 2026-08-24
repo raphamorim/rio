@@ -33,6 +33,12 @@ pub const KITTY_PLACEHOLDER: char = '\u{10EEEE}';
 pub struct StoredImage {
     pub data: GraphicData,
     pub transmission_time: crate::time::Instant,
+    /// Whether the frontend texture keyed by this image id currently
+    /// holds these pixels. GPU textures are per window while image
+    /// stores are per screen, so a same-id image on the other screen
+    /// can overwrite the texture; `swap_kitty_screen_state` accounts
+    /// for that.
+    pub gpu_uploaded: bool,
 }
 
 /// Overlay placement for a kitty graphics image.
@@ -842,7 +848,10 @@ impl Graphics {
         }
     }
 
-    pub fn swap_kitty_screen_state(&mut self) {
+    /// Returns whether pixel uploads were queued: an image on the
+    /// incoming screen whose id was also uploaded by the outgoing
+    /// screen no longer owns its texture and, if placed, is resent.
+    pub fn swap_kitty_screen_state(&mut self) -> bool {
         std::mem::swap(
             &mut self.kitty_images,
             &mut self.kitty_inactive_screen.kitty_images,
@@ -868,6 +877,43 @@ impl Graphics {
             &mut self.kitty_inactive_screen.atlas_key_refs,
         );
         self.kitty_graphics_dirty = true;
+
+        let mut queued = false;
+        for (id, incoming) in self.kitty_images.iter_mut() {
+            let outgoing_uploaded = self
+                .kitty_inactive_screen
+                .kitty_images
+                .get(id)
+                .is_some_and(|outgoing| outgoing.gpu_uploaded);
+            if !outgoing_uploaded {
+                continue;
+            }
+            let placed = self.kitty_placements.keys().any(|(img, _)| img == id)
+                || self
+                    .kitty_virtual_placements
+                    .keys()
+                    .any(|(img, _)| img == id);
+            incoming.gpu_uploaded = placed;
+            if placed {
+                self.pending_images.push((*id, incoming.data.clone()));
+                queued = true;
+            }
+        }
+        queued
+    }
+
+    /// Queue the stored pixels of `image_id` for the GPU unless the
+    /// texture already holds them. Returns whether an upload was queued.
+    pub fn queue_kitty_upload(&mut self, image_id: u32) -> bool {
+        let Some(stored) = self.kitty_images.get_mut(&image_id) else {
+            return false;
+        };
+        if stored.gpu_uploaded {
+            return false;
+        }
+        stored.gpu_uploaded = true;
+        self.pending_images.push((image_id, stored.data.clone()));
+        true
     }
 
     /// Clear all kitty graphics state on both screens. Used by full reset.
@@ -943,6 +989,9 @@ impl Graphics {
             for placement in self.kitty_placements.values() {
                 active.insert(placement.image_id as u64);
             }
+            for (img, _) in self.kitty_virtual_placements.keys() {
+                active.insert(*img as u64);
+            }
             // Also protect the image we're about to store
             active.insert(image_id as u64);
             self.evict_images(new_bytes, &active);
@@ -958,6 +1007,7 @@ impl Graphics {
             StoredImage {
                 data,
                 transmission_time: now,
+                gpu_uploaded: false,
             },
         );
         self.total_bytes += new_bytes;
@@ -1194,6 +1244,8 @@ impl Graphics {
             self.kitty_images.keys().copied().collect();
         self.kitty_placements
             .retain(|_, p| active_ids.contains(&p.image_id));
+        self.kitty_virtual_placements
+            .retain(|(img, _), _| active_ids.contains(img));
         let inactive_ids: std::collections::HashSet<u32> = self
             .kitty_inactive_screen
             .kitty_images
@@ -1203,6 +1255,9 @@ impl Graphics {
         self.kitty_inactive_screen
             .kitty_placements
             .retain(|_, p| inactive_ids.contains(&p.image_id));
+        self.kitty_inactive_screen
+            .kitty_virtual_placements
+            .retain(|(img, _), _| inactive_ids.contains(img));
 
         // Update total_bytes
         self.total_bytes = self.total_bytes.saturating_sub(freed_bytes);
@@ -1576,4 +1631,60 @@ fn test_graphics_no_eviction_when_under_limit() {
     // No eviction should occur
     assert_eq!(graphics.pending.len(), 1);
     assert_eq!(graphics.total_bytes, 50_000);
+}
+
+#[test]
+fn test_kitty_eviction_protects_virtual_placements_and_sweeps_dangling() {
+    use rio_graphics::ColorType;
+    let mut graphics = Graphics {
+        total_limit: 100_000,
+        ..Graphics::default()
+    };
+    let image = |id: u32| GraphicData {
+        id: GraphicId::new(id as u64),
+        width: 100,
+        height: 100,
+        color_type: ColorType::Rgba,
+        pixels: vec![0u8; 40_000],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: crate::time::Instant::now(),
+    };
+    let vp = |id: u32| VirtualPlacement {
+        image_id: id,
+        placement_id: 1,
+        columns: 2,
+        rows: 2,
+        x: 0,
+        y: 0,
+        width: 0,
+        height: 0,
+    };
+
+    graphics.store_kitty_image(1, None, image(1));
+    graphics.kitty_virtual_placements.insert((1, 1), vp(1));
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    graphics.store_kitty_image(2, None, image(2));
+    graphics.kitty_virtual_placements.insert((2, 1), vp(2));
+    graphics
+        .kitty_inactive_screen
+        .kitty_virtual_placements
+        .insert((7, 1), vp(7));
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    // Image 1 is older but virtually placed, so image 2 without a
+    // placement would go first; here both are placed, so the oldest
+    // placed one (1) is the last resort and 2 stays too until needed.
+    graphics.kitty_virtual_placements.remove(&(2, 1));
+    graphics.store_kitty_image(3, None, image(3));
+    assert!(graphics.kitty_images.contains_key(&1));
+    assert!(!graphics.kitty_images.contains_key(&2));
+    assert!(graphics.kitty_images.contains_key(&3));
+    assert!(graphics.kitty_virtual_placements.contains_key(&(1, 1)));
+    assert!(!graphics
+        .kitty_inactive_screen
+        .kitty_virtual_placements
+        .contains_key(&(7, 1)));
 }

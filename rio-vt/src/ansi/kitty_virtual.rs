@@ -654,19 +654,20 @@ pub fn compute_run_geometry(
 ///
 /// The placement id comes from the cell's underline color. Per the
 /// kitty spec, "if it's omitted or zero, the terminal may choose any
-/// virtual placement of the given image" — and clients routinely
-/// omit it: Neovim's TUI only emits the underline color (SGR 58) for
-/// cells that carry an underline attribute, so snacks.image's
-/// placeholder cells always arrive with `placement_id == 0` even
-/// though the placement was registered with `p=N`. kitty
-/// (`graphics.c`, `find the first virtual image placement`) and
-/// ghostty (`graphics_unicode.zig`, `placeholderTarget`) both fall
-/// back to the first virtual placement of the image in that case.
+/// virtual placement of the given image", and clients routinely omit
+/// it: Neovim's TUI only emits the underline color (SGR 58) for cells
+/// that carry an underline attribute, so snacks.image's placeholder
+/// cells always arrive with `placement_id == 0` even though the
+/// placement was registered with `p=N`. An absent underline color and
+/// an explicit black one both decode to 0 (`color_to_id`), matching
+/// kitty.
 ///
-/// A non-zero id must match exactly, as in kitty. For id 0 the
-/// placement with the lowest id is chosen so the result does not
-/// depend on hash-map iteration order (an explicit `p=0` placement
-/// therefore still wins).
+/// A non-zero id must match exactly, as in kitty (`graphics.c`,
+/// `grman_put_cell_image`). For id 0 kitty takes the first virtual
+/// placement its hash table happens to yield; the spec allows any, so
+/// the placement with the lowest id is chosen here instead, so the
+/// result never depends on iteration order (an explicit `p=0`
+/// placement therefore still wins).
 pub fn resolve_virtual_placement(
     placements: &FxHashMap<(u32, u32), VirtualPlacement>,
     image_id: u32,
@@ -674,6 +675,9 @@ pub fn resolve_virtual_placement(
 ) -> Option<&VirtualPlacement> {
     if placement_id != 0 {
         return placements.get(&(image_id, placement_id));
+    }
+    if let Some(vp) = placements.get(&(image_id, 0)) {
+        return Some(vp);
     }
     placements
         .iter()
