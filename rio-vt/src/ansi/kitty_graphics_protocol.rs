@@ -6,12 +6,12 @@ use std::collections::HashMap;
 use tracing::debug;
 
 /// Maximum width or height (per axis) we accept for a kitty-graphics
-/// image. Matches ghostty / upstream kitty. Anything larger is a DoS
+/// image. Matches upstream kitty. Anything larger is a DoS
 /// vector — we refuse with `EINVAL: dimensions too large`.
 const MAX_DIMENSION: u32 = 10_000;
 
 /// Maximum decoded payload size (bytes) we accept. 400 MiB matches
-/// ghostty / upstream kitty. Guards against runaway base64 blobs filling
+/// upstream kitty. Guards against runaway base64 blobs filling
 /// memory before `create_graphic_data` validates them.
 const MAX_SIZE: usize = 400 * 1024 * 1024;
 
@@ -235,7 +235,7 @@ pub struct KittyGraphicsCommand {
 
     /// Payload, always stored as already-base64-decoded bytes.
     ///
-    /// Matches ghostty: we decode each APC command's base64 payload up
+    /// We decode each APC command's base64 payload up
     /// front in `parse()` so that clients which pad every chunk
     /// independently (e.g. chafa) don't produce a concatenated base64
     /// string with `=` bytes stuck in the middle when multiple chunks
@@ -301,7 +301,7 @@ impl Default for KittyGraphicsCommand {
 }
 
 /// Build an APC response string of the form
-/// `\x1b_G<keys>;<message>\x1b\\`, matching ghostty's encoder.
+/// `\x1b_G<keys>;<message>\x1b\\`.
 ///
 /// `image_id`, `image_number`, `placement_id` are all emitted (in that
 /// order, comma-separated) when non-zero. When *all* of them are zero
@@ -389,7 +389,7 @@ pub fn parse(
     }
 
     // Decode payload if present. We always decode base64 up front
-    // (matching ghostty) so that each APC command's payload is
+    // so that each APC command's payload is
     // self-contained: clients like chafa which pad every chunk
     // independently can be merged by simply concatenating the decoded
     // byte streams, rather than trying to splice base64 text and running
@@ -972,8 +972,8 @@ fn evict_stale_chunks(state: &mut KittyGraphicsState) {
 /// no-padding variant so that chunks from spec-compliant clients
 /// (which don't pad intermediate chunks) also decode cleanly.
 ///
-/// Callers decode each APC command's payload independently — the same
-/// approach ghostty uses — so that per-chunk padding from clients like
+/// Callers decode each APC command's payload independently, so that
+/// per-chunk padding from clients like
 /// chafa is contained within its own chunk instead of contaminating the
 /// merged byte stream.
 fn decode_payload_base64(payload: &[u8]) -> Option<Vec<u8>> {
@@ -2074,7 +2074,7 @@ mod tests {
     #[test]
     fn test_query_requires_image_id() {
         // Query without i= AND without I=: no identifier to address
-        // the response to, so nothing is emitted — matches ghostty.
+        // the response to, so nothing is emitted.
         let result =
             parse_kitty_graphics_protocol("a=q", "").expect("response struct must exist");
         assert!(result.response.is_none());
@@ -2102,7 +2102,7 @@ mod tests {
     #[test]
     fn test_response_combines_image_number_and_placement() {
         // When placement_id is set alongside image_id, the response
-        // must carry both keys (matches ghostty's encoder).
+        // must carry both keys.
         let png_data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
         let result = parse_kitty_graphics_protocol("a=T,f=100,i=7,p=13", png_data)
             .expect("response struct must exist");

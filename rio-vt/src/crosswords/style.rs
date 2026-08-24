@@ -81,10 +81,40 @@ pub struct StyleSet {
     /// Direct-mapped cache of candidate ids fronting `lookup`; slots are
     /// verified against `packed`, so a stale slot misses, never lies.
     memo: [StyleId; MEMO_SLOTS],
+    /// Ids freed by `sweep_unmarked`, reused before growing `styles`.
+    free: Vec<StyleId>,
+    /// Novel interns (lookup misses, including ones that failed at the
+    /// id cap) since the last sweep. Drives the sweep cadence.
+    novel_since_sweep: usize,
+    /// Novel interns required before the next sweep. Re-armed by each
+    /// sweep to the number of ids it freed (with a floor), so a sweep
+    /// that reclaimed plenty allows the next one as soon as those ids
+    /// are used up, instead of stranding novel styles on the default
+    /// fallback for the remainder of a fixed cadence.
+    novel_needed: usize,
 }
 
 const MEMO_BITS: u32 = 10;
 const MEMO_SLOTS: usize = 1 << MEMO_BITS;
+
+/// `pack_style` output never sets bits above 111 (flags occupy 96..112),
+/// so this can never collide with a real key. Freed slots hold it so a
+/// stale memo candidate verifies against it and misses.
+const TOMBSTONE_KEY: u128 = 1 << 127;
+
+/// Lower bound for the novel-intern count between sweeps. The mark
+/// walks every cell of the ring's styled rows (`Row::has_styles`), so
+/// a style-heavy scrollback can still mean a large walk per sweep; the
+/// floor bounds how often a near-fruitless sweep can recur. Counting
+/// misses that failed at the id cap keeps sweeps, and therefore
+/// recovery, coming even while interns fall back to the default style.
+const SWEEP_MIN_NOVEL: usize = 4096;
+
+/// No sweep runs while the table is smaller than this, no matter the
+/// cadence: sessions with modest style sets never pay the ring walk,
+/// and after a spike the trailing-tombstone truncation can drop the
+/// table back below it.
+const SWEEP_HIGH_WATER: usize = 32768;
 
 /// Pack a style into a unique `u128`: 32 bits per color (tag + payload),
 /// 32 for the optional underline color, the flag bits on top. Injective,
@@ -139,6 +169,9 @@ impl StyleSet {
             packed: vec![key],
             lookup,
             memo: [DEFAULT_STYLE_ID; MEMO_SLOTS],
+            free: Vec::new(),
+            novel_since_sweep: 0,
+            novel_needed: SWEEP_MIN_NOVEL,
         }
     }
 
@@ -164,31 +197,14 @@ impl StyleSet {
             .unwrap_or_else(Style::default)
     }
 
-    /// Unchecked variant of `get`. Skips both the default-style early
-    /// return AND the bounds check on `self.styles`. Used by the renderer
-    /// hot loop after the caller has already verified the id is non-zero
-    /// and in range (which is always true for ids produced by `intern`).
-    ///
-    /// # Safety
-    /// `id` must be a valid index into `self.styles` (i.e. less than
-    /// `self.len()`). Ids returned by `intern` always satisfy this.
-    #[inline(always)]
-    pub unsafe fn get_unchecked(&self, id: StyleId) -> Style {
-        debug_assert!(
-            (id as usize) < self.styles.len(),
-            "StyleSet::get_unchecked called with out-of-range id {} (len {})",
-            id,
-            self.styles.len(),
-        );
-        *self.styles.get_unchecked(id as usize)
-    }
-
     /// Intern a style and return its id. If the style already exists,
-    /// returns the existing id. If not, inserts it.
+    /// returns the existing id. If not, inserts it, reusing a swept id
+    /// when one is free.
     ///
     /// Saturates at `u16::MAX` styles per grid: any attempt to intern beyond
-    /// that returns `DEFAULT_STYLE_ID`. In practice rio sessions use < 100
-    /// distinct styles so this is purely defensive.
+    /// that returns `DEFAULT_STYLE_ID`. `Grid::reclaim_styles` sweeps
+    /// unreferenced ids before the cap is reached, so hitting it means the
+    /// grid genuinely displays 65k distinct styles at once.
     pub fn intern(&mut self, style: Style) -> StyleId {
         let key = pack_style(&style);
         let slot = memo_index(key);
@@ -207,18 +223,89 @@ impl StyleSet {
         if let Some(&id) = self.lookup.get(&key) {
             return id;
         }
-        if self.styles.len() >= u16::MAX as usize {
-            tracing::warn!(
-                "StyleSet hit u16::MAX styles ({}); falling back to default",
-                self.styles.len()
-            );
-            return DEFAULT_STYLE_ID;
-        }
-        let id = self.styles.len() as StyleId;
-        self.styles.push(style);
-        self.packed.push(key);
+        self.novel_since_sweep += 1;
+        let id = match self.free.pop() {
+            Some(id) => {
+                self.styles[id as usize] = style;
+                self.packed[id as usize] = key;
+                id
+            }
+            None => {
+                if self.styles.len() >= u16::MAX as usize {
+                    tracing::warn!(
+                        "StyleSet hit u16::MAX styles ({}); falling back to default",
+                        self.styles.len()
+                    );
+                    return DEFAULT_STYLE_ID;
+                }
+                let id = self.styles.len() as StyleId;
+                self.styles.push(style);
+                self.packed.push(key);
+                id
+            }
+        };
         self.lookup.insert(key, id);
         id
+    }
+
+    /// Whether the caller should run a mark-and-sweep before the next
+    /// intern: enough novel interns since the last sweep, freed ids ran
+    /// out, and the table is past the high-water mark. The re-armed
+    /// `novel_needed` floor keeps a sweep that frees nothing (every id
+    /// genuinely live) from re-triggering on the very next intern; at
+    /// full id-cap saturation the pressure escape retries on the
+    /// smaller fixed floor instead, so a large scaled floor cannot
+    /// stretch the window where novel styles fall back to the default.
+    #[inline]
+    pub fn should_sweep(&self) -> bool {
+        if !self.free.is_empty() {
+            return false;
+        }
+        let under_pressure = self.styles.len() >= u16::MAX as usize
+            && self.novel_since_sweep >= SWEEP_MIN_NOVEL;
+        under_pressure
+            || (self.novel_since_sweep >= self.novel_needed
+                && self.styles.len() >= SWEEP_HIGH_WATER)
+    }
+
+    /// Free every non-default id whose bit is unset in `live`, making it
+    /// reusable by later interns. `live` is a bitset indexed by id;
+    /// callers mark every id still referenced by a cell or cursor
+    /// template before calling, and pass `min_novel` to scale the
+    /// re-arm floor with the cost of the mark walk. Freed slots keep
+    /// the default style so a stale read renders defensively rather
+    /// than garbage.
+    pub fn sweep_unmarked(&mut self, live: &[u64], min_novel: usize) {
+        self.novel_since_sweep = 0;
+        let mut freed = 0usize;
+        for id in 1..self.styles.len() {
+            if live[id / 64] & (1 << (id % 64)) != 0 {
+                continue;
+            }
+            let key = self.packed[id];
+            if key == TOMBSTONE_KEY {
+                continue;
+            }
+            self.lookup.remove(&key);
+            self.packed[id] = TOMBSTONE_KEY;
+            self.styles[id] = Style::default();
+            self.free.push(id as StyleId);
+            freed += 1;
+        }
+        self.novel_needed = freed.max(min_novel).max(SWEEP_MIN_NOVEL);
+        // Drop trailing tombstoned slots so a one-off style spike doesn't
+        // permanently inflate every later table copy. Ids past the new
+        // length resolve through `get`'s default fallback, and a stale
+        // memo candidate past the length fails the `packed.get` verify.
+        // Trailing tombstones can only be this sweep's own frees (each
+        // sweep truncates all of them), so `freed > 0` covers the pops.
+        while self.styles.len() > 1 && *self.packed.last().unwrap() == TOMBSTONE_KEY {
+            self.styles.pop();
+            self.packed.pop();
+        }
+        if freed > 0 {
+            self.free.retain(|&id| (id as usize) < self.styles.len());
+        }
     }
 
     #[inline]
@@ -267,6 +354,134 @@ mod tests {
         assert_eq!(id1, id2);
         assert_ne!(id1, DEFAULT_STYLE_ID);
         assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn sweep_frees_and_reuses_ids() {
+        let mut set = StyleSet::new();
+        let red = Style {
+            fg: AnsiColor::Named(NamedColor::Red),
+            ..Style::default()
+        };
+        let blue = Style {
+            fg: AnsiColor::Named(NamedColor::Blue),
+            ..Style::default()
+        };
+        // Blue first so the swept slot is interior (red stays live at the
+        // tail) and exercises tombstone + reuse rather than truncation.
+        let blue_id = set.intern(blue);
+        let red_id = set.intern(red);
+
+        // Keep red alive, sweep blue.
+        let mut live = vec![0u64; crate::crosswords::grid::ID_BITSET_WORDS];
+        live[red_id as usize / 64] |= 1u64 << (red_id % 64);
+        set.sweep_unmarked(&live, 0);
+
+        // Red survives with its id; blue's slot reads as default.
+        assert_eq!(set.intern(red), red_id);
+        assert_eq!(set.get(blue_id), Style::default());
+
+        // The freed id is reused before the table grows.
+        let len = set.len();
+        let green = Style {
+            fg: AnsiColor::Named(NamedColor::Green),
+            ..Style::default()
+        };
+        assert_eq!(set.intern(green), blue_id);
+        assert_eq!(set.get(blue_id), green);
+        assert_eq!(set.len(), len);
+
+        // Re-interning the swept style allocates a fresh id.
+        assert_ne!(set.intern(blue), blue_id);
+    }
+
+    #[test]
+    fn sweep_truncates_trailing_tombstones() {
+        let mut set = StyleSet::new();
+        let red = Style {
+            fg: AnsiColor::Named(NamedColor::Red),
+            ..Style::default()
+        };
+        let blue = Style {
+            fg: AnsiColor::Named(NamedColor::Blue),
+            ..Style::default()
+        };
+        let red_id = set.intern(red);
+        let blue_id = set.intern(blue);
+
+        // Keep red alive; blue is the trailing slot and gets truncated.
+        let mut live = vec![0u64; crate::crosswords::grid::ID_BITSET_WORDS];
+        live[red_id as usize / 64] |= 1u64 << (red_id % 64);
+        set.sweep_unmarked(&live, 0);
+        assert_eq!(set.len(), 2);
+        assert_eq!(set.get(blue_id), Style::default());
+        assert_eq!(set.get(red_id), red);
+
+        // Fresh interns regrow from the truncated end.
+        let green = Style {
+            fg: AnsiColor::Named(NamedColor::Green),
+            ..Style::default()
+        };
+        assert_eq!(set.intern(green), blue_id);
+        assert_eq!(set.len(), 3);
+    }
+
+    #[test]
+    fn sweep_cadence_counts_novel_interns() {
+        use crate::config::colors::ColorRgb;
+        let mut set = StyleSet::new();
+        assert!(!set.should_sweep());
+        // Past both gates: enough novel interns AND past the high-water
+        // table size, with no freed ids available.
+        for i in 0..SWEEP_HIGH_WATER {
+            set.intern(Style {
+                fg: AnsiColor::Spec(ColorRgb {
+                    r: (i >> 8) as u8,
+                    g: (i & 0xFF) as u8,
+                    b: 0,
+                }),
+                ..Style::default()
+            });
+        }
+        assert!(set.should_sweep());
+
+        // A sweep resets the cadence even when nothing is freed, so a
+        // fully-live table can't re-trigger a sweep per intern.
+        let live = vec![u64::MAX; crate::crosswords::grid::ID_BITSET_WORDS];
+        set.sweep_unmarked(&live, 0);
+        assert!(!set.should_sweep());
+    }
+
+    #[test]
+    fn sweep_rearm_respects_min_novel_floor() {
+        use crate::config::colors::ColorRgb;
+        fn distinct(i: usize) -> Style {
+            Style {
+                fg: AnsiColor::Spec(ColorRgb {
+                    r: (i & 0xFF) as u8,
+                    g: ((i >> 8) & 0xFF) as u8,
+                    b: ((i >> 16) & 0xFF) as u8,
+                }),
+                ..Style::default()
+            }
+        }
+
+        let mut set = StyleSet::new();
+        for i in 0..SWEEP_HIGH_WATER {
+            set.intern(distinct(i));
+        }
+
+        // Everything live, nothing freed: the caller-provided floor
+        // re-arms the cadence.
+        let live = vec![u64::MAX; crate::crosswords::grid::ID_BITSET_WORDS];
+        set.sweep_unmarked(&live, 9_999);
+        assert!(!set.should_sweep());
+        for i in 0..9_998 {
+            set.intern(distinct(SWEEP_HIGH_WATER + i));
+        }
+        assert!(!set.should_sweep());
+        set.intern(distinct(SWEEP_HIGH_WATER + 9_998));
+        assert!(set.should_sweep());
     }
 
     #[test]

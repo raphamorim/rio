@@ -472,6 +472,35 @@ fn color_to_c(color: AnsiColor) -> rio_color_s {
     }
 }
 
+/// Resolve a cell color, honoring the terminal's dynamic OSC overrides
+/// before falling back to the process-global theme. Those OSC-set colors
+/// live per-terminal in the frame's `term_colors` snapshot: `OSC 10/11`
+/// override the default foreground/background, `OSC 4` overrides an ANSI
+/// palette slot. A named or indexed cell that has an override resolves to
+/// it here, mirroring rioterm's and libsugarloaf's canonical
+/// `term_colors[idx].unwrap_or(base)`, rather than resolving to the
+/// host's own scheme. Direct-RGB cells carry their color inline and are
+/// untouched. (Dim/bold intensity remapping isn't applied here, matching
+/// `color_to_c`; it travels in the cell's style flags.)
+fn resolve_cell_color(color: AnsiColor, term_colors: &crate::TermColors) -> rio_color_s {
+    let (idx, value, kind) = match color {
+        AnsiColor::Named(named) => (named as usize, named as u16, RIO_COLOR_NAMED),
+        AnsiColor::Indexed(index) => (index as usize, index as u16, RIO_COLOR_INDEXED),
+        AnsiColor::Spec(_) => return color_to_c(color),
+    };
+    if let Some(arr) = term_colors[idx] {
+        let rgb = ColorRgb::from_color_arr(arr);
+        return rio_color_s {
+            kind,
+            value,
+            r: rgb.r,
+            g: rgb.g,
+            b: rgb.b,
+        };
+    }
+    color_to_c(color)
+}
+
 unsafe fn cstr_opt(ptr: *const c_char) -> Option<String> {
     if ptr.is_null() {
         return None;
@@ -953,16 +982,17 @@ pub unsafe extern "C" fn rio_render_state_cell(
         let Some(square) = state.square(line as usize, column as usize) else {
             return empty;
         };
-        let style = state.style_of(square);
+        let style = state.style_at(line as usize, column as usize, square);
         let cluster = if state.cluster_of(square).is_some() {
             RIO_CELL_HAS_CLUSTER
         } else {
             0
         };
+        let tc = state.term_colors();
         rio_cell_s {
             codepoint: square.c() as u32,
-            fg: color_to_c(style.fg),
-            bg: color_to_c(style.bg),
+            fg: resolve_cell_color(style.fg, tc),
+            bg: resolve_cell_color(style.bg, tc),
             style_flags: style.flags.bits() | cluster,
         }
     }))
@@ -1068,7 +1098,7 @@ pub unsafe extern "C" fn rio_render_state_display_offset(
     .unwrap_or(0)
 }
 
-/// Symbols-only Nerd Font, embedded the way libghostty embeds it, so every
+/// Symbols-only Nerd Font, embedded in the library itself, so every
 /// embedder can offer icon glyphs (Powerline, Font Awesome, Material, ...)
 /// without shipping a font file or requiring one installed. Pair with
 /// [`rio_nerd_constrain`] for patched-font-quality scaling.
@@ -1095,7 +1125,7 @@ pub struct rio_glyph_box_s {
 }
 
 /// Apply the Nerd Fonts patcher's scaling/alignment rules to a glyph
-/// (the same generated table ghostty and sugarloaf use). `glyph` is the
+/// (the same generated table sugarloaf uses). `glyph` is the
 /// glyph's bounding box; `constraint_width` is how many cells are
 /// horizontally free (1 or 2). Writes the adjusted box to `out` and
 /// returns true when the codepoint has a rule; returns false (out
@@ -1409,6 +1439,49 @@ pub unsafe extern "C" fn rio_render_state_cursor(
         }
     }))
     .unwrap_or(rio_cursor_s { line: 0, column: 0 })
+}
+
+/// This frame's dynamic (OSC 10/11/12) default colors. `which`:
+/// 0 = foreground, 1 = background, 2 = cursor. Writes the resolved RGB
+/// into `out` and returns true when the program has set that color via
+/// OSC; returns false and leaves `out` untouched when it is unset, so the
+/// host falls back to its own scheme (this also covers OSC 110/111/112
+/// reset, which clears the override). Cell colors already follow the
+/// override via `rio_render_state_cell` (and the GPU grid palette); the
+/// host reads this only for the parts that aren't cells: the solid pane
+/// ground a default-bg cell shows through, and the cursor color.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_dynamic_color(
+    state: *const RenderState,
+    which: u8,
+    out: *mut rio_rgb_s,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() || out.is_null() {
+            return false;
+        }
+        let named = match which {
+            0 => NamedColor::Foreground,
+            1 => NamedColor::Background,
+            2 => NamedColor::Cursor,
+            _ => return false,
+        };
+        match unsafe { &*state }.term_colors()[named] {
+            Some(arr) => {
+                let rgb = ColorRgb::from_color_arr(arr);
+                unsafe {
+                    *out = rio_rgb_s {
+                        r: rgb.r,
+                        g: rgb.g,
+                        b: rgb.b,
+                    };
+                }
+                true
+            }
+            None => false,
+        }
+    }))
+    .unwrap_or(false)
 }
 
 #[cfg(test)]

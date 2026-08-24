@@ -707,7 +707,7 @@ impl RioTerm {
             let base = col * CELL_WORDS;
             match self.state.square(line, col) {
                 Some(square) => {
-                    let style = self.state.style_of(square);
+                    let style = self.state.style_at(line, col, square);
                     let cluster = if self.state.cluster_of(square).is_some() {
                         CELL_HAS_CLUSTER
                     } else {

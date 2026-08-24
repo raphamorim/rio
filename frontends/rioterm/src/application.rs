@@ -466,7 +466,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
+                use rio_backend::sugarloaf::route_image_key;
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // A batch the VT thread queued before the user
+                    // closed its tab or split would otherwise land
+                    // under a route nothing will ever release.
+                    if route
+                        .window
+                        .screen
+                        .context_manager
+                        .get_by_route_id(route_id)
+                        .is_none()
+                    {
+                        return;
+                    }
+
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 
@@ -474,19 +488,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // texture store with kitty images, in a disjoint key
                     // namespace.
                     for graphic_data in queues.pending {
-                        let key = crate::renderer::atlas_image_key(graphic_data.id.get());
+                        let key = route_image_key(
+                            route_id,
+                            crate::renderer::atlas_image_key(graphic_data.id.get()),
+                        );
                         sugarloaf.image_data.insert(
                             key,
-                            rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
-                                graphic_data,
-                            ),
-                        );
-                    }
-
-                    // Image textures (kitty) → separate store, no clone
-                    for (image_id, graphic_data) in queues.pending_images {
-                        sugarloaf.image_data.insert(
-                            crate::renderer::kitty_image_key(image_id),
                             rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
                                 graphic_data,
                             ),
@@ -496,8 +503,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Removals arrive as final image keys (atlas refs
                     // dropped off scrollback, kitty evictions) and free
                     // both the pixel store and the cached GPU texture.
+                    // They run before the kitty uploads so a batch that
+                    // frees a key and resends it keeps the new pixels.
                     for key in queues.remove_queue {
-                        sugarloaf.remove_image(key);
+                        sugarloaf.remove_image(route_image_key(route_id, key));
+                    }
+
+                    // Image textures (kitty) → separate store, no clone
+                    for (image_id, graphic_data) in queues.pending_images {
+                        sugarloaf.image_data.insert(
+                            route_image_key(
+                                route_id,
+                                crate::renderer::kitty_image_key(image_id),
+                            ),
+                            rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
+                                graphic_data,
+                            ),
+                        );
                     }
 
                     // Mark the panel dirty: the renderer skips non-dirty

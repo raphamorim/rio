@@ -1221,7 +1221,8 @@ impl Screen<'_> {
                         if self.ctx().len() <= 1 {
                             return true;
                         }
-                        self.context_manager.close_unfocused_tabs();
+                        self.context_manager
+                            .close_unfocused_tabs(&mut self.sugarloaf);
                         if let Some(ref mut island) = self.renderer.island {
                             island.dismiss_color_picker();
                         }
@@ -3687,7 +3688,8 @@ impl Screen<'_> {
             PaletteAction::TabClose => self.close_tab(clipboard),
             PaletteAction::TabCloseUnfocused => {
                 if self.ctx().len() > 1 {
-                    self.context_manager.close_unfocused_tabs();
+                    self.context_manager
+                        .close_unfocused_tabs(&mut self.sugarloaf);
                     if let Some(ref mut island) = self.renderer.island {
                         island.dismiss_color_picker();
                     }
@@ -3920,7 +3922,7 @@ impl Screen<'_> {
                         rio_backend::crosswords::square::Square,
                     >,
                 >,
-                style_table: Vec<rio_backend::crosswords::style::Style>,
+                row_styles: Vec<Vec<rio_backend::crosswords::style::Style>>,
                 /// Snapshot of the grid's extras table — needed to hash
                 /// per-cell zero-width combining codepoints into the run
                 /// shape key so cells with the same base codepoint but
@@ -3983,7 +3985,6 @@ impl Screen<'_> {
                     rio_backend::crosswords::pos::Pos,
                 )>,
                 hint_labels: Option<Vec<crate::context::renderable::HintLabel>>,
-                label_style_base: Option<u16>,
             }
 
             let (active_key, scaled_margin) = {
@@ -4035,8 +4036,7 @@ impl Screen<'_> {
                 // allocations.
                 let visible_rows =
                     std::mem::take(&mut ctx.renderable_content.visible_rows);
-                let mut style_table =
-                    std::mem::take(&mut ctx.renderable_content.style_table);
+                let row_styles = std::mem::take(&mut ctx.renderable_content.row_styles);
                 let extras = std::mem::take(&mut ctx.renderable_content.extras);
                 let term_colors = ctx.renderable_content.term_colors;
                 let display_offset = ctx.renderable_content.display_offset as i32;
@@ -4076,16 +4076,6 @@ impl Screen<'_> {
                 } else {
                     None
                 };
-                let label_style_base = hint_labels
-                    .as_deref()
-                    .filter(|labels| !labels.is_empty())
-                    .map(|_| {
-                        rio_grid::push_hint_label_styles(
-                            &mut style_table,
-                            self.renderer.named_colors.hint_foreground,
-                            self.renderer.named_colors.hint_background,
-                        )
-                    });
                 let cursor_shape = cursor.state.content;
                 let cursor_blinking = ctx.renderable_content.has_blinking_enabled;
                 let cursor_blink_visible =
@@ -4108,7 +4098,7 @@ impl Screen<'_> {
                     cell_h,
                     font_px,
                     visible_rows,
-                    style_table,
+                    row_styles,
                     extras,
                     term_colors,
                     cursor_col: cursor.state.pos.col.0 as u16,
@@ -4127,7 +4117,6 @@ impl Screen<'_> {
                     focused_match,
                     hovered_hyperlink,
                     hint_labels,
-                    label_style_base,
                 });
             }
 
@@ -4201,6 +4190,25 @@ impl Screen<'_> {
                     Vec::with_capacity(cols);
                 let mut hint_scratch: Vec<rio_grid::RowHint> = Vec::new();
 
+                let label_styles_pair = rio_grid::hint_label_styles(
+                    self.renderer.named_colors.hint_foreground,
+                    self.renderer.named_colors.hint_background,
+                );
+                let hint_labels_converted: Option<Vec<rio_grid::HintLabel>> = p
+                    .hint_labels
+                    .as_deref()
+                    .filter(|labels| !labels.is_empty())
+                    .map(|labels| {
+                        labels
+                            .iter()
+                            .map(|l| rio_grid::HintLabel {
+                                position: l.position,
+                                label: l.label,
+                                is_first: l.is_first,
+                            })
+                            .collect()
+                    });
+
                 // Small helper: rebuild one row into the grid's
                 // buffers. Closure-style to avoid duplicating the
                 // body between the `All` and `Only` branches.
@@ -4219,7 +4227,8 @@ impl Screen<'_> {
                         let Some(row) = p.visible_rows.get(y) else {
                             return;
                         };
-                        let style_table = p.style_table.as_slice();
+                        let row_styles =
+                            p.row_styles.get(y).map(Vec::as_slice).unwrap_or(&[]);
                         let row_sel = rio_grid::row_selection_for(
                             p.selection,
                             y,
@@ -4236,37 +4245,32 @@ impl Screen<'_> {
                             &mut hint_scratch,
                         );
                         let label_row;
-                        let row = match (p.hint_labels.as_deref(), p.label_style_base) {
-                            (Some(labels), Some(style_base)) => {
-                                let labels: Vec<rio_grid::HintLabel> = labels
-                                    .iter()
-                                    .map(|l| rio_grid::HintLabel {
-                                        position: l.position,
-                                        label: l.label,
-                                        is_first: l.is_first,
-                                    })
-                                    .collect();
+                        let label_styles;
+                        let (row, row_styles) = match hint_labels_converted.as_deref() {
+                            Some(labels) => {
                                 match rio_grid::overlay_hint_labels(
                                     row,
-                                    &labels,
+                                    row_styles,
+                                    labels,
                                     y,
                                     p.display_offset,
-                                    style_base,
+                                    label_styles_pair,
                                     &mut hint_scratch,
                                 ) {
-                                    Some(overlaid) => {
-                                        label_row = overlaid;
-                                        &label_row
+                                    Some((r, styles)) => {
+                                        label_row = r;
+                                        label_styles = styles;
+                                        (&label_row, label_styles.as_slice())
                                     }
-                                    None => row,
+                                    None => (row, row_styles),
                                 }
                             }
-                            _ => row,
+                            None => (row, row_styles),
                         };
                         rio_grid::build_row_bg(
                             row,
                             cols,
-                            style_table,
+                            row_styles,
                             renderer_ref,
                             &p.term_colors,
                             row_sel,
@@ -4285,7 +4289,7 @@ impl Screen<'_> {
                             row,
                             cols,
                             y as u16,
-                            style_table,
+                            row_styles,
                             &p.extras,
                             renderer_ref,
                             &p.term_colors,
@@ -4362,16 +4366,15 @@ impl Screen<'_> {
                 // frame and only dirties cursor buffers on
                 // change — do NOT clear the slots beforehand,
                 // that would dirty them every frame.
-                let render_style = rio_grid::cursor_render_style(
-                    rio_grid::CursorRenderInputs {
+                let render_style =
+                    rio_grid::cursor_render_style(rio_grid::CursorRenderInputs {
                         visible: p.cursor_visible,
                         focused: p.is_active && self.renderer.is_window_focused,
                         blink_visible: p.cursor_blink_visible,
                         blinking: p.cursor_blinking,
                         preedit: p.cursor_preedit,
                         shape: p.cursor_shape,
-                    },
-                );
+                    });
                 let mut block_cursor: Option<rio_backend::sugarloaf::grid::CellText> =
                     None;
                 let mut tail_cursor: Option<rio_backend::sugarloaf::grid::CellText> =
@@ -4425,18 +4428,21 @@ impl Screen<'_> {
                 // underline / hollow) draw via the sprite emitted
                 // above; their bg/text stays untouched. Same gate as
                 // .
-                let (cursor_pos, cursor_col_u, cursor_bg_u) = if matches!(
-                    render_style,
-                    Some(rio_grid::CursorRenderStyle::Block)
-                ) {
-                    (
-                        [p.cursor_col as u32, p.cursor_row as u32],
-                        [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
-                        [p.cursor_color[0], p.cursor_color[1], p.cursor_color[2], 1.0],
-                    )
-                } else {
-                    ([u32::MAX; 2], [0.0; 4], [0.0; 4])
-                };
+                let (cursor_pos, cursor_col_u, cursor_bg_u) =
+                    if matches!(render_style, Some(rio_grid::CursorRenderStyle::Block)) {
+                        (
+                            [p.cursor_col as u32, p.cursor_row as u32],
+                            [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
+                            [
+                                p.cursor_color[0],
+                                p.cursor_color[1],
+                                p.cursor_color[2],
+                                1.0,
+                            ],
+                        )
+                    } else {
+                        ([u32::MAX; 2], [0.0; 4], [0.0; 4])
+                    };
 
                 let uniforms = rio_backend::sugarloaf::grid::GridUniforms {
                     projection:
@@ -4506,12 +4512,8 @@ impl Screen<'_> {
                 let route_id = item.val.route_id;
                 if let Some(idx) = panels.iter().position(|p| p.route_id == route_id) {
                     let p = panels.swap_remove(idx);
-                    let mut style_table = p.style_table;
-                    if let Some(base) = p.label_style_base {
-                        style_table.truncate(base as usize);
-                    }
                     item.val.renderable_content.visible_rows = p.visible_rows;
-                    item.val.renderable_content.style_table = style_table;
+                    item.val.renderable_content.row_styles = p.row_styles;
                     item.val.renderable_content.extras = p.extras;
                     item.val.renderable_content.hint_labels = p.hint_labels;
                 }

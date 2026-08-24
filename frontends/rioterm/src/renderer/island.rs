@@ -423,9 +423,7 @@ impl Island {
     /// actively reporting. `progress_started_at` is reset only when the
     /// state actually transitions, so a TUI sending the same `OSC 9;4;3`
     /// every 100 ms (issue #1509) doesn't yank the indeterminate animation
-    /// phase back to zero on every report. Mirrors ghostty's split between
-    /// `glib.timeoutAdd` (heartbeat) and `GtkProgressBar`'s internal pulse
-    /// state (animation).
+    /// phase back to zero on every report.
     pub fn set_progress_report(&mut self, report: ProgressReport) {
         match report.state {
             ProgressState::Remove => {

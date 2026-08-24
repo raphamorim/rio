@@ -619,8 +619,8 @@ impl Surface {
 
     pub fn write<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
         // Input snaps the view back to the live screen and drops any
-        // selection, matching ghostty's scroll-to-bottom / clear-on-typing
-        // behavior (only reached when a key actually produced PTY bytes).
+        // selection, the scroll-to-bottom / clear-on-typing convention
+        // (only reached when a key actually produced PTY bytes).
         {
             use rio_vt::crosswords::grid::Scroll;
             let mut term = self.terminal.lock();
@@ -735,7 +735,7 @@ impl Surface {
     /// A wheel scroll, dispatched the way terminals do it: the program
     /// running in the terminal gets first claim.
     ///
-    /// Three cases, in order (the same order rio and ghostty use):
+    /// Three cases, in order:
     /// mouse reporting on, so the wheel is a mouse event; the alternate
     /// screen with alternate-scroll on, where there is no scrollback to
     /// move so the wheel becomes cursor keys and pagers scroll; and
@@ -979,7 +979,7 @@ impl Surface {
             let row = &grid[Line(last)];
             for col in 0..cols {
                 let square = row[PosColumn(col)];
-                if !square.is_empty() || square.style_id() != 0 {
+                if !square.is_empty() {
                     break 'trim;
                 }
             }
@@ -1003,7 +1003,7 @@ impl Surface {
             if !wrapped {
                 while end > 0 {
                     let square = row[PosColumn(end - 1)];
-                    if !square.is_empty() || square.style_id() != 0 {
+                    if !square.is_empty() {
                         break;
                     }
                     end -= 1;
@@ -1024,7 +1024,7 @@ impl Surface {
                 }
 
                 let cell_link = square
-                    .extras_id()
+                    .extras_id_checked()
                     .and_then(|id| grid.extras_table.get(id))
                     .and_then(|extras| extras.hyperlink.as_ref())
                     .map(|h| h.uri().to_string());
@@ -1042,8 +1042,9 @@ impl Surface {
 
                 let c = square.c();
                 out.push(if c == '\0' { ' ' } else { c });
-                if let Some(extras) =
-                    square.extras_id().and_then(|id| grid.extras_table.get(id))
+                if let Some(extras) = square
+                    .extras_id_checked()
+                    .and_then(|id| grid.extras_table.get(id))
                 {
                     for z in &extras.zerowidth {
                         out.push(*z);
@@ -1866,10 +1867,10 @@ mod tests {
         state.update();
 
         let last = state.columns() - 1;
-        let el_fill = state.style_of(state.square(5, last).unwrap());
+        let el_fill = state.style_at(5, last, state.square(5, last).unwrap());
         assert_eq!(el_fill.bg, AnsiColor::Indexed(2));
 
-        let el2_fill = state.style_of(state.square(6, last).unwrap());
+        let el2_fill = state.style_at(6, last, state.square(6, last).unwrap());
         assert_eq!(el2_fill.bg, AnsiColor::Spec(ColorRgb { r: 9, g: 8, b: 7 }));
 
         // Snapshot text renders the fills as trimmable spaces, not NULs.

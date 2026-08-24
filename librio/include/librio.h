@@ -304,6 +304,15 @@ size_t rio_cluster_width(const uint32_t *codepoints, size_t len,
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
+
+/* This frame's dynamic (OSC 10/11/12) default colors. `which`: 0 =
+ * foreground, 1 = background, 2 = cursor. Writes the resolved RGB into
+ * `out` and returns true when the program has set that color via OSC;
+ * returns false and leaves `out` untouched when unset (including after an
+ * OSC 110/111/112 reset), so the host falls back to its own scheme. */
+bool rio_render_state_dynamic_color(const rio_render_state_t *state,
+                                    uint8_t which, rio_rgb_s *out);
+
 size_t rio_render_state_display_offset(const rio_render_state_t *state);
 bool rio_render_state_alt_screen(const rio_render_state_t *state);
 

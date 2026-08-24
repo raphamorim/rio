@@ -29,6 +29,11 @@ pub enum Scroll {
 pub trait GridSquare: Sized {
     fn is_empty(&self) -> bool;
     fn reset(&mut self, template: &Self);
+    /// True when the value carries a non-default style id; drives the
+    /// per-row `has_styles` hint.
+    fn carries_style(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -71,7 +76,11 @@ pub struct Grid<T> {
     /// the actual fg/bg/underline_color/sgr-flags live here and are looked up
     /// at render/SGR-mutation time. The renderer snapshots a clone under the
     /// terminal lock so post-unlock reads don't race PTY writes.
-    pub style_set: crate::crosswords::style::StyleSet,
+    /// Private so interning must go through [`Self::intern_style`] /
+    /// [`Self::sync_template_style`] and the mark-and-sweep cadence
+    /// can't be bypassed; readers use [`Self::styles`] and
+    /// [`Self::resolve_row_styles`].
+    style_set: crate::crosswords::style::StyleSet,
 
     /// Per-grid storage for the rare per-cell data that used to live inside
     /// `CellExtra` (zero-width chars, hyperlinks, sixel/iterm graphics).
@@ -118,6 +127,10 @@ impl ReflowRemap {
         Some(self.base_abs as i64 + new)
     }
 }
+
+/// Words in a live-id bitset covering the full u16 id space, shared by
+/// the styles and extras mark-and-sweeps.
+pub(crate) const ID_BITSET_WORDS: usize = (u16::MAX as usize + 1).div_ceil(64);
 
 /// Slot table for `square::Extras`. Index `0` is reserved as the "no extras"
 /// sentinel — `Square::extras_id() == None` corresponds to id 0. Slots are
@@ -212,12 +225,10 @@ impl ExtrasTable {
         self.allocs_since_reclaim >= EXTRAS_RECLAIM_CADENCE || self.under_pressure()
     }
 
-    pub(crate) fn reset_reclaim_cadence(&mut self) {
-        self.allocs_since_reclaim = 0;
-    }
-
     /// Free every allocated slot whose bit is not set in `live`.
+    /// Resets the reclaim cadence, matching `StyleSet::sweep_unmarked`.
     pub fn sweep_unmarked(&mut self, live: &[u64]) {
+        self.allocs_since_reclaim = 0;
         for id in 1..self.slots.len() {
             let marked = live[id / 64] & (1 << (id % 64)) != 0;
             if !marked && self.slots[id].is_some() {
@@ -603,8 +614,7 @@ impl Grid<Square> {
     pub fn cell_text(&self, pos: Pos) -> impl Iterator<Item = char> + '_ {
         let square = self[pos];
         let marks = square
-            .extras_id()
-            .filter(|_| !square.is_bg_only())
+            .extras_id_checked()
             .and_then(|id| self.extras_table.get(id))
             .map(|extras| extras.zerowidth.as_slice())
             .unwrap_or(&[]);
@@ -634,38 +644,95 @@ impl Grid<Square> {
     }
 
     pub fn reclaim_extras(&mut self) {
-        self.extras_table.reset_reclaim_cadence();
-        #[inline]
-        fn mark(live: &mut [u64], sq: &Square) {
-            if matches!(
-                sq.content_tag(),
-                crate::crosswords::square::ContentTag::Codepoint
-            ) {
-                if let Some(eid) = sq.extras_id() {
-                    live[eid as usize / 64] |= 1 << (eid % 64);
-                }
-            }
-        }
-
-        let mut live = vec![0u64; (u16::MAX as usize).div_ceil(64)];
-        for l in self.topmost_line().0..=self.bottommost_line().0 {
-            let row = &self.raw[Line(l)];
-            if !row.has_extras {
-                continue;
-            }
-            for sq in &row.inner {
-                mark(&mut live, sq);
-            }
-        }
-        mark(&mut live, &self.cursor.template);
-        mark(&mut live, &self.saved_cursor.template);
+        let live =
+            self.collect_live_ids(|sq| sq.extras_id_checked(), |row| !row.has_extras);
         self.extras_table.sweep_unmarked(&live);
     }
 
-    /// Read the style associated with the cell's style id.
+    /// Bitset of every id yielded by `id_of` over this grid's live
+    /// squares: the cells of every raw-storage row `skip_row` doesn't
+    /// exclude, plus the cursor templates. A skipped row asserts that
+    /// none of its cells can yield an id (the extras sweep skips on
+    /// `Row::has_extras`); a stale skip flag makes the sweep free live
+    /// ids. The walk covers the raw ring, not the Line-indexed window,
+    /// because a scrollback shrink keeps up to `MAX_CACHE_SIZE` rows'
+    /// content intact beyond `len` and a later grow re-exposes them
+    /// verbatim, so their ids must stay live too. Shared by the styles
+    /// and extras mark-and-sweeps so the live-root set is maintained in
+    /// one place.
+    fn collect_live_ids(
+        &self,
+        id_of: impl Fn(&Square) -> Option<u16>,
+        skip_row: impl Fn(&Row<Square>) -> bool,
+    ) -> Vec<u64> {
+        let mut live = vec![0u64; ID_BITSET_WORDS];
+        let mut mark = |sq: &Square| {
+            if let Some(id) = id_of(sq) {
+                live[id as usize / 64] |= 1u64 << (id % 64);
+            }
+        };
+        for row in self.raw.rows() {
+            if skip_row(row) {
+                debug_assert!(
+                    row.inner.iter().all(|sq| id_of(sq).is_none()),
+                    "skip_row excluded a row that still carries live ids",
+                );
+                continue;
+            }
+            for sq in &row.inner {
+                mark(sq);
+            }
+        }
+        mark(&self.cursor.template);
+        mark(&self.saved_cursor.template);
+        live
+    }
+
+    /// Read the cell's resolved style, safe on any cell: bg-only cells
+    /// synthesize a style carrying their inline background instead of
+    /// misreading the color bits as a style id.
     #[inline]
     pub fn style_of(&self, square: &Square) -> Style {
-        self.style_set.get(square.style_id())
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        use crate::crosswords::square::ContentTag;
+        match square.content_tag() {
+            ContentTag::Codepoint => self.style_set.get(square.style_id()),
+            ContentTag::BgPalette => Style {
+                bg: AnsiColor::Indexed(square.bg_palette_index()),
+                ..Style::default()
+            },
+            ContentTag::BgRgb => {
+                let (r, g, b) = square.bg_rgb();
+                Style {
+                    bg: AnsiColor::Spec(ColorRgb { r, g, b }),
+                    ..Style::default()
+                }
+            }
+        }
+    }
+
+    /// The interned styles slice; `StyleId`s index into it.
+    #[inline]
+    pub fn styles(&self) -> &[Style] {
+        self.style_set.styles()
+    }
+
+    /// Resolve `src`'s style ids into per-cell `Style` values, index-
+    /// parallel to the row's cells. Bg-only cells get the default
+    /// style; their color travels inline in the cell itself. Snapshots
+    /// carry these resolved values instead of ids, so id reuse by the
+    /// sweep can never affect rows copied on earlier frames.
+    pub fn resolve_row_styles(&self, src: &Row<Square>, out: &mut Vec<Style>) {
+        out.clear();
+        if !src.has_styles {
+            out.resize(src.inner.len(), Style::default());
+            return;
+        }
+        out.extend(src.inner.iter().map(|sq| {
+            sq.style_id_checked()
+                .map(|id| self.style_set.get(id))
+                .unwrap_or_default()
+        }));
     }
 
     /// Read the style id of the current cursor template.
@@ -711,10 +778,55 @@ impl Grid<Square> {
     #[inline]
     pub fn sync_template_style(&mut self) {
         if self.cursor.style_dirty {
-            let id = self.style_set.intern(self.cursor.pending_style);
+            let id = self.intern_style(self.cursor.pending_style);
             self.cursor.template.set_style_id(id);
             self.cursor.style_dirty = false;
         }
+    }
+
+    /// Intern a style, transparently running the mark-and-sweep when the
+    /// id space is close to exhausted. Same contract as `alloc_extras`:
+    /// callers never orchestrate reclamation.
+    #[inline]
+    fn intern_style(&mut self, style: Style) -> StyleId {
+        if self.style_set.should_sweep() {
+            self.reclaim_styles();
+        }
+        self.style_set.intern(style)
+    }
+
+    /// Free style ids no longer referenced by any cell.
+    ///
+    /// Cells are overwritten and rows drop off the scrollback ring without
+    /// freeing their style id, so a session that keeps generating novel
+    /// truecolor pairs (gradients, animations) eventually exhausts the
+    /// u16 id space. Mark every id referenced by a live row (visible +
+    /// history) or a cursor template, then free the rest for reuse.
+    pub fn reclaim_styles(&mut self) {
+        // Id 0 (the default style) is never swept, so it needs no
+        // marking; filtering it also makes the skip contract exact: an
+        // unstyled row yields no ids at all.
+        let live = self.collect_live_ids(
+            |sq| {
+                sq.style_id_checked()
+                    .filter(|&id| id != crate::crosswords::style::DEFAULT_STYLE_ID)
+            },
+            |row| !row.has_styles,
+        );
+        // Scale the post-sweep re-arm floor with the walk cost, so a big
+        // ring cannot be re-walked more than once per ~256 cells of it.
+        // Clamped well under the id space: a floor larger than the ids a
+        // sweep can recover would strand novel styles on the default
+        // fallback for the whole window. Counts styled rows only, since
+        // the walk skips the rest.
+        let walked_cells = self
+            .raw
+            .rows()
+            .filter(|row| row.has_styles)
+            .map(|row| row.inner.len())
+            .sum::<usize>();
+        let min_novel = (walked_cells / 256).min(u16::MAX as usize / 4);
+        self.style_set.sweep_unmarked(&live, min_novel);
     }
 
     /// Build a "blank cell with this bg color" using the default style for
@@ -767,7 +879,7 @@ impl Grid<Square> {
             bg,
             ..Style::default()
         };
-        let id = self.style_set.intern(style);
+        let id = self.intern_style(style);
         Square::default().with_style_id(id)
     }
 }
