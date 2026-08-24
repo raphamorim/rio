@@ -81,7 +81,8 @@ pub struct KittyPlacement {
     pub cell_y_offset: u32,
     /// Z-index layer for rendering order.
     pub z_index: i32,
-    /// Transmission timestamp for cache invalidation.
+    /// `transmission_time` of the stored image this placement was
+    /// made from.
     pub transmit_time: crate::time::Instant,
 }
 
@@ -943,8 +944,9 @@ impl Graphics {
             .sum();
         self.total_bytes = self.total_bytes.saturating_sub(inactive_bytes);
 
-        self.kitty_images.clear();
-        self.kitty_image_numbers.clear();
+        // The active store goes through the delete path so its bytes
+        // leave the budget and owned textures are released.
+        self.delete_kitty_images(|_, _| true);
         self.kitty_placements.clear();
         self.kitty_virtual_placements.clear();
         {
@@ -1081,16 +1083,19 @@ impl Graphics {
         predicate: impl Fn(&u32, &StoredImage) -> bool,
     ) {
         let mut released = Vec::new();
+        let mut freed_bytes = 0usize;
         self.kitty_images.retain(|id, img| {
             let delete = predicate(id, img);
             if delete {
                 released.push((*id, img.transmission_time));
+                freed_bytes += img.data.pixels.len();
             }
             !delete
         });
         if !released.is_empty() {
             self.kitty_graphics_dirty = true;
         }
+        self.total_bytes = self.total_bytes.saturating_sub(freed_bytes);
         for (id, transmission_time) in released {
             self.release_kitty_texture(id, transmission_time);
         }
@@ -1827,7 +1832,6 @@ fn test_kitty_texture_contents_tracks_uploads_across_screens() {
     graphics.kitty_virtual_placements.insert((1, 1), vp.clone());
 
     // A retransmit changes the transmission time; the texture is stale.
-    std::thread::sleep(std::time::Duration::from_millis(2));
     graphics.store_kitty_image(1, None, image(1, 20));
     assert!(!graphics.is_kitty_uploaded(1));
     assert!(graphics.queue_kitty_upload(1));
@@ -1859,7 +1863,6 @@ fn test_kitty_texture_contents_tracks_uploads_across_screens() {
     // texture and the active image is resent right away.
     graphics.kitty_images.remove(&2);
     graphics.total_bytes = 1600;
-    std::thread::sleep(std::time::Duration::from_millis(2));
     graphics.kitty_inactive_screen.kitty_images.insert(
         1,
         StoredImage {
@@ -2006,4 +2009,33 @@ fn test_kitty_delete_frees_texture_only_when_it_holds_the_pixels() {
         .contains(&rio_graphics::kitty_image_key(3)));
     assert!(graphics.pending_images.is_empty());
     assert!(graphics.kitty_texture_contents.is_empty());
+}
+
+#[test]
+fn test_kitty_delete_and_reset_return_bytes_to_budget() {
+    use rio_graphics::ColorType;
+    let mut graphics = Graphics::default();
+    let image = |id: u32| GraphicData {
+        id: GraphicId::new(id as u64),
+        width: 10,
+        height: 10,
+        color_type: ColorType::Rgba,
+        pixels: vec![0u8; 400],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: crate::time::Instant::now(),
+    };
+    graphics.store_kitty_image(1, None, image(1));
+    graphics.store_kitty_image(2, None, image(2));
+    assert_eq!(graphics.total_bytes, 800);
+    graphics.delete_kitty_images(|id, _| *id == 1);
+    assert_eq!(graphics.total_bytes, 400);
+
+    assert!(!graphics.swap_kitty_screen_state());
+    graphics.store_kitty_image(3, None, image(3));
+    assert_eq!(graphics.total_bytes, 800);
+    graphics.clear_all_kitty_state();
+    assert_eq!(graphics.total_bytes, 0);
 }

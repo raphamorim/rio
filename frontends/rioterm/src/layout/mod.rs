@@ -1653,13 +1653,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    /// Drop image overlays for every panel in the grid. Used on tab
-    /// teardown — the panels themselves go away with the
-    /// `ContextManager`; only the kitty graphics state needs an
-    /// explicit cleanup signal.
+    /// Release everything this grid's panels hold in sugarloaf on tab
+    /// teardown: image overlays and the images they drew. The panels
+    /// themselves go away with the `ContextManager`.
     #[inline]
-    /// Release everything this grid's panels hold in sugarloaf: image
-    /// overlays and the images they drew.
     pub fn remove_from_sugarloaf(&self, sugarloaf: &mut Sugarloaf) {
         for item in self.inner.values() {
             sugarloaf.clear_image_overlays_for(item.val.rich_text_id);

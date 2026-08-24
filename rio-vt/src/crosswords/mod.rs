@@ -4925,8 +4925,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if has_placements {
             self.refresh_placements_for_image(image_id, image_width, image_height);
             self.ensure_kitty_upload(image_id);
+        } else {
+            self.send_graphics_updates();
         }
-        self.send_graphics_updates();
     }
 
     fn kitty_transmit_and_display(
@@ -5677,8 +5678,9 @@ impl<U: EventListener> Crosswords<U> {
             .insert((image_id, placement_id), kitty_placement);
         self.graphics.kitty_graphics_dirty = true;
 
-        self.graphics.queue_kitty_upload(image_id);
-        self.send_graphics_updates();
+        if !self.ensure_kitty_upload(image_id) {
+            self.send_graphics_updates();
+        }
 
         // Handle cursor movement per kitty spec
         match placement.cursor_movement {
@@ -10008,6 +10010,22 @@ mod tests {
         assert!(cw.graphics.get_kitty_image(5).is_none());
         assert!(cw.graphics.kitty_virtual_placements.contains_key(&(9, 1)));
         assert!(cw.graphics.get_kitty_image(9).is_some());
+
+        // Without the data flag the placement still goes and the image
+        // stays.
+        cw.delete_graphics(DeleteRequest {
+            action: b'r',
+            delete_data: false,
+            image_id: 0,
+            image_number: 0,
+            placement_id: 0,
+            x: 9,
+            y: 9,
+            z_index: 0,
+        });
+        assert!(cw.graphics.kitty_virtual_placements.is_empty());
+        assert!(cw.graphics.get_kitty_image(9).is_some());
+        assert!(cw.graphics.kitty_graphics_dirty);
     }
 
     #[test]
