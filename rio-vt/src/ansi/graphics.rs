@@ -946,7 +946,14 @@ impl Graphics {
         self.kitty_image_numbers.clear();
         self.kitty_placements.clear();
         self.kitty_virtual_placements.clear();
+        {
+            let mut removals = self.texture_operations.lock();
+            for id in self.kitty_texture_contents.keys() {
+                removals.push(rio_graphics::kitty_image_key(*id));
+            }
+        }
         self.kitty_texture_contents.clear();
+        self.pending_images.clear();
 
         // Sixel/iTerm2 placements die with the reset too; queue every
         // referenced key (both screens) so the frontend frees the
@@ -1002,6 +1009,12 @@ impl Graphics {
             .get(&image_id)
             .map(|old| old.transmission_time)
             .into_iter()
+            .chain(
+                self.kitty_inactive_screen
+                    .kitty_images
+                    .get(&image_id)
+                    .map(|old| old.transmission_time),
+            )
             .chain(self.kitty_texture_contents.get(&image_id).copied())
             .max();
         if let Some(previous) = previous {
@@ -1066,14 +1079,50 @@ impl Graphics {
         &mut self,
         predicate: impl Fn(&u32, &StoredImage) -> bool,
     ) {
-        let before = self.kitty_images.len();
-        self.kitty_images.retain(|id, img| !predicate(id, img));
-        if self.kitty_images.len() != before {
+        let mut released = Vec::new();
+        self.kitty_images.retain(|id, img| {
+            let delete = predicate(id, img);
+            if delete {
+                released.push((*id, img.transmission_time));
+            }
+            !delete
+        });
+        if !released.is_empty() {
             self.kitty_graphics_dirty = true;
         }
-        // Clean up stale number mappings
+        for (id, transmission_time) in released {
+            self.release_kitty_texture(id, transmission_time);
+        }
+        // Clean up stale number mappings and placements of the images
+        // that are gone.
         self.kitty_image_numbers
             .retain(|_, id| self.kitty_images.contains_key(id));
+        self.kitty_placements
+            .retain(|_, p| self.kitty_images.contains_key(&p.image_id));
+        self.kitty_virtual_placements
+            .retain(|(img, _), _| self.kitty_images.contains_key(img));
+    }
+
+    /// Free the frontend texture for `image_id` if it holds the pixels
+    /// of the store stamped `transmission_time`; a texture holding the
+    /// other screen's image of the same id stays. Returns whether a
+    /// removal was queued.
+    fn release_kitty_texture(
+        &mut self,
+        image_id: u32,
+        transmission_time: crate::time::Instant,
+    ) -> bool {
+        if self.kitty_texture_contents.get(&image_id) != Some(&transmission_time) {
+            return false;
+        }
+        self.kitty_texture_contents.remove(&image_id);
+        // An upload of these pixels still waiting in the queue would
+        // land after the removal.
+        self.pending_images.retain(|(img, _)| *img != image_id);
+        self.texture_operations
+            .lock()
+            .push(rio_graphics::kitty_image_key(image_id));
+        true
     }
 
     /// Calculate the memory size of a graphic in bytes
@@ -1256,21 +1305,18 @@ impl Graphics {
             // A kitty texture is only freed when it holds the evicted
             // pixels; otherwise it belongs to the other screen's image
             // of the same id and stays.
-            let key = match source {
-                CandidateSource::Pending => rio_graphics::atlas_image_key(id.get()),
-                CandidateSource::ActiveKitty | CandidateSource::InactiveKitty => {
-                    let holds_evicted = removed_kitty.is_some_and(|img| {
-                        self.kitty_texture_contents.get(&evicted_u32)
-                            == Some(&img.transmission_time)
-                    });
-                    if !holds_evicted {
-                        continue;
-                    }
-                    self.kitty_texture_contents.remove(&evicted_u32);
-                    rio_graphics::kitty_image_key(evicted_u32)
+            match source {
+                CandidateSource::Pending => {
+                    self.texture_operations
+                        .lock()
+                        .push(rio_graphics::atlas_image_key(id.get()));
                 }
-            };
-            self.texture_operations.lock().push(key);
+                CandidateSource::ActiveKitty | CandidateSource::InactiveKitty => {
+                    if let Some(img) = removed_kitty {
+                        self.release_kitty_texture(evicted_u32, img.transmission_time);
+                    }
+                }
+            }
         }
 
         // Sweep dangling placements on both screens. A placement is
@@ -1867,4 +1913,96 @@ fn test_kitty_store_never_repeats_transmission_time() {
         graphics.get_kitty_image(1).unwrap().data.transmit_time,
         second
     );
+}
+
+#[test]
+fn test_kitty_eviction_cancels_pending_upload_of_evicted_image() {
+    use rio_graphics::ColorType;
+    let mut graphics = Graphics {
+        total_limit: 8_000,
+        ..Graphics::default()
+    };
+    let image = |id: u32, side: usize| GraphicData {
+        id: GraphicId::new(id as u64),
+        width: side,
+        height: side,
+        color_type: ColorType::Rgba,
+        pixels: vec![0u8; side * side * 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: crate::time::Instant::now(),
+    };
+
+    // Image 1 is uploaded but not placed, so it is the eviction
+    // candidate when image 2 does not fit; both happen in one batch.
+    graphics.store_kitty_image(1, None, image(1, 30));
+    assert!(graphics.queue_kitty_upload(1));
+    graphics.store_kitty_image(2, None, image(2, 40));
+    assert!(graphics.get_kitty_image(1).is_none());
+    assert!(graphics.pending_images.iter().all(|(img, _)| *img != 1));
+    assert!(graphics
+        .texture_operations
+        .lock()
+        .contains(&rio_graphics::kitty_image_key(1)));
+    assert!(!graphics.kitty_texture_contents.contains_key(&1));
+}
+
+#[test]
+fn test_kitty_delete_frees_texture_only_when_it_holds_the_pixels() {
+    use rio_graphics::ColorType;
+    let mut graphics = Graphics::default();
+    let image = |id: u32| GraphicData {
+        id: GraphicId::new(id as u64),
+        width: 1,
+        height: 1,
+        color_type: ColorType::Rgba,
+        pixels: vec![0u8; 4],
+        is_opaque: true,
+        resize: None,
+        display_width: None,
+        display_height: None,
+        transmit_time: crate::time::Instant::now(),
+    };
+    graphics.store_kitty_image(1, None, image(1));
+    assert!(graphics.queue_kitty_upload(1));
+    graphics.store_kitty_image(2, None, image(2));
+
+    // Image 2 was never uploaded: nothing to free.
+    graphics.delete_kitty_images(|id, _| *id == 2);
+    assert!(graphics.texture_operations.lock().is_empty());
+
+    // The other screen's copy of id 1 owns the texture: deleting the
+    // active copy leaves it alone.
+    assert!(!graphics.swap_kitty_screen_state());
+    graphics.store_kitty_image(1, None, image(1));
+    assert!(graphics.queue_kitty_upload(1));
+    assert!(!graphics.swap_kitty_screen_state());
+    graphics.delete_kitty_images(|id, _| *id == 1);
+    assert!(graphics.texture_operations.lock().is_empty());
+    assert!(graphics.kitty_texture_contents.contains_key(&1));
+
+    // Deleting the owning copy frees it and drops a pending resend.
+    assert!(!graphics.swap_kitty_screen_state());
+    graphics.pending_images.clear();
+    graphics.delete_kitty_images(|id, _| *id == 1);
+    assert!(graphics
+        .texture_operations
+        .lock()
+        .contains(&rio_graphics::kitty_image_key(1)));
+    assert!(!graphics.kitty_texture_contents.contains_key(&1));
+    assert!(graphics.pending_images.is_empty());
+
+    // A full reset frees whatever the record still names.
+    graphics.store_kitty_image(3, None, image(3));
+    assert!(graphics.queue_kitty_upload(3));
+    graphics.texture_operations.lock().clear();
+    graphics.clear_all_kitty_state();
+    assert!(graphics
+        .texture_operations
+        .lock()
+        .contains(&rio_graphics::kitty_image_key(3)));
+    assert!(graphics.pending_images.is_empty());
+    assert!(graphics.kitty_texture_contents.is_empty());
 }
