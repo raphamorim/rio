@@ -140,7 +140,7 @@ fn window_bg_alpha(config: &Config) -> f32 {
     }
 }
 
-pub use rio_backend::sugarloaf::{atlas_image_key, kitty_image_key};
+pub use rio_backend::sugarloaf::{atlas_image_key, kitty_image_key, route_image_key};
 
 pub struct Renderer {
     is_vi_mode_enabled: bool,
@@ -567,6 +567,7 @@ impl Renderer {
             // exist. Positions depend on display_offset and history_size which
             // change on scroll and text output (like approach).
             let rc = &context.renderable_content;
+            let route_id = context.route_id;
             let has_overlays = !rc.kitty_placements.is_empty();
             let has_virtual = !rc.kitty_virtual_placements.is_empty();
             let has_atlas = !rc.atlas_placements.is_empty();
@@ -622,7 +623,7 @@ impl Renderer {
                             continue;
                         };
                         let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
-                            image_id: p.image_key,
+                            image_id: route_image_key(route_id, p.image_key),
                             x: geometry.x,
                             y: geometry.y,
                             width: geometry.width,
@@ -660,7 +661,10 @@ impl Renderer {
                             continue;
                         };
                         let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
-                            image_id: kitty_image_key(p.image_id),
+                            image_id: route_image_key(
+                                route_id,
+                                kitty_image_key(p.image_id),
+                            ),
                             x: geometry.x,
                             y: geometry.y,
                             width: geometry.width,
@@ -684,6 +688,7 @@ impl Renderer {
                     Self::push_virtual_placeholder_overlays(
                         overlays,
                         rc,
+                        route_id,
                         origin_x,
                         origin_y,
                         cell_width,
@@ -969,6 +974,7 @@ impl Renderer {
     fn push_virtual_placeholder_overlays(
         overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
         rc: &RenderableContent,
+        route_id: usize,
         origin_x: f32,
         origin_y: f32,
         cell_width: f32,
@@ -1008,6 +1014,7 @@ impl Renderer {
                         flush_run(
                             overlays,
                             rc,
+                            route_id,
                             p.complete(),
                             line_idx,
                             start_col,
@@ -1044,6 +1051,7 @@ impl Renderer {
                             flush_run(
                                 overlays,
                                 rc,
+                                route_id,
                                 p.complete(),
                                 line_idx,
                                 start_col,
@@ -1074,6 +1082,7 @@ impl Renderer {
                 flush_run(
                     overlays,
                     rc,
+                    route_id,
                     p.complete(),
                     line_idx,
                     start_col,
@@ -1097,6 +1106,7 @@ impl Renderer {
         fn flush_run(
             overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
             rc: &RenderableContent,
+            route_id: usize,
             run: PlaceholderRun,
             screen_line: usize,
             start_screen_col: usize,
@@ -1107,10 +1117,11 @@ impl Renderer {
             z_index: i32,
             clip: (f32, f32, f32, f32),
         ) {
-            let vp = rc
-                .kitty_virtual_placements
-                .get(&(run.image_id, run.placement_id))
-                .or_else(|| rc.kitty_virtual_placements.get(&(run.image_id, 0)));
+            let vp = rio_backend::ansi::kitty_virtual::resolve_virtual_placement(
+                &rc.kitty_virtual_placements,
+                run.image_id,
+                run.placement_id,
+            );
             let vp = match vp {
                 Some(v) => v,
                 None => return,
@@ -1139,7 +1150,7 @@ impl Renderer {
             };
 
             let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
-                image_id: kitty_image_key(run.image_id),
+                image_id: route_image_key(route_id, kitty_image_key(run.image_id)),
                 x: geom.x,
                 y: geom.y,
                 width: geom.width,

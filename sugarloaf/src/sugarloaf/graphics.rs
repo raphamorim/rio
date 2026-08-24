@@ -15,8 +15,9 @@ use crate::sugarloaf::Handle;
 use rustc_hash::FxHashMap;
 
 pub use rio_graphics::{
-    atlas_image_key, kitty_image_key, ColorType, Graphic, GraphicData, GraphicId,
-    GraphicOverlay, ResizeCommand, ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
+    atlas_image_key, image_key_route, kitty_image_key, route_image_key, ColorType,
+    Graphic, GraphicData, GraphicId, GraphicOverlay, ResizeCommand, ResizeParameter,
+    MAX_GRAPHIC_DIMENSIONS,
 };
 
 pub struct GraphicDataEntry {

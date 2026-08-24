@@ -4,7 +4,8 @@ use rio_vt::ansi::graphics::{
     VirtualPlacement,
 };
 use rio_vt::ansi::kitty_virtual::{
-    compute_run_geometry, IncompletePlacement, PlaceholderRun, PLACEHOLDER,
+    compute_run_geometry, resolve_virtual_placement, IncompletePlacement, PlaceholderRun,
+    PLACEHOLDER,
 };
 use rio_vt::ansi::CursorShape;
 use rio_vt::config::colors::term::TermColors;
@@ -355,10 +356,11 @@ impl RenderState {
                      run: PlaceholderRun,
                      line: usize,
                      start_col: usize| {
-            let placement = graphics
-                .kitty_virtual_placements
-                .get(&(run.image_id, run.placement_id))
-                .or_else(|| graphics.kitty_virtual_placements.get(&(run.image_id, 0)));
+            let placement = resolve_virtual_placement(
+                &graphics.kitty_virtual_placements,
+                run.image_id,
+                run.placement_id,
+            );
             let Some(placement) = placement else { return };
             let Some(image) = graphics.get_kitty_image(run.image_id) else {
                 return;

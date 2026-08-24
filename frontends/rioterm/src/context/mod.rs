@@ -500,7 +500,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         // A whole tab dies.
-        self.contexts[tab_index].remove_all_rich_text(sugarloaf);
+        self.contexts[tab_index].remove_from_sugarloaf(sugarloaf);
         self.contexts.remove(tab_index);
 
         if self.contexts.is_empty() {
@@ -574,10 +574,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn close_unfocused_tabs(&mut self) {
+    pub fn close_unfocused_tabs(&mut self, sugarloaf: &mut Sugarloaf) {
         let current_route_id = self.current().route_id;
-        self.contexts
-            .retain(|ctx| ctx.current().route_id == current_route_id);
+        self.contexts.retain(|ctx| {
+            let keep = ctx.current().route_id == current_route_id;
+            if !keep {
+                ctx.remove_from_sugarloaf(sugarloaf);
+            }
+            keep
+        });
         self.current_route = self.contexts[0].current().route_id;
         self.set_current(0);
     }
@@ -884,7 +889,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         // Remove all rich text from the grid before removing the context
-        self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
+        self.contexts[index_to_remove].remove_from_sugarloaf(sugarloaf);
         self.contexts.remove(index_to_remove);
 
         if should_set_current {
