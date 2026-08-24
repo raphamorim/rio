@@ -330,7 +330,7 @@ impl HintState {
 
         for col in 0..grid.columns() {
             let cell = &grid[line][Column(col)];
-            text.push(cell.c());
+            text.push(cell_char_for_regex(cell.c()));
         }
 
         text.trim_end().to_string()
@@ -343,6 +343,14 @@ impl HintState {
         for _ in 0..self.matches.len() {
             self.labels.push(generator.next());
         }
+    }
+}
+
+fn cell_char_for_regex(c: char) -> char {
+    if c == '\0' {
+        ' '
+    } else {
+        c
     }
 }
 
@@ -764,6 +772,18 @@ fn post_process_hyperlink_uri(uri: &str) -> String {
 mod tests {
     use super::*;
     use rio_backend::config::hints::{HintAction, HintInternalAction};
+
+    #[test]
+    fn empty_grid_cells_are_regex_whitespace() {
+        let line: String = "https://example.com"
+            .chars()
+            .chain(['\0', '\0'])
+            .map(cell_char_for_regex)
+            .collect();
+        let regex = onig::Regex::new(r"https?://[^\s]+").unwrap();
+
+        assert_eq!(regex.find_iter(&line).next(), Some((0, 19)));
+    }
 
     #[test]
     fn hyperlink_rule_filters_osc8_uri() {
