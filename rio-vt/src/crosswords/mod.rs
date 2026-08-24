@@ -4910,7 +4910,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
             .graphics
             .kitty_placements
             .keys()
-            .any(|(id, _)| *id == image_id);
+            .any(|(id, _)| *id == image_id)
+            || self
+                .graphics
+                .kitty_virtual_placements
+                .keys()
+                .any(|(id, _)| *id == image_id);
         let image_width = graphic.width;
         let image_height = graphic.height;
         let pixel_data = has_placements.then(|| graphic.clone());
@@ -5004,6 +5009,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // emits U+10EEEE placeholder cells itself. The renderer scans
         // visible cells and composites the image at those positions.
         if placement.virtual_placement {
+            // `a=t` deliberately defers the GPU upload to the placement
+            // (see `store_graphic`). The direct path does it in
+            // `place_kitty_overlay`; the virtual path has to do it here,
+            // otherwise the placeholder cells stay blank (this is the
+            // `a=t` + `a=p,U=1` sequence snacks.image and yazi emit).
+            // Upload once per image: clients re-place on every relayout,
+            // and that must not resend the pixels.
+            self.upload_for_virtual_placement(image_id);
             self.place_virtual_graphic(placement);
             return true;
         }
@@ -5776,6 +5789,33 @@ impl<U: EventListener> Crosswords<U> {
     /// decodes the image_id from the foreground color and the row/col
     /// indices from the combining-mark diacritics (kitty_virtual::*), and
     /// looks up the metadata stored here to know which image to composite.
+    /// Queue the stored pixels of `image_id` for the GPU before its first
+    /// virtual placement. Returns whether an upload was queued: `false`
+    /// when the image already has a virtual placement (pixels are on the
+    /// GPU) or is unknown.
+    fn upload_for_virtual_placement(&mut self, image_id: u32) -> bool {
+        let already_uploaded = self
+            .graphics
+            .kitty_virtual_placements
+            .keys()
+            .any(|(id, _)| *id == image_id);
+        if already_uploaded {
+            return false;
+        }
+        let pixel_data = self
+            .graphics
+            .get_kitty_image(image_id)
+            .map(|stored| stored.data.clone());
+        match pixel_data {
+            Some(pixel_data) => {
+                self.graphics.pending_images.push((image_id, pixel_data));
+                self.send_graphics_updates();
+                true
+            }
+            None => false,
+        }
+    }
+
     fn place_virtual_graphic(
         &mut self,
         placement: crate::ansi::kitty_graphics_protocol::PlacementRequest,
@@ -9685,6 +9725,63 @@ mod tests {
 
         // Cursor must be untouched.
         assert_eq!(cw.grid.cursor.pos, cursor_before);
+    }
+
+    #[test]
+    fn virtual_placement_uploads_pixels_once_per_image() {
+        use crate::ansi::kitty_graphics_protocol::PlacementRequest;
+
+        let size = CrosswordsSize::new(40, 20);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        // Unknown image: nothing to upload.
+        assert!(!cw.upload_for_virtual_placement(1234));
+
+        cw.graphics.store_kitty_image(
+            1234,
+            None,
+            GraphicData {
+                id: rio_graphics::GraphicId::new(1234),
+                width: 1,
+                height: 1,
+                pixels: vec![0u8; 4],
+                color_type: rio_graphics::ColorType::Rgba,
+                is_opaque: true,
+                display_width: None,
+                display_height: None,
+                resize: None,
+                transmit_time: crate::time::Instant::now(),
+            },
+        );
+        // `a=t` stored the image without uploading; the first virtual
+        // placement must queue the pixels …
+        assert!(cw.upload_for_virtual_placement(1234));
+        let placement = PlacementRequest {
+            image_id: 1234,
+            placement_id: 7,
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            columns: 8,
+            rows: 4,
+            z_index: 0,
+            virtual_placement: true,
+            unicode_placeholder: 0,
+            cursor_movement: 0,
+            cell_x_offset: 0,
+            cell_y_offset: 0,
+        };
+        assert!(cw.place_graphic(placement));
+        // … and a re-place of the same image must not resend them.
+        assert!(!cw.upload_for_virtual_placement(1234));
     }
 
     /// DECSTBM bounds where scrolling happens, not what is on screen. Both
