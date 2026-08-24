@@ -660,7 +660,8 @@ pub struct Graphics {
     /// are per screen, so this is deliberately not swapped with the
     /// screens: a same-id image on the other screen overwrites the
     /// texture, and an eviction on either screen can free it. Other
-    /// terminals sharing the window's texture store are not tracked.
+    /// terminals in the window draw from keys namespaced by route, so
+    /// they never share a texture with this one.
     pub kitty_texture_contents: FxHashMap<u32, crate::time::Instant>,
 
     /// Counter for auto-assigning internal placement IDs.

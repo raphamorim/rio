@@ -1221,7 +1221,8 @@ impl Screen<'_> {
                         if self.ctx().len() <= 1 {
                             return true;
                         }
-                        self.context_manager.close_unfocused_tabs();
+                        self.context_manager
+                            .close_unfocused_tabs(&mut self.sugarloaf);
                         if let Some(ref mut island) = self.renderer.island {
                             island.dismiss_color_picker();
                         }
@@ -3687,7 +3688,8 @@ impl Screen<'_> {
             PaletteAction::TabClose => self.close_tab(clipboard),
             PaletteAction::TabCloseUnfocused => {
                 if self.ctx().len() > 1 {
-                    self.context_manager.close_unfocused_tabs();
+                    self.context_manager
+                        .close_unfocused_tabs(&mut self.sugarloaf);
                     if let Some(ref mut island) = self.renderer.island {
                         island.dismiss_color_picker();
                     }

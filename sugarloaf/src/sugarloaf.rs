@@ -9,7 +9,7 @@ use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::font_cache::{compute_advance, resolve_with, FontCache, ResolvedGlyph};
 use crate::layout::RootStyle;
 use crate::renderer::Renderer;
-use crate::sugarloaf::graphics::{GraphicDataEntry, Graphics};
+use crate::sugarloaf::graphics::{image_key_route, GraphicDataEntry, Graphics};
 use swash::Attributes;
 
 use crate::context::Context;
@@ -859,6 +859,14 @@ impl Sugarloaf<'_> {
     pub fn remove_image(&mut self, key: u64) {
         self.image_data.remove(&key);
         self.renderer.evict_image_texture(key);
+    }
+
+    /// Drop every image a closed terminal uploaded (keys namespaced
+    /// with `graphics::route_image_key`), pixel store and GPU textures.
+    pub fn remove_route_images(&mut self, route_id: usize) {
+        self.image_data
+            .retain(|key, _| image_key_route(*key) != route_id);
+        self.renderer.evict_route_textures(route_id);
     }
 
     /// Drop everything this frame's immediate-mode producers pushed

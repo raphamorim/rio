@@ -116,6 +116,29 @@ pub fn atlas_image_key(graphic_id: u64) -> u64 {
     (1u64 << 32) + graphic_id
 }
 
+/// Bits of an image key below the terminal namespace: the kitty u32
+/// id space plus the atlas range above it.
+const IMAGE_KEY_ROUTE_SHIFT: u32 = 33;
+
+/// Namespace an image key by the terminal (route) it belongs to. The
+/// texture store is shared by every terminal drawn in a window while
+/// kitty ids are chosen by each terminal's client and atlas ids are a
+/// per-terminal counter, so without this two tabs or splits using the
+/// same id would overwrite each other's pixels. Route 0 is the
+/// identity, which keeps single-terminal embedders on plain keys.
+#[inline]
+pub fn route_image_key(route_id: usize, key: u64) -> u64 {
+    debug_assert!(key < (1u64 << IMAGE_KEY_ROUTE_SHIFT));
+    debug_assert!((route_id as u64) < (1u64 << (64 - IMAGE_KEY_ROUTE_SHIFT)));
+    ((route_id as u64) << IMAGE_KEY_ROUTE_SHIFT) | key
+}
+
+/// The route a namespaced image key belongs to.
+#[inline]
+pub fn image_key_route(key: u64) -> usize {
+    (key >> IMAGE_KEY_ROUTE_SHIFT) as usize
+}
+
 /// An overlay image placement.
 /// Used by the renderer to draw images on top of (or behind) terminal content.
 #[derive(Debug, Clone)]
@@ -521,4 +544,39 @@ fn check_opaque_region() {
 
     assert!(graphic.is_filled(0, 0, 3, 3));
     assert!(!graphic.is_filled(1, 1, 4, 4));
+}
+
+#[cfg(test)]
+mod route_key_tests {
+    use super::*;
+
+    #[test]
+    fn route_zero_is_identity() {
+        assert_eq!(route_image_key(0, kitty_image_key(7)), kitty_image_key(7));
+        assert_eq!(route_image_key(0, atlas_image_key(7)), atlas_image_key(7));
+        assert_eq!(image_key_route(kitty_image_key(u32::MAX)), 0);
+        assert_eq!(image_key_route(atlas_image_key(u32::MAX as u64)), 0);
+    }
+
+    #[test]
+    fn routes_never_collide() {
+        let a = route_image_key(1, kitty_image_key(7));
+        let b = route_image_key(2, kitty_image_key(7));
+        assert_ne!(a, b);
+        assert_ne!(
+            route_image_key(1, atlas_image_key(7)),
+            route_image_key(2, atlas_image_key(7))
+        );
+        assert_ne!(
+            route_image_key(1, kitty_image_key(u32::MAX)),
+            route_image_key(2, kitty_image_key(0))
+        );
+        assert_ne!(
+            route_image_key(1, atlas_image_key(0)),
+            route_image_key(2, kitty_image_key(0))
+        );
+        assert_eq!(image_key_route(a), 1);
+        assert_eq!(image_key_route(b), 2);
+        assert_eq!(image_key_route(route_image_key(3, atlas_image_key(9))), 3);
+    }
 }

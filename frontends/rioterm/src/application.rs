@@ -466,6 +466,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
+                use rio_backend::sugarloaf::route_image_key;
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
@@ -474,7 +475,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // texture store with kitty images, in a disjoint key
                     // namespace.
                     for graphic_data in queues.pending {
-                        let key = crate::renderer::atlas_image_key(graphic_data.id.get());
+                        let key = route_image_key(
+                            route_id,
+                            crate::renderer::atlas_image_key(graphic_data.id.get()),
+                        );
                         sugarloaf.image_data.insert(
                             key,
                             rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
@@ -489,13 +493,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // They run before the kitty uploads so a batch that
                     // frees a key and resends it keeps the new pixels.
                     for key in queues.remove_queue {
-                        sugarloaf.remove_image(key);
+                        sugarloaf.remove_image(route_image_key(route_id, key));
                     }
 
                     // Image textures (kitty) → separate store, no clone
                     for (image_id, graphic_data) in queues.pending_images {
                         sugarloaf.image_data.insert(
-                            crate::renderer::kitty_image_key(image_id),
+                            route_image_key(
+                                route_id,
+                                crate::renderer::kitty_image_key(image_id),
+                            ),
                             rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
                                 graphic_data,
                             ),

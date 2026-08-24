@@ -1662,6 +1662,18 @@ impl Renderer {
         }
     }
 
+    pub fn evict_route_textures(&mut self, route_id: usize) {
+        let mut freed = 0;
+        self.image_textures.retain(|key, entry| {
+            let keep = crate::sugarloaf::graphics::image_key_route(*key) != route_id;
+            if !keep {
+                freed += entry.bytes;
+            }
+            keep
+        });
+        self.image_texture_bytes -= freed;
+    }
+
     #[inline]
     pub fn clear_atlas(&mut self) {
         self.images.clear_atlas();
