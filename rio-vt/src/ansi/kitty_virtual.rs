@@ -1,6 +1,8 @@
 // Kitty graphics protocol virtual placement encoding/decoding
 
+use crate::ansi::graphics::VirtualPlacement;
 use crate::config::colors::{AnsiColor, ColorRgb};
+use rustc_hash::FxHashMap;
 
 /// The Kitty Unicode placeholder codepoint (U+10EEEE). Cells containing
 /// this codepoint are interpreted as image placeholders; their fg color
@@ -648,9 +650,90 @@ pub fn compute_run_geometry(
     })
 }
 
+/// Resolve the virtual placement a placeholder run refers to.
+///
+/// The placement id comes from the cell's underline color. Per the
+/// kitty spec, "if it's omitted or zero, the terminal may choose any
+/// virtual placement of the given image" — and clients routinely
+/// omit it: Neovim's TUI only emits the underline color (SGR 58) for
+/// cells that carry an underline attribute, so snacks.image's
+/// placeholder cells always arrive with `placement_id == 0` even
+/// though the placement was registered with `p=N`. kitty
+/// (`graphics.c`, `find the first virtual image placement`) and
+/// ghostty (`graphics_unicode.zig`, `placeholderTarget`) both fall
+/// back to the first virtual placement of the image in that case.
+///
+/// A non-zero id must match exactly, as in kitty. For id 0 the
+/// placement with the lowest id is chosen so the result does not
+/// depend on hash-map iteration order (an explicit `p=0` placement
+/// therefore still wins).
+pub fn resolve_virtual_placement(
+    placements: &FxHashMap<(u32, u32), VirtualPlacement>,
+    image_id: u32,
+    placement_id: u32,
+) -> Option<&VirtualPlacement> {
+    if placement_id != 0 {
+        return placements.get(&(image_id, placement_id));
+    }
+    placements
+        .iter()
+        .filter(|((img, _), _)| *img == image_id)
+        .min_by_key(|((_, pid), _)| *pid)
+        .map(|(_, vp)| vp)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn vp(image_id: u32, placement_id: u32) -> VirtualPlacement {
+        VirtualPlacement {
+            image_id,
+            placement_id,
+            columns: 4,
+            rows: 2,
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        }
+    }
+
+    #[test]
+    fn resolve_zero_placement_id_falls_back_to_any_placement_of_image() {
+        // snacks.image registers `p=11`; Neovim never sends the underline
+        // color for non-underlined cells, so the cells decode to id 0.
+        let mut m = FxHashMap::default();
+        m.insert((7, 11), vp(7, 11));
+        m.insert((8, 3), vp(8, 3));
+        let got = resolve_virtual_placement(&m, 7, 0).expect("placement");
+        assert_eq!((got.image_id, got.placement_id), (7, 11));
+        assert!(resolve_virtual_placement(&m, 9, 0).is_none());
+    }
+
+    #[test]
+    fn resolve_zero_placement_id_prefers_lowest_id() {
+        let mut m = FxHashMap::default();
+        m.insert((7, 11), vp(7, 11));
+        m.insert((7, 0), vp(7, 0));
+        m.insert((7, 5), vp(7, 5));
+        let got = resolve_virtual_placement(&m, 7, 0).unwrap();
+        assert_eq!(got.placement_id, 0);
+        m.remove(&(7, 0));
+        assert_eq!(resolve_virtual_placement(&m, 7, 0).unwrap().placement_id, 5);
+    }
+
+    #[test]
+    fn resolve_nonzero_placement_id_must_match_exactly() {
+        let mut m = FxHashMap::default();
+        m.insert((7, 11), vp(7, 11));
+        m.insert((7, 0), vp(7, 0));
+        assert_eq!(
+            resolve_virtual_placement(&m, 7, 11).unwrap().placement_id,
+            11
+        );
+        assert!(resolve_virtual_placement(&m, 7, 12).is_none());
+    }
 
     #[test]
     fn test_diacritic_conversion() {

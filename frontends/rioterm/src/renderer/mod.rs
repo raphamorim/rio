@@ -1107,10 +1107,11 @@ impl Renderer {
             z_index: i32,
             clip: (f32, f32, f32, f32),
         ) {
-            let vp = rc
-                .kitty_virtual_placements
-                .get(&(run.image_id, run.placement_id))
-                .or_else(|| rc.kitty_virtual_placements.get(&(run.image_id, 0)));
+            let vp = rio_backend::ansi::kitty_virtual::resolve_virtual_placement(
+                &rc.kitty_virtual_placements,
+                run.image_id,
+                run.placement_id,
+            );
             let vp = match vp {
                 Some(v) => v,
                 None => return,
