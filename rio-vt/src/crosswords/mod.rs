@@ -4926,6 +4926,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.refresh_placements_for_image(image_id, image_width, image_height);
             self.ensure_kitty_upload(image_id);
         }
+        self.send_graphics_updates();
     }
 
     fn kitty_transmit_and_display(
@@ -5544,7 +5545,7 @@ impl<U: EventListener> Crosswords<U> {
             }
         };
         let mut graphic_data = stored.data.clone();
-        let texture_current = stored.gpu_uploaded;
+        let texture_current = self.graphics.is_kitty_uploaded(image_id);
 
         let image_width = graphic_data.width;
         let image_height = graphic_data.height;
@@ -5703,12 +5704,12 @@ impl<U: EventListener> Crosswords<U> {
 
         // Only push pixel data when image data actually changed
         if needs_upload {
-            if let Some(stored) = self.graphics.kitty_images.get_mut(&image_id) {
-                stored.gpu_uploaded = true;
-            }
+            self.graphics
+                .kitty_texture_contents
+                .insert(image_id, transmit_time);
             self.graphics.pending_images.push((image_id, graphic_data));
-            self.send_graphics_updates();
         }
+        self.send_graphics_updates();
 
         // Handle cursor movement per kitty spec
         match placement.cursor_movement {
@@ -9755,10 +9756,7 @@ mod tests {
     }
 
     fn uploaded(cw: &Crosswords<VoidListener>, image_id: u32) -> bool {
-        cw.graphics
-            .get_kitty_image(image_id)
-            .map(|s| s.gpu_uploaded)
-            .unwrap_or(false)
+        cw.graphics.is_kitty_uploaded(image_id)
     }
 
     #[test]
@@ -9881,6 +9879,101 @@ mod tests {
         assert!(cw.graphics.pending_images.is_empty());
         assert!(!uploaded(&cw, 1));
         assert!(cw.ensure_kitty_upload(1));
+    }
+
+    #[test]
+    fn alt_screen_delete_still_invalidates_main_texture() {
+        use crate::ansi::kitty_graphics_protocol::DeleteRequest;
+        let mut cw = make_crosswords();
+        cw.store_graphic(kitty_test_image(1, 1, 1));
+        cw.place_graphic(virtual_request(1, 1));
+        assert!(uploaded(&cw, 1));
+
+        // The alt screen uploads its own image 1, then deletes it with
+        // its data before switching back; the texture still holds the
+        // alt pixels.
+        cw.swap_alt();
+        cw.store_graphic(kitty_test_image(1, 2, 2));
+        cw.place_graphic(virtual_request(1, 1));
+        cw.delete_graphics(DeleteRequest {
+            action: b'I',
+            delete_data: true,
+            image_id: 1,
+            image_number: 0,
+            placement_id: 0,
+            x: 0,
+            y: 0,
+            z_index: 0,
+        });
+        assert!(cw.graphics.get_kitty_image(1).is_none());
+
+        assert!(cw.graphics.swap_kitty_screen_state());
+        assert_eq!(cw.graphics.pending_images.len(), 1);
+        assert_eq!(cw.graphics.pending_images[0].1.width, 1);
+        assert!(uploaded(&cw, 1));
+    }
+
+    #[test]
+    fn alt_screen_retransmit_without_placement_invalidates_main_texture() {
+        let mut cw = make_crosswords();
+        cw.store_graphic(kitty_test_image(1, 1, 1));
+        cw.place_graphic(virtual_request(1, 1));
+
+        // Alt uploads image 1, drops its placements, then retransmits
+        // without placing: the texture holds the first alt pixels.
+        cw.swap_alt();
+        cw.store_graphic(kitty_test_image(1, 2, 2));
+        cw.place_graphic(virtual_request(1, 1));
+        cw.graphics.kitty_virtual_placements.clear();
+        cw.store_graphic(kitty_test_image(1, 3, 3));
+        assert!(!uploaded(&cw, 1));
+
+        assert!(cw.graphics.swap_kitty_screen_state());
+        assert_eq!(cw.graphics.pending_images.len(), 1);
+        assert_eq!(cw.graphics.pending_images[0].1.width, 1);
+        assert!(uploaded(&cw, 1));
+    }
+
+    #[test]
+    fn cursor_delete_with_data_keeps_virtually_placed_images() {
+        use crate::ansi::kitty_graphics_protocol::DeleteRequest;
+        let mut cw = make_crosswords();
+        cw.store_graphic(kitty_test_image(1, 1, 1));
+        cw.place_graphic(virtual_request(1, 1));
+        cw.store_graphic(kitty_test_image(2, 1, 1));
+        cw.delete_graphics(DeleteRequest {
+            action: b'C',
+            delete_data: true,
+            image_id: 0,
+            image_number: 0,
+            placement_id: 0,
+            x: 0,
+            y: 0,
+            z_index: 0,
+        });
+        assert!(cw.graphics.get_kitty_image(1).is_some());
+        assert!(cw.graphics.get_kitty_image(2).is_none());
+    }
+
+    #[test]
+    fn evicting_inactive_same_id_image_requeues_active_one() {
+        let mut cw = make_crosswords();
+        cw.graphics.total_limit = 100_000;
+        cw.store_graphic(kitty_test_image(1, 100, 100));
+        cw.place_graphic(virtual_request(1, 1));
+        assert!(uploaded(&cw, 1));
+
+        cw.swap_alt();
+        cw.store_graphic(kitty_test_image(1, 100, 100));
+        cw.swap_alt();
+        assert!(uploaded(&cw, 1));
+
+        // Storing image 2 has to evict; the inactive image 1 goes first
+        // and frees texture 1, which the active screen still draws.
+        cw.store_graphic(kitty_test_image(2, 100, 100));
+        assert!(cw.graphics.kitty_inactive_screen.kitty_images.is_empty());
+        assert!(cw.graphics.get_kitty_image(1).is_some());
+        assert!(uploaded(&cw, 1));
     }
 
     #[test]

@@ -2899,7 +2899,6 @@ fn test_eviction_prefers_inactive_screen_images() {
             data: inactive_data,
             transmission_time: std::time::Instant::now()
                 - std::time::Duration::from_secs(60),
-            gpu_uploaded: false,
         },
     );
     // Inactive bytes also count toward total_bytes (kept consistent).
@@ -2965,7 +2964,6 @@ fn test_eviction_keeps_active_used_image_when_inactive_available() {
         StoredImage {
             data: inactive,
             transmission_time: std::time::Instant::now(),
-            gpu_uploaded: false,
         },
     );
     graphics.total_bytes += 50;
