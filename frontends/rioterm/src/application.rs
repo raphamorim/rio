@@ -468,6 +468,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
                 use rio_backend::sugarloaf::route_image_key;
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // A batch the VT thread queued before the user
+                    // closed its tab or split would otherwise land
+                    // under a route nothing will ever release.
+                    if route
+                        .window
+                        .screen
+                        .context_manager
+                        .get_by_route_id(route_id)
+                        .is_none()
+                    {
+                        return;
+                    }
+
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 

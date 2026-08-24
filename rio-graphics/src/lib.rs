@@ -130,7 +130,8 @@ const IMAGE_KEY_ROUTE_SHIFT: u32 = 33;
 pub fn route_image_key(route_id: usize, key: u64) -> u64 {
     debug_assert!(key < (1u64 << IMAGE_KEY_ROUTE_SHIFT));
     debug_assert!((route_id as u64) < (1u64 << (64 - IMAGE_KEY_ROUTE_SHIFT)));
-    ((route_id as u64) << IMAGE_KEY_ROUTE_SHIFT) | key
+    ((route_id as u64) << IMAGE_KEY_ROUTE_SHIFT)
+        | (key & ((1u64 << IMAGE_KEY_ROUTE_SHIFT) - 1))
 }
 
 /// The route a namespaced image key belongs to.
