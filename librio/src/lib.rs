@@ -481,6 +481,15 @@ fn mouse_report(
     out
 }
 
+fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
+    if bracketed {
+        let filtered = text.replace(['\x1b', '\x03'], "");
+        format!("\x1b[200~{filtered}\x1b[201~").into_bytes()
+    } else {
+        text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
+    }
+}
+
 impl Surface {
     fn new(
         engine: &Engine,
@@ -641,17 +650,14 @@ impl Surface {
         self.write(text.as_bytes().to_vec());
     }
 
-    /// Paste text the way terminals do: newlines normalized to CR, and the
-    /// whole run wrapped in bracketed-paste markers when the program asked
-    /// for them (so shells and editors can treat it as one atomic paste).
+    /// Paste text the way terminals do: when the program asked for
+    /// bracketed paste (mode 2004) the text is sent verbatim inside
+    /// ESC[200~/ESC[201~ markers, minus ESC and ETX so the payload can
+    /// never close the bracket early and inject keystrokes; otherwise
+    /// newlines are normalized to CR, what the Enter key produces.
     pub fn paste(&self, text: &str) {
-        let normalized = text.replace("\r\n", "\r").replace('\n', "\r");
         let bracketed = self.terminal.lock().mode().contains(Mode::BRACKETED_PASTE);
-        if bracketed {
-            self.write(format!("\x1b[200~{normalized}\x1b[201~").into_bytes());
-        } else {
-            self.write(normalized.into_bytes());
-        }
+        self.write(encode_paste(text, bracketed));
     }
 
     /// A stable, C-friendly view of the terminal modes an embedder needs
@@ -1494,8 +1500,27 @@ mod tests {
         assert_eq!(state.link_run(0, 0), None);
     }
 
+    // Bracketed paste sends the text verbatim minus ESC/ETX, so a
+    // malicious payload cannot close the bracket and inject keystrokes;
+    // unbracketed paste normalizes newlines to CR.
+    #[test]
+    fn paste_encoding_is_injection_safe() {
+        assert_eq!(
+            encode_paste("one\ntwo", true),
+            b"\x1b[200~one\ntwo\x1b[201~".to_vec()
+        );
+        assert_eq!(
+            encode_paste("a\x1b[201~rm -rf /\x03", true),
+            b"\x1b[200~a[201~rm -rf /\x1b[201~".to_vec()
+        );
+        assert_eq!(
+            encode_paste("one\r\ntwo\nthree", false),
+            b"one\rtwo\rthree".to_vec()
+        );
+    }
+
     // Paste wraps in bracketed-paste markers exactly when the program
-    // turned the mode on, and newlines never reach the shell as LF.
+    // turned the mode on.
     #[test]
     fn paste_brackets_when_the_program_asks() {
         let delegate = Arc::new(CountingDelegate {
