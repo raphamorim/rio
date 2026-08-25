@@ -579,6 +579,21 @@ pub unsafe extern "C" fn rio_surface_text(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn rio_surface_paste(
+    surface: *mut Surface,
+    bytes: *const c_char,
+    len: usize,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() || bytes.is_null() {
+            return;
+        }
+        let slice = unsafe { std::slice::from_raw_parts(bytes as *const u8, len) };
+        unsafe { &*surface }.paste(&String::from_utf8_lossy(slice));
+    }));
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn rio_surface_key(
     surface: *mut Surface,
     event: *const rio_key_event_s,
