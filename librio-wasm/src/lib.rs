@@ -294,15 +294,16 @@ impl RioTerm {
         self.flush();
     }
 
-    /// Send text to the child (a paste, or synthetic input). Reaches JS
-    /// back through the `output` callback.
+    /// Send raw text to the child (synthetic input; use `paste` for
+    /// clipboard text). Reaches JS back through the `output` callback.
     pub fn send_text(&self, text: &str) {
         self.surface.text(text);
         self.flush();
     }
 
-    /// Paste text: newlines normalized to CR and wrapped in
-    /// bracketed-paste markers when the program enabled the mode.
+    /// Paste text: sent verbatim inside bracketed-paste markers (minus
+    /// ESC/ETX) when the program enabled mode 2004, otherwise with
+    /// newlines normalized to CR.
     pub fn paste(&self, text: &str) {
         self.surface.paste(text);
         self.flush();
