@@ -3429,9 +3429,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 s.flags.remove(StyleFlags::ALL_UNDERLINES);
                 s.flags.insert(StyleFlags::DASHED_UNDERLINE);
             }),
-            Attr::BlinkSlow | Attr::BlinkFast | Attr::CancelBlink => {
-                info!("Term got unhandled attr: {:?}", attr);
-            }
+            Attr::BlinkSlow => self.grid.update_template_style(|s| {
+                s.flags.remove(StyleFlags::ALL_BLINK);
+                s.flags.insert(StyleFlags::SLOW_BLINK);
+            }),
+            Attr::BlinkFast => self.grid.update_template_style(|s| {
+                s.flags.remove(StyleFlags::ALL_BLINK);
+                s.flags.insert(StyleFlags::RAPID_BLINK);
+            }),
+            Attr::CancelBlink => self
+                .grid
+                .update_template_style(|s| s.flags.remove(StyleFlags::ALL_BLINK)),
             Attr::CancelUnderline => self
                 .grid
                 .update_template_style(|s| s.flags.remove(StyleFlags::ALL_UNDERLINES)),
@@ -6093,6 +6101,32 @@ mod tests {
                 .any(|sq| !sq.is_bg_only() && cw.grid.style_of(sq).bg == green)
         });
         assert!(found, "cached row lost its style across shrink/grow");
+    }
+
+    #[test]
+    fn terminal_attributes_preserve_blink_kind() {
+        use crate::crosswords::style::StyleFlags;
+
+        let mut cw = make_crosswords();
+        cw.terminal_attribute(Attr::BlinkSlow);
+        let style = cw.grid.template_style();
+        assert!(style.flags.contains(StyleFlags::SLOW_BLINK));
+        assert!(!style.flags.contains(StyleFlags::RAPID_BLINK));
+
+        cw.terminal_attribute(Attr::BlinkFast);
+        let style = cw.grid.template_style();
+        assert!(!style.flags.contains(StyleFlags::SLOW_BLINK));
+        assert!(style.flags.contains(StyleFlags::RAPID_BLINK));
+
+        cw.terminal_attribute(Attr::CancelBlink);
+        let style = cw.grid.template_style();
+        assert!(!style.flags.intersects(StyleFlags::ALL_BLINK));
+
+        // And the flags survive interning when a glyph is written.
+        cw.terminal_attribute(Attr::BlinkSlow);
+        cw.input('x');
+        let sq = cw.grid[Line(0)][Column(0)];
+        assert!(cw.grid.style_of(&sq).flags.contains(StyleFlags::SLOW_BLINK));
     }
 
     // Minimum-valid simple glyph: one contour, one on-curve point.
