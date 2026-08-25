@@ -516,6 +516,12 @@ struct SyncState {
 
     /// Bytes read during the synchronized update.
     buffer: Vec<u8>,
+
+    /// The last bytes handed to the normal parser, at most one byte short
+    /// of a BSU. Lets `find_bsu_end` recognise a BSU whose start arrived
+    /// in an earlier chunk, so the bytes after it still reach the sync
+    /// buffer.
+    carry: Vec<u8>,
 }
 
 #[derive(Debug, Default)]
@@ -543,6 +549,7 @@ impl Default for SyncState {
     fn default() -> Self {
         Self {
             buffer: Vec::with_capacity(SYNC_BUFFER_SIZE),
+            carry: Vec::with_capacity(SYNC_ESCAPE_LEN),
             timeout: Default::default(),
         }
     }
@@ -609,14 +616,89 @@ impl Processor {
             // the deadline itself and never reach this branch.
             if self.state.sync_state.timeout.expired() {
                 self.stop_sync(handler);
-                let mut performer = Performer::new(&mut self.state, handler);
-                self.parser.advance(&mut performer, bytes);
+                self.advance_normal(handler, bytes);
             } else {
                 self.advance_sync(handler, bytes);
             }
         } else {
+            self.advance_normal(handler, bytes);
+        }
+    }
+
+    /// Process bytes outside a synchronized update.
+    ///
+    /// A BSU partway through `bytes` arms the timeout from inside the
+    /// parser, but the parser consumes the whole chunk, so on its own the
+    /// bytes after the BSU would never enter the sync buffer. Any prefix of
+    /// a split ESU at the end of the chunk would then be missed by
+    /// `advance_sync_csi`, and the update would never close. So the chunk
+    /// is cut right after the first BSU: the head goes through the parser,
+    /// the tail through the sync path, exactly as if the BSU had ended the
+    /// chunk. Only the exact forms `advance_sync_csi` recognises are cut
+    /// on; a match the parser does not act on (one inside a string
+    /// payload) leaves the timeout unarmed and the tail is parsed normally.
+    fn advance_normal<H>(&mut self, handler: &mut H, mut bytes: &[u8])
+    where
+        H: Handler,
+    {
+        loop {
+            let (head, rest) = match self.find_bsu_end(bytes) {
+                Some(end) => bytes.split_at(end),
+                None => (bytes, &[][..]),
+            };
+            self.remember_parsed(head);
             let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, bytes);
+            self.parser.advance(&mut performer, head);
+            if rest.is_empty() {
+                return;
+            }
+            if self.state.sync_state.timeout.pending_timeout() {
+                self.advance_sync(handler, rest);
+                return;
+            }
+            bytes = rest;
+        }
+    }
+
+    /// Offset just past the first BSU that ends inside `bytes`, counting a
+    /// BSU that began in the carried bytes of an earlier chunk.
+    fn find_bsu_end(&self, bytes: &[u8]) -> Option<usize> {
+        const FORMS: [&[u8]; 2] = [&BSU_CSI, &BSU_DCS];
+        let carry = &self.state.sync_state.carry;
+        for start in memchr::memchr_iter(0x1B, carry) {
+            let seen = &carry[start..];
+            for form in FORMS {
+                if form.len() > seen.len()
+                    && form.starts_with(seen)
+                    && bytes.starts_with(&form[seen.len()..])
+                {
+                    return Some(form.len() - seen.len());
+                }
+            }
+        }
+        for start in memchr::memchr_iter(0x1B, bytes) {
+            for form in FORMS {
+                if bytes[start..].starts_with(form) {
+                    return Some(start + form.len());
+                }
+            }
+        }
+        None
+    }
+
+    /// Keep the last bytes fed to the parser for `find_bsu_end`.
+    fn remember_parsed(&mut self, bytes: &[u8]) {
+        const KEEP: usize = SYNC_ESCAPE_LEN - 1;
+        let carry = &mut self.state.sync_state.carry;
+        if bytes.len() >= KEEP {
+            carry.clear();
+            carry.extend_from_slice(&bytes[bytes.len() - KEEP..]);
+        } else {
+            carry.extend_from_slice(bytes);
+            if carry.len() > KEEP {
+                let excess = carry.len() - KEEP;
+                carry.drain(..excess);
+            }
         }
     }
 
@@ -643,6 +725,7 @@ impl Processor {
         let offset = bsu_offset.unwrap_or(buffer.len());
         let mut performer = Performer::new(&mut self.state, handler);
         self.parser.advance(&mut performer, &buffer[..offset]);
+        self.remember_parsed(&buffer[..offset]);
         self.state.sync_state.buffer = buffer;
 
         match bsu_offset {
@@ -689,8 +772,7 @@ impl Processor {
             self.stop_sync_internal(handler, None);
 
             // Just parse the bytes normally.
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, bytes);
+            self.advance_normal(handler, bytes);
         } else {
             self.state.sync_state.buffer.extend(bytes);
             self.advance_sync_csi(handler, bytes.len());
@@ -2442,6 +2524,86 @@ mod tests {
 
         processor.advance(&mut handler, b" visible");
         assert_eq!(handler.printed, "hidden visible");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// A BSU partway through a chunk must send the rest of that chunk to
+    /// the sync buffer, so an ESU split across the chunk boundary is found
+    /// the moment its last byte arrives: no timeout, no further output.
+    #[test]
+    fn sync_update_mid_chunk_bsu_then_split_esu_closes_on_arrival() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"before\x1b[?2026hframe\x1b[?20");
+        assert_eq!(handler.printed, "before");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+        assert_eq!(processor.sync_bytes_count(), b"frame\x1b[?20".len());
+
+        processor.advance(&mut handler, b"26l");
+        assert_eq!(handler.printed, "beforeframe");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// The DCS form of the same split.
+    #[test]
+    fn sync_update_dcs_mid_chunk_bsu_then_split_esu_closes_on_arrival() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"before\x1bP=1s\x1b\\frame\x1bP=2");
+        assert_eq!(handler.printed, "before");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+
+        processor.advance(&mut handler, b"s\x1b\\");
+        assert_eq!(handler.printed, "beforeframe");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// Feeding one byte at a time must give the same result as any other
+    /// chunking: nothing shows until the ESU's final byte, then all of it.
+    #[test]
+    fn sync_update_split_esu_byte_at_a_time() {
+        for stream in [
+            b"before\x1b[?2026hframe\x1b[?2026l".as_slice(),
+            b"before\x1bP=1s\x1b\\frame\x1bP=2s\x1b\\".as_slice(),
+        ] {
+            let mut handler = SyncHandler::default();
+            let mut processor = Processor::default();
+
+            let (all_but_last, last) = stream.split_at(stream.len() - 1);
+            for byte in all_but_last {
+                processor.advance(&mut handler, std::slice::from_ref(byte));
+            }
+            assert_eq!(handler.printed, "before");
+            assert!(processor.sync_timeout().sync_timeout().is_some());
+
+            processor.advance(&mut handler, last);
+            assert_eq!(handler.printed, "beforeframe");
+            assert!(processor.sync_timeout().sync_timeout().is_none());
+            assert_eq!(processor.sync_bytes_count(), 0);
+        }
+    }
+
+    /// A BSU split across chunks, with more bytes after it in the second
+    /// chunk, is recognised through the carried bytes so those bytes are
+    /// buffered rather than parsed, and a split ESU after them still
+    /// closes the update.
+    #[test]
+    fn sync_update_split_bsu_then_split_esu_closes_on_arrival() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"before\x1b[?20");
+        processor.advance(&mut handler, b"26hframe\x1b[?20");
+        assert_eq!(handler.printed, "before");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+
+        processor.advance(&mut handler, b"26l");
+        assert_eq!(handler.printed, "beforeframe");
         assert!(processor.sync_timeout().sync_timeout().is_none());
         assert_eq!(processor.sync_bytes_count(), 0);
     }
