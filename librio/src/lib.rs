@@ -483,7 +483,7 @@ fn mouse_report(
 
 fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
     if bracketed {
-        let filtered = text.replace(['\x1b', '\x03'], "");
+        let filtered = text.replace(['\x1b', '\x03', '\u{9b}'], "");
         format!("\x1b[200~{filtered}\x1b[201~").into_bytes()
     } else {
         text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
@@ -652,9 +652,10 @@ impl Surface {
 
     /// Paste text the way terminals do: when the program asked for
     /// bracketed paste (mode 2004) the text is sent verbatim inside
-    /// ESC[200~/ESC[201~ markers, minus ESC and ETX so the payload can
-    /// never close the bracket early and inject keystrokes; otherwise
-    /// newlines are normalized to CR, what the Enter key produces.
+    /// ESC[200~/ESC[201~ markers, minus ESC, ETX and the 8-bit CSI so
+    /// the payload can never close the bracket early and inject
+    /// keystrokes; otherwise newlines are normalized to CR, what the
+    /// Enter key produces.
     pub fn paste(&self, text: &str) {
         if text.is_empty() {
             return;
@@ -1517,15 +1518,18 @@ mod tests {
             b"\x1b[200~a[201~rm -rf /\x1b[201~".to_vec()
         );
         assert_eq!(
+            encode_paste("a\u{9b}201~oops", true),
+            b"\x1b[200~a201~oops\x1b[201~".to_vec()
+        );
+        assert_eq!(
             encode_paste("one\r\ntwo\nthree", false),
             b"one\rtwo\rthree".to_vec()
         );
     }
 
-    // Paste wraps in bracketed-paste markers exactly when the program
-    // turned the mode on.
+    // mode_bits mirrors the private modes programs toggle at runtime.
     #[test]
-    fn paste_brackets_when_the_program_asks() {
+    fn mode_bits_track_private_modes() {
         let delegate = Arc::new(CountingDelegate {
             wakeups: AtomicUsize::new(0),
         });
@@ -1539,6 +1543,44 @@ mod tests {
         assert_eq!(surface.mode_bits() & (1 << 3), 1 << 3);
         surface.inject_output(b"\x1b[?1h\x1b[?1049h\x1b[?1000h");
         assert_eq!(surface.mode_bits(), 0b1111);
+    }
+
+    // paste() keys off live terminal state: markers go to the child only
+    // once the program turned mode 2004 on. The sleeper child never reads,
+    // so what lands in the grid is the tty line discipline's echo, which
+    // renders the ESC of each marker as ^[ (ECHOCTL).
+    #[test]
+    fn paste_brackets_when_the_program_asks() {
+        let surface = quiet_surface(60, 10);
+        let mut state = RenderState::new(&surface);
+        std::thread::sleep(Duration::from_millis(150));
+
+        let grid_rows = |state: &mut RenderState, needle: &str| {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            loop {
+                state.update();
+                let rows: Vec<String> =
+                    (0..state.lines()).map(|i| state.text_row(i)).collect();
+                if rows.iter().any(|row| row.contains(needle)) {
+                    return rows;
+                }
+                if Instant::now() >= deadline {
+                    panic!("echo of {needle:?} never reached the grid: {rows:?}");
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        };
+
+        surface.paste("plain\n");
+        let rows = grid_rows(&mut state, "plain");
+        assert!(
+            !rows.iter().any(|row| row.contains("^[[200~")),
+            "unbracketed paste must not emit markers: {rows:?}"
+        );
+
+        surface.inject_output(b"\x1b[?2004h");
+        surface.paste("wrapped");
+        grid_rows(&mut state, "^[[200~wrapped^[[201~");
     }
 
     // A child that never writes, so buffer contents are exactly what the

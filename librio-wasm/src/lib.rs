@@ -294,8 +294,8 @@ impl RioTerm {
         self.flush();
     }
 
-    /// Send text to the child (a paste, or synthetic input). Reaches JS
-    /// back through the `output` callback.
+    /// Send raw text to the child (synthetic input; use `paste` for
+    /// clipboard text). Reaches JS back through the `output` callback.
     pub fn send_text(&self, text: &str) {
         self.surface.text(text);
         self.flush();
