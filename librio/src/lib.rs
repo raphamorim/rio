@@ -656,6 +656,9 @@ impl Surface {
     /// never close the bracket early and inject keystrokes; otherwise
     /// newlines are normalized to CR, what the Enter key produces.
     pub fn paste(&self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
         let bracketed = self.terminal.lock().mode().contains(Mode::BRACKETED_PASTE);
         self.write(encode_paste(text, bracketed));
     }

@@ -39,14 +39,17 @@ int main(void) {
   usleep(400 * 1000);
   const char *cmd = "printf '%s%s\\n' li brio-cgate\r";
   rio_surface_text(surface, cmd, strlen(cmd));
+  const char *pasted = "librio-pgate";
+  rio_surface_paste(surface, pasted, strlen(pasted));
 
   rio_render_state_t *state = rio_render_state_new(surface);
   int found = 0;
-  for (int attempt = 0; attempt < 200 && !found; attempt++) {
+  int found_paste = 0;
+  for (int attempt = 0; attempt < 200 && !(found && found_paste); attempt++) {
     rio_render_state_update(state);
     uint16_t lines = rio_render_state_lines(state);
     uint16_t cols = rio_render_state_columns(state);
-    for (uint16_t line = 0; line < lines && !found; line++) {
+    for (uint16_t line = 0; line < lines; line++) {
       char text[512] = {0};
       uint16_t limit = cols < 511 ? cols : 511;
       for (uint16_t col = 0; col < limit; col++) {
@@ -55,23 +58,28 @@ int main(void) {
                         ? (char)cell.codepoint
                         : ' ';
       }
-      if (strstr(text, "librio-cgate")) {
+      if (!found && strstr(text, "librio-cgate")) {
         printf("row %u: %s\n", line, text);
         found = 1;
+      }
+      if (!found_paste && strstr(text, "librio-pgate")) {
+        printf("paste row %u: %s\n", line, text);
+        found_paste = 1;
       }
     }
     usleep(25 * 1000);
   }
 
   rio_cursor_s cursor = rio_render_state_cursor(state);
-  printf("wakeups=%d cursor=%u,%u found=%d\n", atomic_load(&wakeups),
-         cursor.line, cursor.column, found);
+  printf("wakeups=%d cursor=%u,%u found=%d found_paste=%d\n",
+         atomic_load(&wakeups), cursor.line, cursor.column, found,
+         found_paste);
 
   rio_render_state_free(state);
   rio_surface_free(surface);
   rio_engine_free(engine);
 
-  if (!found || atomic_load(&wakeups) == 0) {
+  if (!found || !found_paste || atomic_load(&wakeups) == 0) {
     fprintf(stderr, "gate failed\n");
     return 1;
   }
