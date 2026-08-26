@@ -49,17 +49,21 @@ fn main() {
 
 #[cfg(target_os = "windows")]
 fn load_app_icon() {
-    let mut res = winres::WindowsResource::new();
-    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let icon_path = manifest_dir
-        .parent()
-        .expect("rio-window must not be at the filesystem root")
-        .join("misc")
-        .join("windows")
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let icon_path = std::path::Path::new(&manifest_dir)
+        .join("assets")
         .join("rio-2024.ico");
+    if !icon_path.exists() {
+        println!(
+            "cargo:warning=window icon not found at {}, skipping resource",
+            icon_path.display()
+        );
+        return;
+    }
 
     println!("cargo:rerun-if-changed={}", icon_path.display());
-    res.set_icon(&icon_path.to_string_lossy());
+    let mut res = winres::WindowsResource::new();
+    res.set_icon(&icon_path.to_string_lossy().replace('\\', "/"));
     res.compile()
         .expect("Failed to compile Window icon resource");
 }
