@@ -1584,15 +1584,16 @@ mod tests {
     }
 
     // A child that never writes, so buffer contents are exactly what the
-    // test injected and comparisons can't race the shell prompt.
+    // test injected and comparisons can't race the shell prompt. Spawned
+    // via /bin/sh, the one binary the nix build sandbox provides.
     fn quiet_surface(cols: u16, rows: u16) -> Surface {
         let engine = Engine::new(Arc::new(CountingDelegate {
             wakeups: AtomicUsize::new(0),
         }));
         engine
             .create_surface(&SurfaceDesc {
-                shell: Some("/bin/sleep".to_string()),
-                args: vec!["300".to_string()],
+                shell: Some("/bin/sh".to_string()),
+                args: vec!["-c".to_string(), "sleep 300".to_string()],
                 cols,
                 rows,
                 ..SurfaceDesc::default()
