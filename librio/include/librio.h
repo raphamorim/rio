@@ -188,6 +188,8 @@ typedef struct {
   size_t text_len;
 } rio_key_event_s;
 
+/* Hosts on Linux should ignore SIGPIPE: internal wake pipes written from
+ * signal handlers expect EPIPE. On macOS/BSD the sockets opt out per-fd. */
 rio_engine_t *rio_engine_new(const rio_runtime_config_s *config);
 void rio_engine_free(rio_engine_t *engine);
 
@@ -206,6 +208,10 @@ rio_surface_id_t rio_surface_id(const rio_surface_t *surface);
 void rio_surface_text(rio_surface_t *surface, const char *bytes, size_t len);
 /* Paste `bytes` (UTF-8), bracketed when the program has enabled mode 2004. */
 void rio_surface_paste(rio_surface_t *surface, const char *bytes, size_t len);
+/* Terminal modes for input decisions the host makes on its own: bit 0 mouse
+ * reporting, bit 1 application cursor keys, bit 2 alternate screen, bit 3
+ * bracketed paste. */
+uint32_t rio_surface_mode_bits(const rio_surface_t *surface);
 /* Returns true when the event was consumed and encoded to the PTY. */
 bool rio_surface_key(rio_surface_t *surface, const rio_key_event_s *event);
 /* Whether alt acts as meta, prefixing with ESC, instead of letting the text
