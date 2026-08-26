@@ -204,6 +204,8 @@ rio_surface_id_t rio_surface_id(const rio_surface_t *surface);
 
 /* Input entry points are callable from any thread. */
 void rio_surface_text(rio_surface_t *surface, const char *bytes, size_t len);
+/* Paste `bytes` (UTF-8), bracketed when the program has enabled mode 2004. */
+void rio_surface_paste(rio_surface_t *surface, const char *bytes, size_t len);
 /* Returns true when the event was consumed and encoded to the PTY. */
 bool rio_surface_key(rio_surface_t *surface, const rio_key_event_s *event);
 /* Whether alt acts as meta, prefixing with ESC, instead of letting the text
