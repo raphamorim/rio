@@ -481,6 +481,15 @@ fn mouse_report(
     out
 }
 
+fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
+    if bracketed {
+        let filtered = text.replace(['\x1b', '\x03', '\u{9b}'], "");
+        format!("\x1b[200~{filtered}\x1b[201~").into_bytes()
+    } else {
+        text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
+    }
+}
+
 impl Surface {
     fn new(
         engine: &Engine,
@@ -619,8 +628,8 @@ impl Surface {
 
     pub fn write<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
         // Input snaps the view back to the live screen and drops any
-        // selection, matching ghostty's scroll-to-bottom / clear-on-typing
-        // behavior (only reached when a key actually produced PTY bytes).
+        // selection, the scroll-to-bottom / clear-on-typing convention
+        // (only reached when a key actually produced PTY bytes).
         {
             use rio_vt::crosswords::grid::Scroll;
             let mut term = self.terminal.lock();
@@ -641,17 +650,18 @@ impl Surface {
         self.write(text.as_bytes().to_vec());
     }
 
-    /// Paste text the way terminals do: newlines normalized to CR, and the
-    /// whole run wrapped in bracketed-paste markers when the program asked
-    /// for them (so shells and editors can treat it as one atomic paste).
+    /// Paste text the way terminals do: when the program asked for
+    /// bracketed paste (mode 2004) the text is sent verbatim inside
+    /// ESC[200~/ESC[201~ markers, minus ESC, ETX and the 8-bit CSI so
+    /// the payload can never close the bracket early and inject
+    /// keystrokes; otherwise newlines are normalized to CR, what the
+    /// Enter key produces.
     pub fn paste(&self, text: &str) {
-        let normalized = text.replace("\r\n", "\r").replace('\n', "\r");
-        let bracketed = self.terminal.lock().mode().contains(Mode::BRACKETED_PASTE);
-        if bracketed {
-            self.write(format!("\x1b[200~{normalized}\x1b[201~").into_bytes());
-        } else {
-            self.write(normalized.into_bytes());
+        if text.is_empty() {
+            return;
         }
+        let bracketed = self.terminal.lock().mode().contains(Mode::BRACKETED_PASTE);
+        self.write(encode_paste(text, bracketed));
     }
 
     /// A stable, C-friendly view of the terminal modes an embedder needs
@@ -735,7 +745,7 @@ impl Surface {
     /// A wheel scroll, dispatched the way terminals do it: the program
     /// running in the terminal gets first claim.
     ///
-    /// Three cases, in order (the same order rio and ghostty use):
+    /// Three cases, in order:
     /// mouse reporting on, so the wheel is a mouse event; the alternate
     /// screen with alternate-scroll on, where there is no scrollback to
     /// move so the wheel becomes cursor keys and pagers scroll; and
@@ -979,7 +989,7 @@ impl Surface {
             let row = &grid[Line(last)];
             for col in 0..cols {
                 let square = row[PosColumn(col)];
-                if !square.is_empty() || square.style_id() != 0 {
+                if !square.is_empty() {
                     break 'trim;
                 }
             }
@@ -1003,7 +1013,7 @@ impl Surface {
             if !wrapped {
                 while end > 0 {
                     let square = row[PosColumn(end - 1)];
-                    if !square.is_empty() || square.style_id() != 0 {
+                    if !square.is_empty() {
                         break;
                     }
                     end -= 1;
@@ -1024,7 +1034,7 @@ impl Surface {
                 }
 
                 let cell_link = square
-                    .extras_id()
+                    .extras_id_checked()
                     .and_then(|id| grid.extras_table.get(id))
                     .and_then(|extras| extras.hyperlink.as_ref())
                     .map(|h| h.uri().to_string());
@@ -1042,8 +1052,9 @@ impl Surface {
 
                 let c = square.c();
                 out.push(if c == '\0' { ' ' } else { c });
-                if let Some(extras) =
-                    square.extras_id().and_then(|id| grid.extras_table.get(id))
+                if let Some(extras) = square
+                    .extras_id_checked()
+                    .and_then(|id| grid.extras_table.get(id))
                 {
                     for z in &extras.zerowidth {
                         out.push(*z);
@@ -1493,10 +1504,32 @@ mod tests {
         assert_eq!(state.link_run(0, 0), None);
     }
 
-    // Paste wraps in bracketed-paste markers exactly when the program
-    // turned the mode on, and newlines never reach the shell as LF.
+    // Bracketed paste sends the text verbatim minus ESC/ETX, so a
+    // malicious payload cannot close the bracket and inject keystrokes;
+    // unbracketed paste normalizes newlines to CR.
     #[test]
-    fn paste_brackets_when_the_program_asks() {
+    fn paste_encoding_is_injection_safe() {
+        assert_eq!(
+            encode_paste("one\ntwo", true),
+            b"\x1b[200~one\ntwo\x1b[201~".to_vec()
+        );
+        assert_eq!(
+            encode_paste("a\x1b[201~rm -rf /\x03", true),
+            b"\x1b[200~a[201~rm -rf /\x1b[201~".to_vec()
+        );
+        assert_eq!(
+            encode_paste("a\u{9b}201~oops", true),
+            b"\x1b[200~a201~oops\x1b[201~".to_vec()
+        );
+        assert_eq!(
+            encode_paste("one\r\ntwo\nthree", false),
+            b"one\rtwo\rthree".to_vec()
+        );
+    }
+
+    // mode_bits mirrors the private modes programs toggle at runtime.
+    #[test]
+    fn mode_bits_track_private_modes() {
         let delegate = Arc::new(CountingDelegate {
             wakeups: AtomicUsize::new(0),
         });
@@ -1512,16 +1545,55 @@ mod tests {
         assert_eq!(surface.mode_bits(), 0b1111);
     }
 
+    // paste() keys off live terminal state: markers go to the child only
+    // once the program turned mode 2004 on. The sleeper child never reads,
+    // so what lands in the grid is the tty line discipline's echo, which
+    // renders the ESC of each marker as ^[ (ECHOCTL).
+    #[test]
+    fn paste_brackets_when_the_program_asks() {
+        let surface = quiet_surface(60, 10);
+        let mut state = RenderState::new(&surface);
+        std::thread::sleep(Duration::from_millis(150));
+
+        let grid_rows = |state: &mut RenderState, needle: &str| {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            loop {
+                state.update();
+                let rows: Vec<String> =
+                    (0..state.lines()).map(|i| state.text_row(i)).collect();
+                if rows.iter().any(|row| row.contains(needle)) {
+                    return rows;
+                }
+                if Instant::now() >= deadline {
+                    panic!("echo of {needle:?} never reached the grid: {rows:?}");
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        };
+
+        surface.paste("plain\n");
+        let rows = grid_rows(&mut state, "plain");
+        assert!(
+            !rows.iter().any(|row| row.contains("^[[200~")),
+            "unbracketed paste must not emit markers: {rows:?}"
+        );
+
+        surface.inject_output(b"\x1b[?2004h");
+        surface.paste("wrapped");
+        grid_rows(&mut state, "^[[200~wrapped^[[201~");
+    }
+
     // A child that never writes, so buffer contents are exactly what the
-    // test injected and comparisons can't race the shell prompt.
+    // test injected and comparisons can't race the shell prompt. Spawned
+    // via /bin/sh, the one binary the nix build sandbox provides.
     fn quiet_surface(cols: u16, rows: u16) -> Surface {
         let engine = Engine::new(Arc::new(CountingDelegate {
             wakeups: AtomicUsize::new(0),
         }));
         engine
             .create_surface(&SurfaceDesc {
-                shell: Some("/bin/sleep".to_string()),
-                args: vec!["300".to_string()],
+                shell: Some("/bin/sh".to_string()),
+                args: vec!["-c".to_string(), "sleep 300".to_string()],
                 cols,
                 rows,
                 ..SurfaceDesc::default()
@@ -1866,10 +1938,10 @@ mod tests {
         state.update();
 
         let last = state.columns() - 1;
-        let el_fill = state.style_of(state.square(5, last).unwrap());
+        let el_fill = state.style_at(5, last, state.square(5, last).unwrap());
         assert_eq!(el_fill.bg, AnsiColor::Indexed(2));
 
-        let el2_fill = state.style_of(state.square(6, last).unwrap());
+        let el2_fill = state.style_at(6, last, state.square(6, last).unwrap());
         assert_eq!(el2_fill.bg, AnsiColor::Spec(ColorRgb { r: 9, g: 8, b: 7 }));
 
         // Snapshot text renders the fills as trimmable spaces, not NULs.

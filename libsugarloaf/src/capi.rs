@@ -58,6 +58,14 @@ pub struct Sl {
     /// Same, for search highlights: the frame after the matches clear must
     /// repaint to drop the highlight from rows the dirty bits won't flag.
     had_search: bool,
+    /// Padding (physical px) between the drawable edges and the cell grid:
+    /// top, right, bottom, left. Fed into `GridUniforms.grid_padding` by
+    /// `sl_render_surface`; hosts driving `sl_render_grid` directly pass
+    /// their own uniforms and ignore this.
+    grid_padding: [f32; 4],
+    /// Bitmask of edges whose row/column background colors extend into the
+    /// padding band (bit0 left, bit1 right, bit2 up, bit3 down).
+    padding_extend: u32,
 }
 
 /// The selected column interval on visible row `y`, from the render state's
@@ -82,8 +90,16 @@ fn row_selection_from(
             hi: sel.start_col.max(sel.end_col).min(cols_max),
         });
     }
-    let lo = if y == sel.start_line { sel.start_col } else { 0 };
-    let hi = if y == sel.end_line { sel.end_col } else { cols_max };
+    let lo = if y == sel.start_line {
+        sel.start_col
+    } else {
+        0
+    };
+    let hi = if y == sel.end_line {
+        sel.end_col
+    } else {
+        cols_max
+    };
     Some(rio_grid::RowSelection {
         lo: lo.min(cols_max),
         hi: hi.min(cols_max),
@@ -187,8 +203,10 @@ pub unsafe extern "C" fn sl_new(
         // The host rasterizes its own glyphs into the atlas, so this font
         // library only backs sugarloaf's (unused-by-us) UI text. A default
         // is enough; `Sugarloaf` holds its own Arc clone, so it can drop.
-        let mut fonts = SugarloafFonts::default();
-        fonts.size = font_size;
+        let fonts = SugarloafFonts {
+            size: font_size,
+            ..Default::default()
+        };
         let (font_library, _errors) = FontLibrary::new(fonts);
         let layout = RootStyle::new(scale, font_size, line_height);
 
@@ -207,6 +225,8 @@ pub unsafe extern "C" fn sl_new(
             palette: HostPalette::new(),
             had_selection: false,
             had_search: false,
+            grid_padding: [0.0; 4],
+            padding_extend: 0,
         }))
     }))
     .unwrap_or(std::ptr::null_mut())
@@ -399,8 +419,10 @@ pub unsafe extern "C" fn sl_image_upload(
         display_height: None,
         transmit_time: std::time::Instant::now(),
     };
-    sl.image_data
-        .insert(kitty_image_key(id), GraphicDataEntry::from_graphic_data(data));
+    sl.image_data.insert(
+        kitty_image_key(id),
+        GraphicDataEntry::from_graphic_data(data),
+    );
 }
 
 /// Drop every uploaded image and placement. Used when the terminal reports no
@@ -462,6 +484,26 @@ pub unsafe extern "C" fn sl_set_background_color(
             b: b as f64,
             a: a as f64,
         }));
+    }
+}
+
+/// Padding (physical px) between the drawable edges and the cell grid:
+/// top, right, bottom, left. `extend` is a bitmask of edges whose
+/// row/column background colors extend into the padding band (bit0 left,
+/// bit1 right, bit2 up, bit3 down). Applies to `sl_render_surface`; the
+/// low-level `sl_render_grid` path takes padding through its uniforms.
+#[no_mangle]
+pub unsafe extern "C" fn sl_set_grid_padding(
+    sl: *mut Sl,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    left: f32,
+    extend: u32,
+) {
+    if let Some(sl) = sl.as_mut() {
+        sl.grid_padding = [top, right, bottom, left];
+        sl.padding_extend = extend;
     }
 }
 
@@ -573,7 +615,9 @@ pub unsafe extern "C" fn sl_grid_set_cursor(
 
 #[no_mangle]
 pub unsafe extern "C" fn sl_grid_needs_full_rebuild(grid: *const GridRenderer) -> bool {
-    grid.as_ref().map(|g| g.needs_full_rebuild()).unwrap_or(false)
+    grid.as_ref()
+        .map(|g| g.needs_full_rebuild())
+        .unwrap_or(false)
 }
 
 #[no_mangle]
@@ -615,7 +659,11 @@ pub unsafe extern "C" fn sl_grid_lookup_glyph(
     let (Some(grid), Some(out)) = (grid.as_ref(), out.as_mut()) else {
         return false;
     };
-    match grid.lookup_glyph(GlyphKey { font_id, glyph_id, size_bucket }) {
+    match grid.lookup_glyph(GlyphKey {
+        font_id,
+        glyph_id,
+        size_bucket,
+    }) {
         Some(slot) => {
             *out = to_slot(slot);
             true
@@ -650,7 +698,14 @@ pub unsafe extern "C" fn sl_grid_insert_glyph(
         bearing_y,
         bytes: slice_or_empty(bytes, bytes_len),
     };
-    match grid.insert_glyph(GlyphKey { font_id, glyph_id, size_bucket }, glyph) {
+    match grid.insert_glyph(
+        GlyphKey {
+            font_id,
+            glyph_id,
+            size_bucket,
+        },
+        glyph,
+    ) {
         Some(slot) => {
             *out = to_slot(slot);
             true
@@ -1171,7 +1226,7 @@ pub unsafe extern "C" fn sl_render_surface(
                 rio_grid::build_row_bg(
                     row,
                     cols,
-                    rs.styles(),
+                    rs.row_styles(y),
                     palette,
                     &term_colors,
                     row_sel,
@@ -1193,7 +1248,7 @@ pub unsafe extern "C" fn sl_render_surface(
                     row,
                     cols,
                     y as u16,
-                    rs.styles(),
+                    rs.row_styles(y),
                     rs.extras(),
                     palette,
                     &term_colors,
@@ -1273,7 +1328,7 @@ pub unsafe extern "C" fn sl_render_surface(
                 window_size.width,
                 window_size.height,
             ),
-            grid_padding: [0.0, 0.0, 0.0, 0.0],
+            grid_padding: sl.grid_padding,
             cursor_color: cursor_col_u,
             cursor_bg_color: cursor_bg_u,
             cell_size: [cell_w, cell_h],
@@ -1282,7 +1337,7 @@ pub unsafe extern "C" fn sl_render_surface(
             _pad_cursor: [0; 2],
             min_contrast: 0.0,
             flags: 0,
-            padding_extend: 0,
+            padding_extend: sl.padding_extend,
             input_colorspace,
         };
 
@@ -1292,10 +1347,7 @@ pub unsafe extern "C" fn sl_render_surface(
         // renderer's `drawPreedit`. The box isn't in the terminal buffer, so
         // it rides the UI-text pass rather than the cell grid.
         if let Some(preedit) = preedit_str {
-            if cursor_visible
-                && (cursor_line as usize) < rows
-                && (cursor_col as usize) < cols
-            {
+            if cursor_visible && cursor_line < rows && cursor_col < cols {
                 let scale_f = scale.max(f32::MIN_POSITIVE);
                 let cell_w_l = cell_w / scale_f;
                 let cell_h_l = cell_h / scale_f;
@@ -1310,12 +1362,14 @@ pub unsafe extern "C" fn sl_render_surface(
                     ..Default::default()
                 };
                 let text_w = sl.text_mut().measure(preedit, &opts).max(cell_w_l);
-                let grid_right = cols as f32 * cell_w_l;
-                let mut x = cursor_col as f32 * cell_w_l;
+                let pad_left_l = sl.grid_padding[3] / scale_f;
+                let pad_top_l = sl.grid_padding[0] / scale_f;
+                let grid_right = pad_left_l + cols as f32 * cell_w_l;
+                let mut x = pad_left_l + cursor_col as f32 * cell_w_l;
                 if x + text_w > grid_right {
                     x = (grid_right - text_w).max(0.0);
                 }
-                let y = cursor_line as f32 * cell_h_l;
+                let y = pad_top_l + cursor_line as f32 * cell_h_l;
                 sl.rect(None, x, y, text_w, cell_h_l, fg_col, 0.0, 0);
                 let underline_h = (cell_h_l * 0.09).max(1.0);
                 sl.rect(

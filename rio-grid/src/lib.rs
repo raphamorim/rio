@@ -60,8 +60,11 @@ pub trait GridPalette {
         cell_style: &Style,
         term_colors: &TermColors,
     ) -> rio_backend::config::colors::ColorArray;
-    fn color(&self, idx: usize, term_colors: &TermColors)
-        -> rio_backend::config::colors::ColorArray;
+    fn color(
+        &self,
+        idx: usize,
+        term_colors: &TermColors,
+    ) -> rio_backend::config::colors::ColorArray;
     fn use_drawable_chars(&self) -> bool;
     fn opacity_cells(&self) -> bool;
     fn cell_bg_alpha(&self) -> u8;
@@ -77,16 +80,11 @@ pub struct HintLabel {
     pub is_first: bool,
 }
 
+/// The pre-resolved style for cell `x`: bg-only cells already hold the
+/// default here (their color travels inline in the cell).
 #[inline(always)]
-pub fn resolve_style(style_table: &[Style], sq: Square) -> Style {
-    if sq.is_bg_only() {
-        return Style::default();
-    }
-    let sid = sq.style_id() as usize;
-    if sid == 0 {
-        return Style::default();
-    }
-    style_table.get(sid).copied().unwrap_or_default()
+pub fn resolve_style(row_styles: &[Style], x: usize) -> Style {
+    row_styles.get(x).copied().unwrap_or_default()
 }
 
 /// Per-row selection interval, in column indices. `None` = row is
@@ -266,45 +264,52 @@ fn pos_eq(a: Pos, b: Pos) -> bool {
     a.row == b.row && a.col == b.col
 }
 
-pub fn push_hint_label_styles(
-    style_table: &mut Vec<Style>,
+/// The two hint-label badge styles: (first-char, following-chars).
+pub fn hint_label_styles(
     hint_foreground: rio_backend::config::colors::ColorArray,
     hint_background: rio_backend::config::colors::ColorArray,
-) -> u16 {
+) -> (Style, Style) {
     use rio_backend::config::colors::ColorRgb;
-    let base = style_table.len() as u16;
     let fg = AnsiColor::Spec(ColorRgb::from_color_arr(hint_foreground));
-    style_table.push(Style {
+    let first = Style {
         fg,
         bg: AnsiColor::Spec(ColorRgb::from_color_arr(hint_background)),
         underline_color: None,
         flags: StyleFlags::BOLD,
-    });
+    };
     let dimmed = [
         hint_background[0] * 0.8,
         hint_background[1] * 0.8,
         hint_background[2] * 0.8,
         hint_background[3],
     ];
-    style_table.push(Style {
+    let rest = Style {
         fg,
         bg: AnsiColor::Spec(ColorRgb::from_color_arr(dimmed)),
         underline_color: None,
         flags: StyleFlags::BOLD,
-    });
-    base
+    };
+    (first, rest)
 }
+
+/// Style id stamped on overlaid hint-label cells. Never produced by
+/// interning (the id cap stops before this index), so the shaping-run
+/// id comparison always breaks at label boundaries even though the
+/// badge style itself lives in the resolved row styles.
+const HINT_LABEL_STYLE_ID: u16 = u16::MAX;
 
 pub fn overlay_hint_labels(
     row: &Row<Square>,
+    row_styles: &[Style],
     labels: &[HintLabel],
     y: usize,
     display_offset: i32,
-    label_style_base: u16,
+    label_styles: (Style, Style),
     row_hints: &mut Vec<RowHint>,
-) -> Option<Row<Square>> {
+) -> Option<(Row<Square>, Vec<Style>)> {
     let line = Line((y as i32) - display_offset);
-    let mut out: Option<Row<Square>> = None;
+    let mut out: Option<(Row<Square>, Vec<Style>)> = None;
+    let (first_style, rest_style) = label_styles;
     for label in labels {
         if label.position.row != line {
             continue;
@@ -313,10 +318,19 @@ pub fn overlay_hint_labels(
         if col >= row.len() {
             continue;
         }
-        let target = out.get_or_insert_with(|| row.clone());
+        let (target, styles) = out.get_or_insert_with(|| {
+            let mut styles = row_styles.to_vec();
+            styles.resize(row.len(), Style::default());
+            (row.clone(), styles)
+        });
         let mut sq = Square::from_char(label.label);
-        sq.set_style_id(label_style_base + if label.is_first { 0 } else { 1 });
+        sq.set_style_id(HINT_LABEL_STYLE_ID);
         target[Column(col)] = sq;
+        styles[col] = if label.is_first {
+            first_style
+        } else {
+            rest_style
+        };
         row_hints.insert(
             0,
             RowHint {
@@ -363,7 +377,9 @@ fn cell_fg_hinted<P: GridPalette>(tag: HintTag, palette: &P) -> [u8; 4] {
         HintTag::Focused => {
             normalized_to_u8(palette.named_colors().search_focused_match_foreground)
         }
-        HintTag::Match => normalized_to_u8(palette.named_colors().search_match_foreground),
+        HintTag::Match => {
+            normalized_to_u8(palette.named_colors().search_match_foreground)
+        }
         HintTag::Label => normalized_to_u8(palette.named_colors().hint_foreground),
         // Hover doesn't change fg color; defensive — `cell_in_row_hints`
         // already filters this tag out, so this arm shouldn't fire.
@@ -418,10 +434,8 @@ pub fn cell_fg_selected<P: GridPalette>(
 
 // Decoration sprites (underlines, strikethrough)
 //
-// pre-rasterizes underline/strikethrough sprites into the
-// grayscale atlas and emits them as regular `CellText` entries
-// (`ghostty/src/font/sprite/draw/special.zig`,
-// `ghostty/src/renderer/generic.zig:3074`). We do the same: one sprite
+// Underline/strikethrough sprites are pre-rasterized into the
+// grayscale atlas and emitted as regular `CellText` entries: one sprite
 // per (style, cell_w, thickness) cached in the grid atlas. Z-order is
 // enforced by emit order — underlines before glyphs (draws under),
 // strikethrough after (draws on top).
@@ -1090,7 +1104,7 @@ fn normalized_to_u8(c: [f32; 4]) -> [u8; 4] {
 pub fn build_row_bg<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
-    style_table: &[Style],
+    row_styles: &[Style],
     palette: &P,
     term_colors: &TermColors,
     row_sel: Option<RowSelection>,
@@ -1111,7 +1125,7 @@ pub fn build_row_bg<P: GridPalette>(
         for x in 0..cols {
             let sq = row[Column(x)];
             bg_scratch.push(CellBg {
-                rgba: cell_bg(sq, resolve_style(style_table, sq), palette, term_colors),
+                rgba: cell_bg(sq, resolve_style(row_styles, x), palette, term_colors),
             });
         }
         return;
@@ -1119,7 +1133,9 @@ pub fn build_row_bg<P: GridPalette>(
 
     // Slow path: selection and/or hint highlighting present.
     let sel_bg = if has_sel {
-        Some(normalized_to_u8(palette.named_colors().selection_background))
+        Some(normalized_to_u8(
+            palette.named_colors().selection_background,
+        ))
     } else {
         None
     };
@@ -1137,29 +1153,29 @@ pub fn build_row_bg<P: GridPalette>(
     };
     for x in 0..cols {
         let sq = row[Column(x)];
-        let style = resolve_style(style_table, sq);
+        let style = resolve_style(row_styles, x);
         let col = x as u16;
-        let rgba = if cell_in_row_sel(row_sel, col) {
-            // Selection bg wins over hint bg and the cell's own bg,
-            // matching `generic.zig:2775-2800` (selection check
-            // runs before highlight check).
-            sel_bg.unwrap_or_else(|| cell_bg(sq, style, palette, term_colors))
-        } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
-            match tag {
-                HintTag::Focused => focused_bg
-                    .unwrap_or_else(|| cell_bg(sq, style, palette, term_colors)),
-                HintTag::Match => {
-                    match_bg.unwrap_or_else(|| cell_bg(sq, style, palette, term_colors))
+        let rgba =
+            if cell_in_row_sel(row_sel, col) {
+                // Selection bg wins over hint bg and the cell's own bg,
+                // matching `generic.zig:2775-2800` (selection check
+                // runs before highlight check).
+                sel_bg.unwrap_or_else(|| cell_bg(sq, style, palette, term_colors))
+            } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
+                match tag {
+                    HintTag::Focused => focused_bg
+                        .unwrap_or_else(|| cell_bg(sq, style, palette, term_colors)),
+                    HintTag::Match => match_bg
+                        .unwrap_or_else(|| cell_bg(sq, style, palette, term_colors)),
+                    HintTag::Label => cell_bg(sq, style, palette, term_colors),
+                    // `cell_in_row_hints` filters HyperlinkHover out, but
+                    // make the match exhaustive so a future caller can't
+                    // accidentally hit a panic.
+                    HintTag::HyperlinkHover => cell_bg(sq, style, palette, term_colors),
                 }
-                HintTag::Label => cell_bg(sq, style, palette, term_colors),
-                // `cell_in_row_hints` filters HyperlinkHover out, but
-                // make the match exhaustive so a future caller can't
-                // accidentally hit a panic.
-                HintTag::HyperlinkHover => cell_bg(sq, style, palette, term_colors),
-            }
-        } else {
-            cell_bg(sq, style, palette, term_colors)
-        };
+            } else {
+                cell_bg(sq, style, palette, term_colors)
+            };
         bg_scratch.push(CellBg { rgba });
     }
 }
@@ -1364,7 +1380,7 @@ impl GridGlyphRasterizer {
         // image-overlay slices, not text. Resolve them to the primary
         // font as if they were a space, so the run shapes them as an
         // invisible space glyph instead of falling back to a notdef
-        // tofu box. Mirrors ghostty's `font/shaper/run.zig:328-335`.
+        // tofu box.
         if ch == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
             return (rio_backend::sugarloaf::font::FONT_ID_REGULAR as u32, false);
         }
@@ -1699,7 +1715,7 @@ pub fn build_row_fg<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
     y: u16,
-    style_table: &[Style],
+    row_styles: &[Style],
     extras_table: &ExtrasMap,
     palette: &P,
     term_colors: &TermColors,
@@ -1755,7 +1771,7 @@ pub fn build_row_fg<P: GridPalette>(
         row,
         cols,
         y,
-        style_table,
+        row_styles,
         palette,
         term_colors,
         grid,
@@ -1795,7 +1811,7 @@ pub fn build_row_fg<P: GridPalette>(
         let ch = sq.c();
         let run_start_style_id = sq.style_id();
         let run_style_flags =
-            (resolve_style(style_table, sq).flags.bits() & SHAPING_FLAG_MASK) as u8;
+            (resolve_style(row_styles, x).flags.bits() & SHAPING_FLAG_MASK) as u8;
         let (font_id, is_emoji) =
             rasterizer.resolve_font(ch, run_style_flags, font_library, route_id);
 
@@ -1815,7 +1831,7 @@ pub fn build_row_fg<P: GridPalette>(
 
             // fg colour, mirroring the regular emit loop's
             // selection / hint precedence.
-            let style = resolve_style(style_table, sq);
+            let style = resolve_style(row_styles, x);
             let color = if !needs_per_cell_check {
                 cell_fg(sq, style, palette, term_colors)
             } else {
@@ -1901,7 +1917,7 @@ pub fn build_row_fg<P: GridPalette>(
                 if slot.w != 0 && slot.h != 0 {
                     // fg colour, mirroring the regular emit loop's
                     // selection / hint precedence.
-                    let style = resolve_style(style_table, sq);
+                    let style = resolve_style(row_styles, x);
                     let color = if !needs_per_cell_check {
                         cell_fg(sq, style, palette, term_colors)
                     } else {
@@ -1937,18 +1953,16 @@ pub fn build_row_fg<P: GridPalette>(
         }
 
         let run_start = x;
-        // Sticky style_id — typical syntax-highlighted output has long
-        // stretches of cells sharing one style_id. While it stays equal
-        // we know shape flags match too, so skip the StyleSet vec read
-        // + bits/mask/compare. Mirrors ghostty `font/shaper/run.zig:140`
-        // (`if (prev_cell.style_id == cell.style_id) break :style;`).
+        // Sticky style_id: equal ids imply equal resolved styles (the
+        // per-row styles are resolved from these very ids, and overlay
+        // label cells carry the reserved HINT_LABEL_STYLE_ID), so the
+        // flags comparison only runs on id changes.
         let mut prev_style_id = run_start_style_id;
 
         // Kitty Unicode placeholder shapes as a space — the cell
         // joins the run, the shaper emits an invisible space glyph
         // (no notdef tofu), and the kitty image overlay is drawn on
-        // top to fill the cell. Mirrors ghostty's
-        // `font/shaper/run.zig:264-267`.
+        // top to fill the cell.
         let shape_ch = if ch == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
             ' '
         } else {
@@ -2065,7 +2079,7 @@ pub fn build_row_fg<P: GridPalette>(
             }
             let style2_id = sq2.style_id();
             if style2_id != prev_style_id {
-                let f = (resolve_style(style_table, sq2).flags.bits() & SHAPING_FLAG_MASK)
+                let f = (resolve_style(row_styles, end).flags.bits() & SHAPING_FLAG_MASK)
                     as u8;
                 if f != run_style_flags {
                     break;
@@ -2229,7 +2243,7 @@ pub fn build_row_fg<P: GridPalette>(
             // `grid_col` above.
             let src_col = (grid_col as usize).min(cols.saturating_sub(1));
             let src_sq = row[Column(src_col)];
-            let src_style = resolve_style(style_table, src_sq);
+            let src_style = resolve_style(row_styles, src_col);
             let (atlas, color) = if is_color {
                 // Colour glyphs (emoji) don't take the selection-fg /
                 // hint-fg swap — behaviour for
@@ -2289,7 +2303,7 @@ pub fn build_row_fg<P: GridPalette>(
         row,
         cols,
         y,
-        style_table,
+        row_styles,
         palette,
         term_colors,
         grid,
@@ -2307,7 +2321,7 @@ fn emit_underlines<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
     y: u16,
-    style_table: &[Style],
+    row_styles: &[Style],
     palette: &P,
     term_colors: &TermColors,
     grid: &mut GridRenderer,
@@ -2320,7 +2334,7 @@ fn emit_underlines<P: GridPalette>(
 ) {
     for x in 0..cols {
         let sq = row[Column(x)];
-        let style = resolve_style(style_table, sq);
+        let style = resolve_style(row_styles, x);
         let col = x as u16;
         // SGR underline (UNDER, double, curly, …) wins over the
         // hover-only forced underline. When the cell has no SGR
@@ -2378,7 +2392,7 @@ fn emit_strikethroughs<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
     y: u16,
-    style_table: &[Style],
+    row_styles: &[Style],
     palette: &P,
     term_colors: &TermColors,
     grid: &mut GridRenderer,
@@ -2391,7 +2405,7 @@ fn emit_strikethroughs<P: GridPalette>(
 ) {
     for x in 0..cols {
         let sq = row[Column(x)];
-        let style = resolve_style(style_table, sq);
+        let style = resolve_style(row_styles, x);
         if !style.flags.contains(StyleFlags::STRIKEOUT) {
             continue;
         }
@@ -2744,38 +2758,46 @@ mod hint_label_tests {
     }
 
     #[test]
-    fn push_hint_label_styles_appends_two_bold_badges() {
+    fn hint_label_styles_are_bold_badges() {
         use rio_backend::config::colors::ColorRgb;
-        let mut table = vec![Style::default()];
         let fg = [0.1, 0.1, 0.1, 1.0];
         let bg = [1.0, 0.5, 0.0, 1.0];
-        let base = push_hint_label_styles(&mut table, fg, bg);
-        assert_eq!(base, 1);
-        assert_eq!(table.len(), 3);
-        assert!(table[1].flags.contains(StyleFlags::BOLD));
-        assert!(table[2].flags.contains(StyleFlags::BOLD));
-        assert_eq!(table[1].bg, AnsiColor::Spec(ColorRgb::from_color_arr(bg)));
+        let (first, rest) = hint_label_styles(fg, bg);
+        assert!(first.flags.contains(StyleFlags::BOLD));
+        assert!(rest.flags.contains(StyleFlags::BOLD));
+        assert_eq!(first.bg, AnsiColor::Spec(ColorRgb::from_color_arr(bg)));
         assert_eq!(
-            table[2].bg,
+            rest.bg,
             AnsiColor::Spec(ColorRgb::from_color_arr([0.8, 0.4, 0.0, 1.0]))
         );
     }
 
     #[test]
     fn overlay_substitutes_label_squares_on_matching_row_only() {
+        let fg = [0.1, 0.1, 0.1, 1.0];
+        let bg = [1.0, 0.5, 0.0, 1.0];
+        let (first_style, rest_style) = hint_label_styles(fg, bg);
+        let pair = (first_style, rest_style);
         let row: Row<Square> = Row::new(10);
+        let row_styles = vec![Style::default(); 10];
         let labels = [label(3, 2, 'j', true), label(3, 3, 'f', false)];
         let mut hints = Vec::new();
 
-        assert!(overlay_hint_labels(&row, &labels, 2, 0, 5, &mut hints).is_none());
+        assert!(
+            overlay_hint_labels(&row, &row_styles, &labels, 2, 0, pair, &mut hints)
+                .is_none()
+        );
         assert!(hints.is_empty());
 
-        let overlaid = overlay_hint_labels(&row, &labels, 3, 0, 5, &mut hints).unwrap();
+        let (overlaid, styles) =
+            overlay_hint_labels(&row, &row_styles, &labels, 3, 0, pair, &mut hints)
+                .unwrap();
         assert_eq!(overlaid[Column(2)].c(), 'j');
-        assert_eq!(overlaid[Column(2)].style_id(), 5);
+        assert_eq!(styles[2], first_style);
         assert_eq!(overlaid[Column(3)].c(), 'f');
-        assert_eq!(overlaid[Column(3)].style_id(), 6);
+        assert_eq!(styles[3], rest_style);
         assert_eq!(overlaid[Column(4)].c(), row[Column(4)].c());
+        assert_eq!(styles[4], Style::default());
         assert_eq!(hints.len(), 2);
         assert!(hints.iter().all(|h| h.tag == HintTag::Label));
         assert_eq!(cell_in_row_hints(&hints, 2), Some(HintTag::Label));
@@ -2786,17 +2808,26 @@ mod hint_label_tests {
             hi: 9,
             tag: HintTag::Match,
         }];
-        overlay_hint_labels(&row, &labels, 3, 0, 5, &mut hints).unwrap();
+        overlay_hint_labels(&row, &row_styles, &labels, 3, 0, pair, &mut hints).unwrap();
         assert_eq!(cell_in_row_hints(&hints, 2), Some(HintTag::Label));
         assert_eq!(cell_in_row_hints(&hints, 5), Some(HintTag::Match));
 
         let mut hints = Vec::new();
-        assert!(overlay_hint_labels(&row, &labels, 3, 2, 5, &mut hints).is_none());
-        assert!(overlay_hint_labels(&row, &labels, 5, 2, 5, &mut hints).is_some());
+        assert!(
+            overlay_hint_labels(&row, &row_styles, &labels, 3, 2, pair, &mut hints)
+                .is_none()
+        );
+        assert!(
+            overlay_hint_labels(&row, &row_styles, &labels, 5, 2, pair, &mut hints)
+                .is_some()
+        );
 
         let oob = [label(3, 99, 'x', true)];
         let mut hints = Vec::new();
-        assert!(overlay_hint_labels(&row, &oob, 3, 0, 5, &mut hints).is_none());
+        assert!(
+            overlay_hint_labels(&row, &row_styles, &oob, 3, 0, pair, &mut hints)
+                .is_none()
+        );
         assert!(hints.is_empty());
     }
 }

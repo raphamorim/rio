@@ -13,6 +13,30 @@ static void on_wakeup(void *userdata, rio_surface_id_t surface) {
   atomic_fetch_add(&wakeups, 1);
 }
 
+static int wait_for(rio_render_state_t *state, const char *needle) {
+  for (int attempt = 0; attempt < 200; attempt++) {
+    rio_render_state_update(state);
+    uint16_t lines = rio_render_state_lines(state);
+    uint16_t cols = rio_render_state_columns(state);
+    for (uint16_t line = 0; line < lines; line++) {
+      char text[512] = {0};
+      uint16_t limit = cols < 511 ? cols : 511;
+      for (uint16_t col = 0; col < limit; col++) {
+        rio_cell_s cell = rio_render_state_cell(state, line, col);
+        text[col] = (cell.codepoint >= 32 && cell.codepoint < 127)
+                        ? (char)cell.codepoint
+                        : ' ';
+      }
+      if (strstr(text, needle)) {
+        printf("row %u: %s\n", line, text);
+        return 1;
+      }
+    }
+    usleep(25 * 1000);
+  }
+  return 0;
+}
+
 int main(void) {
   rio_runtime_config_s config = {0};
   config.wakeup_cb = on_wakeup;
@@ -41,37 +65,23 @@ int main(void) {
   rio_surface_text(surface, cmd, strlen(cmd));
 
   rio_render_state_t *state = rio_render_state_new(surface);
-  int found = 0;
-  for (int attempt = 0; attempt < 200 && !found; attempt++) {
-    rio_render_state_update(state);
-    uint16_t lines = rio_render_state_lines(state);
-    uint16_t cols = rio_render_state_columns(state);
-    for (uint16_t line = 0; line < lines && !found; line++) {
-      char text[512] = {0};
-      uint16_t limit = cols < 511 ? cols : 511;
-      for (uint16_t col = 0; col < limit; col++) {
-        rio_cell_s cell = rio_render_state_cell(state, line, col);
-        text[col] = (cell.codepoint >= 32 && cell.codepoint < 127)
-                        ? (char)cell.codepoint
-                        : ' ';
-      }
-      if (strstr(text, "librio-cgate")) {
-        printf("row %u: %s\n", line, text);
-        found = 1;
-      }
-    }
-    usleep(25 * 1000);
-  }
+  int found = wait_for(state, "librio-cgate");
+
+  /* Paste at the idle prompt; echo of mid-command input is shell-dependent. */
+  const char *pasted = "librio-pgate";
+  rio_surface_paste(surface, pasted, strlen(pasted));
+  int found_paste = wait_for(state, "librio-pgate");
 
   rio_cursor_s cursor = rio_render_state_cursor(state);
-  printf("wakeups=%d cursor=%u,%u found=%d\n", atomic_load(&wakeups),
-         cursor.line, cursor.column, found);
+  printf("wakeups=%d cursor=%u,%u found=%d found_paste=%d\n",
+         atomic_load(&wakeups), cursor.line, cursor.column, found,
+         found_paste);
 
   rio_render_state_free(state);
   rio_surface_free(surface);
   rio_engine_free(engine);
 
-  if (!found || atomic_load(&wakeups) == 0) {
+  if (!found || !found_paste || atomic_load(&wakeups) == 0) {
     fprintf(stderr, "gate failed\n");
     return 1;
   }

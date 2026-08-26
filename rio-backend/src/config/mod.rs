@@ -159,7 +159,7 @@ pub struct Config {
     #[serde(default = "default_bool_true", rename = "confirm-before-quit")]
     pub confirm_before_quit: bool,
     /// Unicode grapheme clusters as the unit of cell layout (presets
-    /// DEC private mode 2027; ghostty's `grapheme-width-method`). A
+    /// DEC private mode 2027). A
     /// program's DECSET/DECRST still wins at runtime.
     #[serde(default = "default_bool_true", rename = "grapheme-clustering")]
     pub grapheme_clustering: bool,
@@ -1348,8 +1348,8 @@ mod tests {
         "#,
         );
 
-        // Default is sRGB on every platform — same semantics as ghostty's
-        // `window-colorspace` default. `[window] colorspace` describes how
+        // Default is sRGB on every platform. `[window] colorspace`
+        // describes how
         // input color bytes are *interpreted*, not the surface gamut.
         assert_eq!(result.window.colorspace, window::Colorspace::Srgb);
     }

@@ -1011,13 +1011,14 @@ impl Parser {
         }
     }
 
-    /// Scalar transcode for wasm, where the C++-backed `simdutf` cannot
-    /// build. Same contract as the SIMD path below: each invalid maximal
-    /// subpart becomes one U+FFFD, except a lone C1 byte, which keeps its
-    /// execute semantics through decode.
-    #[cfg(target_arch = "wasm32")]
+    /// Scalar transcode. Used for every input on wasm, where the
+    /// C++-backed `simdutf` cannot build, and for short runs everywhere
+    /// else, where the out-of-line simdutf call costs more than the
+    /// decode itself. Same contract as the SIMD path below: each invalid
+    /// maximal subpart becomes one U+FFFD, except a lone C1 byte, which
+    /// keeps its execute semantics through decode.
     #[inline]
-    fn decode_codepoints(&mut self, src: &[u8]) {
+    fn decode_codepoints_scalar(&mut self, src: &[u8]) {
         self.decode_buf.clear();
         self.decode_buf.reserve(src.len());
 
@@ -1047,12 +1048,26 @@ impl Parser {
         }
     }
 
+    /// Transcode a UTF-8 byte slice into [`Self::decode_buf`] as `u32`
+    /// codepoints. SGR-dense streams produce a ground run of one glyph
+    /// between escapes, where the FFI call into simdutf costs more than
+    /// decoding in place, so short runs (and all of wasm, where simdutf
+    /// cannot build) go scalar.
+    #[inline]
+    fn decode_codepoints(&mut self, src: &[u8]) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if src.len() >= SIMD_DECODE_MIN {
+            return self.decode_codepoints_simd(src);
+        }
+        self.decode_codepoints_scalar(src)
+    }
+
     /// SIMD-transcode a UTF-8 byte slice into [`Self::decode_buf`] as `u32`
     /// codepoints, replacing each invalid UTF-8 maximal subpart with one
     /// U+FFFD inline (W3C/Unicode "Substitution of Maximal Subparts").
     #[cfg(not(target_arch = "wasm32"))]
     #[inline]
-    fn decode_codepoints(&mut self, src: &[u8]) {
+    fn decode_codepoints_simd(&mut self, src: &[u8]) {
         self.decode_buf.clear();
         // Worst case: 1 codepoint per source byte. Reserve up-front so the
         // raw pointer writes simdutf does are always in-bounds.
@@ -1259,6 +1274,10 @@ fn find_dcs_boundary(bytes: &[u8]) -> usize {
 /// growth. Chunks never split a UTF-8 sequence.
 const DECODE_CHUNK: usize = 4096;
 
+/// Runs shorter than this decode scalar instead of through simdutf.
+#[cfg(not(target_arch = "wasm32"))]
+const SIMD_DECODE_MIN: usize = 16;
+
 /// Length of the maximal valid subpart of a UTF-8 sequence starting at
 /// `p[0]`, per Unicode Table 3-7 / W3C "U+FFFD Substitution of Maximal
 /// Subparts". Each maximal subpart maps to exactly one U+FFFD when
@@ -1306,7 +1325,7 @@ fn maximal_subpart(p: &[u8]) -> usize {
 /// Length of `input` excluding any trailing valid-so-far UTF-8 sequence.
 /// Bytes that form an invalid lead (`<C2` or `>F4`) at the tail are NOT
 /// trimmed — they're left in place so the MSP-aware decode loop can
-/// replace them with U+FFFD. Mirrors ghostty's `TrimValidPartialUTF8`.
+/// replace them with U+FFFD.
 fn trim_valid_partial_utf8(input: &[u8]) -> usize {
     if input.is_empty() {
         return 0;
@@ -1545,6 +1564,42 @@ pub trait Perform {
 mod tests {
     use super::*;
 
+    /// The scalar and simdutf decoders implement the maximal-subpart /
+    /// U+FFFD / lone-C1 contract independently; with short runs routed
+    /// scalar, only inputs >= SIMD_DECODE_MIN reach the simdutf error
+    /// loop. Feed the same invalid corpus through both, below and above
+    /// the threshold, and require identical output.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn scalar_and_simd_decode_agree() {
+        let invalid_cases: &[&[u8]] = &[
+            b"\x80",                     // lone continuation (C1: keeps value)
+            b"\xBF",                     // lone continuation (non-C1: U+FFFD)
+            b"\xE2\x96",                 // truncated 3-byte sequence
+            b"\xF0\x9F\x92",             // truncated 4-byte sequence
+            b"\xC0\xAF",                 // overlong encoding
+            b"\xED\xA0\x80",             // UTF-16 surrogate
+            b"\xF5\x80\x80\x80",         // above U+10FFFF
+            b"a\xE2\x96b\x80c",          // interleaved with ASCII
+            "▀\u{45}\u{300}".as_bytes(), // valid multibyte control
+        ];
+        for case in invalid_cases {
+            for pad in [0usize, SIMD_DECODE_MIN + 4] {
+                let mut input = case.to_vec();
+                input.extend(vec![b'x'; pad]);
+
+                let mut scalar = Parser::new();
+                scalar.decode_codepoints_scalar(&input);
+                let mut simd = Parser::new();
+                simd.decode_codepoints_simd(&input);
+                assert_eq!(
+                    scalar.decode_buf, simd.decode_buf,
+                    "decoder divergence on {case:?} pad {pad}",
+                );
+            }
+        }
+    }
+
     const OSC_BYTES: &[u8] = &[
         0x1B, 0x5D, // Begin OSC
         b'2', b';', b'j', b'w', b'i', b'l', b'm', b'@', b'j', b'w', b'i', b'l', b'm',
@@ -1645,7 +1700,6 @@ mod tests {
     /// to the per-byte state machine for every chunking of the input:
     /// the same stream is fed whole, byte-at-a-time, and split at
     /// random boundaries, and all three must dispatch the same events.
-    /// (Same discipline as ghostty's "simd matches scalar" test.)
     #[test]
     fn string_state_runs_match_per_byte() {
         let big = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=".repeat(300);
@@ -2119,7 +2173,7 @@ mod tests {
         match &dispatcher.dispatched[0] {
             Sequence::Csi(params, intermediates, ignore, _) => {
                 assert_eq!(params, &[vec![38, 2, 255, 0, 255], vec![1]]);
-                assert_eq!(intermediates, &[]);
+                assert!(intermediates.is_empty());
                 assert!(!ignore);
             }
             _ => panic!("expected csi sequence"),
@@ -2250,7 +2304,7 @@ mod tests {
         assert_eq!(dispatcher.dispatched.len(), 1);
         match &dispatcher.dispatched[0] {
             Sequence::Csi(params, intermediates, ignore, c) => {
-                assert_eq!(intermediates, &[]);
+                assert!(intermediates.is_empty());
                 assert_eq!(params, &[[0; 32]]);
                 assert_eq!(c, &'x');
                 assert!(ignore);

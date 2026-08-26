@@ -1,6 +1,6 @@
 //! Flat lookup tables for mode-2027 grapheme clustering.
 //!
-//! The ghostty devlog-006 treatment: the segmentation hot path must
+//! The segmentation hot path must
 //! not evaluate rule chains or binary-search property ranges per
 //! codepoint. Two tables replace both:
 //!

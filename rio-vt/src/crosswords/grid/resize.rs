@@ -418,9 +418,7 @@ impl Grid<Square> {
                         // terminate here: column 0 is also the last column,
                         // so it would be displaced again every iteration
                         // while `new_raw` grew without bound. Destroy the
-                        // wide char and leave a blank narrow cell, which is
-                        // what ghostty does reflowing to one column
-                        // (`PageList.zig`, ReflowCursor), and drop the
+                        // wide char and leave a blank narrow cell, and drop the
                         // Spacer that followed it so it cannot claim a row
                         // of its own.
                         row[Column(columns - 1)] = Square::default();

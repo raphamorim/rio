@@ -11,7 +11,7 @@
 //! add a GPU completion handler + semaphore gate. For now slot 0 is
 //! written and read on every frame.
 //!
-//! `ghostty/src/renderer/cell.zig` allocation model:
+//! Allocation model:
 //! one flat `CellBg` buffer indexed `row * cols + col`, one
 //! `ArrayList(CellText)` per row plus two cursor slots. The per-row
 //! FG storage lands in Phase 1c alongside `cell_text` shader port.
@@ -33,9 +33,7 @@ use crate::context::metal::MetalContext;
 use crate::renderer::image_cache::atlas::AtlasAllocator;
 
 /// Number of GPU buffer slots cycled through frame-by-frame so the
-/// CPU can populate frame N+1 while the GPU is still drawing N. Sized
-/// to match Metal `swap_chain_count` at
-/// `ghostty/src/renderer/Metal.zig:37`.
+/// CPU can populate frame N+1 while the GPU is still drawing N.
 const FRAMES_IN_FLIGHT: usize = 3;
 
 /// Number of in-flight frames the swap chain owns. Re-export here
@@ -46,9 +44,7 @@ pub const FRAMES_IN_FLIGHT_PUB: usize = FRAMES_IN_FLIGHT;
 
 /// Cross-thread semaphore — `FRAMES_IN_FLIGHT_PUB` permits,
 /// decremented on render-start, restored in the command-buffer
-/// completion handler. Mirrors ghostty's `frame_sema` at
-/// `renderer/generic.zig:261` (`std.Thread.Semaphore` →
-/// `dispatch_semaphore_t` on Darwin). We use parking_lot's
+/// completion handler. We use parking_lot's
 /// Mutex+Condvar instead of dispatch_semaphore because the rest of
 /// sugarloaf already pulls parking_lot in and the behavior is
 /// identical for a counting semaphore.
@@ -364,8 +360,7 @@ pub struct MetalGridRenderer {
     /// Set to `true` on construction + `resize()`. The emission
     /// path checks this to force a full rebuild (every row) on the
     /// next frame, regardless of whether `TerminalDamage` is
-    /// `Noop`. `grid_size_diff` gate at
-    /// `ghostty/src/renderer/generic.zig:2353`. Cleared via
+    /// `Noop`. Cleared via
     /// `mark_full_rebuild_done` after the emission loop runs.
     needs_full_rebuild: bool,
 

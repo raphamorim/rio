@@ -4,7 +4,8 @@ use rio_vt::ansi::graphics::{
     VirtualPlacement,
 };
 use rio_vt::ansi::kitty_virtual::{
-    compute_run_geometry, IncompletePlacement, PlaceholderRun, PLACEHOLDER,
+    compute_run_geometry, resolve_virtual_placement, IncompletePlacement, PlaceholderRun,
+    PLACEHOLDER,
 };
 use rio_vt::ansi::CursorShape;
 use rio_vt::config::colors::term::TermColors;
@@ -65,7 +66,8 @@ impl KittyEntry {
 pub struct RenderState {
     terminal: Arc<FairMutex<Crosswords<Listener>>>,
     rows: Vec<Row<Square>>,
-    styles: Vec<Style>,
+    /// Per-row resolved cell styles, index-parallel to `rows`.
+    row_styles: Vec<Vec<Style>>,
     extras: FxHashMap<u16, Extras>,
     columns: usize,
     cursor_line: usize,
@@ -99,7 +101,7 @@ impl RenderState {
         Self {
             terminal,
             rows: Vec::new(),
-            styles: Vec::new(),
+            row_styles: Vec::new(),
             extras: FxHashMap::default(),
             columns,
             cursor_line: 0,
@@ -128,9 +130,8 @@ impl RenderState {
         };
         term.snapshot_visible(
             &damage,
-            self.columns,
             &mut self.rows,
-            &mut self.styles,
+            &mut self.row_styles,
             &mut self.extras,
         );
         term.reset_damage();
@@ -256,14 +257,14 @@ impl RenderState {
         Some(&row[Column(column)])
     }
 
-    pub fn style_of(&self, square: &Square) -> Style {
+    pub fn style_at(&self, line: usize, column: usize, square: &Square) -> Style {
         // Bg-only cells (erase fills, blank lines after `clear`) encode
-        // their background inline instead of carrying a style id; reading
-        // `style_id()` on one would misinterpret the color bits as an index.
+        // their background inline instead of carrying a style id; the
+        // resolved per-row styles hold the default for them.
         match square.content_tag() {
             ContentTag::Codepoint => self
-                .styles
-                .get(square.style_id() as usize)
+                .row_styles(line)
+                .get(column)
                 .copied()
                 .unwrap_or_default(),
             ContentTag::BgPalette => Style {
@@ -280,13 +281,15 @@ impl RenderState {
         }
     }
 
-    pub fn styles(&self) -> &[Style] {
-        &self.styles
+    /// Resolved styles for one visible row, index-parallel to its
+    /// cells. Empty for an out-of-range line.
+    pub fn row_styles(&self, line: usize) -> &[Style] {
+        self.row_styles.get(line).map(Vec::as_slice).unwrap_or(&[])
     }
 
-    /// The snapshot's visible rows. Parallel to `styles()` / `extras()`:
-    /// the GPU emit path (rio-grid) walks these, resolving each cell's
-    /// style id against `styles()` and its extras id against `extras()`.
+    /// The snapshot's visible rows. Index-parallel to the resolved
+    /// per-row styles served by `style_at` / `row_styles`, and to
+    /// `extras()`: the GPU emit path (rio-grid) walks these.
     pub fn rows(&self) -> &[Row<Square>] {
         &self.rows
     }
@@ -339,8 +342,7 @@ impl RenderState {
     /// Scan the snapshot rows for U+10EEEE placeholder cells and collapse
     /// them into row-runs (kitty virtual placements). One entry per run,
     /// resolved against the virtual placement registry and image store.
-    /// The walk mirrors rioterm's renderer (itself mirroring ghostty's
-    /// `PlacementIterator` in `graphics_unicode.zig`): a cell with missing
+    /// The walk mirrors rioterm's renderer: a cell with missing
     /// diacritics inherits from its left neighbour, and consecutive cells
     /// showing sequential image columns collapse into one run.
     fn collect_virtual_runs(&self, term: &Crosswords<Listener>) -> Vec<KittyEntry> {
@@ -354,10 +356,11 @@ impl RenderState {
                      run: PlaceholderRun,
                      line: usize,
                      start_col: usize| {
-            let placement = graphics
-                .kitty_virtual_placements
-                .get(&(run.image_id, run.placement_id))
-                .or_else(|| graphics.kitty_virtual_placements.get(&(run.image_id, 0)));
+            let placement = resolve_virtual_placement(
+                &graphics.kitty_virtual_placements,
+                run.image_id,
+                run.placement_id,
+            );
             let Some(placement) = placement else { return };
             let Some(image) = graphics.get_kitty_image(run.image_id) else {
                 return;
@@ -385,7 +388,7 @@ impl RenderState {
                     continue;
                 }
 
-                let style = self.style_of(square);
+                let style = self.style_at(line, col, square);
                 let combining: &[char] = square
                     .extras_id()
                     .and_then(|eid| self.extras.get(&eid))
@@ -551,7 +554,7 @@ impl RenderState {
     /// The OSC 8 hyperlink under a viewport cell, if any.
     pub fn link_at(&self, line: usize, column: usize) -> Option<&str> {
         let square = self.square(line, column)?;
-        let eid = square.extras_id()?;
+        let eid = square.extras_id_checked()?;
         self.extras
             .get(&eid)?
             .hyperlink

@@ -204,6 +204,8 @@ rio_surface_id_t rio_surface_id(const rio_surface_t *surface);
 
 /* Input entry points are callable from any thread. */
 void rio_surface_text(rio_surface_t *surface, const char *bytes, size_t len);
+/* Paste `bytes` (UTF-8), bracketed when the program has enabled mode 2004. */
+void rio_surface_paste(rio_surface_t *surface, const char *bytes, size_t len);
 /* Returns true when the event was consumed and encoded to the PTY. */
 bool rio_surface_key(rio_surface_t *surface, const rio_key_event_s *event);
 /* Whether alt acts as meta, prefixing with ESC, instead of letting the text
@@ -304,6 +306,15 @@ size_t rio_cluster_width(const uint32_t *codepoints, size_t len,
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
+
+/* This frame's dynamic (OSC 10/11/12) default colors. `which`: 0 =
+ * foreground, 1 = background, 2 = cursor. Writes the resolved RGB into
+ * `out` and returns true when the program has set that color via OSC;
+ * returns false and leaves `out` untouched when unset (including after an
+ * OSC 110/111/112 reset), so the host falls back to its own scheme. */
+bool rio_render_state_dynamic_color(const rio_render_state_t *state,
+                                    uint8_t which, rio_rgb_s *out);
+
 size_t rio_render_state_display_offset(const rio_render_state_t *state);
 bool rio_render_state_alt_screen(const rio_render_state_t *state);
 

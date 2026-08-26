@@ -343,6 +343,28 @@ impl Square {
         self.0 = (self.0 & !STYLE_ID_MASK) | ((id as u64) << STYLE_ID_SHIFT);
     }
 
+    /// Tag-checked variant of [`Self::style_id`], safe on any cell:
+    /// `None` for bg-only cells, whose upper bits hold color bits
+    /// rather than a style id. Deliberately an exhaustive match so a
+    /// new `ContentTag` variant forces a decision here.
+    #[inline]
+    pub fn style_id_checked(self) -> Option<StyleId> {
+        match self.content_tag() {
+            ContentTag::Codepoint => Some(self.style_id()),
+            ContentTag::BgPalette | ContentTag::BgRgb => None,
+        }
+    }
+
+    /// Tag-checked variant of [`Self::extras_id`], safe on any cell.
+    /// Exhaustive for the same reason as [`Self::style_id_checked`].
+    #[inline]
+    pub fn extras_id_checked(self) -> Option<ExtrasId> {
+        match self.content_tag() {
+            ContentTag::Codepoint => self.extras_id(),
+            ContentTag::BgPalette | ContentTag::BgRgb => None,
+        }
+    }
+
     /// Read the cell's extras id, if any.
     ///
     /// **The caller must check `content_tag()` first** if the cell might be
@@ -474,7 +496,7 @@ impl Square {
 
     #[inline]
     pub fn has_extras(self) -> bool {
-        self.extras_id().is_some()
+        self.extras_id_checked().is_some()
     }
 
     #[inline]
@@ -489,6 +511,11 @@ impl Square {
 }
 
 impl GridSquare for Square {
+    #[inline]
+    fn carries_style(&self) -> bool {
+        matches!(self.style_id_checked(), Some(id) if id != DEFAULT_STYLE_ID)
+    }
+
     #[inline]
     fn is_empty(&self) -> bool {
         if self.0 == 0 {
@@ -514,7 +541,11 @@ impl GridSquare for Square {
 }
 
 pub trait LineLength {
-    /// Calculate the occupied line length.
+    /// Calculate the occupied TEXTUAL line length: up to the last cell
+    /// carrying a character or extras. Deliberately narrower than
+    /// `GridSquare::is_empty`, which also counts bg-only cells and
+    /// styled blanks as occupied; this feeds selection/copy, where
+    /// colored blanks contribute no text.
     fn line_length(&self) -> Column;
 }
 
@@ -562,6 +593,41 @@ mod tests {
 
     use crate::crosswords::grid::row::Row;
     use crate::crosswords::pos::Column;
+
+    #[test]
+    fn line_length_ignores_bg_only_cells_regardless_of_color() {
+        // A bg-only cell's upper bits hold color channels where a
+        // Codepoint cell keeps its extras id; line_length must not read
+        // them as one (a nonzero blue channel used to count the cell as
+        // text while zero dropped it). Bg-only cells carry no text, so
+        // they never extend the textual line length.
+        let mut row: Row<Square> = Row::new(4);
+        row[Column(1)].set_bg_rgb(10, 20, 0);
+        assert_eq!(row.line_length(), Column(0));
+
+        let mut row: Row<Square> = Row::new(4);
+        row[Column(1)].set_bg_rgb(10, 20, 30);
+        assert_eq!(row.line_length(), Column(0));
+
+        // Text after a bg-only cell still counts normally.
+        let mut row: Row<Square> = Row::new(4);
+        row[Column(0)].set_bg_rgb(10, 20, 30);
+        row[Column(1)] = Square::from_char('x');
+        assert_eq!(row.line_length(), Column(2));
+    }
+
+    #[test]
+    fn checked_id_accessors_reject_bg_only_cells() {
+        let mut sq = Square::default();
+        sq.set_style_id(7);
+        assert_eq!(sq.style_id_checked(), Some(7));
+
+        let mut bg = Square::default();
+        bg.set_bg_rgb(1, 2, 3);
+        assert_eq!(bg.style_id_checked(), None);
+        assert_eq!(bg.extras_id_checked(), None);
+        assert!(!bg.has_extras());
+    }
 
     #[test]
     fn square_is_eight_bytes() {
