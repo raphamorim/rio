@@ -1,8 +1,5 @@
 use cfg_aliases::cfg_aliases;
 
-#[cfg(windows)]
-extern crate winres;
-
 fn main() {
     // The script doesn't depend on our code
     println!("cargo:rerun-if-changed=build.rs");
@@ -42,30 +39,6 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     generate_dispatch_bindings();
-
-    #[cfg(target_os = "windows")]
-    load_app_icon();
-}
-
-#[cfg(target_os = "windows")]
-fn load_app_icon() {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let icon_path = std::path::Path::new(&manifest_dir)
-        .join("assets")
-        .join("rio-2024.ico");
-    if !icon_path.exists() {
-        println!(
-            "cargo:warning=window icon not found at {}, skipping resource",
-            icon_path.display()
-        );
-        return;
-    }
-
-    println!("cargo:rerun-if-changed={}", icon_path.display());
-    let mut res = winres::WindowsResource::new();
-    res.set_icon(&icon_path.to_string_lossy().replace('\\', "/"));
-    res.compile()
-        .expect("Failed to compile Window icon resource");
 }
 
 #[cfg(target_os = "macos")]

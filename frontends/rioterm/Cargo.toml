@@ -60,6 +60,9 @@ cpal = { version = "0.15", optional = true }
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = { workspace = true }
 
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1.12"
+
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.12", default-features = false, features = ["std"] }
 dunce = "1.0.5"
