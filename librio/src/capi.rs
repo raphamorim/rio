@@ -696,6 +696,17 @@ pub unsafe extern "C" fn rio_surface_key(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn rio_surface_mode_bits(surface: *const Surface) -> u32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return 0;
+        }
+        unsafe { &*surface }.mode_bits()
+    }))
+    .unwrap_or(0)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn rio_surface_set_alt_is_meta(
     surface: *mut Surface,
     enabled: bool,

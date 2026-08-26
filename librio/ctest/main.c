@@ -67,21 +67,53 @@ int main(void) {
   rio_render_state_t *state = rio_render_state_new(surface);
   int found = wait_for(state, "librio-cgate");
 
-  /* Paste at the idle prompt; echo of mid-command input is shell-dependent. */
-  const char *pasted = "librio-pgate";
-  rio_surface_paste(surface, pasted, strlen(pasted));
-  int found_paste = wait_for(state, "librio-pgate");
+  /* Paste into a cat child: no line editor in the way, so the check does
+   * not depend on the host's shell. The tty's own echo puts it on screen. */
+  rio_surface_config_s paste_config = surface_config;
+  paste_config.shell = "/bin/cat";
+  rio_surface_t *paste_surface = rio_surface_new(engine, &paste_config);
+  rio_render_state_t *paste_state =
+      paste_surface ? rio_render_state_new(paste_surface) : NULL;
+  int found_paste = 0;
+  int found_bracketed = 0;
+  if (paste_surface) {
+    const char *pasted = "librio-pgate";
+    rio_surface_paste(paste_surface, pasted, strlen(pasted));
+    found_paste = wait_for(paste_state, "librio-pgate");
+
+    /* Enable mode 2004 through the child: cat copies the sequence back to
+     * its stdout, which the terminal parses. The next paste must then wrap
+     * in markers, echoed as ^[[200~..^[[201~. */
+    const char *decset = "\x1b[?2004h\n";
+    rio_surface_text(paste_surface, decset, strlen(decset));
+    for (int attempt = 0; attempt < 200; attempt++) {
+      if (rio_surface_mode_bits(paste_surface) & (1u << 3)) {
+        break;
+      }
+      usleep(25 * 1000);
+    }
+    const char *bracketed = "librio-bgate";
+    rio_surface_paste(paste_surface, bracketed, strlen(bracketed));
+    found_bracketed = wait_for(paste_state, "[200~librio-bgate");
+  }
 
   rio_cursor_s cursor = rio_render_state_cursor(state);
-  printf("wakeups=%d cursor=%u,%u found=%d found_paste=%d\n",
+  printf("wakeups=%d cursor=%u,%u found=%d found_paste=%d found_bracketed=%d\n",
          atomic_load(&wakeups), cursor.line, cursor.column, found,
-         found_paste);
+         found_paste, found_bracketed);
 
+  if (paste_state) {
+    rio_render_state_free(paste_state);
+  }
+  if (paste_surface) {
+    rio_surface_free(paste_surface);
+  }
   rio_render_state_free(state);
   rio_surface_free(surface);
   rio_engine_free(engine);
 
-  if (!found || !found_paste || atomic_load(&wakeups) == 0) {
+  if (!found || !found_paste || !found_bracketed ||
+      atomic_load(&wakeups) == 0) {
     fprintf(stderr, "gate failed\n");
     return 1;
   }
