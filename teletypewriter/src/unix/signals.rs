@@ -45,6 +45,27 @@ macro_rules! implement_signals_with_pipe {
                 S: Borrow<c_int>,
             {
                 let (read, write) = Pipe::pair()?;
+                // The signal handler's wake write must fail with EPIPE once
+                // the reader is gone, not raise SIGPIPE: C hosts, unlike
+                // Rust ones, do not ignore SIGPIPE and would be killed.
+                #[cfg(any(
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "freebsd"
+                ))]
+                unsafe {
+                    use std::os::fd::AsRawFd;
+                    let on: libc::c_int = 1;
+                    for fd in [read.as_raw_fd(), write.as_raw_fd()] {
+                        libc::setsockopt(
+                            fd,
+                            libc::SOL_SOCKET,
+                            libc::SO_NOSIGPIPE,
+                            &on as *const libc::c_int as *const libc::c_void,
+                            std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+                        );
+                    }
+                }
                 let delivery =
                     SignalDelivery::with_pipe(read, write, exfiltrator, signals)?;
                 Ok(Self(delivery))
