@@ -67,28 +67,31 @@ int main(void) {
   rio_render_state_t *state = rio_render_state_new(surface);
   int found = wait_for(state, "librio-cgate");
 
-  /* Paste into a cat child: it writes the paste back with no line editor
-   * in the way, so the check does not depend on the host's shell. */
+  /* Paste into a cat child: no line editor in the way, so the check does
+   * not depend on the host's shell. The tty's own echo puts it on screen. */
   rio_surface_config_s paste_config = surface_config;
   paste_config.shell = "/bin/cat";
   rio_surface_t *paste_surface = rio_surface_new(engine, &paste_config);
-  if (!paste_surface) {
-    fprintf(stderr, "paste surface creation failed\n");
-    return 1;
+  rio_render_state_t *paste_state =
+      paste_surface ? rio_render_state_new(paste_surface) : NULL;
+  int found_paste = 0;
+  if (paste_surface) {
+    const char *pasted = "librio-pgate";
+    rio_surface_paste(paste_surface, pasted, strlen(pasted));
+    found_paste = wait_for(paste_state, "librio-pgate");
   }
-  usleep(400 * 1000);
-  const char *pasted = "librio-pgate\n";
-  rio_surface_paste(paste_surface, pasted, strlen(pasted));
-  rio_render_state_t *paste_state = rio_render_state_new(paste_surface);
-  int found_paste = wait_for(paste_state, "librio-pgate");
 
   rio_cursor_s cursor = rio_render_state_cursor(state);
   printf("wakeups=%d cursor=%u,%u found=%d found_paste=%d\n",
          atomic_load(&wakeups), cursor.line, cursor.column, found,
          found_paste);
 
-  rio_render_state_free(paste_state);
-  rio_surface_free(paste_surface);
+  if (paste_state) {
+    rio_render_state_free(paste_state);
+  }
+  if (paste_surface) {
+    rio_surface_free(paste_surface);
+  }
   rio_render_state_free(state);
   rio_surface_free(surface);
   rio_engine_free(engine);
