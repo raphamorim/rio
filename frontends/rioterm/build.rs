@@ -13,4 +13,29 @@ fn main() {
         println!("cargo:rustc-link-arg-bins=-weak_framework");
         println!("cargo:rustc-link-arg-bins=CoreGraphics");
     }
+
+    #[cfg(windows)]
+    load_app_icon();
+}
+
+// The exe resource Explorer and the taskbar read; the same image the
+// runtime window icon uses (router::window::LOGO_ICON). cfg(windows) in
+// a build script is the host, so cross-compiles from a windows host to
+// another os must still skip via the target check.
+#[cfg(windows)]
+fn load_app_icon() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    let icon_path = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .join("src")
+        .join("router")
+        .join("resources")
+        .join("images")
+        .join("rio-logo.ico");
+    println!("cargo:rerun-if-changed={}", icon_path.display());
+    let mut res = winres::WindowsResource::new();
+    res.set_icon(icon_path.to_str().expect("manifest dir must be utf-8"));
+    res.compile()
+        .expect("failed to compile the windows icon resource");
 }

@@ -4030,7 +4030,6 @@ dependencies = [
  "web-sys",
  "web-time",
  "windows-sys 0.59.0",
- "winres",
  "x11-dl",
  "x11rb",
  "xkbcommon-dl",
@@ -4080,6 +4079,7 @@ dependencies = [
  "url",
  "wgpu",
  "windows-sys 0.60.2",
+ "winres",
 ]
 
 [[package]]
