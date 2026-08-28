@@ -199,10 +199,12 @@ impl Screen<'_> {
             backend,
             font_features: config.fonts.features.clone(),
             colorspace: config.window.colorspace.to_sugarloaf_colorspace(),
-            // Same condition the window is created with
-            // (`with_transparent` in router/window.rs): a translucent
-            // window needs an adapter whose surface carries alpha.
-            prefer_alpha_capable_adapter: config.window.opacity < 1.,
+            // The exact predicate the rest of the frontend uses: glass
+            // blur forces the window bg alpha to 0 regardless of opacity,
+            // so it needs an alpha-carrying surface exactly like
+            // `window.opacity < 1` does. Fixed at surface creation; a
+            // live-reloaded opacity change takes effect on restart.
+            prefer_alpha_capable_adapter: !window_should_be_opaque(config),
         };
 
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(

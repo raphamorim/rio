@@ -38,6 +38,9 @@ pub struct Sugarloaf<'a> {
     pub graphics: Graphics,
     #[cfg(feature = "wgpu")]
     filters_brush: Option<FiltersBrush>,
+    /// One-shot notice that active filters defeat `window.opacity`.
+    #[cfg(feature = "wgpu")]
+    warned_filters_opacity: bool,
     /// Pixel data for standalone image textures, keyed by image key
     /// (`graphics::kitty_image_key` / `graphics::atlas_image_key`).
     pub image_data: rustc_hash::FxHashMap<u64, GraphicDataEntry>,
@@ -253,6 +256,8 @@ impl Sugarloaf<'_> {
             graphics: Graphics::default(),
             #[cfg(feature = "wgpu")]
             filters_brush: None,
+            #[cfg(feature = "wgpu")]
+            warned_filters_opacity: false,
             image_data: rustc_hash::FxHashMap::default(),
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
             font_cache,
@@ -1157,22 +1162,23 @@ impl Sugarloaf<'_> {
                 // for any cell that didn't get an explicit bg ends up = the clear
                 // alpha. When the user sets `window.opacity < 1` we want the
                 // compositor to treat that cleared color as a translucent overlay
-                // over the desktop. DWM (Windows DX12 / wgpu Vulkan path) and
-                // wayland compositors interpret the framebuffer RGB as **already**
-                // multiplied by alpha when the surface is in PreMultiplied mode.
-                // wgpu's Auto / Inherit modes also map to that interpretation when
-                // transparency is engaged (no platform we ship to picks
-                // straight-alpha by default). Only `PostMultiplied` wants the
-                // straight value. Pre-multiply here so a translucent bg doesn't
-                // come out as a near-fully-transparent window on those backends.
+                // over the desktop.
+                //
+                // Only a surface in `PreMultiplied` mode (DWM via the Windows
+                // wgpu Vulkan path, Wayland) reads the RGB as already
+                // multiplied by alpha, so only there may the clear be
+                // premultiplied. `PostMultiplied` wants the straight value,
+                // and everything else (`Opaque`, and `Auto` resolving to it)
+                // ignores the alpha byte entirely: premultiplying would just
+                // darken the window with no transparency in return.
                 let clear = match ctx.alpha_mode {
-                    wgpu::CompositeAlphaMode::PostMultiplied => background_color.into(),
-                    _ => wgpu::Color {
+                    wgpu::CompositeAlphaMode::PreMultiplied => wgpu::Color {
                         r: background_color.r * background_color.a,
                         g: background_color.g * background_color.a,
                         b: background_color.b * background_color.a,
                         a: background_color.a,
                     },
+                    _ => background_color.into(),
                 };
                 wgpu::LoadOp::Clear(clear)
             } else {
@@ -1231,6 +1237,19 @@ impl Sugarloaf<'_> {
         }
 
         if let Some(ref mut filters_brush) = self.filters_brush {
+            // The filter chain's final pass writes with blending disabled,
+            // so whatever alpha the shader outputs (1.0 for CRT shaders)
+            // replaces the frame's: the window snaps back to opaque. Say
+            // so once instead of letting the two settings cancel silently.
+            if !self.warned_filters_opacity
+                && self.background_color.is_some_and(|c| c.a < 1.0)
+            {
+                self.warned_filters_opacity = true;
+                tracing::warn!(
+                    "[renderer] filters overwrite the frame's alpha channel; \
+                     window.opacity < 1 has no effect while filters are active"
+                );
+            }
             filters_brush.render(ctx, &mut encoder, &frame.texture, &frame.texture);
         }
         ctx.queue.submit(Some(encoder.finish()));

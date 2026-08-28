@@ -1,9 +1,16 @@
 fn main() {
     cfg_aliases::cfg_aliases! {
-        // rioterm's own `wgpu` feature, or Windows, where sugarloaf and
-        // rio-backend get the feature through the target-specific
-        // dependency override so the wgpu code paths always exist.
-        wgpu_backend: { any(feature = "wgpu", target_os = "windows") },
+        // rioterm's own `wgpu` feature, or the targets whose
+        // target-specific dependency overrides force the feature onto
+        // sugarloaf and rio-backend (Windows and wasm32 in Cargo.toml),
+        // so the wgpu code paths always exist there.
+        wgpu_backend: {
+            any(
+                feature = "wgpu",
+                target_os = "windows",
+                target_arch = "wasm32"
+            )
+        },
     }
 
     // wgpu-hal references HDR colorspace constants (ExtendedDisplayP3,

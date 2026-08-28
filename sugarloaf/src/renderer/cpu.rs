@@ -10,6 +10,7 @@
 // Kitty image overlays composite via `draw_image_overlay`.
 
 use crate::context::cpu::CpuContext;
+use crate::premul::{pack_opaque, pack_premul};
 use crate::renderer::compositor::Vertex;
 use crate::renderer::image_cache::ImageCache;
 use crate::renderer::Renderer;
@@ -56,20 +57,6 @@ struct CachedGlyph {
     pixels: Vec<u32>,
     w: u16,
     h: u16,
-}
-
-#[inline(always)]
-fn pack_premul(r: u8, g: u8, b: u8, a: u8) -> u32 {
-    ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
-}
-
-#[inline(always)]
-fn pack_opaque(r: u8, g: u8, b: u8) -> u32 {
-    // alpha = 0xff so alpha-respecting compositors (Windows DWM under
-    // `DwmEnableBlurBehindWindow`) treat the pixel as fully opaque.
-    // For non-transparent windows the OS ignores this byte, so writing
-    // 0xff is a no-op there.
-    0xff00_0000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }
 
 /// Scalar SWAR premultiplied source-over for all four channels (RGBA).
@@ -404,19 +391,30 @@ pub fn render_cpu(
         }
     };
 
-    // Bg fill writes premultiplied RGBA. The alpha byte carries
-    // `window.opacity`; on alpha-respecting compositors (Windows DWM
-    // under `DwmEnableBlurBehindWindow`, Wayland surfaces) that's what
-    // makes the window translucent. For fully opaque windows the OS
-    // ignores the alpha byte, so writing `(rgb*1, 1)` is a no-op there.
+    // Bg fill writes premultiplied RGBA on Windows only: softbuffer's GDI
+    // path copies the alpha byte through to the DWM redirection surface,
+    // where `DwmEnableBlurBehindWindow` makes `window.opacity` real. Its
+    // other presenters drop the byte (macOS `NoneSkipFirst`, Wayland
+    // `Xrgb8888`), so premultiplying there would darken the window with
+    // no transparency in return; those keep the full-brightness opaque
+    // fill and opacity stays a no-op on the CPU backend, as before.
     let bg_u32 = match background {
         Some(c) => {
-            let a = c.a.clamp(0.0, 1.0);
-            pack_premul(
-                (c.r.clamp(0.0, 1.0) * a * 255.0) as u8,
-                (c.g.clamp(0.0, 1.0) * a * 255.0) as u8,
-                (c.b.clamp(0.0, 1.0) * a * 255.0) as u8,
-                (a * 255.0) as u8,
+            #[cfg(target_os = "windows")]
+            {
+                let a = c.a.clamp(0.0, 1.0);
+                pack_premul(
+                    (c.r.clamp(0.0, 1.0) * a * 255.0) as u8,
+                    (c.g.clamp(0.0, 1.0) * a * 255.0) as u8,
+                    (c.b.clamp(0.0, 1.0) * a * 255.0) as u8,
+                    (a * 255.0) as u8,
+                )
+            }
+            #[cfg(not(target_os = "windows"))]
+            pack_opaque(
+                (c.r.clamp(0.0, 1.0) * 255.0) as u8,
+                (c.g.clamp(0.0, 1.0) * 255.0) as u8,
+                (c.b.clamp(0.0, 1.0) * 255.0) as u8,
             )
         }
         None => 0,

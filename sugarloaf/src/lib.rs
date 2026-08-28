@@ -4,6 +4,7 @@ pub mod font;
 mod font_cache;
 pub mod grid;
 pub mod layout;
+mod premul;
 pub mod renderer;
 pub mod sprite;
 mod sugarloaf;

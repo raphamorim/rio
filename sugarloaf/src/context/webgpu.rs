@@ -41,61 +41,76 @@ impl<'a> WgpuContext<'a> {
         let instance = wgpu::Instance::new(instance_desc);
 
         tracing::info!("selected instance: {instance:?}");
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            tracing::info!("Available adapters:");
-            for a in futures::executor::block_on(
-                instance.enumerate_adapters(wgpu::Backends::all()),
-            ) {
-                tracing::info!("    {:?}", a.get_info())
-            }
-        }
-
         tracing::info!("initializing the surface");
 
         let surface: wgpu::Surface<'a> =
             instance.create_surface(sugarloaf_window).unwrap();
+
         // A translucent window needs an adapter whose surface offers an
         // alpha-carrying composite mode. On Windows that decides whether
         // transparency works at all: DX12 HWND swapchains expose only
         // `Opaque`, while Vulkan drivers expose `PreMultiplied`, and with
         // `Backends::all()` either may win the default adapter request.
-        // Prefer an alpha-capable adapter (highest device class first)
-        // and fall back to the default request when none exists.
+        // Prefer an alpha-capable hardware adapter (highest device class,
+        // ties broken deterministically by backend then enumeration
+        // order; software rasterizers never win over the default request)
+        // and fall back to the default request when none exists or the
+        // preferred one cannot create a device.
         #[cfg(not(target_arch = "wasm32"))]
         let alpha_capable_adapter = if renderer_config.prefer_alpha_capable_adapter {
-            futures::executor::block_on(instance.enumerate_adapters(backend))
-                .into_iter()
-                .filter(|adapter| {
-                    surface
-                        .get_capabilities(adapter)
-                        .alpha_modes
-                        .iter()
-                        .any(|mode| {
-                            matches!(
-                                mode,
-                                wgpu::CompositeAlphaMode::PreMultiplied
-                                    | wgpu::CompositeAlphaMode::PostMultiplied
-                            )
-                        })
-                })
-                .max_by_key(|adapter| match adapter.get_info().device_type {
-                    wgpu::DeviceType::DiscreteGpu => 4,
-                    wgpu::DeviceType::IntegratedGpu => 3,
-                    wgpu::DeviceType::VirtualGpu => 2,
-                    wgpu::DeviceType::Other => 1,
-                    wgpu::DeviceType::Cpu => 0,
-                })
+            let mut best: Option<(u8, u8, wgpu::Adapter)> = None;
+            for candidate in
+                futures::executor::block_on(instance.enumerate_adapters(backend))
+            {
+                let info = candidate.get_info();
+                tracing::info!("available adapter: {info:?}");
+                let device_rank = match info.device_type {
+                    wgpu::DeviceType::DiscreteGpu => 3,
+                    wgpu::DeviceType::IntegratedGpu => 2,
+                    wgpu::DeviceType::VirtualGpu => 1,
+                    wgpu::DeviceType::Other => 0,
+                    // A software rasterizer would technically satisfy the
+                    // alpha requirement while being unusably slow; the
+                    // fallback request below is the better outcome then.
+                    wgpu::DeviceType::Cpu => continue,
+                };
+                let backend_rank = match info.backend {
+                    wgpu::Backend::Vulkan | wgpu::Backend::Metal => 2,
+                    wgpu::Backend::Dx12 => 1,
+                    _ => 0,
+                };
+                let alpha_capable = surface
+                    .get_capabilities(&candidate)
+                    .alpha_modes
+                    .iter()
+                    .any(|mode| {
+                        matches!(
+                            mode,
+                            wgpu::CompositeAlphaMode::PreMultiplied
+                                | wgpu::CompositeAlphaMode::PostMultiplied
+                        )
+                    });
+                if !alpha_capable {
+                    continue;
+                }
+                // Strictly-greater keeps the first of equals, so the
+                // choice is stable across runs.
+                if best
+                    .as_ref()
+                    .is_none_or(|(d, b, _)| (device_rank, backend_rank) > (*d, *b))
+                {
+                    best = Some((device_rank, backend_rank, candidate));
+                }
+            }
+            best.map(|(_, _, adapter)| adapter)
         } else {
             None
         };
         #[cfg(target_arch = "wasm32")]
-        let alpha_capable_adapter = None;
+        let alpha_capable_adapter: Option<wgpu::Adapter> = None;
 
-        let adapter = match alpha_capable_adapter {
-            Some(adapter) => adapter,
-            None => futures::executor::block_on(instance.request_adapter(
+        let default_adapter = |surface: &wgpu::Surface| {
+            futures::executor::block_on(instance.request_adapter(
                 &wgpu::RequestAdapterOptions {
                     // Hard-coded — sugarloaf used to expose a
                     // `power_preference` knob, but in practice every Rio
@@ -103,12 +118,56 @@ impl<'a> WgpuContext<'a> {
                     // visibly worse text on hybrid laptops). Removed from
                     // the public API.
                     power_preference: wgpu::PowerPreference::HighPerformance,
-                    compatible_surface: Some(&surface),
+                    compatible_surface: Some(surface),
                     force_fallback_adapter: false,
                     apply_limit_buckets: false,
                 },
             ))
-            .expect("Request adapter"),
+            .expect("Request adapter")
+        };
+        let request_device = |adapter: &wgpu::Adapter| {
+            if let Ok(result) = futures::executor::block_on(
+                adapter.request_device(&wgpu::DeviceDescriptor::default()),
+            ) {
+                Ok((result.0, result.1))
+            } else {
+                // These downlevel limits will allow the code to run on all possible hardware
+                futures::executor::block_on(adapter.request_device(
+                    &wgpu::DeviceDescriptor {
+                        memory_hints: wgpu::MemoryHints::Performance,
+                        label: None,
+                        required_features: wgpu::Features::empty(),
+                        required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                        ..Default::default()
+                    },
+                ))
+                .map(|result| (result.0, result.1))
+            }
+        };
+
+        let (adapter, device, queue) = match alpha_capable_adapter {
+            // A broken ICD can enumerate and answer capability queries yet
+            // fail device creation; fall back to the default request the
+            // way pre-preference code effectively did instead of aborting.
+            Some(preferred) => match request_device(&preferred) {
+                Ok((device, queue)) => (preferred, device, queue),
+                Err(err) => {
+                    tracing::warn!(
+                        "alpha-capable adapter {:?} refused a device ({err}); \
+                         falling back to the default adapter",
+                        preferred.get_info()
+                    );
+                    let adapter = default_adapter(&surface);
+                    let (device, queue) =
+                        request_device(&adapter).expect("Request device");
+                    (adapter, device, queue)
+                }
+            },
+            None => {
+                let adapter = default_adapter(&surface);
+                let (device, queue) = request_device(&adapter).expect("Request device");
+                (adapter, device, queue)
+            }
         };
 
         let adapter_info = adapter.get_info();
@@ -124,39 +183,21 @@ impl<'a> WgpuContext<'a> {
             renderer_config.colorspace,
         );
 
-        let (device, queue) = {
-            {
-                if let Ok(result) = futures::executor::block_on(
-                    adapter.request_device(&wgpu::DeviceDescriptor::default()),
-                ) {
-                    (result.0, result.1)
-                } else {
-                    // These downlevel limits will allow the code to run on all possible hardware
-                    let result = futures::executor::block_on(adapter.request_device(
-                        &wgpu::DeviceDescriptor {
-                            memory_hints: wgpu::MemoryHints::Performance,
-                            label: None,
-                            required_features: wgpu::Features::empty(),
-                            required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
-                            ..Default::default()
-                        },
-                    ))
-                    .expect("Request device");
-                    (result.0, result.1)
-                }
-            }
-        };
-
+        // Every sugarloaf pipeline emits premultiplied alpha, so a surface
+        // that can composite premultiplied directly is the correct match;
+        // PostMultiplied stays as the fallback for surfaces that offer
+        // nothing else (wgpu's Metal backend), where only the fully-opaque
+        // and fully-transparent pixels compose identically either way.
         let alpha_mode = if surface_caps
-            .alpha_modes
-            .contains(&wgpu::CompositeAlphaMode::PostMultiplied)
-        {
-            wgpu::CompositeAlphaMode::PostMultiplied
-        } else if surface_caps
             .alpha_modes
             .contains(&wgpu::CompositeAlphaMode::PreMultiplied)
         {
             wgpu::CompositeAlphaMode::PreMultiplied
+        } else if surface_caps
+            .alpha_modes
+            .contains(&wgpu::CompositeAlphaMode::PostMultiplied)
+        {
+            wgpu::CompositeAlphaMode::PostMultiplied
         } else {
             wgpu::CompositeAlphaMode::Auto
         };
