@@ -4042,6 +4042,7 @@ version = "0.5.26"
 dependencies = [
  "ahash",
  "bitflags 2.13.1",
+ "cfg_aliases",
  "clap",
  "corcovado",
  "cpal",

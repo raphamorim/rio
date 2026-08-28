@@ -56,20 +56,60 @@ impl<'a> WgpuContext<'a> {
 
         let surface: wgpu::Surface<'a> =
             instance.create_surface(sugarloaf_window).unwrap();
-        let adapter = futures::executor::block_on(instance.request_adapter(
-            &wgpu::RequestAdapterOptions {
-                // Hard-coded — sugarloaf used to expose a
-                // `power_preference` knob, but in practice every Rio
-                // user picks `HighPerformance` (the alternative gives
-                // visibly worse text on hybrid laptops). Removed from
-                // the public API.
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-                apply_limit_buckets: false,
-            },
-        ))
-        .expect("Request adapter");
+        // A translucent window needs an adapter whose surface offers an
+        // alpha-carrying composite mode. On Windows that decides whether
+        // transparency works at all: DX12 HWND swapchains expose only
+        // `Opaque`, while Vulkan drivers expose `PreMultiplied`, and with
+        // `Backends::all()` either may win the default adapter request.
+        // Prefer an alpha-capable adapter (highest device class first)
+        // and fall back to the default request when none exists.
+        #[cfg(not(target_arch = "wasm32"))]
+        let alpha_capable_adapter = if renderer_config.prefer_alpha_capable_adapter {
+            futures::executor::block_on(instance.enumerate_adapters(backend))
+                .into_iter()
+                .filter(|adapter| {
+                    surface
+                        .get_capabilities(adapter)
+                        .alpha_modes
+                        .iter()
+                        .any(|mode| {
+                            matches!(
+                                mode,
+                                wgpu::CompositeAlphaMode::PreMultiplied
+                                    | wgpu::CompositeAlphaMode::PostMultiplied
+                            )
+                        })
+                })
+                .max_by_key(|adapter| match adapter.get_info().device_type {
+                    wgpu::DeviceType::DiscreteGpu => 4,
+                    wgpu::DeviceType::IntegratedGpu => 3,
+                    wgpu::DeviceType::VirtualGpu => 2,
+                    wgpu::DeviceType::Other => 1,
+                    wgpu::DeviceType::Cpu => 0,
+                })
+        } else {
+            None
+        };
+        #[cfg(target_arch = "wasm32")]
+        let alpha_capable_adapter = None;
+
+        let adapter = match alpha_capable_adapter {
+            Some(adapter) => adapter,
+            None => futures::executor::block_on(instance.request_adapter(
+                &wgpu::RequestAdapterOptions {
+                    // Hard-coded — sugarloaf used to expose a
+                    // `power_preference` knob, but in practice every Rio
+                    // user picks `HighPerformance` (the alternative gives
+                    // visibly worse text on hybrid laptops). Removed from
+                    // the public API.
+                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    compatible_surface: Some(&surface),
+                    force_fallback_adapter: false,
+                    apply_limit_buckets: false,
+                },
+            ))
+            .expect("Request adapter"),
+        };
 
         let adapter_info = adapter.get_info();
         tracing::info!("Selected adapter: {:?}", adapter_info);

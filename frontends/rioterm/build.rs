@@ -1,4 +1,11 @@
 fn main() {
+    cfg_aliases::cfg_aliases! {
+        // rioterm's own `wgpu` feature, or Windows, where sugarloaf and
+        // rio-backend get the feature through the target-specific
+        // dependency override so the wgpu code paths always exist.
+        wgpu_backend: { any(feature = "wgpu", target_os = "windows") },
+    }
+
     // wgpu-hal references HDR colorspace constants (ExtendedDisplayP3,
     // the ITUR_2100 pair) that older macOS does not export. Their use
     // is runtime-gated inside wgpu, but the references link as strong

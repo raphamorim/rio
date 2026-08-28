@@ -733,3 +733,26 @@ fn blit_color(
         }
     }
 }
+
+#[cfg(test)]
+mod blend_alpha_tests {
+    use super::*;
+
+    /// Opaque destinations stay opaque and transparent sources are
+    /// identity, alpha byte included: the invariants `window.opacity`
+    /// rides on now that the framebuffer carries real alpha.
+    #[test]
+    fn blend_over_propagates_alpha() {
+        let dst = 0xff20_4060;
+        for sa in 0..=255u8 {
+            let src = [sa / 2, sa / 3, sa, sa];
+            assert_eq!(blend_over(src, dst) >> 24, 0xff, "sa={sa}");
+        }
+        let translucent = 0x9912_3456;
+        assert_eq!(blend_over([0, 0, 0, 0], translucent), translucent);
+        // Porter-Duff source-over on the alpha channel.
+        let out = blend_over([0x40, 0x20, 0x10, 0x80], translucent);
+        let expected = 0x80u32 + (0x99 * (255 - 0x80) + 127) / 255;
+        assert_eq!(out >> 24, expected);
+    }
+}

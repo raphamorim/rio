@@ -2052,3 +2052,23 @@ fn blit_text_color(
         }
     }
 }
+
+#[cfg(test)]
+mod blend_alpha_tests {
+    use super::{blend_premul_over, pack_opaque};
+
+    /// UI text overlays must not punch translucency holes into an
+    /// opaque window, and must keep the window-opacity alpha intact
+    /// where they only partially cover a pixel.
+    #[test]
+    fn blend_premul_over_propagates_alpha() {
+        assert_eq!(pack_opaque(1, 2, 3) >> 24, 0xff);
+        let dst = 0xff10_2030;
+        assert_eq!(blend_premul_over([0x30, 0x30, 0x30, 0x60], dst) >> 24, 0xff);
+        let translucent = 0x8010_2030;
+        assert_eq!(blend_premul_over([0, 0, 0, 0], translucent), translucent);
+        let out = blend_premul_over([0x20, 0x20, 0x20, 0x40], translucent);
+        let expected = 0x40u32 + (0x80 * (255 - 0x40) + 127) / 255;
+        assert_eq!(out >> 24, expected);
+    }
+}

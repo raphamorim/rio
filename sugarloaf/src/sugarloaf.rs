@@ -126,6 +126,12 @@ pub struct SugarloafRenderer {
     pub backend: SugarloafBackend,
     pub font_features: Option<Vec<String>>,
     pub colorspace: Colorspace,
+    /// The window wants per-pixel alpha (`window.opacity < 1`). On wgpu
+    /// this prefers an adapter whose surface offers an alpha-carrying
+    /// composite mode: on Windows, DX12 HWND swapchains expose only
+    /// `Opaque`, while Vulkan exposes `PreMultiplied`, so which adapter
+    /// wgpu happens to pick decides whether transparency works at all.
+    pub prefer_alpha_capable_adapter: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -183,6 +189,7 @@ impl Default for SugarloafRenderer {
             backend: default_backend,
             font_features: None,
             colorspace: Colorspace::default(),
+            prefer_alpha_capable_adapter: false,
         }
     }
 }
