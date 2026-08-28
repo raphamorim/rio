@@ -540,31 +540,7 @@ fn premul(c: [u8; 4]) -> [u8; 4] {
     ]
 }
 
-#[inline]
-fn pack_opaque(r: u8, g: u8, b: u8) -> u32 {
-    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
-}
-
-/// Premultiplied source-over against a 0x00RRGGBB destination.
-#[inline]
-fn blend_over(src: [u8; 4], dst: u32) -> u32 {
-    let sa = src[3] as u32;
-    if sa == 0 {
-        return dst;
-    }
-    if sa == 255 {
-        return pack_opaque(src[0], src[1], src[2]);
-    }
-    let inv = 255 - sa;
-    let dr = (dst >> 16) & 0xff;
-    let dg = (dst >> 8) & 0xff;
-    let db = dst & 0xff;
-    // src is already premultiplied — add to attenuated dst.
-    let or = src[0] as u32 + (dr * inv + 127) / 255;
-    let og = src[1] as u32 + (dg * inv + 127) / 255;
-    let ob = src[2] as u32 + (db * inv + 127) / 255;
-    pack_opaque(or.min(255) as u8, og.min(255) as u8, ob.min(255) as u8)
-}
+use crate::premul::{blend_premul_over as blend_over, pack_opaque};
 
 #[allow(clippy::too_many_arguments)]
 fn fill_rect(

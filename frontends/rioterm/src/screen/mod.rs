@@ -165,26 +165,32 @@ impl Screen<'_> {
         let backend = if config.renderer.use_cpu {
             SugarloafBackend::Cpu
         } else {
+            // `wgpu_backend` (see build.rs): rioterm's own `wgpu`
+            // feature, or Windows, where sugarloaf and rio-backend get
+            // the feature through the target-specific dependency
+            // override so the wgpu code paths always exist. Without the
+            // Windows half, default builds there silently fall back to
+            // the CPU rasterizer.
             match config.renderer.backend {
                 // `Backend::Vulkan` from the user config means the
                 // native ash backend on Linux. Other OSes fall through
-                // to the wgpu Vulkan path when the `wgpu` feature is
-                // on; otherwise we degrade to CPU rasterizer.
+                // to the wgpu Vulkan path when wgpu is available;
+                // otherwise we degrade to CPU rasterizer.
                 #[cfg(target_os = "linux")]
                 Backend::Vulkan => SugarloafBackend::Vulkan,
-                #[cfg(all(not(target_os = "linux"), feature = "wgpu"))]
+                #[cfg(all(not(target_os = "linux"), wgpu_backend))]
                 Backend::Vulkan => SugarloafBackend::Wgpu(wgpu::Backends::VULKAN),
-                #[cfg(all(not(target_os = "linux"), not(feature = "wgpu")))]
+                #[cfg(all(not(target_os = "linux"), not(wgpu_backend)))]
                 Backend::Vulkan => SugarloafBackend::Cpu,
                 #[cfg(target_os = "macos")]
                 Backend::Metal => SugarloafBackend::Metal,
-                #[cfg(all(feature = "wgpu", target_arch = "wasm32"))]
+                #[cfg(all(wgpu_backend, target_arch = "wasm32"))]
                 Backend::Webgpu => SugarloafBackend::Wgpu(
                     wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
                 ),
-                #[cfg(all(feature = "wgpu", not(target_arch = "wasm32")))]
+                #[cfg(all(wgpu_backend, not(target_arch = "wasm32")))]
                 Backend::Webgpu => SugarloafBackend::Wgpu(wgpu::Backends::all()),
-                #[cfg(not(feature = "wgpu"))]
+                #[cfg(not(wgpu_backend))]
                 Backend::Webgpu => SugarloafBackend::Cpu,
             }
         };
@@ -193,6 +199,12 @@ impl Screen<'_> {
             backend,
             font_features: config.fonts.features.clone(),
             colorspace: config.window.colorspace.to_sugarloaf_colorspace(),
+            // The exact predicate the rest of the frontend uses: glass
+            // blur forces the window bg alpha to 0 regardless of opacity,
+            // so it needs an alpha-carrying surface exactly like
+            // `window.opacity < 1` does. Fixed at surface creation; a
+            // live-reloaded opacity change takes effect on restart.
+            prefer_alpha_capable_adapter: !window_should_be_opaque(config),
         };
 
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(
@@ -208,7 +220,7 @@ impl Screen<'_> {
             }
         };
 
-        #[cfg(feature = "wgpu")]
+        #[cfg(wgpu_backend)]
         sugarloaf.update_filters(config.renderer.filters.as_slice());
 
         let mut renderer = Renderer::new(config);
@@ -456,7 +468,10 @@ impl Screen<'_> {
         s.font_size = config.fonts.size;
         s.line_height = config.line_height;
 
-        #[cfg(feature = "wgpu")]
+        // `wgpu_backend`, not the bare feature: default Windows builds
+        // run the wgpu path too, and skipping this made `[renderer]
+        // filters` edits require a restart there.
+        #[cfg(wgpu_backend)]
         self.sugarloaf
             .update_filters(config.renderer.filters.as_slice());
 

@@ -38,6 +38,9 @@ pub struct Sugarloaf<'a> {
     pub graphics: Graphics,
     #[cfg(feature = "wgpu")]
     filters_brush: Option<FiltersBrush>,
+    /// One-shot notice that active filters defeat `window.opacity`.
+    #[cfg(feature = "wgpu")]
+    warned_filters_opacity: bool,
     /// Pixel data for standalone image textures, keyed by image key
     /// (`graphics::kitty_image_key` / `graphics::atlas_image_key`).
     pub image_data: rustc_hash::FxHashMap<u64, GraphicDataEntry>,
@@ -126,6 +129,12 @@ pub struct SugarloafRenderer {
     pub backend: SugarloafBackend,
     pub font_features: Option<Vec<String>>,
     pub colorspace: Colorspace,
+    /// The window wants per-pixel alpha (`window.opacity < 1`). On wgpu
+    /// this prefers an adapter whose surface offers an alpha-carrying
+    /// composite mode: on Windows, DX12 HWND swapchains expose only
+    /// `Opaque`, while Vulkan exposes `PreMultiplied`, so which adapter
+    /// wgpu happens to pick decides whether transparency works at all.
+    pub prefer_alpha_capable_adapter: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -183,6 +192,7 @@ impl Default for SugarloafRenderer {
             backend: default_backend,
             font_features: None,
             colorspace: Colorspace::default(),
+            prefer_alpha_capable_adapter: false,
         }
     }
 }
@@ -246,6 +256,8 @@ impl Sugarloaf<'_> {
             graphics: Graphics::default(),
             #[cfg(feature = "wgpu")]
             filters_brush: None,
+            #[cfg(feature = "wgpu")]
+            warned_filters_opacity: false,
             image_data: rustc_hash::FxHashMap::default(),
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
             font_cache,
@@ -1144,7 +1156,31 @@ impl Sugarloaf<'_> {
 
         {
             let load = if let Some(background_color) = self.background_color {
-                wgpu::LoadOp::Clear(background_color.into())
+                // The grid bg pass emits `(0,0,0,0)` for default-bg cells (see
+                // `cell_bg` in `frontends/rioterm/src/grid_emit.rs`) and blends
+                // premultiplied-over the cleared color, so the framebuffer alpha
+                // for any cell that didn't get an explicit bg ends up = the clear
+                // alpha. When the user sets `window.opacity < 1` we want the
+                // compositor to treat that cleared color as a translucent overlay
+                // over the desktop.
+                //
+                // Only a surface in `PreMultiplied` mode (DWM via the Windows
+                // wgpu Vulkan path, Wayland) reads the RGB as already
+                // multiplied by alpha, so only there may the clear be
+                // premultiplied. `PostMultiplied` wants the straight value,
+                // and everything else (`Opaque`, and `Auto` resolving to it)
+                // ignores the alpha byte entirely: premultiplying would just
+                // darken the window with no transparency in return.
+                let clear = match ctx.alpha_mode {
+                    wgpu::CompositeAlphaMode::PreMultiplied => wgpu::Color {
+                        r: background_color.r * background_color.a,
+                        g: background_color.g * background_color.a,
+                        b: background_color.b * background_color.a,
+                        a: background_color.a,
+                    },
+                    _ => background_color.into(),
+                };
+                wgpu::LoadOp::Clear(clear)
             } else {
                 wgpu::LoadOp::Load
             };
@@ -1201,6 +1237,19 @@ impl Sugarloaf<'_> {
         }
 
         if let Some(ref mut filters_brush) = self.filters_brush {
+            // The filter chain's final pass writes with blending disabled,
+            // so whatever alpha the shader outputs (1.0 for CRT shaders)
+            // replaces the frame's: the window snaps back to opaque. Say
+            // so once instead of letting the two settings cancel silently.
+            if !self.warned_filters_opacity
+                && self.background_color.is_some_and(|c| c.a < 1.0)
+            {
+                self.warned_filters_opacity = true;
+                tracing::warn!(
+                    "[renderer] filters overwrite the frame's alpha channel; \
+                     window.opacity < 1 has no effect while filters are active"
+                );
+            }
             filters_brush.render(ctx, &mut encoder, &frame.texture, &frame.texture);
         }
         ctx.queue.submit(Some(encoder.finish()));

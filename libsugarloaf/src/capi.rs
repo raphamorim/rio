@@ -199,6 +199,7 @@ pub unsafe extern "C" fn sl_new(
             backend: default_backend(),
             font_features: None,
             colorspace: colorspace_from_u32(colorspace),
+            ..Default::default()
         };
         // The host rasterizes its own glyphs into the atlas, so this font
         // library only backs sugarloaf's (unused-by-us) UI text. A default
