@@ -1075,9 +1075,23 @@ mod blend_alpha_tests {
             let dst: Vec<u32> = (0..8).map(|_| lcg(&mut seed)).collect();
             let scalar: Vec<u32> = dst.iter().map(|&d| blend_over_swar(src, d)).collect();
 
+            // The var-src kernel is documented branchless-correct for the
+            // extreme alphas too, so it is checked before the early-out
+            // skip the const-src kernels rely on their fill paths for.
+            let var = blend_over_simd_var_src_x4(
+                u32x4::splat(src),
+                u32x4::new(dst[..4].try_into().unwrap()),
+            )
+            .to_array();
+            assert_eq!(
+                &var[..],
+                &scalar[..4],
+                "var_src disagrees for src={src:08x}"
+            );
+
             let sa = (src >> 24) & 0xff;
-            // The vector kernels skip the scalar early-outs; those alphas
-            // are handled before dispatch in the fill paths.
+            // The const-src kernels skip the scalar early-outs; those
+            // alphas are handled before dispatch in the fill paths.
             if sa == 0 || sa == 255 {
                 continue;
             }
@@ -1098,17 +1112,6 @@ mod blend_alpha_tests {
             )
             .to_array();
             assert_eq!(&x4[..], &scalar[..4], "x4 disagrees for src={src:08x}");
-
-            let var = blend_over_simd_var_src_x4(
-                u32x4::splat(src),
-                u32x4::new(dst[..4].try_into().unwrap()),
-            )
-            .to_array();
-            assert_eq!(
-                &var[..],
-                &scalar[..4],
-                "var_src disagrees for src={src:08x}"
-            );
         }
     }
 
