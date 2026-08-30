@@ -14,6 +14,7 @@ objc2 = "0.5.2"
 objc2-foundation = { version = "0.2.2", features = ["NSString"] }
 objc2-user-notifications = { version = "0.2.2", features = [
     "UNUserNotificationCenter",
+    "UNNotification",
     "UNNotificationContent",
     "UNNotificationRequest",
     "UNNotificationTrigger",
