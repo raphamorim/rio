@@ -225,6 +225,7 @@ impl Renderer {
                 named_colors.tabs_active,
                 config.navigation.hide_if_single,
                 config.navigation.max_tab_width,
+                config.navigation.draws_window_buttons(),
             ))
         } else {
             None
