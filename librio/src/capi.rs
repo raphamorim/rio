@@ -58,6 +58,11 @@ pub const RIO_SELECTION_WORD: u8 = 1;
 pub const RIO_SELECTION_LINE: u8 = 2;
 pub const RIO_SELECTION_BLOCK: u8 = 3;
 
+pub const RIO_CURSOR_BLOCK: u8 = 0;
+pub const RIO_CURSOR_UNDERLINE: u8 = 1;
+pub const RIO_CURSOR_BEAM: u8 = 2;
+pub const RIO_CURSOR_HIDDEN: u8 = 3;
+
 #[repr(C)]
 pub struct rio_action_s {
     pub tag: u32,
@@ -588,6 +593,25 @@ pub unsafe extern "C" fn rio_surface_id(surface: *const Surface) -> usize {
             return 0;
         }
         unsafe { &*surface }.id()
+    }))
+    .unwrap_or(0)
+}
+
+/// Pid of the spawned program (a session leader), 0 without a PTY.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_child_pid(surface: *const Surface) -> u32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return 0;
+        }
+        #[cfg(feature = "pty")]
+        {
+            unsafe { &*surface }.child_pid()
+        }
+        #[cfg(not(feature = "pty"))]
+        {
+            0
+        }
     }))
     .unwrap_or(0)
 }
@@ -1465,6 +1489,33 @@ pub unsafe extern "C" fn rio_render_state_cursor(
         }
     }))
     .unwrap_or(rio_cursor_s { line: 0, column: 0 })
+}
+
+/// The cursor's visual shape for this frame, as RIO_CURSOR_*: the program's
+/// DECSCUSR choice (block / underline / beam), or RIO_CURSOR_HIDDEN when it
+/// hid the cursor (DECTCEM) or the view is scrolled into history. Hosts that
+/// paint the cursor themselves read this next to `rio_render_state_cursor`.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_cursor_shape(
+    state: *const RenderState,
+) -> u8 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return RIO_CURSOR_HIDDEN;
+        }
+        let state = unsafe { &*state };
+        if !state.cursor_visible() {
+            return RIO_CURSOR_HIDDEN;
+        }
+        use rio_vt::ansi::CursorShape;
+        match state.cursor_shape() {
+            CursorShape::Block => RIO_CURSOR_BLOCK,
+            CursorShape::Underline => RIO_CURSOR_UNDERLINE,
+            CursorShape::Beam => RIO_CURSOR_BEAM,
+            CursorShape::Hidden => RIO_CURSOR_HIDDEN,
+        }
+    }))
+    .unwrap_or(RIO_CURSOR_HIDDEN)
 }
 
 /// This frame's dynamic (OSC 10/11/12) default colors. `which`:

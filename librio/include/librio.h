@@ -64,6 +64,13 @@ typedef size_t rio_surface_id_t;
 #define RIO_SELECTION_LINE 2u
 #define RIO_SELECTION_BLOCK 3u
 
+/* rio_render_state_cursor_shape: DECSCUSR shape, or HIDDEN when the program
+   hid the cursor (DECTCEM) or the view is scrolled into history. */
+#define RIO_CURSOR_BLOCK 0u
+#define RIO_CURSOR_UNDERLINE 1u
+#define RIO_CURSOR_BEAM 2u
+#define RIO_CURSOR_HIDDEN 3u
+
 #define RIO_MOD_SHIFT (1u << 0)
 #define RIO_MOD_CTRL (1u << 1)
 #define RIO_MOD_ALT (1u << 2)
@@ -203,6 +210,10 @@ rio_surface_t *rio_surface_new(rio_engine_t *engine,
                                const rio_surface_config_s *config);
 void rio_surface_free(rio_surface_t *surface);
 rio_surface_id_t rio_surface_id(const rio_surface_t *surface);
+/* Pid of the spawned program. It is a session leader, so killpg() on it
+ * reaches everything the shell started; rio_surface_free only hangs up the
+ * pty and signals this pid. 0 when the surface has no PTY. */
+uint32_t rio_surface_child_pid(const rio_surface_t *surface);
 
 /* Input entry points are callable from any thread. */
 void rio_surface_text(rio_surface_t *surface, const char *bytes, size_t len);
@@ -312,6 +323,8 @@ size_t rio_cluster_width(const uint32_t *codepoints, size_t len,
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
+/* RIO_CURSOR_*; see the defines. */
+uint8_t rio_render_state_cursor_shape(const rio_render_state_t *state);
 
 /* This frame's dynamic (OSC 10/11/12) default colors. `which`: 0 =
  * foreground, 1 = background, 2 = cursor. Writes the resolved RGB into
