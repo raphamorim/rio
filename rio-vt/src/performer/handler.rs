@@ -496,6 +496,12 @@ pub trait Handler {
 
 #[derive(Debug, Default)]
 struct ProcessorState {
+    /// Whether the parser should stop consuming input. Set when a BSU is
+    /// dispatched, so the bytes after it go to the sync buffer instead of
+    /// the parser; read by [`Parser::advance_until_terminated`] and reset
+    /// at the start of every advance call.
+    terminated: bool,
+
     /// Last processed character for repetition.
     preceding_char: Option<char>,
 
@@ -609,14 +615,32 @@ impl Processor {
             // the deadline itself and never reach this branch.
             if self.state.sync_state.timeout.expired() {
                 self.stop_sync(handler);
-                let mut performer = Performer::new(&mut self.state, handler);
-                self.parser.advance(&mut performer, bytes);
+                self.advance_normal(handler, bytes);
             } else {
                 self.advance_sync(handler, bytes);
             }
         } else {
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, bytes);
+            self.advance_normal(handler, bytes);
+        }
+    }
+
+    /// Process bytes outside a synchronized update.
+    ///
+    /// The parser stops right after dispatching a BSU and hands back
+    /// everything after it, so those bytes are buffered rather than shown
+    /// regardless of where in the chunk the BSU sat. An ESU split across
+    /// reads is then found by the sync scan the moment its last byte
+    /// arrives.
+    #[inline]
+    fn advance_normal<H>(&mut self, handler: &mut H, bytes: &[u8])
+    where
+        H: Handler,
+    {
+        let mut performer = Performer::<_, false>::new(&mut self.state, handler);
+        let processed = self.parser.advance_until_terminated(&mut performer, bytes);
+        if processed != bytes.len() {
+            // advance_sync is #[cold]; a cut only happens on a BSU.
+            self.advance_sync(handler, &bytes[processed..]);
         }
     }
 
@@ -641,7 +665,7 @@ impl Processor {
         // automatically during the synchronized update.
         let buffer = mem::take(&mut self.state.sync_state.buffer);
         let offset = bsu_offset.unwrap_or(buffer.len());
-        let mut performer = Performer::new(&mut self.state, handler);
+        let mut performer = Performer::<_, true>::new(&mut self.state, handler);
         self.parser.advance(&mut performer, &buffer[..offset]);
         self.state.sync_state.buffer = buffer;
 
@@ -677,23 +701,32 @@ impl Processor {
         self.state.sync_state.buffer.len()
     }
 
-    /// Process a new byte during a synchronized update.
+    /// Process new bytes during a synchronized update.
     #[cold]
-    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8])
+    fn advance_sync<H>(&mut self, handler: &mut H, mut bytes: &[u8])
     where
         H: Handler,
     {
-        // Advance sync parser or stop sync if we'd exceed the maximum buffer size.
-        if self.state.sync_state.buffer.len() + bytes.len() >= SYNC_BUFFER_SIZE - 1 {
-            // Terminate the synchronized update.
-            self.stop_sync_internal(handler, None);
+        loop {
+            // Advance sync parser or stop sync if we'd exceed the maximum buffer size.
+            if self.state.sync_state.buffer.len() + bytes.len() >= SYNC_BUFFER_SIZE - 1 {
+                // Terminate the synchronized update.
+                self.stop_sync_internal(handler, None);
 
-            // Just parse the bytes normally.
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, bytes);
-        } else {
-            self.state.sync_state.buffer.extend(bytes);
-            self.advance_sync_csi(handler, bytes.len());
+                // Just parse the bytes normally; a new BSU in them starts
+                // over with the buffer cleared, so this cannot loop again.
+                let mut performer = Performer::<_, false>::new(&mut self.state, handler);
+                let processed =
+                    self.parser.advance_until_terminated(&mut performer, bytes);
+                if processed == bytes.len() {
+                    return;
+                }
+                bytes = &bytes[processed..];
+            } else {
+                self.state.sync_state.buffer.extend(bytes);
+                self.advance_sync_csi(handler, bytes.len());
+                return;
+            }
         }
     }
 
@@ -743,18 +776,24 @@ impl Processor {
     }
 }
 
-struct Performer<'a, H: Handler> {
+/// `REPLAY` distinguishes the sync-buffer replay instantiation: replayed
+/// BSUs belong to the update being flushed, so [`Perform::terminated`]
+/// stays `false` there. A const parameter rather than a runtime flag so
+/// each parser-loop monomorphization keeps exactly one caller per method
+/// and the run helpers stay fully inlined on the PTY hot path.
+struct Performer<'a, H: Handler, const REPLAY: bool = false> {
     state: &'a mut ProcessorState,
     handler: &'a mut H,
 }
 
-impl<'a, H: Handler + 'a> Performer<'a, H> {
+impl<'a, H: Handler + 'a, const REPLAY: bool> Performer<'a, H, REPLAY> {
     /// Create a performer.
     #[inline]
     pub fn new<'b>(
         state: &'b mut ProcessorState,
         handler: &'b mut H,
-    ) -> Performer<'b, H> {
+    ) -> Performer<'b, H, REPLAY> {
+        state.terminated = false;
         Performer { state, handler }
     }
 
@@ -973,7 +1012,12 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
     }
 }
 
-impl<U: Handler> Perform for Performer<'_, U> {
+impl<U: Handler, const REPLAY: bool> Perform for Performer<'_, U, REPLAY> {
+    #[inline(always)]
+    fn terminated(&self) -> bool {
+        !REPLAY && self.state.terminated
+    }
+
     fn print(&mut self, c: char) {
         self.handler.input(c);
         self.state.preceding_char = Some(c);
@@ -1043,6 +1087,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
                             .sync_state
                             .timeout
                             .set_timeout(SYNC_UPDATE_TIMEOUT);
+                        self.state.terminated = true;
                         self.handler
                             .set_private_mode(NamedPrivateMode::SyncUpdate.into());
                     }
@@ -1354,6 +1399,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
                             .sync_state
                             .timeout
                             .set_timeout(SYNC_UPDATE_TIMEOUT);
+                        self.state.terminated = true;
                     }
 
                     handler.set_private_mode(PrivateMode::new(param))
@@ -2460,6 +2506,107 @@ mod tests {
         assert_eq!(handler.printed, "two");
         assert!(processor.sync_timeout().sync_timeout().is_none());
         assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// A BSU partway through a chunk hands everything after it to the
+    /// sync buffer, so an ESU split across reads closes the update the
+    /// moment its last byte arrives: no timeout, no further output needed.
+    #[test]
+    fn sync_update_mid_chunk_bsu_buffers_the_tail() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"shown\x1b[?2026hhidden\x1b[?20");
+        assert_eq!(handler.printed, "shown");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+        assert_eq!(processor.sync_bytes_count(), b"hidden\x1b[?20".len());
+
+        processor.advance(&mut handler, b"26l");
+        assert_eq!(handler.printed, "shownhidden");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// The DCS form of the same split. The parser stops at the hook (the
+    /// `s` final byte), so the update's own string terminator is buffered
+    /// and replayed through the same parser, which still completes it.
+    #[test]
+    fn sync_update_dcs_mid_chunk_bsu_and_split_esu() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"shown\x1bP=1s\x1b\\hidden\x1bP=2");
+        assert_eq!(handler.printed, "shown");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+
+        processor.advance(&mut handler, b"s\x1b\\after");
+        assert_eq!(handler.printed, "shownhiddenafter");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// Termination is dispatch-driven, so a BSU that sets several private
+    /// modes at once still cuts the chunk; a byte-pattern scan for the
+    /// exact `\e[?2026h` form would miss it.
+    #[test]
+    fn sync_update_multi_param_bsu_mid_chunk() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"shown\x1b[?1049;2026hhidden\x1b[?20");
+        assert_eq!(handler.printed, "shown");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+        assert_eq!(processor.sync_bytes_count(), b"hidden\x1b[?20".len());
+
+        processor.advance(&mut handler, b"26l");
+        assert_eq!(handler.printed, "shownhidden");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+    }
+
+    /// A BSU itself split across reads still cuts after its final byte:
+    /// the parser state spans the boundary, so no lookback is needed.
+    #[test]
+    fn sync_update_split_bsu_with_tail_in_second_chunk() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"shown\x1b[?20");
+        processor.advance(&mut handler, b"26hhidden\x1b[?20");
+        assert_eq!(handler.printed, "shown");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+        assert_eq!(processor.sync_bytes_count(), b"hidden\x1b[?20".len());
+
+        processor.advance(&mut handler, b"26l");
+        assert_eq!(handler.printed, "shownhidden");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// Every chunking of the same stream must produce the same result:
+    /// nothing until the ESU's final byte, then everything at once.
+    #[test]
+    fn sync_update_chunking_is_equivalent() {
+        for stream in [
+            b"shown\x1b[?2026hhidden\x1b[?2026l".as_slice(),
+            b"shown\x1bP=1s\x1b\\hidden\x1bP=2s\x1b\\".as_slice(),
+        ] {
+            for chunk_len in 1..stream.len() {
+                let mut handler = SyncHandler::default();
+                let mut processor = Processor::default();
+
+                let (head, tail) = stream.split_at(stream.len() - 1);
+                for chunk in head.chunks(chunk_len) {
+                    processor.advance(&mut handler, chunk);
+                }
+                assert_eq!(handler.printed, "shown", "chunk_len={chunk_len}");
+                assert!(processor.sync_timeout().sync_timeout().is_some());
+
+                processor.advance(&mut handler, tail);
+                assert_eq!(handler.printed, "shownhidden", "chunk_len={chunk_len}");
+                assert!(processor.sync_timeout().sync_timeout().is_none());
+                assert_eq!(processor.sync_bytes_count(), 0);
+            }
+        }
     }
 
     #[test]
