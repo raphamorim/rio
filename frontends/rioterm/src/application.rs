@@ -2035,13 +2035,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         if route.window.screen.context_manager.current().ime.preedit()
                             != preedit.as_ref()
                         {
-                            route
-                                .window
-                                .screen
-                                .context_manager
-                                .current_mut()
-                                .ime
-                                .set_preedit(preedit);
+                            let ctx = route.window.screen.context_manager.current_mut();
+                            ctx.ime.set_preedit(preedit);
+                            // Preedit doesn't touch terminal cells, but it
+                            // does change what gets drawn (the composed
+                            // text overlay + cursor style) — without this,
+                            // `Renderer::run`'s per-context dirty gate
+                            // skips the panel entirely and the composing
+                            // text never reaches the screen. Same
+                            // "UI overlay changed" case as the command
+                            // palette / search bar (see `set_dirty` doc).
+                            ctx.renderable_content.pending_update.set_dirty();
                             route.request_redraw();
                         }
                     }

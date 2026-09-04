@@ -155,12 +155,18 @@ fn cell_in_row_sel(row_sel: Option<RowSelection>, col: u16) -> bool {
 /// `HyperlinkHover` is rio-specific: same row-interval shape but the
 /// only visual is a forced underline (no bg/fg color change), used for
 /// the OSC 8 / regex-hint-on-hover affordance.
+///
+/// `Preedit` is the IME composition span (e.g. the romaji/pinyin typed
+/// before a candidate is committed). Same forced-underline-only
+/// treatment as `HyperlinkHover` — it marks in-progress input without
+/// recoloring the cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HintTag {
     Match,
     Focused,
     HyperlinkHover,
     Label,
+    Preedit,
 }
 
 /// Per-row hint interval, closed on both ends. Several `RowHint`s may
@@ -343,12 +349,77 @@ pub fn overlay_hint_labels(
     out
 }
 
+/// Style id stamped on overlaid IME preedit cells. Distinct from
+/// `HINT_LABEL_STYLE_ID` (also outside the interning range) so a
+/// preedit run never gets shaped together with a hint-label run, and
+/// so `build_row_fg`'s run-break-on-style-id-change always splits at
+/// the preedit boundary even when the surrounding text happens to
+/// share the default style.
+const PREEDIT_STYLE_ID: u16 = u16::MAX - 1;
+
+/// Splice the IME composition string into the cursor's row so it is
+/// actually visible while composing (e.g. the pinyin typed before a
+/// candidate is selected), instead of only showing up in the IME's own
+/// candidate popup. Mirrors `overlay_hint_labels`: cells are
+/// overwritten in a cloned row/style buffer, and a `RowHint` marks the
+/// span so `emit_underlines` draws a plain underline under it (see
+/// `HintTag::Preedit`).
+///
+/// One column per `char` — correct for the common case (romaji /
+/// pinyin composition is ASCII) and good enough for a visible-but-not
+/// pixel-perfect indicator for wide preedit text; text run past the
+/// end of the row is clipped rather than wrapped.
+pub fn overlay_preedit_text(
+    row: &Row<Square>,
+    row_styles: &[Style],
+    text: &str,
+    start_col: u16,
+    row_hints: &mut Vec<RowHint>,
+) -> Option<(Row<Square>, Vec<Style>)> {
+    let width = row.len();
+    let mut col = start_col as usize;
+    if text.is_empty() || col >= width {
+        return None;
+    }
+
+    let mut out: Option<(Row<Square>, Vec<Style>)> = None;
+    let start_col = col;
+    for ch in text.chars() {
+        if col >= width {
+            break;
+        }
+        let (target, styles) = out.get_or_insert_with(|| {
+            let mut styles = row_styles.to_vec();
+            styles.resize(width, Style::default());
+            (row.clone(), styles)
+        });
+        let mut sq = Square::from_char(ch);
+        sq.set_style_id(PREEDIT_STYLE_ID);
+        target[Column(col)] = sq;
+        styles[col] = Style::default();
+        col += 1;
+    }
+
+    if out.is_some() {
+        row_hints.insert(
+            0,
+            RowHint {
+                lo: start_col as u16,
+                hi: (col - 1) as u16,
+                tag: HintTag::Preedit,
+            },
+        );
+    }
+    out
+}
+
 #[inline]
 fn cell_in_row_hints(row_hints: &[RowHint], col: u16) -> Option<HintTag> {
-    // Skip HyperlinkHover for the color paths — it only contributes
-    // an underline (handled separately in `emit_underlines`).
+    // Skip HyperlinkHover/Preedit for the color paths — they only
+    // contribute an underline (handled separately in
+    // `emit_underlines`).
     for rh in row_hints {
-        if rh.tag == HintTag::HyperlinkHover {
+        if matches!(rh.tag, HintTag::HyperlinkHover | HintTag::Preedit) {
             continue;
         }
         if col >= rh.lo && col <= rh.hi {
@@ -359,12 +430,15 @@ fn cell_in_row_hints(row_hints: &[RowHint], col: u16) -> Option<HintTag> {
 }
 
 /// Whether a cell should receive a forced underline from a hovered
-/// hyperlink / hint, regardless of its own SGR style flags.
+/// hyperlink / hint / IME preedit span, regardless of its own SGR
+/// style flags.
 #[inline]
 fn cell_in_hover_underline(row_hints: &[RowHint], col: u16) -> bool {
-    row_hints
-        .iter()
-        .any(|rh| rh.tag == HintTag::HyperlinkHover && col >= rh.lo && col <= rh.hi)
+    row_hints.iter().any(|rh| {
+        matches!(rh.tag, HintTag::HyperlinkHover | HintTag::Preedit)
+            && col >= rh.lo
+            && col <= rh.hi
+    })
 }
 
 /// Foreground for a hint-matched cell. Mirrors `cell_fg_selected` but
@@ -381,9 +455,10 @@ fn cell_fg_hinted<P: GridPalette>(tag: HintTag, palette: &P) -> [u8; 4] {
             normalized_to_u8(palette.named_colors().search_match_foreground)
         }
         HintTag::Label => normalized_to_u8(palette.named_colors().hint_foreground),
-        // Hover doesn't change fg color; defensive — `cell_in_row_hints`
-        // already filters this tag out, so this arm shouldn't fire.
-        HintTag::HyperlinkHover => [0, 0, 0, 0],
+        // Hover/Preedit don't change fg color; defensive —
+        // `cell_in_row_hints` already filters these tags out, so
+        // these arms shouldn't fire.
+        HintTag::HyperlinkHover | HintTag::Preedit => [0, 0, 0, 0],
     }
 }
 
@@ -1119,7 +1194,9 @@ pub fn build_row_bg<P: GridPalette>(
     // strip the per-cell `cell_in_row_sel` / `cell_in_row_hints`
     // checks and just walk cells.
     let has_sel = row_sel.is_some();
-    let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
+    let has_color_hints = row_hints
+        .iter()
+        .any(|rh| !matches!(rh.tag, HintTag::HyperlinkHover | HintTag::Preedit));
     if !has_sel && !has_color_hints {
         bg_scratch.reserve(cols);
         for x in 0..cols {
@@ -1168,10 +1245,12 @@ pub fn build_row_bg<P: GridPalette>(
                     HintTag::Match => match_bg
                         .unwrap_or_else(|| cell_bg(sq, style, palette, term_colors)),
                     HintTag::Label => cell_bg(sq, style, palette, term_colors),
-                    // `cell_in_row_hints` filters HyperlinkHover out, but
-                    // make the match exhaustive so a future caller can't
-                    // accidentally hit a panic.
-                    HintTag::HyperlinkHover => cell_bg(sq, style, palette, term_colors),
+                    // `cell_in_row_hints` filters HyperlinkHover/Preedit
+                    // out, but make the match exhaustive so a future
+                    // caller can't accidentally hit a panic.
+                    HintTag::HyperlinkHover | HintTag::Preedit => {
+                        cell_bg(sq, style, palette, term_colors)
+                    }
                 }
             } else {
                 cell_bg(sq, style, palette, term_colors)
@@ -1751,7 +1830,9 @@ pub fn build_row_fg<P: GridPalette>(
     // `cell_in_row_sel` + `cell_in_row_hints` calls per glyph when
     // the row has no selection / no color-changing hints.
     let has_sel = row_sel.is_some();
-    let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
+    let has_color_hints = row_hints
+        .iter()
+        .any(|rh| !matches!(rh.tag, HintTag::HyperlinkHover | HintTag::Preedit));
     let needs_per_cell_check = has_sel || has_color_hints;
     // Consulted in the per-cell sprite hook and the run-extension break.
     let use_drawable_chars = palette.use_drawable_chars();
