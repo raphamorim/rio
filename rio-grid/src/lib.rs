@@ -388,15 +388,21 @@ pub fn overlay_preedit_text(
         if col >= width {
             break;
         }
-        let (target, styles) = out.get_or_insert_with(|| {
-            let mut styles = row_styles.to_vec();
-            styles.resize(width, Style::default());
-            (row.clone(), styles)
-        });
+        let target = &mut out
+            .get_or_insert_with(|| {
+                let mut styles = row_styles.to_vec();
+                styles.resize(width, Style::default());
+                (row.clone(), styles)
+            })
+            .0;
         let mut sq = Square::from_char(ch);
         sq.set_style_id(PREEDIT_STYLE_ID);
         target[Column(col)] = sq;
-        styles[col] = Style::default();
+        // The per-cell style (`out.1`, cloned from `row_styles` above)
+        // is left untouched — resetting it would recolor the cell
+        // (e.g. composing over colored prompt text) even though
+        // `HintTag::Preedit` is meant to be underline-only,
+        // same as `HyperlinkHover`.
         col += 1;
     }
 

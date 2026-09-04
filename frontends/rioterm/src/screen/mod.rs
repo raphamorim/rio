@@ -4226,34 +4226,36 @@ impl Screen<'_> {
                 // cells, so it never generates PTY/UI damage and the
                 // gate above would otherwise never pick the cursor
                 // row up. Force it in directly: mark that row dirty
-                // while composing so `overlay_preedit_text` runs, and
-                // once more right after composing ends without a
-                // commit (e.g. Escape cancels it) so the overlay gets
-                // erased and the row falls back to its real terminal
-                // content.
+                // while composing so `overlay_preedit_text` runs.
                 let prev_preedit_row = preedit_rows.get(route_id).copied();
-                let force_preedit_row = if p.preedit_text.is_some() {
-                    preedit_rows.insert(*route_id, p.cursor_row);
-                    Some(p.cursor_row)
+                let current_preedit_row =
+                    p.preedit_text.is_some().then_some(p.cursor_row);
+                if let Some(row) = current_preedit_row {
+                    preedit_rows.insert(*route_id, row);
                 } else {
                     preedit_rows.remove(route_id);
-                    prev_preedit_row
-                };
-                let rows_to_rebuild = match (rows_to_rebuild, force_preedit_row) {
-                    (RowsToRebuild::None, Some(row)) => {
-                        if let Some(r) = p.visible_rows.get_mut(row as usize) {
-                            r.dirty = true;
-                        }
-                        RowsToRebuild::Dirty
+                }
+                // The row that carried last frame's overlay but isn't
+                // the current one — composing ended without a commit
+                // (e.g. Escape), or the cursor moved to a different
+                // row mid-composition. Force it in too, once, so the
+                // stale overlay left over from last frame's
+                // `overlay_preedit_text` doesn't linger on screen.
+                let stale_preedit_row =
+                    prev_preedit_row.filter(|&prev| Some(prev) != current_preedit_row);
+
+                let mut rows_to_rebuild = rows_to_rebuild;
+                for row in [current_preedit_row, stale_preedit_row]
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Some(r) = p.visible_rows.get_mut(row as usize) {
+                        r.dirty = true;
                     }
-                    (mode, Some(row)) => {
-                        if let Some(r) = p.visible_rows.get_mut(row as usize) {
-                            r.dirty = true;
-                        }
-                        mode
+                    if matches!(rows_to_rebuild, RowsToRebuild::None) {
+                        rows_to_rebuild = RowsToRebuild::Dirty;
                     }
-                    (mode, None) => mode,
-                };
+                }
 
                 let cols = p.cols as usize;
                 let mut bg_scratch: Vec<rio_backend::sugarloaf::grid::CellBg> =
