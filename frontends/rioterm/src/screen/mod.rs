@@ -95,6 +95,15 @@ pub struct Screen<'screen> {
     last_close_press: Option<(std::time::Instant, f32)>,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
     pub grid_rasterizer: rio_grid::GridGlyphRasterizer,
+    /// Per-route cursor row that currently carries a spliced-in IME
+    /// preedit overlay (see `overlay_preedit_text`). An IME-only
+    /// update never touches terminal damage, so the normal
+    /// `RowsToRebuild` gate (driven by PTY/UI damage) wouldn't pick
+    /// the row up on its own; this lets the render loop force that
+    /// one row through even on an otherwise-Noop frame, both while
+    /// composing and once more to erase the overlay when composing
+    /// ends without a commit (e.g. Escape).
+    preedit_row: rustc_hash::FxHashMap<usize, u16>,
 }
 
 pub struct ChromePress {
@@ -347,6 +356,7 @@ impl Screen<'_> {
             last_close_press: None,
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: rio_grid::GridGlyphRasterizer::new(),
+            preedit_row: rustc_hash::FxHashMap::default(),
         })
     }
 
@@ -3965,6 +3975,12 @@ impl Screen<'_> {
                 /// configured shape so the user can tell IME is
                 /// taking input.
                 cursor_preedit: bool,
+                /// The IME composition string itself (e.g. the pinyin
+                /// typed before a candidate is selected), spliced into
+                /// the cursor's row so composing input is actually
+                /// visible in the grid rather than only in the IME's
+                /// own candidate popup. `None` when not composing.
+                preedit_text: Option<String>,
                 /// Resolved cursor color: OSC 12 wins, then config /
                 /// theme `cursor`.
                 /// `state.colors.cursor → config.cursor_color`
@@ -4096,6 +4112,11 @@ impl Screen<'_> {
                 let cursor_blink_visible =
                     !cursor_blinking || ctx.renderable_content.is_blinking_cursor_visible;
                 let cursor_preedit = ctx.ime.preedit().is_some();
+                let preedit_text = if is_active {
+                    ctx.ime.preedit().map(|p| p.text.clone())
+                } else {
+                    None
+                };
                 // OSC 12 wins; otherwise fall back to the named-color
                 // theme value. `Renderer::color`'s fallback (the
                 // indexed-color List) is not populated for the Cursor
@@ -4123,6 +4144,7 @@ impl Screen<'_> {
                     cursor_blinking,
                     cursor_blink_visible,
                     cursor_preedit,
+                    preedit_text,
                     cursor_color,
                     is_active,
                     damage,
@@ -4157,6 +4179,7 @@ impl Screen<'_> {
             )> = Vec::with_capacity(panels.len());
 
             let rasterizer = &mut self.grid_rasterizer;
+            let preedit_rows = &mut self.preedit_row;
             let renderer_ref = &self.renderer;
             for (route_id, grid) in self.grids.iter_mut() {
                 let Some(p) = panels.iter_mut().find(|p| p.route_id == *route_id) else {
@@ -4197,6 +4220,42 @@ impl Screen<'_> {
                         | rio_backend::event::TerminalDamage::Noop => RowsToRebuild::None,
                     }
                 };
+
+                // IME preedit (the pinyin/romaji typed before a
+                // candidate is committed) never touches terminal
+                // cells, so it never generates PTY/UI damage and the
+                // gate above would otherwise never pick the cursor
+                // row up. Force it in directly: mark that row dirty
+                // while composing so `overlay_preedit_text` runs.
+                let prev_preedit_row = preedit_rows.get(route_id).copied();
+                let current_preedit_row =
+                    p.preedit_text.is_some().then_some(p.cursor_row);
+                if let Some(row) = current_preedit_row {
+                    preedit_rows.insert(*route_id, row);
+                } else {
+                    preedit_rows.remove(route_id);
+                }
+                // The row that carried last frame's overlay but isn't
+                // the current one — composing ended without a commit
+                // (e.g. Escape), or the cursor moved to a different
+                // row mid-composition. Force it in too, once, so the
+                // stale overlay left over from last frame's
+                // `overlay_preedit_text` doesn't linger on screen.
+                let stale_preedit_row =
+                    prev_preedit_row.filter(|&prev| Some(prev) != current_preedit_row);
+
+                let mut rows_to_rebuild = rows_to_rebuild;
+                for row in [current_preedit_row, stale_preedit_row]
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Some(r) = p.visible_rows.get_mut(row as usize) {
+                        r.dirty = true;
+                    }
+                    if matches!(rows_to_rebuild, RowsToRebuild::None) {
+                        rows_to_rebuild = RowsToRebuild::Dirty;
+                    }
+                }
 
                 let cols = p.cols as usize;
                 let mut bg_scratch: Vec<rio_backend::sugarloaf::grid::CellBg> =
@@ -4281,6 +4340,27 @@ impl Screen<'_> {
                                 }
                             }
                             None => (row, row_styles),
+                        };
+                        let preedit_row;
+                        let preedit_styles;
+                        let (row, row_styles) = match p.preedit_text.as_deref() {
+                            Some(text) if (y as u16) == p.cursor_row => {
+                                match rio_grid::overlay_preedit_text(
+                                    row,
+                                    row_styles,
+                                    text,
+                                    p.cursor_col,
+                                    &mut hint_scratch,
+                                ) {
+                                    Some((r, styles)) => {
+                                        preedit_row = r;
+                                        preedit_styles = styles;
+                                        (&preedit_row, preedit_styles.as_slice())
+                                    }
+                                    None => (row, row_styles),
+                                }
+                            }
+                            _ => (row, row_styles),
                         };
                         rio_grid::build_row_bg(
                             row,
