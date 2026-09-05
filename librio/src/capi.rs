@@ -1496,9 +1496,7 @@ pub unsafe extern "C" fn rio_render_state_cursor(
 /// hid the cursor (DECTCEM) or the view is scrolled into history. Hosts that
 /// paint the cursor themselves read this next to `rio_render_state_cursor`.
 #[no_mangle]
-pub unsafe extern "C" fn rio_render_state_cursor_shape(
-    state: *const RenderState,
-) -> u8 {
+pub unsafe extern "C" fn rio_render_state_cursor_shape(state: *const RenderState) -> u8 {
     catch_unwind(AssertUnwindSafe(|| {
         if state.is_null() {
             return RIO_CURSOR_HIDDEN;
