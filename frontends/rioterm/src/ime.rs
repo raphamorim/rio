@@ -39,28 +39,42 @@ impl Ime {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+/// Where the IME put its caret, as the platform reported it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreeditCursor {
+    /// The IME asked for no visible caret. Wayland (`cursor_begin =
+    /// -1`) and Windows deliver this with non-empty text while the
+    /// user pages through conversion candidates; drawing a caret then
+    /// would contradict the IME's own UI.
+    Hidden,
+    /// Caret before the cluster containing this byte offset; offsets
+    /// at or past the end of the text mean end-of-text.
+    Byte(usize),
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct Preedit {
     /// The preedit text.
     pub text: String,
 
-    /// Byte offset of the IME caret into the preedit text.
+    /// The IME caret.
     ///
-    /// `None` means the caret is at the end of the text. Offsets that
-    /// don't land on a char boundary (macOS reports UTF-16 ranges that
-    /// can split a surrogate pair) are dropped rather than trusted —
-    /// slicing on one would panic downstream.
-    pub cursor_byte_offset: Option<usize>,
+    /// Byte offsets that don't land on a char boundary (macOS reports
+    /// UTF-16 ranges that can split a surrogate pair) snap to
+    /// end-of-text rather than being trusted — slicing on one would
+    /// panic downstream.
+    pub cursor: PreeditCursor,
 }
 
 impl Preedit {
-    pub fn new(text: String, cursor_byte_offset: Option<usize>) -> Self {
-        let cursor_byte_offset =
-            cursor_byte_offset.filter(|&offset| text.is_char_boundary(offset));
-        Self {
-            text,
-            cursor_byte_offset,
-        }
+    pub fn new(text: String, cursor: PreeditCursor) -> Self {
+        let cursor = match cursor {
+            PreeditCursor::Byte(offset) if !text.is_char_boundary(offset) => {
+                PreeditCursor::Byte(text.len())
+            }
+            other => other,
+        };
+        Self { text, cursor }
     }
 }
 
@@ -71,19 +85,22 @@ mod tests {
     #[test]
     fn preedit_new_rejects_invalid_byte_offset() {
         // Byte 1 is inside 啊's UTF-8 encoding: not a char boundary.
-        let preedit = Preedit::new("啊a".to_string(), Some(1));
-        assert!(preedit.cursor_byte_offset.is_none());
+        let preedit = Preedit::new("啊a".to_string(), PreeditCursor::Byte(1));
+        assert_eq!(preedit.cursor, PreeditCursor::Byte(4));
         // Boundary offsets survive, including one-past-the-end.
-        let preedit = Preedit::new("啊a".to_string(), Some(3));
-        assert_eq!(preedit.cursor_byte_offset, Some(3));
-        let preedit = Preedit::new("啊a".to_string(), Some(4));
-        assert_eq!(preedit.cursor_byte_offset, Some(4));
+        let preedit = Preedit::new("啊a".to_string(), PreeditCursor::Byte(3));
+        assert_eq!(preedit.cursor, PreeditCursor::Byte(3));
+        let preedit = Preedit::new("啊a".to_string(), PreeditCursor::Byte(4));
+        assert_eq!(preedit.cursor, PreeditCursor::Byte(4));
+        // A hidden caret stays hidden.
+        let preedit = Preedit::new("啊a".to_string(), PreeditCursor::Hidden);
+        assert_eq!(preedit.cursor, PreeditCursor::Hidden);
     }
 
     #[test]
     fn set_preedit_clears_on_none() {
         let mut ime = Ime::new();
-        ime.set_preedit(Some(Preedit::new("a".to_string(), Some(1))));
+        ime.set_preedit(Some(Preedit::new("a".to_string(), PreeditCursor::Byte(1))));
         assert!(ime.preedit().is_some());
         ime.set_preedit(None);
         assert!(ime.preedit().is_none());

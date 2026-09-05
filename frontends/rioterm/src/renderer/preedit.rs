@@ -19,14 +19,15 @@
 //!   thick underline (visible on the cursor-colored block), past the
 //!   end of the text as a beam on the following cell (visible on the
 //!   normal background). Both presentations exist because a beam drawn
-//!   in the cursor color on a cursor-colored block is invisible.
+//!   in the cursor color on a cursor-colored block is invisible. When
+//!   the IME reports a hidden caret (candidate paging), none renders.
 //!
 //! The caller decides visibility: the overlay is only built for the
 //! active panel and never while the viewport is scrolled into history
 //! (`display_offset != 0`), where the cursor row is off-screen and the
 //! anchor would lie.
 
-use crate::ime::Preedit;
+use crate::ime::{Preedit, PreeditCursor};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -47,6 +48,8 @@ pub enum PreeditCaret {
     OnCell(usize),
     /// Caret one past the composition: beam on that (non-block) cell.
     PastEnd(usize),
+    /// The IME asked for no caret (candidate paging): draw none.
+    Hidden,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -99,13 +102,14 @@ impl PreeditLine {
 
         // The caret sits before the first cluster starting at or past
         // the byte offset (mid-cluster offsets snap to the cluster).
-        // No offset reported means end-of-text, the common IME idiom.
-        let mut caret_index = match preedit.cursor_byte_offset {
-            Some(offset) => segs
-                .iter()
-                .position(|seg| seg.byte_start >= offset)
-                .unwrap_or(segs.len()),
-            None => segs.len(),
+        // A hidden caret (candidate paging) stays hidden.
+        let mut caret_index = match preedit.cursor {
+            PreeditCursor::Hidden => None,
+            PreeditCursor::Byte(offset) => Some(
+                segs.iter()
+                    .position(|seg| seg.byte_start >= offset)
+                    .unwrap_or(segs.len()),
+            ),
         };
 
         // Wider than the row: drop leading clusters, keeping the tail
@@ -118,7 +122,7 @@ impl PreeditLine {
             total -= segs.remove(0).width;
             dropped += 1;
         }
-        caret_index = caret_index.saturating_sub(dropped);
+        caret_index = caret_index.map(|index| index.saturating_sub(dropped));
         if total > columns {
             // A single cluster wider than the grid; nothing sane to draw.
             return None;
@@ -129,9 +133,12 @@ impl PreeditLine {
 
         let mut cells = Vec::with_capacity(total);
         let mut clusters = Vec::with_capacity(segs.len());
-        let mut caret = None;
+        let mut caret = match caret_index {
+            Some(_) => None,
+            None => Some(PreeditCaret::Hidden),
+        };
         for (i, seg) in segs.iter().enumerate() {
-            if i == caret_index {
+            if caret_index == Some(i) {
                 caret = Some(PreeditCaret::OnCell(start_col + cells.len()));
             }
             cells.push(PreeditCell::Start(clusters.len() as u16));
@@ -186,6 +193,16 @@ impl PreeditLine {
     pub fn end_col(&self) -> usize {
         self.start_col + self.cells.len()
     }
+
+    /// Column the OS candidate popup should anchor to: the caret,
+    /// or the last composition cell when the caret is hidden.
+    #[inline]
+    pub fn popup_anchor_col(&self) -> usize {
+        match self.caret {
+            PreeditCaret::OnCell(col) | PreeditCaret::PastEnd(col) => col,
+            PreeditCaret::Hidden => self.end_col().saturating_sub(1),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -193,7 +210,9 @@ mod tests {
     use super::*;
 
     fn preedit(text: &str, caret: Option<usize>) -> Preedit {
-        Preedit::new(text.to_string(), caret)
+        // `None` = end-of-text, the common IME idiom while composing.
+        let cursor = PreeditCursor::Byte(caret.unwrap_or(text.len()));
+        Preedit::new(text.to_string(), cursor)
     }
 
     #[test]
@@ -283,6 +302,20 @@ mod tests {
         // first visible cluster.
         let line = PreeditLine::new(&preedit(&text, Some(0)), 0, 0, 80).unwrap();
         assert_eq!(line.caret, PreeditCaret::OnCell(0));
+    }
+
+    #[test]
+    fn hidden_caret_draws_no_caret() {
+        // Wayland/Windows report a hidden caret while the user pages
+        // through candidates; no caret may render then.
+        let p = Preedit::new("日本語".to_string(), PreeditCursor::Hidden);
+        let line = PreeditLine::new(&p, 0, 0, 80).unwrap();
+        assert_eq!(line.caret, PreeditCaret::Hidden);
+        assert_eq!(line.popup_anchor_col(), 5);
+        // Cropping keeps it hidden too.
+        let long = Preedit::new("あ".repeat(50), PreeditCursor::Hidden);
+        let line = PreeditLine::new(&long, 0, 0, 80).unwrap();
+        assert_eq!(line.caret, PreeditCaret::Hidden);
     }
 
     #[test]

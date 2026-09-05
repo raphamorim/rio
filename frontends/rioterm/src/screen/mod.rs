@@ -4240,7 +4240,12 @@ impl Screen<'_> {
                             .preedit_line
                             .as_ref()
                             .filter(|line| line.row == y)
-                            .map(|line| crate::grid_emit::PreeditRow { line });
+                            .map(|line| crate::grid_emit::PreeditRow {
+                                line,
+                                block_bg: crate::grid_emit::normalized_to_u8(
+                                    p.cursor_color,
+                                ),
+                            });
                         crate::grid_emit::build_row_bg(
                             row,
                             cols,
@@ -4578,6 +4583,29 @@ impl Screen<'_> {
         let layout = current_item.val.dimension;
         let cursor_pos = current_item.val.renderable_content.cursor.state.pos;
 
+        // While composing, the candidate popup follows the IME caret,
+        // not the terminal cursor: the composition renders inline and
+        // can slide away from the cursor cell, and a popup opening
+        // tens of cells from the caret overlaps the freshly drawn
+        // text. Mirrors the layout the renderer uses (same inputs).
+        let content = &current_item.val.renderable_content;
+        let (anchor_row, anchor_col) = match self.ime.preedit().filter(|_| {
+            content.display_offset == 0 && content.columns > 0 && content.screen_lines > 0
+        }) {
+            Some(preedit) => match crate::renderer::preedit::PreeditLine::new(
+                preedit,
+                (cursor_pos.row.0.max(0) as usize).min(content.screen_lines - 1),
+                cursor_pos.col.0,
+                content.columns,
+            ) {
+                Some(line) => {
+                    (line.row, line.popup_anchor_col().min(content.columns - 1))
+                }
+                None => (cursor_pos.row.0.max(0) as usize, cursor_pos.col.0),
+            },
+            None => (cursor_pos.row.0.max(0) as usize, cursor_pos.col.0),
+        };
+
         // Calculate pixel position of cursor — canonical integer
         // stride (line_height already baked into cell_height).
         let cell_width = layout.cell.cell_width as f32;
@@ -4600,9 +4628,8 @@ impl Screen<'_> {
         let origin_y = panel_rect[1] + scaled_margin.top;
 
         // Convert grid position to pixel position
-        let pixel_x =
-            origin_x + (cursor_pos.col.0 as f32 * cell_width) + (cell_width * 0.5);
-        let pixel_y = origin_y + (cursor_pos.row.0 as f32 * cell_height);
+        let pixel_x = origin_x + (anchor_col as f32 * cell_width) + (cell_width * 0.5);
+        let pixel_y = origin_y + (anchor_row as f32 * cell_height);
 
         // Validate final coordinates
         if pixel_x.is_nan() || pixel_y.is_nan() || pixel_x < 0.0 || pixel_y < 0.0 {

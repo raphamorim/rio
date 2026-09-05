@@ -1,5 +1,5 @@
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
-use crate::ime::Preedit;
+use crate::ime::{Preedit, PreeditCursor};
 use crate::renderer::utils::update_colors_based_on_theme;
 use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
@@ -1921,29 +1921,48 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Ime(ime) => {
-                if route.window.screen.renderer.assistant.is_active() {
-                    return;
-                }
+                // The assistant swallows IME input, but clear events
+                // (empty Preedit, Disabled) must still pass: dropping
+                // them leaves the window-level preedit stuck, and the
+                // preedit gate in `process_key_event` then swallows
+                // every plain keystroke after the assistant closes.
+                let assistant_active = route.window.screen.renderer.assistant.is_active();
 
                 match ime {
                     Ime::Commit(text) => {
+                        if assistant_active {
+                            return;
+                        }
                         // Don't use bracketed paste for single char input.
                         route.window.screen.paste(&text, text.chars().count() > 1);
                     }
                     Ime::Preedit(text, cursor_offset) => {
+                        if assistant_active && !text.is_empty() {
+                            return;
+                        }
                         let preedit = if text.is_empty() {
                             None
                         } else {
-                            Some(Preedit::new(text, cursor_offset.map(|offset| offset.0)))
+                            // The platform's `None` means the IME asked
+                            // for a hidden caret (candidate paging) —
+                            // NOT end-of-text, which arrives as an
+                            // explicit offset.
+                            let cursor = match cursor_offset {
+                                Some((start, _)) => PreeditCursor::Byte(start),
+                                None => PreeditCursor::Hidden,
+                            };
+                            Some(Preedit::new(text, cursor))
                         };
 
                         if route.window.screen.ime.preedit() != preedit.as_ref() {
                             route.window.screen.ime.set_preedit(preedit);
                             // The overlay lives in the grid's CPU cell
-                            // buffers: force the current panel to
-                            // repaint so the composition (or its
-                            // removal) is visible this frame, not
-                            // whenever the terminal next damages.
+                            // buffers and its rows are force-rebuilt
+                            // each frame while composing; a plain
+                            // dirty mark is enough to get a frame
+                            // scheduled — full terminal damage would
+                            // re-shape every visible row per
+                            // keystroke for nothing.
                             route
                                 .window
                                 .screen
@@ -1951,9 +1970,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .current_mut()
                                 .renderable_content
                                 .pending_update
-                                .set_terminal_damage(
-                                    rio_backend::event::TerminalDamage::Full,
-                                );
+                                .set_dirty();
                             route.request_redraw();
                         }
                     }
@@ -1962,9 +1979,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     Ime::Disabled => {
                         // Disabling wipes any live preedit (input
-                        // source switched mid-composition): damage and
-                        // repaint like the Preedit arm, or the block
-                        // ghosts on screen until unrelated damage.
+                        // source switched mid-composition): mark dirty
+                        // and repaint like the Preedit arm, or the
+                        // block ghosts on screen until unrelated
+                        // damage.
                         let had_preedit = route.window.screen.ime.preedit().is_some();
                         route.window.screen.ime.set_enabled(false);
                         if had_preedit {
@@ -1975,9 +1993,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .current_mut()
                                 .renderable_content
                                 .pending_update
-                                .set_terminal_damage(
-                                    rio_backend::event::TerminalDamage::Full,
-                                );
+                                .set_dirty();
                             route.request_redraw();
                         }
                     }

@@ -46,6 +46,11 @@ use crate::renderer::Renderer;
 /// emit passes for the single row the composition lives on.
 pub struct PreeditRow<'a> {
     pub line: &'a PreeditLine,
+    /// The cursor color the frame resolved once (OSC 12 wins, then the
+    /// theme) — the same value the cursor-block uniforms use, threaded
+    /// here so the block fill, the PastEnd beam, and the cursor can
+    /// never diverge.
+    pub block_bg: [u8; 4],
 }
 
 impl PreeditRow<'_> {
@@ -913,13 +918,14 @@ fn rasterize_decoration(
             (bytes, cell_w, thickness, bearing_y)
         }
         DecorationStyle::ImeCaretUnderline => {
-            // Double-thickness underline at the underline position —
-            // the ghostty presentation for the caret inside a
-            // composition.
-            let h = (thickness * 2).max(2).min(cell_h);
-            let bytes = vec![0xFFu8; (cell_w * h) as usize];
-            let bearing_y = (h + underline_gap_below(cell_h)) as i16;
-            (bytes, cell_w, h, bearing_y)
+            // The cursor's underline sprite at doubled thickness: one
+            // rasterizer for both, so a change to the underline
+            // position can't leave the IME caret misaligned with the
+            // underline cursor.
+            let t2 = (thickness * 2).max(2).min(cell_h);
+            let (bytes, w, h, _bearing_x, bearing_y) =
+                rasterize_cursor(CursorSpriteStyle::Underline, cell_w, cell_h, t2);
+            (bytes, w as u32, h as u32, bearing_y)
         }
         DecorationStyle::ImeCaretBeam => {
             // Full-height beam pinned to the cell's left edge, in the
@@ -931,10 +937,13 @@ fn rasterize_decoration(
     }
 }
 
-/// Look up or insert a decoration sprite into the grid atlas. Key is
-/// (decoration font_id sentinel, cell_w as glyph_id, thickness as
-/// size_bucket) — the same cache that backs regular glyphs, so
-/// decorations ride the grid's glyph-eviction policy for free.
+/// Look up or insert a decoration sprite into the grid atlas. Keyed by
+/// (decoration font_id sentinel, cell_w as glyph_id, thickness+cell_h
+/// as size_bucket) — the same cache that backs regular glyphs, so
+/// decorations ride the grid's glyph-eviction policy for free. Every
+/// decoration's bearing (and the IME beam's height) depends on
+/// `cell_h`, so it must key the sprite or a line-height-only config
+/// reload serves stale-height sprites until eviction.
 fn ensure_decoration_slot(
     grid: &mut GridRenderer,
     style: DecorationStyle,
@@ -945,7 +954,7 @@ fn ensure_decoration_slot(
     let key = GlyphKey {
         font_id: DECORATION_FONT_ID_BASE + style as u32,
         glyph_id: cell_w,
-        size_bucket: thickness as u16,
+        size_bucket: ((thickness as u16 & 0xF) << 12) | (cell_h.min(0xFFF) as u16),
     };
     if let Some(slot) = grid.lookup_glyph(key) {
         return Some(slot);
@@ -1080,7 +1089,7 @@ pub fn cell_bg(
 }
 
 #[inline]
-fn normalized_to_u8(c: [f32; 4]) -> [u8; 4] {
+pub(crate) fn normalized_to_u8(c: [f32; 4]) -> [u8; 4] {
     [
         (c[0].clamp(0.0, 1.0) * 255.0) as u8,
         (c[1].clamp(0.0, 1.0) * 255.0) as u8,
@@ -1103,16 +1112,10 @@ pub fn build_row_bg(
 ) {
     bg_scratch.clear();
 
-    // Block fill behind every composition cell — the same resolved
-    // cursor color the cursor-block uniforms use (OSC 12 wins, then
-    // the theme), so the block and the forced block cursor on the
+    // Block fill behind every composition cell: the frame's resolved
+    // cursor color, so the block and the forced block cursor on the
     // first composition cell can never be two different colors.
-    let preedit_block_bg = preedit.map(|_| {
-        normalized_to_u8(
-            term_colors[NamedColor::Cursor as usize]
-                .unwrap_or(renderer.named_colors.cursor),
-        )
-    });
+    let preedit_block_bg = preedit.map(|p| p.block_bg);
 
     // Fast path: row has no selection, no color-changing hints, and no
     // composition. (HyperlinkHover only contributes an underline,
@@ -1668,6 +1671,40 @@ fn shape_run_swash(
 
 // Emission
 
+/// Shape the rasterizer's current run scratch, keyed in the run cache
+/// by `hash`, and return the ascent for `(font_id, size_bucket)`; on a
+/// miss the shaped glyphs are stored under `hash`. `None` means
+/// shaping failed (no font handle). The one shaping-cache protocol,
+/// shared by the grid run path and the preedit path.
+fn shape_cached(
+    rasterizer: &mut GridGlyphRasterizer,
+    hash: u64,
+    font_id: u32,
+    size_u16: u16,
+    size_bucket: u16,
+    font_library: &FontLibrary,
+) -> Option<i16> {
+    if run_cache_get(&mut rasterizer.run_cache, hash).is_some() {
+        // Cache hit — ascent already stored.
+        return Some(
+            rasterizer
+                .ascent_cache
+                .get(&(font_id, size_bucket))
+                .copied()
+                .unwrap_or(0),
+        );
+    }
+    #[cfg(target_os = "macos")]
+    let shaped_opt =
+        shape_run_ct(rasterizer, font_id, size_u16, size_bucket, font_library);
+    #[cfg(not(target_os = "macos"))]
+    let shaped_opt =
+        shape_run_swash(rasterizer, font_id, size_u16, size_bucket, font_library);
+    let (glyphs, ascent_px) = shaped_opt?;
+    run_cache_put(&mut rasterizer.run_cache, RunCacheEntry { hash, glyphs });
+    Some(ascent_px)
+}
+
 /// Run-level fg emission. Shapes once per run, emits one CellText per
 /// shaped glyph. Works on both macOS (CoreText) and non-macOS (swash).
 ///
@@ -2107,26 +2144,16 @@ pub fn build_row_fg(
         let hash = rasterizer.run_hasher.finish();
 
         // Shape (cached) and capture ascent for this (font_id, size).
-        let ascent_px = if run_cache_get(&mut rasterizer.run_cache, hash).is_some() {
-            // Cache hit — ascent already stored.
-            rasterizer
-                .ascent_cache
-                .get(&(font_id, size_bucket))
-                .copied()
-                .unwrap_or(0)
-        } else {
-            #[cfg(target_os = "macos")]
-            let shaped_opt =
-                shape_run_ct(rasterizer, font_id, size_u16, size_bucket, font_library);
-            #[cfg(not(target_os = "macos"))]
-            let shaped_opt =
-                shape_run_swash(rasterizer, font_id, size_u16, size_bucket, font_library);
-            let Some((glyphs, ascent_px)) = shaped_opt else {
-                x = end;
-                continue;
-            };
-            run_cache_put(&mut rasterizer.run_cache, RunCacheEntry { hash, glyphs });
-            ascent_px
+        let Some(ascent_px) = shape_cached(
+            rasterizer,
+            hash,
+            font_id,
+            size_u16,
+            size_bucket,
+            font_library,
+        ) else {
+            x = end;
+            continue;
         };
 
         let (synthetic_bold, synthetic_italic) =
@@ -2329,26 +2356,43 @@ pub fn build_row_fg(
     // composition there is no block, so a beam in the cursor color
     // reads correctly there.
     if let Some(pre) = preedit {
-        let (col, style, color) = match pre.line.caret {
-            PreeditCaret::OnCell(col) => (
+        let caret = match pre.line.caret {
+            PreeditCaret::OnCell(col) => Some((
                 col,
                 DecorationStyle::ImeCaretUnderline,
                 normalized_to_u8(renderer.named_colors.background.0),
-            ),
-            PreeditCaret::PastEnd(col) => (
-                col,
-                DecorationStyle::ImeCaretBeam,
-                normalized_to_u8(
-                    term_colors[NamedColor::Cursor as usize]
-                        .unwrap_or(renderer.named_colors.cursor),
-                ),
-            ),
+            )),
+            PreeditCaret::PastEnd(col) => {
+                Some((col, DecorationStyle::ImeCaretBeam, pre.block_bg))
+            }
+            // The IME asked for no caret (candidate paging).
+            PreeditCaret::Hidden => None,
         };
-        if col < cols {
-            emit_preedit_caret(
-                col as u16, y, grid, cell_w_u32, cell_h_u32, thickness, style, color,
-                fg_scratch,
-            );
+        if let Some((col, style, color)) = caret {
+            if col < cols {
+                emit_preedit_caret(
+                    col as u16, y, grid, cell_w_u32, cell_h_u32, thickness, style, color,
+                    fg_scratch,
+                );
+            }
+            // A caret underline on a wide cluster covers both of its
+            // cells; one cell would underline half the kanji.
+            if matches!(style, DecorationStyle::ImeCaretUnderline)
+                && pre.cell(col + 1) == Some(PreeditCell::Continuation)
+                && col + 1 < cols
+            {
+                emit_preedit_caret(
+                    (col + 1) as u16,
+                    y,
+                    grid,
+                    cell_w_u32,
+                    cell_h_u32,
+                    thickness,
+                    style,
+                    color,
+                    fg_scratch,
+                );
+            }
         }
     }
 }
@@ -2416,24 +2460,15 @@ fn emit_preedit_cluster(
     rasterizer.run_hasher.write_u16(size_bucket);
     let hash = rasterizer.run_hasher.finish();
 
-    let ascent_px = if run_cache_get(&mut rasterizer.run_cache, hash).is_some() {
-        rasterizer
-            .ascent_cache
-            .get(&(font_id, size_bucket))
-            .copied()
-            .unwrap_or(0)
-    } else {
-        #[cfg(target_os = "macos")]
-        let shaped_opt =
-            shape_run_ct(rasterizer, font_id, size_u16, size_bucket, font_library);
-        #[cfg(not(target_os = "macos"))]
-        let shaped_opt =
-            shape_run_swash(rasterizer, font_id, size_u16, size_bucket, font_library);
-        let Some((glyphs, ascent_px)) = shaped_opt else {
-            return;
-        };
-        run_cache_put(&mut rasterizer.run_cache, RunCacheEntry { hash, glyphs });
-        ascent_px
+    let Some(ascent_px) = shape_cached(
+        rasterizer,
+        hash,
+        font_id,
+        size_u16,
+        size_bucket,
+        font_library,
+    ) else {
+        return;
     };
 
     let (synthetic_bold, synthetic_italic) =
