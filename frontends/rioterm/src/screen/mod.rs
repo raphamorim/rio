@@ -93,6 +93,13 @@ pub struct Screen<'screen> {
     pub allow_manual_dragging: bool,
     last_chrome_press: Option<ChromePress>,
     last_close_press: Option<(std::time::Instant, f32)>,
+    /// Window button pressed on the tab strip. Consumed by the
+    /// application loop, which owns the router and event loop a close
+    /// needs (`navigation.window-buttons`).
+    pending_window_button: Option<island::WindowButton>,
+    /// Wheel travel over the tab strip, in tab steps
+    /// (`navigation.scroll-tabs`).
+    tab_scroll_accum: f32,
     pub grids: rustc_hash::FxHashMap<usize, rio_backend::sugarloaf::grid::GridRenderer>,
     pub grid_rasterizer: rio_grid::GridGlyphRasterizer,
 }
@@ -345,6 +352,8 @@ impl Screen<'_> {
             allow_manual_dragging: config.navigation.is_enabled(),
             last_chrome_press: None,
             last_close_press: None,
+            pending_window_button: None,
+            tab_scroll_accum: 0.0,
             grids: rustc_hash::FxHashMap::default(),
             grid_rasterizer: rio_grid::GridGlyphRasterizer::new(),
         })
@@ -2735,21 +2744,29 @@ impl Screen<'_> {
 
     #[inline]
     fn island_tab_layout(&self, num_tabs: usize) -> TabStripLayout {
-        let max_tab_width = self
+        let (max_tab_width, reserved_right) = self
             .renderer
             .island
             .as_ref()
-            .map(|island| island.max_tab_width)
-            .unwrap_or_else(rio_backend::config::navigation::default_max_tab_width);
+            .map(|island| (island.max_tab_width, island.reserved_right()))
+            .unwrap_or_else(|| {
+                (
+                    rio_backend::config::navigation::default_max_tab_width(),
+                    0.0,
+                )
+            });
         island::tab_strip_layout(
             self.sugarloaf.window_size().width,
             self.sugarloaf.scale_factor(),
             num_tabs,
             max_tab_width,
+            reserved_right,
         )
     }
 
-    #[cfg(target_os = "macos")]
+    /// Hand the press to the window system as a move. The button state is
+    /// released first: on Wayland (and macOS) the compositor takes over the
+    /// pointer and the matching release never reaches us.
     pub fn start_window_drag(&mut self, window: &rio_window::window::Window) {
         self.mouse.left_button_state = ElementState::Released;
         let _ = window.drag_window();
@@ -2773,10 +2790,66 @@ impl Screen<'_> {
             window_origin,
             at: std::time::Instant::now(),
         });
-        #[cfg(target_os = "macos")]
-        if self.allow_manual_dragging {
+        if self.renderer.navigation.allows_window_drag() {
             self.start_window_drag(window);
         }
+    }
+
+    /// The window button pressed by the last strip click, if any.
+    #[inline]
+    pub fn take_window_button_action(&mut self) -> Option<island::WindowButton> {
+        self.pending_window_button.take()
+    }
+
+    /// `navigation.scroll-tabs`: wheel travel over the visible strip
+    /// switches tabs. `delta` is in lines (one notch = one line); pixel
+    /// deltas are converted by the caller. Returns true when consumed.
+    pub fn scroll_tabs_over_strip(&mut self, delta_lines: f32) -> bool {
+        let num_tabs = self.context_manager.len();
+        if !self.renderer.navigation.scroll_tabs
+            || !self.renderer.navigation.island_visible(num_tabs)
+        {
+            self.tab_scroll_accum = 0.0;
+            return false;
+        }
+        let scale_factor = self.sugarloaf.scale_factor();
+        if self.mouse.y > (ISLAND_HEIGHT * scale_factor) as f64 {
+            self.tab_scroll_accum = 0.0;
+            return false;
+        }
+        if num_tabs < 2 {
+            return true;
+        }
+
+        self.tab_scroll_accum += delta_lines;
+        let mut switched = false;
+        while self.tab_scroll_accum >= 1.0 {
+            self.tab_scroll_accum -= 1.0;
+            self.switch_tab_by_wheel(false);
+            switched = true;
+        }
+        while self.tab_scroll_accum <= -1.0 {
+            self.tab_scroll_accum += 1.0;
+            self.switch_tab_by_wheel(true);
+            switched = true;
+        }
+        if switched {
+            self.mark_dirty();
+        }
+        true
+    }
+
+    fn switch_tab_by_wheel(&mut self, next: bool) {
+        self.clear_selection();
+        let old = self.context_manager.current_index();
+        if next {
+            self.context_manager.switch_to_next();
+        } else {
+            self.context_manager.switch_to_prev();
+        }
+        let new = self.context_manager.current_index();
+        self.context_manager
+            .switch_context_visibility(&mut self.sugarloaf, old, new);
     }
 
     #[inline]
@@ -2807,22 +2880,52 @@ impl Screen<'_> {
     pub fn update_close_button_hover(&mut self, mouse_x: f64, mouse_y: f64) -> bool {
         let num_tabs = self.context_manager.len();
         let scale_factor = self.sugarloaf.scale_factor();
+        let island_visible = self.renderer.navigation.island_visible(num_tabs);
+        let in_band = mouse_y <= (ISLAND_HEIGHT * scale_factor) as f64;
+        let x_unscaled = mouse_x as f32 / scale_factor;
 
         let hovering = num_tabs > 1
-            && self.renderer.navigation.island_visible(num_tabs)
-            && mouse_y <= (ISLAND_HEIGHT * scale_factor) as f64
+            && island_visible
+            && in_band
             && island::close_button_hit(
                 &self.island_tab_layout(num_tabs),
                 self.context_manager.current_index(),
-                mouse_x as f32 / scale_factor,
+                x_unscaled,
             );
 
-        self.apply_close_hover(hovering)
+        let window_button = if island_visible && in_band {
+            let window_width = self.sugarloaf.window_size().width;
+            self.renderer.island.as_ref().and_then(|island| {
+                island.window_button_at(window_width, scale_factor, x_unscaled)
+            })
+        } else {
+            None
+        };
+
+        // Evaluate both: `||` would skip the second update once the first
+        // reports a change.
+        let close_changed = self.apply_close_hover(hovering);
+        let button_changed = self.apply_window_button_hover(window_button);
+        close_changed || button_changed
+    }
+
+    fn apply_window_button_hover(&mut self, hover: Option<island::WindowButton>) -> bool {
+        let changed = self
+            .renderer
+            .island
+            .as_mut()
+            .is_some_and(|island| island.set_window_button_hover(hover));
+        if changed {
+            self.mark_dirty();
+        }
+        changed
     }
 
     #[inline]
     pub fn clear_close_button_hover(&mut self) -> bool {
-        self.apply_close_hover(false)
+        let close_changed = self.apply_close_hover(false);
+        let button_changed = self.apply_window_button_hover(None);
+        close_changed || button_changed
     }
 
     pub fn handle_island_click(
@@ -2905,6 +3008,18 @@ impl Screen<'_> {
             }
 
             return false;
+        }
+
+        // Window buttons come before the tab slots: they live past the
+        // last slot, where a press would otherwise start a window drag.
+        if let Some(button) = self.renderer.island.as_ref().and_then(|island| {
+            island.window_button_at(window_width, scale_factor, mouse_x_unscaled)
+        }) {
+            if !is_right_click {
+                self.stop_hint_mode_if_active();
+                self.pending_window_button = Some(button);
+            }
+            return true;
         }
 
         let layout = self.island_tab_layout(num_tabs);

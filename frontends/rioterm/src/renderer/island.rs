@@ -75,6 +75,145 @@ const CLOSE_ALPHA_HOVER: f32 = 0.95;
 const CLOSE_STROKE_WIDTH: f32 = 1.2;
 const INACTIVE_CUSTOM_MUTE: f32 = 0.55;
 
+/// Window buttons (minimize / maximize / close) drawn at the right end of
+/// the strip when `navigation.window-buttons` is on (Linux and Windows).
+/// Sized like the buttons of a typical desktop title bar so the strip can
+/// stand in for one under `window.decorations = "Disabled"`.
+const WINDOW_BUTTON_WIDTH: f32 = 36.0;
+const WINDOW_BUTTON_COUNT: usize = 3;
+const WINDOW_BUTTON_MARGIN_RIGHT: f32 = 4.0;
+const WINDOW_BUTTON_GLYPH_HALF: f32 = 4.5;
+const WINDOW_BUTTON_HOVER_INSET_X: f32 = 3.0;
+const WINDOW_BUTTON_HOVER_INSET_Y: f32 = 5.0;
+const WINDOW_BUTTON_HOVER_RADIUS: f32 = 5.0;
+const WINDOW_BUTTON_ALPHA_IDLE: f32 = 0.7;
+const WINDOW_BUTTON_ALPHA_HOVER: f32 = 1.0;
+const WINDOW_BUTTON_STROKE_WIDTH: f32 = 1.2;
+/// Close hovers red on every desktop that draws its own buttons.
+const WINDOW_BUTTON_CLOSE_HOVER: [f32; 4] = [0.91, 0.07, 0.14, 1.0];
+const WINDOW_BUTTON_CLOSE_HOVER_GLYPH: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+/// `navigation.scroll-tabs`: logical pixels of touchpad travel per tab.
+pub const WHEEL_PX_PER_TAB: f32 = 40.0;
+
+/// One of the strip's window buttons, left to right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowButton {
+    Minimize,
+    Maximize,
+    Close,
+}
+
+impl WindowButton {
+    const ALL: [WindowButton; WINDOW_BUTTON_COUNT] = [
+        WindowButton::Minimize,
+        WindowButton::Maximize,
+        WindowButton::Close,
+    ];
+}
+
+/// Logical width the window buttons take away from the tab slots.
+#[inline]
+pub fn window_buttons_width(enabled: bool) -> f32 {
+    if enabled {
+        WINDOW_BUTTON_WIDTH * WINDOW_BUTTON_COUNT as f32 + WINDOW_BUTTON_MARGIN_RIGHT
+    } else {
+        0.0
+    }
+}
+
+/// Left edge (logical px) of the first window button.
+#[inline]
+fn window_buttons_x(window_width: f32, scale_factor: f32) -> f32 {
+    (window_width / scale_factor)
+        - WINDOW_BUTTON_MARGIN_RIGHT
+        - WINDOW_BUTTON_WIDTH * WINDOW_BUTTON_COUNT as f32
+}
+
+/// Which window button, if any, sits under `x_unscaled` (logical px). The
+/// caller has already established the pointer is inside the strip band.
+#[inline]
+pub fn window_button_hit(
+    enabled: bool,
+    window_width: f32,
+    scale_factor: f32,
+    x_unscaled: f32,
+) -> Option<WindowButton> {
+    if !enabled {
+        return None;
+    }
+    let x0 = window_buttons_x(window_width, scale_factor);
+    if x_unscaled < x0 {
+        return None;
+    }
+    let index = ((x_unscaled - x0) / WINDOW_BUTTON_WIDTH) as usize;
+    WindowButton::ALL.get(index).copied()
+}
+
+fn draw_window_buttons(
+    sugarloaf: &mut Sugarloaf,
+    window_width: f32,
+    scale_factor: f32,
+    fills: &IslandFills,
+    color: [f32; 4],
+    hover: Option<WindowButton>,
+) {
+    let x0 = window_buttons_x(window_width, scale_factor);
+    let cy = ISLAND_HEIGHT / 2.0;
+    let r = WINDOW_BUTTON_GLYPH_HALF;
+    let w = WINDOW_BUTTON_STROKE_WIDTH;
+
+    for (i, button) in WindowButton::ALL.iter().enumerate() {
+        let bx = x0 + i as f32 * WINDOW_BUTTON_WIDTH;
+        let cx = bx + WINDOW_BUTTON_WIDTH / 2.0;
+        let hovered = hover == Some(*button);
+
+        let mut glyph = color;
+        glyph[3] *= if hovered {
+            WINDOW_BUTTON_ALPHA_HOVER
+        } else {
+            WINDOW_BUTTON_ALPHA_IDLE
+        };
+
+        if hovered {
+            let backdrop = if *button == WindowButton::Close {
+                glyph = WINDOW_BUTTON_CLOSE_HOVER_GLYPH;
+                WINDOW_BUTTON_CLOSE_HOVER
+            } else {
+                fills.close_hover
+            };
+            sugarloaf.rounded_rect(
+                None,
+                bx + WINDOW_BUTTON_HOVER_INSET_X,
+                WINDOW_BUTTON_HOVER_INSET_Y,
+                WINDOW_BUTTON_WIDTH - WINDOW_BUTTON_HOVER_INSET_X * 2.0,
+                ISLAND_HEIGHT - WINDOW_BUTTON_HOVER_INSET_Y * 2.0,
+                backdrop,
+                0.05,
+                WINDOW_BUTTON_HOVER_RADIUS,
+                1,
+            );
+        }
+
+        match button {
+            WindowButton::Minimize => {
+                sugarloaf.line(cx - r, cy, cx + r, cy, w, 0.0, glyph, 2);
+            }
+            WindowButton::Maximize => {
+                // Square outline: four strokes, corners overlapping.
+                let (l, t, rt, b) = (cx - r, cy - r, cx + r, cy + r);
+                sugarloaf.line(l, t, rt, t, w, 0.0, glyph, 2);
+                sugarloaf.line(rt, t, rt, b, w, 0.0, glyph, 2);
+                sugarloaf.line(rt, b, l, b, w, 0.0, glyph, 2);
+                sugarloaf.line(l, b, l, t, w, 0.0, glyph, 2);
+            }
+            WindowButton::Close => {
+                sugarloaf.line(cx - r, cy - r, cx + r, cy + r, w, 0.0, glyph, 2);
+                sugarloaf.line(cx - r, cy + r, cx + r, cy - r, w, 0.0, glyph, 2);
+            }
+        }
+    }
+}
+
 struct TabDrag {
     // Index of the dragged tab, follows the tab as it reorders.
     tab_index: usize,
@@ -136,19 +275,24 @@ pub struct TabStripLayout {
 
 /// Compute the tab strip layout from the physical window width.
 /// `max_tab_width` comes from `navigation.max-tab-width` (logical px).
+/// `reserved_right` is logical width kept free at the right end of the
+/// strip (the window buttons, see [`window_buttons_width`]).
 pub fn tab_strip_layout(
     window_width: f32,
     scale_factor: f32,
     num_tabs: usize,
     max_tab_width: f32,
+    reserved_right: f32,
 ) -> TabStripLayout {
     #[cfg(target_os = "macos")]
     let left_margin = ISLAND_MARGIN_LEFT_MACOS;
     #[cfg(not(target_os = "macos"))]
     let left_margin = 0.0;
 
-    let available_width =
-        (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
+    let available_width = (window_width / scale_factor)
+        - ISLAND_MARGIN_RIGHT
+        - left_margin
+        - reserved_right.max(0.0);
     let tab_width =
         (available_width / num_tabs.max(1) as f32).clamp(0.0, max_tab_width.max(0.0));
     TabStripLayout {
@@ -248,10 +392,16 @@ fn island_rect(slot_x: f32, tab_width: f32) -> (f32, f32, f32, f32, f32) {
 /// `window_width` is physical, as `render` receives it, while everything
 /// drawn is logical, the same conversion `tab_strip_layout` makes.
 #[inline]
-fn single_title_budget(window_width: f32, scale_factor: f32, left_margin: f32) -> f32 {
+fn single_title_budget(
+    window_width: f32,
+    scale_factor: f32,
+    left_margin: f32,
+    reserved_right: f32,
+) -> f32 {
     ((window_width / scale_factor)
         - left_margin
         - ISLAND_MARGIN_RIGHT
+        - reserved_right.max(0.0)
         - TAB_PADDING_X * 2.0)
         .max(0.0)
 }
@@ -265,8 +415,16 @@ fn single_title_x(
     scale_factor: f32,
     text_width: f32,
     left_margin: f32,
+    reserved_right: f32,
 ) -> f32 {
-    (((window_width / scale_factor) - text_width) / 2.0).max(left_margin + TAB_PADDING_X)
+    let strip_width = window_width / scale_factor;
+    // Centre on the strip, but stop short of the window buttons on the
+    // right; the left clamp wins when both cannot be satisfied.
+    let right_limit =
+        strip_width - reserved_right.max(0.0) - ISLAND_MARGIN_RIGHT - TAB_PADDING_X;
+    ((strip_width - text_width) / 2.0)
+        .min(right_limit - text_width)
+        .max(left_margin + TAB_PADDING_X)
 }
 
 #[inline]
@@ -367,6 +525,11 @@ pub struct Island {
     /// Cursor is over the active island's close button — draws the
     /// hover backdrop. Updated on every cursor move by `Screen`.
     close_hover: bool,
+    /// Draw window buttons at the right end of the strip
+    /// (`navigation.window-buttons`, Linux and Windows only).
+    window_buttons: bool,
+    /// Which window button the cursor is over, for the hover backdrop.
+    window_button_hover: Option<WindowButton>,
 }
 
 impl Island {
@@ -375,6 +538,7 @@ impl Island {
         active_text_color: [f32; 4],
         hide_if_single: bool,
         max_tab_width: f32,
+        window_buttons: bool,
     ) -> Self {
         Self {
             hide_if_single,
@@ -396,7 +560,34 @@ impl Island {
             slide_springs: FxHashMap::default(),
             last_anim_frame: Instant::now(),
             close_hover: false,
+            window_buttons,
+            window_button_hover: None,
         }
+    }
+
+    /// Logical width reserved at the right end of the strip.
+    #[inline]
+    pub fn reserved_right(&self) -> f32 {
+        window_buttons_width(self.window_buttons)
+    }
+
+    /// Window button under `x_unscaled`, if the strip draws them.
+    #[inline]
+    pub fn window_button_at(
+        &self,
+        window_width: f32,
+        scale_factor: f32,
+        x_unscaled: f32,
+    ) -> Option<WindowButton> {
+        window_button_hit(self.window_buttons, window_width, scale_factor, x_unscaled)
+    }
+
+    /// Set which window button the cursor hovers. Returns true when the
+    /// state changed (the caller redraws).
+    pub fn set_window_button_hover(&mut self, hover: Option<WindowButton>) -> bool {
+        let changed = self.window_button_hover != hover;
+        self.window_button_hover = hover;
+        changed
     }
 
     /// Set whether the cursor hovers the active island's close button.
@@ -785,8 +976,14 @@ impl Island {
         self.slide_springs
             .retain(|_, s| s.update(dt, DRAG_ANIMATION_LENGTH));
 
-        let layout =
-            tab_strip_layout(window_width, scale_factor, num_tabs, self.max_tab_width);
+        let reserved_right = self.reserved_right();
+        let layout = tab_strip_layout(
+            window_width,
+            scale_factor,
+            num_tabs,
+            self.max_tab_width,
+            reserved_right,
+        );
         let TabStripLayout {
             left_margin,
             tab_width,
@@ -840,7 +1037,12 @@ impl Island {
             let single = num_tabs == 1;
 
             let max_text_width = if single {
-                single_title_budget(window_width, scale_factor, left_margin)
+                single_title_budget(
+                    window_width,
+                    scale_factor,
+                    left_margin,
+                    reserved_right,
+                )
             } else {
                 (tab_width - TAB_PADDING_X * 2.0).max(0.0)
             };
@@ -882,7 +1084,13 @@ impl Island {
                 let ui = sugarloaf.text_mut();
                 let text_width = ui.measure(&title, &title_opts);
                 let text_x = if single {
-                    single_title_x(window_width, scale_factor, text_width, left_margin)
+                    single_title_x(
+                        window_width,
+                        scale_factor,
+                        text_width,
+                        left_margin,
+                        reserved_right,
+                    )
                 } else {
                     tab_x + (tab_width - text_width) / 2.0
                 };
@@ -1032,6 +1240,19 @@ impl Island {
             }
         }
 
+        // Window buttons sit on the strip itself, to the right of every
+        // tab slot, so a floating (dragged) tab never covers them.
+        if self.window_buttons {
+            draw_window_buttons(
+                sugarloaf,
+                window_width,
+                scale_factor,
+                &fills,
+                self.active_text_color,
+                self.window_button_hover,
+            );
+        }
+
         // Render the progress bar below the island
         self.render_progress_bar(sugarloaf, window_width, scale_factor, ISLAND_HEIGHT);
     }
@@ -1153,7 +1374,13 @@ impl Island {
             left_margin,
             tab_width,
             ..
-        } = tab_strip_layout(window_width, scale_factor, num_tabs, self.max_tab_width);
+        } = tab_strip_layout(
+            window_width,
+            scale_factor,
+            num_tabs,
+            self.max_tab_width,
+            self.reserved_right(),
+        );
         let tab_x = left_margin + picker_tab as f32 * tab_width;
 
         // Picker is rendered just below the island
@@ -1475,19 +1702,19 @@ mod tests {
         // 1600 physical at 2x is an 800pt strip, so a 100pt title starts at
         // 350, not at 750 (which would be centred on the physical width and
         // sit past the right edge).
-        let x = single_title_x(1600.0, 2.0, 100.0, 0.0);
+        let x = single_title_x(1600.0, 2.0, 100.0, 0.0, 0.0);
         assert_eq!(x, 350.0);
         assert!(x + 100.0 <= 800.0, "title must stay on screen: {x}");
 
         // At 1x the two agree, which is why this only showed up on retina.
-        assert_eq!(single_title_x(800.0, 1.0, 100.0, 0.0), 350.0);
+        assert_eq!(single_title_x(800.0, 1.0, 100.0, 0.0, 0.0), 350.0);
     }
 
     #[test]
     fn single_title_never_reaches_under_the_traffic_lights() {
         let margin = 76.0;
         // A title wider than the strip would centre at a negative x.
-        let x = single_title_x(1600.0, 2.0, 900.0, margin);
+        let x = single_title_x(1600.0, 2.0, 900.0, margin, 0.0);
         assert_eq!(x, margin + TAB_PADDING_X);
     }
 
@@ -1496,27 +1723,27 @@ mod tests {
         // 800pt strip, no left margin: full width less the right margin and
         // the padding on each side.
         assert_eq!(
-            single_title_budget(1600.0, 2.0, 0.0),
+            single_title_budget(1600.0, 2.0, 0.0, 0.0),
             800.0 - ISLAND_MARGIN_RIGHT - TAB_PADDING_X * 2.0
         );
         // The macOS left margin comes off the top of that.
         assert_eq!(
-            single_title_budget(1600.0, 2.0, 76.0),
+            single_title_budget(1600.0, 2.0, 76.0, 0.0),
             800.0 - 76.0 - ISLAND_MARGIN_RIGHT - TAB_PADDING_X * 2.0
         );
         // A window too narrow to hold any text yields no budget, not a
         // negative one that would underflow the truncation.
-        assert_eq!(single_title_budget(100.0, 2.0, 76.0), 0.0);
+        assert_eq!(single_title_budget(100.0, 2.0, 76.0, 0.0), 0.0);
     }
 
     /// A lone title gets far more room than a tab slot would give it, which
     /// is the point of dropping the island.
     #[test]
     fn single_title_budget_beats_a_tab_slot() {
-        let slot = tab_strip_layout(1600.0, 2.0, 1, 240.0).tab_width;
+        let slot = tab_strip_layout(1600.0, 2.0, 1, 240.0, 0.0).tab_width;
         let slot_budget = (slot - TAB_PADDING_X * 2.0).max(0.0);
         assert!(
-            single_title_budget(1600.0, 2.0, 0.0) > slot_budget,
+            single_title_budget(1600.0, 2.0, 0.0, 0.0) > slot_budget,
             "expected more than a slot's {slot_budget}"
         );
     }
@@ -1580,7 +1807,7 @@ mod tests {
         let inactive_color = [0.5, 0.5, 0.5, 1.0];
         let active_color = [0.9, 0.9, 0.9, 1.0];
 
-        let island = Island::new(inactive_color, active_color, true, 240.0);
+        let island = Island::new(inactive_color, active_color, true, 240.0, false);
 
         assert_eq!(island.inactive_text_color, inactive_color);
         assert_eq!(island.active_text_color, active_color);
@@ -1589,13 +1816,24 @@ mod tests {
 
     #[test]
     fn test_island_height() {
-        let island =
-            Island::new([0.8, 0.8, 0.8, 1.0], [1.0, 1.0, 1.0, 1.0], false, 240.0);
+        let island = Island::new(
+            [0.8, 0.8, 0.8, 1.0],
+            [1.0, 1.0, 1.0, 1.0],
+            false,
+            240.0,
+            false,
+        );
         assert_eq!(island.height(), ISLAND_HEIGHT);
     }
 
     fn test_island() -> Island {
-        Island::new([0.5, 0.5, 0.5, 1.0], [0.9, 0.9, 0.9, 1.0], false, 240.0)
+        Island::new(
+            [0.5, 0.5, 0.5, 1.0],
+            [0.9, 0.9, 0.9, 1.0],
+            false,
+            240.0,
+            false,
+        )
     }
 
     #[test]
@@ -1791,7 +2029,7 @@ mod tests {
         // 1000 physical px @ 2x scale → 500 logical px window. Slots
         // stay below the cap here, so the math matches the old
         // fill-the-strip layout.
-        let layout = tab_strip_layout(1000.0, 2.0, 4, 240.0);
+        let layout = tab_strip_layout(1000.0, 2.0, 4, 240.0, 0.0);
         #[cfg(target_os = "macos")]
         {
             assert_eq!(layout.left_margin, ISLAND_MARGIN_LEFT_MACOS);
@@ -1805,19 +2043,81 @@ mod tests {
             assert_eq!(layout.tabs_width, 492.0);
         }
         // Zero tabs clamps the divisor.
-        assert!(tab_strip_layout(1000.0, 2.0, 0, 240.0)
+        assert!(tab_strip_layout(1000.0, 2.0, 0, 240.0, 0.0)
             .tab_width
             .is_finite());
     }
 
     #[test]
+    fn tab_strip_layout_reserves_window_buttons() {
+        // 500 logical px strip, 4 tabs: reserving the window buttons
+        // shrinks every slot by the same share.
+        let plain = tab_strip_layout(1000.0, 2.0, 4, 240.0, 0.0);
+        let reserved = window_buttons_width(true);
+        let with_buttons = tab_strip_layout(1000.0, 2.0, 4, 240.0, reserved);
+        assert_eq!(with_buttons.tab_width, plain.tab_width - reserved / 4.0);
+        // The tab region ends before the buttons start.
+        assert!(
+            with_buttons.left_margin + with_buttons.tabs_width
+                <= window_buttons_x(1000.0, 2.0)
+        );
+        // Disabled buttons reserve nothing.
+        assert_eq!(window_buttons_width(false), 0.0);
+        // A negative reservation is treated as none.
+        assert_eq!(
+            tab_strip_layout(1000.0, 2.0, 4, 240.0, -50.0).tab_width,
+            plain.tab_width
+        );
+    }
+
+    #[test]
+    fn window_button_hit_maps_thirds_left_to_right() {
+        // 1000 physical @ 2x → 500 logical. Buttons occupy the last
+        // 3 * 36 + 4 = 112 logical px: [388, 424) [424, 460) [460, 496).
+        let x0 = window_buttons_x(1000.0, 2.0);
+        assert_eq!(x0, 500.0 - window_buttons_width(true));
+        let hit = |x| window_button_hit(true, 1000.0, 2.0, x);
+        assert_eq!(hit(x0 - 1.0), None);
+        assert_eq!(hit(x0 + 1.0), Some(WindowButton::Minimize));
+        assert_eq!(
+            hit(x0 + WINDOW_BUTTON_WIDTH + 1.0),
+            Some(WindowButton::Maximize)
+        );
+        assert_eq!(
+            hit(x0 + WINDOW_BUTTON_WIDTH * 2.0 + 1.0),
+            Some(WindowButton::Close)
+        );
+        // Past the last button (the right margin) is not a hit.
+        assert_eq!(hit(x0 + WINDOW_BUTTON_WIDTH * 3.0 + 1.0), None);
+        // Disabled buttons never hit.
+        assert_eq!(window_button_hit(false, 1000.0, 2.0, x0 + 1.0), None);
+    }
+
+    #[test]
+    fn single_title_stays_clear_of_window_buttons() {
+        // Wide title on a strip with buttons: its right edge must end
+        // before the buttons start, even though centring would overlap.
+        let reserved = window_buttons_width(true);
+        // Wider than centring allows, narrower than the budget (so the
+        // left clamp does not take over as it would for an oversized title).
+        let text_width = 300.0;
+        let x = single_title_x(1000.0, 2.0, text_width, 0.0, reserved);
+        assert!(x + text_width <= window_buttons_x(1000.0, 2.0) - TAB_PADDING_X);
+        // And the budget shrinks by the reservation.
+        assert_eq!(
+            single_title_budget(1000.0, 2.0, 0.0, reserved),
+            single_title_budget(1000.0, 2.0, 0.0, 0.0) - reserved
+        );
+    }
+
+    #[test]
     fn tab_strip_layout_caps_slot_width() {
-        let layout = tab_strip_layout(3000.0, 2.0, 2, 240.0);
+        let layout = tab_strip_layout(3000.0, 2.0, 2, 240.0, 0.0);
         assert_eq!(layout.tab_width, 240.0);
         assert_eq!(layout.tabs_width, 480.0);
 
         // The cap is configurable via navigation.max-tab-width.
-        let layout = tab_strip_layout(3000.0, 2.0, 2, 280.0);
+        let layout = tab_strip_layout(3000.0, 2.0, 2, 280.0, 0.0);
         assert_eq!(layout.tab_width, 280.0);
         assert_eq!(layout.tabs_width, 560.0);
         // The tabs region ends well before the 1500 logical px strip.
@@ -1825,7 +2125,7 @@ mod tests {
 
         // Pathologically narrow window: width clamps at 0 instead of
         // going negative.
-        let layout = tab_strip_layout(10.0, 2.0, 4, 240.0);
+        let layout = tab_strip_layout(10.0, 2.0, 4, 240.0, 0.0);
         assert_eq!(layout.tab_width, 0.0);
         assert_eq!(layout.tabs_width, 0.0);
     }
