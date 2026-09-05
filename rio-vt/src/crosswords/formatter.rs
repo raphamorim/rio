@@ -190,6 +190,11 @@ fn write_sgr(out: &mut String, style: &Style) {
     if flags.contains(StyleFlags::UNDERLINE) {
         out.push_str(";4");
     }
+    if flags.contains(StyleFlags::SLOW_BLINK) {
+        out.push_str(";5");
+    } else if flags.contains(StyleFlags::RAPID_BLINK) {
+        out.push_str(";6");
+    }
     if flags.contains(StyleFlags::INVERSE) {
         out.push_str(";7");
     }
@@ -257,8 +262,8 @@ mod tests {
     #[test]
     fn vt_roundtrip_preserves_text_and_style() {
         let mut a = term(20, 4);
-        // red "hello", default space, bold-blue "world".
-        feed(&mut a, b"\x1b[31mhello\x1b[0m \x1b[1;34mworld\x1b[0m");
+        // rapid-blink red "hello", default space, bold-blink-blue "world".
+        feed(&mut a, b"\x1b[6;31mhello\x1b[0m \x1b[1;5;34mworld\x1b[0m");
         let snapshot = a.contents_formatted();
 
         // The snapshot must carry the colors (index form, not resolved rgb).
@@ -281,6 +286,9 @@ mod tests {
         assert_eq!(sb.c(), 'w');
         assert_eq!(a.grid.style_of(&sa).fg, b.grid.style_of(&sb).fg);
         assert!(b.grid.style_of(&sb).flags.contains(StyleFlags::BOLD));
+        assert!(b.grid.style_of(&sb).flags.contains(StyleFlags::SLOW_BLINK));
+        let hb = *(&b.grid[Line(0)][Column(0)] as &Square);
+        assert!(b.grid.style_of(&hb).flags.contains(StyleFlags::RAPID_BLINK));
     }
 
     #[test]

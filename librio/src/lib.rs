@@ -391,6 +391,11 @@ fn serialize_style(out: &mut String, style: &Style) {
     } else if flags.contains(StyleFlags::DASHED_UNDERLINE) {
         out.push_str(";4:5");
     }
+    if flags.contains(StyleFlags::SLOW_BLINK) {
+        out.push_str(";5");
+    } else if flags.contains(StyleFlags::RAPID_BLINK) {
+        out.push_str(";6");
+    }
     if flags.contains(StyleFlags::INVERSE) {
         out.push_str(";7");
     }
@@ -1611,10 +1616,13 @@ mod tests {
             b"\x1b[31mred\x1b[0m plain \x1b[1;4;38;5;208morange\x1b[0m\r\n\
               \x1b[48;2;10;20;30mrgb bg\x1b[0m \
               \x1b]8;;https://rioterm.com\x1b\\link\x1b]8;;\x1b\\\r\n\
+              \x1b[5mslow\x1b[0m \x1b[6mfast\x1b[0m\r\n\
               wide: \xe4\xbd\xa0\xe5\xa5\xbd",
         );
         let first = surface.serialize();
         assert!(first.contains("\x1b]8;;https://rioterm.com\x1b\\"));
+        assert!(first.contains(";5m"), "missing slow blink: {first:?}");
+        assert!(first.contains(";6m"), "missing rapid blink: {first:?}");
 
         let replica = quiet_surface(40, 10);
         replica.inject_output(first.as_bytes());

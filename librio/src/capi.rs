@@ -2,7 +2,7 @@
 
 use crate::{
     Action, Engine, Key, KeyAction, KeyEvent, Modifiers, RenderState, SelectionKind,
-    Side, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
+    Side, StyleFlags, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
 use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -1034,8 +1034,12 @@ pub unsafe extern "C" fn rio_render_state_cell(
 /// cluster codepoints (combining marks, or a mode-2027 grapheme
 /// cluster) beyond `codepoint`. Fetch the full text with
 /// [`rio_render_state_cell_cluster`] and draw that instead of the
-/// base char. StyleFlags proper occupies bits 0..10; this is bit 15.
+/// base char. StyleFlags proper occupies bits 0..12 (the
+/// `RIO_STYLE_*` constants in librio.h); this is bit 15.
 pub const RIO_CELL_HAS_CLUSTER: u16 = 1 << 15;
+
+// StyleFlags shares the u16 with this bit; a new flag must not collide.
+const _: () = assert!(StyleFlags::all().bits() & RIO_CELL_HAS_CLUSTER == 0);
 
 /// Write the full text of a cell (base codepoint plus attached
 /// cluster codepoints) as UTF-32 into `out` (capacity `cap` code

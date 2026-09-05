@@ -127,6 +127,23 @@ typedef struct {
   uint16_t style_flags;
 } rio_cell_s;
 
+/* Bit assignments for rio_cell_s.style_flags. Bits 6-10 are the
+ * underline kind; at most one is set. At most one blink bit is set.
+ * Bit 15 is RIO_CELL_HAS_CLUSTER, not a style. */
+#define RIO_STYLE_INVERSE (1u << 0)
+#define RIO_STYLE_BOLD (1u << 1)
+#define RIO_STYLE_ITALIC (1u << 2)
+#define RIO_STYLE_DIM (1u << 3)
+#define RIO_STYLE_HIDDEN (1u << 4)
+#define RIO_STYLE_STRIKEOUT (1u << 5)
+#define RIO_STYLE_UNDERLINE (1u << 6)
+#define RIO_STYLE_DOUBLE_UNDERLINE (1u << 7)
+#define RIO_STYLE_UNDERCURL (1u << 8)
+#define RIO_STYLE_DOTTED_UNDERLINE (1u << 9)
+#define RIO_STYLE_DASHED_UNDERLINE (1u << 10)
+#define RIO_STYLE_SLOW_BLINK (1u << 11)
+#define RIO_STYLE_RAPID_BLINK (1u << 12)
+
 typedef struct {
   uint8_t r;
   uint8_t g;
@@ -286,8 +303,8 @@ void rio_render_state_reset_dirty(rio_render_state_t *state);
 /* Set in rio_cell_s.style_flags when the cell carries attached cluster
  * codepoints (combining marks, or a DEC-2027 grapheme cluster) beyond
  * `codepoint`. Fetch the full text with rio_render_state_cell_cluster
- * and draw that instead of the base char. StyleFlags proper occupies
- * bits 0..10; this is bit 15. */
+ * and draw that instead of the base char. Style flags proper occupy
+ * bits 0..12 (RIO_STYLE_*); this is bit 15. */
 #define RIO_CELL_HAS_CLUSTER (1u << 15)
 
 /* Write the full text of a cell (base codepoint plus attached cluster

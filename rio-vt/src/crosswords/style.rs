@@ -39,8 +39,9 @@ bitflags! {
         const UNDERCURL        = 1 << 8;
         const DOTTED_UNDERLINE = 1 << 9;
         const DASHED_UNDERLINE = 1 << 10;
-        const SLOW_BLINK        = 1 << 11;
-        const RAPID_BLINK       = 1 << 12;
+        const SLOW_BLINK       = 1 << 11;
+        const RAPID_BLINK      = 1 << 12;
+        const ALL_BLINK        = Self::SLOW_BLINK.bits() | Self::RAPID_BLINK.bits();
         const ALL_UNDERLINES   = Self::UNDERLINE.bits()
                                | Self::DOUBLE_UNDERLINE.bits()
                                | Self::UNDERCURL.bits()
@@ -48,7 +49,6 @@ bitflags! {
                                | Self::DASHED_UNDERLINE.bits();
         // Combined intensity for shaping decisions.
         const DIM_BOLD         = Self::DIM.bits() | Self::BOLD.bits();
-        const ALL_BLINK         = Self::SLOW_BLINK.bits() | Self::RAPID_BLINK.bits();
     }
 }
 
