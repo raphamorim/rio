@@ -158,15 +158,18 @@ impl<U: EventListener> Crosswords<U> {
         self.row_last_content_col(line as i32, cols, true).is_some()
     }
 
-    /// Rightmost column with a non-blank glyph, or `None` for a blank row.
+    /// Rightmost column with a non-blank glyph or a non-default style (a
+    /// bg-colored or underlined blank still renders, so it is content),
+    /// or `None` for a row with neither.
     fn row_last_content_col(&self, line: i32, cols: usize, trim: bool) -> Option<usize> {
         if !trim {
             return Some(cols.saturating_sub(1));
         }
         let row = &self.grid[Line(line)];
         (0..cols).rev().find(|&col| {
-            let c = row[Column(col)].c();
-            c != ' ' && c != '\0'
+            let square = &row[Column(col)];
+            let c = square.c();
+            (c != ' ' && c != '\0') || self.grid.style_of(square) != Style::default()
         })
     }
 }
@@ -332,6 +335,30 @@ mod tests {
                 b: 0
             }))
         );
+    }
+
+    #[test]
+    fn vt_roundtrip_preserves_styled_blanks() {
+        use crate::config::colors::NamedColor;
+
+        // Red-background trailing spaces after "AB" render, so the trim
+        // must keep them.
+        let mut a = term(20, 4);
+        feed(&mut a, b"AB\x1b[41m   \x1b[0m");
+        let snapshot = a.contents_formatted();
+        let text = String::from_utf8(snapshot.clone()).unwrap();
+        assert!(text.contains(";41"), "missing red bg: {text:?}");
+
+        let mut b = term(20, 4);
+        feed(&mut b, &snapshot);
+        let sb = *(&b.grid[Line(0)][Column(3)] as &Square);
+        assert_eq!(b.grid.style_of(&sb).bg, AnsiColor::Named(NamedColor::Red));
+
+        // A row made only of styled blanks must not be dropped as blank.
+        let mut c = term(20, 4);
+        feed(&mut c, b"top\r\n\x1b[44m    \x1b[0m");
+        let text = String::from_utf8(c.contents_formatted()).unwrap();
+        assert!(text.contains(";44"), "styled-blank row dropped: {text:?}");
     }
 
     #[test]
