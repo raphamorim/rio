@@ -597,7 +597,8 @@ pub unsafe extern "C" fn rio_surface_id(surface: *const Surface) -> usize {
     .unwrap_or(0)
 }
 
-/// Pid of the spawned program (a session leader), 0 without a PTY.
+/// Pid of the spawned program (a session leader on unix, the conpty
+/// child on Windows), 0 without a PTY or when the pid was unavailable.
 #[no_mangle]
 pub unsafe extern "C" fn rio_surface_child_pid(surface: *const Surface) -> u32 {
     catch_unwind(AssertUnwindSafe(|| {

@@ -210,9 +210,11 @@ rio_surface_t *rio_surface_new(rio_engine_t *engine,
                                const rio_surface_config_s *config);
 void rio_surface_free(rio_surface_t *surface);
 rio_surface_id_t rio_surface_id(const rio_surface_t *surface);
-/* Pid of the spawned program. It is a session leader, so killpg() on it
- * reaches everything the shell started; rio_surface_free only hangs up the
- * pty and signals this pid. 0 when the surface has no PTY. */
+/* Pid of the spawned program. On unix it is a session leader, so killpg()
+ * on it reaches everything the shell started; rio_surface_free only hangs
+ * up the pty and signals this pid. On Windows it is the conpty child's
+ * process id (terminate with TerminateProcess/taskkill). 0 when the
+ * surface has no PTY or the pid was unavailable. */
 uint32_t rio_surface_child_pid(const rio_surface_t *surface);
 
 /* Input entry points are callable from any thread. */
