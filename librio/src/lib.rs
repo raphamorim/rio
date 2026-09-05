@@ -1105,6 +1105,15 @@ impl Surface {
         Some(matches)
     }
 
+    /// The pid of the program this surface spawned (the shell, or the
+    /// configured `shell` program). It is a session leader, so a host that
+    /// must take the whole process tree down on teardown can `killpg` it:
+    /// dropping the surface only hangs up the pty and signals this pid.
+    #[cfg(feature = "pty")]
+    pub fn child_pid(&self) -> u32 {
+        self.shell_pid
+    }
+
     /// The foreground process's name (the program the user is running
     /// right now: `claude`, `vim`, or the shell itself), from the kernel.
     /// Hosts use it to tell what a pane is running without any shell
