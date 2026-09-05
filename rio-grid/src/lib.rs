@@ -3,8 +3,12 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
+//! `rio-grid`: shared grid-emit crate.
+//!
 //! Translates terminal `Square` cells into `CellBg` / `CellText`
-//! instances for the grid GPU renderer.
+//! instances for the grid GPU renderer. Decoupled from any frontend
+//! via the [`GridPalette`] trait, so both rioterm and libsugarloaf can
+//! drive it.
 //!
 //! `build_row_bg` is one CellBg per cell; `build_row_fg` does
 //! **run-level shaping** so ligatures (`=>`, `!=`, `fi`) form
@@ -29,7 +33,7 @@ use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::{Column, Line, Pos};
 use rio_backend::crosswords::search::Match;
 use rio_backend::crosswords::square::{ContentTag, Extras, Square};
-use rio_backend::crosswords::style::{Style, StyleFlags};
+use rio_backend::crosswords::style::{Style, StyleFlags, UnderlineKind};
 use rio_backend::selection::SelectionRange;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
@@ -37,17 +41,17 @@ use smallvec::SmallVec;
 /// Snapshot's per-frame extras map. Keyed by the cell's `extras_id`,
 /// populated by `Crosswords::snapshot_visible` from a walk of visible
 /// cells. The renderer reads via `extras.get(&id)`.
-pub(crate) type ExtrasMap = FxHashMap<u16, Extras>;
+pub type ExtrasMap = FxHashMap<u16, Extras>;
 
-use crate::renderer::preedit::{PreeditCaret, PreeditCell, PreeditLine};
-use crate::renderer::Renderer;
+pub mod preedit;
+use preedit::{PreeditCaret, PreeditCell, PreeditLine};
 
 /// The IME composition threaded into a row build. Only handed to the
 /// emit passes for the single row the composition lives on.
 pub struct PreeditRow<'a> {
     pub line: &'a PreeditLine,
     /// The cursor color the frame resolved once (OSC 12 wins, then the
-    /// theme) — the same value the cursor-block uniforms use, threaded
+    /// theme): the same value the cursor-block uniforms use, threaded
     /// here so the block fill, the PastEnd beam, and the cursor can
     /// never diverge.
     pub block_bg: [u8; 4],
@@ -60,16 +64,48 @@ impl PreeditRow<'_> {
     }
 }
 
+/// Color/palette operations the emit code needs from its host
+/// renderer. Implemented by the frontend (e.g. rioterm's `Renderer`)
+/// and passed by generic reference into the per-cell hot path, so the
+/// calls monomorphize with no vtable cost.
+pub trait GridPalette {
+    fn named_colors(&self) -> &rio_backend::config::colors::Colors;
+    fn compute_color(
+        &self,
+        color: &AnsiColor,
+        flags: StyleFlags,
+        term_colors: &TermColors,
+    ) -> rio_backend::config::colors::ColorArray;
+    fn compute_bg_color(
+        &self,
+        cell_style: &Style,
+        term_colors: &TermColors,
+    ) -> rio_backend::config::colors::ColorArray;
+    fn color(
+        &self,
+        idx: usize,
+        term_colors: &TermColors,
+    ) -> rio_backend::config::colors::ColorArray;
+    fn use_drawable_chars(&self) -> bool;
+    fn opacity_cells(&self) -> bool;
+    fn cell_bg_alpha(&self) -> u8;
+    fn ignore_selection_fg_color(&self) -> bool;
+}
+
+/// A single hint-mode label overlaid on a cell (leader-key jump
+/// target). Mirrors the frontend's own `HintLabel`; the frontend
+/// copies its fields into this at the call sites.
+pub struct HintLabel {
+    pub position: Pos,
+    pub label: char,
+    pub is_first: bool,
+}
+
+/// The pre-resolved style for cell `x`: bg-only cells already hold the
+/// default here (their color travels inline in the cell).
 #[inline(always)]
-pub(crate) fn resolve_style(style_table: &[Style], sq: Square) -> Style {
-    if sq.is_bg_only() {
-        return Style::default();
-    }
-    let sid = sq.style_id() as usize;
-    if sid == 0 {
-        return Style::default();
-    }
-    style_table.get(sid).copied().unwrap_or_default()
+pub fn resolve_style(row_styles: &[Style], x: usize) -> Style {
+    row_styles.get(x).copied().unwrap_or_default()
 }
 
 /// Per-row selection interval, in column indices. `None` = row is
@@ -249,45 +285,52 @@ fn pos_eq(a: Pos, b: Pos) -> bool {
     a.row == b.row && a.col == b.col
 }
 
-pub fn push_hint_label_styles(
-    style_table: &mut Vec<Style>,
+/// The two hint-label badge styles: (first-char, following-chars).
+pub fn hint_label_styles(
     hint_foreground: rio_backend::config::colors::ColorArray,
     hint_background: rio_backend::config::colors::ColorArray,
-) -> u16 {
+) -> (Style, Style) {
     use rio_backend::config::colors::ColorRgb;
-    let base = style_table.len() as u16;
     let fg = AnsiColor::Spec(ColorRgb::from_color_arr(hint_foreground));
-    style_table.push(Style {
+    let first = Style {
         fg,
         bg: AnsiColor::Spec(ColorRgb::from_color_arr(hint_background)),
         underline_color: None,
         flags: StyleFlags::BOLD,
-    });
+    };
     let dimmed = [
         hint_background[0] * 0.8,
         hint_background[1] * 0.8,
         hint_background[2] * 0.8,
         hint_background[3],
     ];
-    style_table.push(Style {
+    let rest = Style {
         fg,
         bg: AnsiColor::Spec(ColorRgb::from_color_arr(dimmed)),
         underline_color: None,
         flags: StyleFlags::BOLD,
-    });
-    base
+    };
+    (first, rest)
 }
+
+/// Style id stamped on overlaid hint-label cells. Never produced by
+/// interning (the id cap stops before this index), so the shaping-run
+/// id comparison always breaks at label boundaries even though the
+/// badge style itself lives in the resolved row styles.
+const HINT_LABEL_STYLE_ID: u16 = u16::MAX;
 
 pub fn overlay_hint_labels(
     row: &Row<Square>,
-    labels: &[crate::context::renderable::HintLabel],
+    row_styles: &[Style],
+    labels: &[HintLabel],
     y: usize,
     display_offset: i32,
-    label_style_base: u16,
+    label_styles: (Style, Style),
     row_hints: &mut Vec<RowHint>,
-) -> Option<Row<Square>> {
+) -> Option<(Row<Square>, Vec<Style>)> {
     let line = Line((y as i32) - display_offset);
-    let mut out: Option<Row<Square>> = None;
+    let mut out: Option<(Row<Square>, Vec<Style>)> = None;
+    let (first_style, rest_style) = label_styles;
     for label in labels {
         if label.position.row != line {
             continue;
@@ -296,10 +339,19 @@ pub fn overlay_hint_labels(
         if col >= row.len() {
             continue;
         }
-        let target = out.get_or_insert_with(|| row.clone());
+        let (target, styles) = out.get_or_insert_with(|| {
+            let mut styles = row_styles.to_vec();
+            styles.resize(row.len(), Style::default());
+            (row.clone(), styles)
+        });
         let mut sq = Square::from_char(label.label);
-        sq.set_style_id(label_style_base + if label.is_first { 0 } else { 1 });
+        sq.set_style_id(HINT_LABEL_STYLE_ID);
         target[Column(col)] = sq;
+        styles[col] = if label.is_first {
+            first_style
+        } else {
+            rest_style
+        };
         row_hints.insert(
             0,
             RowHint {
@@ -341,13 +393,15 @@ fn cell_in_hover_underline(row_hints: &[RowHint], col: u16) -> bool {
 /// `search_focused_match_foreground` from
 /// `colors::Colors` (`rio-backend/src/config/colors/mod.rs:287,299`).
 #[inline]
-fn cell_fg_hinted(tag: HintTag, renderer: &Renderer) -> [u8; 4] {
+fn cell_fg_hinted<P: GridPalette>(tag: HintTag, palette: &P) -> [u8; 4] {
     match tag {
         HintTag::Focused => {
-            normalized_to_u8(renderer.named_colors.search_focused_match_foreground)
+            normalized_to_u8(palette.named_colors().search_focused_match_foreground)
         }
-        HintTag::Match => normalized_to_u8(renderer.named_colors.search_match_foreground),
-        HintTag::Label => normalized_to_u8(renderer.named_colors.hint_foreground),
+        HintTag::Match => {
+            normalized_to_u8(palette.named_colors().search_match_foreground)
+        }
+        HintTag::Label => normalized_to_u8(palette.named_colors().hint_foreground),
         // Hover doesn't change fg color; defensive — `cell_in_row_hints`
         // already filters this tag out, so this arm shouldn't fire.
         HintTag::HyperlinkHover => [0, 0, 0, 0],
@@ -361,20 +415,20 @@ use rio_backend::sugarloaf::grid::{
 
 // Bg + shared helpers
 
-pub fn cell_fg(
+pub fn cell_fg<P: GridPalette>(
     sq: Square,
     style: Style,
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
 ) -> [u8; 4] {
     if sq.is_bg_only() {
-        return normalized_to_u8(renderer.named_colors.foreground);
+        return normalized_to_u8(palette.named_colors().foreground);
     }
     let mut style = style;
     if style.flags.contains(StyleFlags::INVERSE) {
         std::mem::swap(&mut style.fg, &mut style.bg);
     }
-    let color = renderer.compute_color(&style.fg, style.flags, term_colors);
+    let color = palette.compute_color(&style.fg, style.flags, term_colors);
     normalized_to_u8(color)
 }
 
@@ -386,25 +440,23 @@ pub fn cell_fg(
 /// has a default selection_foreground populated in its theme, so we
 /// use it directly.
 #[inline]
-pub fn cell_fg_selected(
+pub fn cell_fg_selected<P: GridPalette>(
     sq: Square,
     style: Style,
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
 ) -> [u8; 4] {
-    if renderer.ignore_selection_fg_color {
-        cell_fg(sq, style, renderer, term_colors)
+    if palette.ignore_selection_fg_color() {
+        cell_fg(sq, style, palette, term_colors)
     } else {
-        normalized_to_u8(renderer.named_colors.selection_foreground)
+        normalized_to_u8(palette.named_colors().selection_foreground)
     }
 }
 
 // Decoration sprites (underlines, strikethrough)
 //
-// pre-rasterizes underline/strikethrough sprites into the
-// grayscale atlas and emits them as regular `CellText` entries
-// (`ghostty/src/font/sprite/draw/special.zig`,
-// `ghostty/src/renderer/generic.zig:3074`). We do the same: one sprite
+// Underline/strikethrough sprites are pre-rasterized into the
+// grayscale atlas and emitted as regular `CellText` entries: one sprite
 // per (style, cell_w, thickness) cached in the grid atlas. Z-order is
 // enforced by emit order — underlines before glyphs (draws under),
 // strikethrough after (draws on top).
@@ -566,7 +618,7 @@ impl CursorRenderStyle {
 /// cell height. Capped at 2 px so deeply-zoomed cells don't get a
 /// chunky frame / fat bar instead of a cursor hint.
 #[inline]
-fn cursor_thickness(cell_h: u32) -> u32 {
+pub fn cursor_thickness(cell_h: u32) -> u32 {
     (cell_h / 16).clamp(1, 2)
 }
 
@@ -780,7 +832,7 @@ fn decoration_thickness(size_px: f32) -> u32 {
 /// below. Mirrors the spirit of `underline_position` but
 /// simplified — we don't have per-font metrics here.
 #[inline]
-fn underline_gap_below(cell_h: u32) -> u32 {
+pub fn underline_gap_below(cell_h: u32) -> u32 {
     (cell_h / 20).max(1)
 }
 
@@ -973,38 +1025,31 @@ fn ensure_decoration_slot(
 }
 
 /// Pick the decoration enum value for a cell's `StyleFlags`, or `None`
-/// if the cell has no underline. Bit-test order matches StyleFlags
-/// ordering in `rio-backend/src/crosswords/style.rs`.
+/// if the cell has no underline.
 #[inline]
 fn underline_style_from_flags(flags: StyleFlags) -> Option<DecorationStyle> {
-    if flags.contains(StyleFlags::UNDERLINE) {
-        Some(DecorationStyle::Underline)
-    } else if flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
-        Some(DecorationStyle::DoubleUnderline)
-    } else if flags.contains(StyleFlags::UNDERCURL) {
-        Some(DecorationStyle::CurlyUnderline)
-    } else if flags.contains(StyleFlags::DOTTED_UNDERLINE) {
-        Some(DecorationStyle::DottedUnderline)
-    } else if flags.contains(StyleFlags::DASHED_UNDERLINE) {
-        Some(DecorationStyle::DashedUnderline)
-    } else {
-        None
-    }
+    flags.underline_kind().map(|kind| match kind {
+        UnderlineKind::Single => DecorationStyle::Underline,
+        UnderlineKind::Double => DecorationStyle::DoubleUnderline,
+        UnderlineKind::Curly => DecorationStyle::CurlyUnderline,
+        UnderlineKind::Dotted => DecorationStyle::DottedUnderline,
+        UnderlineKind::Dashed => DecorationStyle::DashedUnderline,
+    })
 }
 
 /// Decoration color: SGR 58 `underline_color` if set, else the cell's
 /// computed fg. `generic.zig:2968`.
 #[inline]
-fn decoration_color(
+fn decoration_color<P: GridPalette>(
     sq: Square,
     style: &rio_backend::crosswords::style::Style,
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
 ) -> [u8; 4] {
     if let Some(uc) = style.underline_color {
-        normalized_to_u8(renderer.compute_color(&uc, style.flags, term_colors))
+        normalized_to_u8(palette.compute_color(&uc, style.flags, term_colors))
     } else {
-        cell_fg(sq, *style, renderer, term_colors)
+        cell_fg(sq, *style, palette, term_colors)
     }
 }
 
@@ -1030,10 +1075,10 @@ fn decoration_color(
 /// Selection / hint highlights are applied at the `build_row_bg` slow
 /// path with their own (always opaque) bg colors, so they don't go
 /// through this function.
-pub fn cell_bg(
+pub fn cell_bg<P: GridPalette>(
     sq: Square,
     style: Style,
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
 ) -> [u8; 4] {
     // Alpha for cells that paint an explicit bg. Default = fully
@@ -1041,8 +1086,8 @@ pub fn cell_bg(
     // and a transparent window, we multiply by the window opacity so
     // the explicit-bg cells stay proportionally translucent. INVERSE
     // always uses 255.
-    let explicit_bg_alpha = if renderer.opacity_cells {
-        renderer.cell_bg_alpha
+    let explicit_bg_alpha = if palette.opacity_cells() {
+        palette.cell_bg_alpha()
     } else {
         255
     };
@@ -1054,7 +1099,7 @@ pub fn cell_bg(
         }
         ContentTag::BgPalette => {
             let idx = sq.bg_palette_index() as usize;
-            let color = renderer.color(idx, term_colors);
+            let color = palette.color(idx, term_colors);
             let [r, g, b, _] = normalized_to_u8(color);
             [r, g, b, explicit_bg_alpha]
         }
@@ -1078,7 +1123,7 @@ pub fn cell_bg(
             if inverse {
                 std::mem::swap(&mut resolved.fg, &mut resolved.bg);
             }
-            let color = renderer.compute_bg_color(&resolved, term_colors);
+            let color = palette.compute_bg_color(&resolved, term_colors);
             let [r, g, b, _] = normalized_to_u8(color);
             // INVERSE always opaque — keep cursor / inverted text
             // readable regardless of the opacity-cells flag.
@@ -1089,7 +1134,7 @@ pub fn cell_bg(
 }
 
 #[inline]
-pub(crate) fn normalized_to_u8(c: [f32; 4]) -> [u8; 4] {
+pub fn normalized_to_u8(c: [f32; 4]) -> [u8; 4] {
     [
         (c[0].clamp(0.0, 1.0) * 255.0) as u8,
         (c[1].clamp(0.0, 1.0) * 255.0) as u8,
@@ -1099,11 +1144,11 @@ pub(crate) fn normalized_to_u8(c: [f32; 4]) -> [u8; 4] {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_row_bg(
+pub fn build_row_bg<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
-    style_table: &[Style],
-    renderer: &Renderer,
+    row_styles: &[Style],
+    palette: &P,
     term_colors: &TermColors,
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
@@ -1129,7 +1174,7 @@ pub fn build_row_bg(
         for x in 0..cols {
             let sq = row[Column(x)];
             bg_scratch.push(CellBg {
-                rgba: cell_bg(sq, resolve_style(style_table, sq), renderer, term_colors),
+                rgba: cell_bg(sq, resolve_style(row_styles, x), palette, term_colors),
             });
         }
         return;
@@ -1137,17 +1182,19 @@ pub fn build_row_bg(
 
     // Slow path: selection and/or hint highlighting present.
     let sel_bg = if has_sel {
-        Some(normalized_to_u8(renderer.named_colors.selection_background))
+        Some(normalized_to_u8(
+            palette.named_colors().selection_background,
+        ))
     } else {
         None
     };
     let (match_bg, focused_bg) = if has_color_hints {
         (
             Some(normalized_to_u8(
-                renderer.named_colors.search_match_background,
+                palette.named_colors().search_match_background,
             )),
             Some(normalized_to_u8(
-                renderer.named_colors.search_focused_match_background,
+                palette.named_colors().search_focused_match_background,
             )),
         )
     } else {
@@ -1155,7 +1202,7 @@ pub fn build_row_bg(
     };
     for x in 0..cols {
         let sq = row[Column(x)];
-        let style = resolve_style(style_table, sq);
+        let style = resolve_style(row_styles, x);
         let col = x as u16;
         // The composition wins over selection / hint backgrounds: the
         // user is actively typing here, that signal reads first. Both
@@ -1165,29 +1212,29 @@ pub fn build_row_bg(
             (Some(p), Some(bg)) if p.cell(x).is_some() => Some(bg),
             _ => None,
         };
-        let rgba = if let Some(bg) = preedit_here {
-            bg
-        } else if cell_in_row_sel(row_sel, col) {
-            // Selection bg wins over hint bg and the cell's own bg,
-            // matching `generic.zig:2775-2800` (selection check
-            // runs before highlight check).
-            sel_bg.unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors))
-        } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
-            match tag {
-                HintTag::Focused => focused_bg
-                    .unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors)),
-                HintTag::Match => {
-                    match_bg.unwrap_or_else(|| cell_bg(sq, style, renderer, term_colors))
+        let rgba =
+            if let Some(bg) = preedit_here {
+                bg
+            } else if cell_in_row_sel(row_sel, col) {
+                // Selection bg wins over hint bg and the cell's own bg,
+                // matching `generic.zig:2775-2800` (selection check
+                // runs before highlight check).
+                sel_bg.unwrap_or_else(|| cell_bg(sq, style, palette, term_colors))
+            } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
+                match tag {
+                    HintTag::Focused => focused_bg
+                        .unwrap_or_else(|| cell_bg(sq, style, palette, term_colors)),
+                    HintTag::Match => match_bg
+                        .unwrap_or_else(|| cell_bg(sq, style, palette, term_colors)),
+                    HintTag::Label => cell_bg(sq, style, palette, term_colors),
+                    // `cell_in_row_hints` filters HyperlinkHover out, but
+                    // make the match exhaustive so a future caller can't
+                    // accidentally hit a panic.
+                    HintTag::HyperlinkHover => cell_bg(sq, style, palette, term_colors),
                 }
-                HintTag::Label => cell_bg(sq, style, renderer, term_colors),
-                // `cell_in_row_hints` filters HyperlinkHover out, but
-                // make the match exhaustive so a future caller can't
-                // accidentally hit a panic.
-                HintTag::HyperlinkHover => cell_bg(sq, style, renderer, term_colors),
-            }
-        } else {
-            cell_bg(sq, style, renderer, term_colors)
-        };
+            } else {
+                cell_bg(sq, style, palette, term_colors)
+            };
         bg_scratch.push(CellBg { rgba });
     }
 }
@@ -1204,7 +1251,9 @@ const RUN_BUCKET_COUNT: usize = 256;
 const RUN_BUCKET_SIZE: usize = 8;
 
 /// One shaped glyph. Same shape from both CoreText (macOS) and swash
-/// (non-macOS). `cluster` is a UTF-8 byte offset into the run string.
+/// (non-macOS). `cluster` is the shaping-buffer offset of the source
+/// cell: UTF-16 code units on macOS (CoreText string indices), UTF-8
+/// bytes elsewhere (swash `cluster.source.start`).
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)] // `x` / `y` / `advance` kept for future kerning-aware layout
 struct ShapedGlyph {
@@ -1259,11 +1308,13 @@ pub struct GridGlyphRasterizer {
     // cell mapping.
     #[cfg(target_os = "macos")]
     run_utf16_scratch: Vec<u16>,
-    /// On macOS, `run_cell_starts[i]` is the offset (in UTF-16 code
-    /// units) where cell `i` of the run begins inside
-    /// `run_utf16_scratch`. Length = cells in the run. Used to walk
-    /// shaped glyphs back to the cell they belong to.
-    #[cfg(target_os = "macos")]
+    /// `run_cell_starts[i]` is the offset where cell `i` of the run
+    /// begins inside the platform shaping buffer — UTF-16 code units
+    /// into `run_utf16_scratch` on macOS, UTF-8 bytes into
+    /// `run_str_scratch` elsewhere. Length = cells in the run. Used to
+    /// walk shaped glyphs back to the cell they belong to; explicit
+    /// because a cell can contribute several codepoints (its attached
+    /// combining marks shape together with the base).
     run_cell_starts: Vec<u32>,
     /// `run_cell_columns[i]` is the absolute grid column for the
     /// `i`-th appended cell in the run. Decouples the cell-index-
@@ -1323,7 +1374,6 @@ impl GridGlyphRasterizer {
             run_hasher: rapidhash::fast::RapidHasher::default(),
             #[cfg(target_os = "macos")]
             run_utf16_scratch: Vec::new(),
-            #[cfg(target_os = "macos")]
             run_cell_starts: Vec::new(),
             run_cell_columns: Vec::new(),
             #[cfg(not(target_os = "macos"))]
@@ -1389,7 +1439,7 @@ impl GridGlyphRasterizer {
         // image-overlay slices, not text. Resolve them to the primary
         // font as if they were a space, so the run shapes them as an
         // invisible space glyph instead of falling back to a notdef
-        // tofu box. Mirrors ghostty's `font/shaper/run.zig:328-335`.
+        // tofu box.
         if ch == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
             return (rio_backend::sugarloaf::font::FONT_ID_REGULAR as u32, false);
         }
@@ -1475,6 +1525,48 @@ fn hash_combining(
         }
         rasterizer.run_hasher.write_u32(cp as u32);
         rasterizer.run_hasher.write_u32(cluster);
+    }
+}
+
+/// Append a cell's attached combining codepoints to the shaping
+/// buffer, so the shaper composes them with the base glyph (`e` +
+/// U+0301 renders as `é` instead of a bare `e`). Mirrors
+/// [`hash_combining`]: VS15/VS16 are skipped — presentation is
+/// already resolved into `font_id`, and feeding a selector to a text
+/// font's shaper can only produce a notdef.
+fn push_cluster_text(
+    rasterizer: &mut GridGlyphRasterizer,
+    extras_table: &ExtrasMap,
+    sq: Square,
+) {
+    if !sq.has_grapheme() {
+        return;
+    }
+    let Some(id) = sq.extras_id() else {
+        return;
+    };
+    let Some(extras) = extras_table.get(&id) else {
+        return;
+    };
+    push_cluster_chars(rasterizer, &extras.zerowidth);
+}
+
+/// Platform-specific tail of [`push_cluster_text`], split out so the
+/// buffer layout is unit-testable without building a `Square`.
+fn push_cluster_chars(rasterizer: &mut GridGlyphRasterizer, marks: &[char]) {
+    for &cp in marks {
+        if cp == '\u{FE0E}' || cp == '\u{FE0F}' {
+            continue;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let mut buf = [0u16; 2];
+            rasterizer
+                .run_utf16_scratch
+                .extend_from_slice(cp.encode_utf16(&mut buf));
+        }
+        #[cfg(not(target_os = "macos"))]
+        rasterizer.run_str_scratch.push(cp);
     }
 }
 
@@ -1712,13 +1804,13 @@ fn shape_cached(
 /// underlines first (drawn under glyphs), glyphs, then strikethroughs
 /// (drawn on top).
 #[allow(clippy::too_many_arguments)]
-pub fn build_row_fg(
+pub fn build_row_fg<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
     y: u16,
-    style_table: &[Style],
+    row_styles: &[Style],
     extras_table: &ExtrasMap,
-    renderer: &Renderer,
+    palette: &P,
     term_colors: &TermColors,
     rasterizer: &mut GridGlyphRasterizer,
     grid: &mut GridRenderer,
@@ -1756,7 +1848,7 @@ pub fn build_row_fg(
     let has_color_hints = row_hints.iter().any(|rh| rh.tag != HintTag::HyperlinkHover);
     let needs_per_cell_check = has_sel || has_color_hints;
     // Consulted in the per-cell sprite hook and the run-extension break.
-    let use_drawable_chars = renderer.use_drawable_chars();
+    let use_drawable_chars = palette.use_drawable_chars();
 
     // Glyph Protocol registry for *this pane*. One Arc clone per row;
     // the per-cell custom-glyph helper then uses the local handle so
@@ -1773,8 +1865,8 @@ pub fn build_row_fg(
         row,
         cols,
         y,
-        style_table,
-        renderer,
+        row_styles,
+        palette,
         term_colors,
         grid,
         cell_w_u32,
@@ -1820,7 +1912,7 @@ pub fn build_row_fg(
         let ch = sq.c();
         let run_start_style_id = sq.style_id();
         let run_style_flags =
-            (resolve_style(style_table, sq).flags.bits() & SHAPING_FLAG_MASK) as u8;
+            (resolve_style(row_styles, x).flags.bits() & SHAPING_FLAG_MASK) as u8;
         let (font_id, is_emoji) =
             rasterizer.resolve_font(ch, run_style_flags, font_library, route_id);
 
@@ -1840,9 +1932,9 @@ pub fn build_row_fg(
 
             // fg colour, mirroring the regular emit loop's
             // selection / hint precedence.
-            let style = resolve_style(style_table, sq);
+            let style = resolve_style(row_styles, x);
             let color = if !needs_per_cell_check {
-                cell_fg(sq, style, renderer, term_colors)
+                cell_fg(sq, style, palette, term_colors)
             } else {
                 let is_sel = cell_in_row_sel(row_sel, x as u16);
                 let hint_tag = if is_sel {
@@ -1851,11 +1943,11 @@ pub fn build_row_fg(
                     cell_in_row_hints(row_hints, x as u16)
                 };
                 if is_sel {
-                    cell_fg_selected(sq, style, renderer, term_colors)
+                    cell_fg_selected(sq, style, palette, term_colors)
                 } else if let Some(tag) = hint_tag {
-                    cell_fg_hinted(tag, renderer)
+                    cell_fg_hinted(tag, palette)
                 } else {
-                    cell_fg(sq, style, renderer, term_colors)
+                    cell_fg(sq, style, palette, term_colors)
                 }
             };
 
@@ -1926,9 +2018,9 @@ pub fn build_row_fg(
                 if slot.w != 0 && slot.h != 0 {
                     // fg colour, mirroring the regular emit loop's
                     // selection / hint precedence.
-                    let style = resolve_style(style_table, sq);
+                    let style = resolve_style(row_styles, x);
                     let color = if !needs_per_cell_check {
-                        cell_fg(sq, style, renderer, term_colors)
+                        cell_fg(sq, style, palette, term_colors)
                     } else {
                         let is_sel = cell_in_row_sel(row_sel, x as u16);
                         let hint_tag = if is_sel {
@@ -1937,11 +2029,11 @@ pub fn build_row_fg(
                             cell_in_row_hints(row_hints, x as u16)
                         };
                         if is_sel {
-                            cell_fg_selected(sq, style, renderer, term_colors)
+                            cell_fg_selected(sq, style, palette, term_colors)
                         } else if let Some(tag) = hint_tag {
-                            cell_fg_hinted(tag, renderer)
+                            cell_fg_hinted(tag, palette)
                         } else {
-                            cell_fg(sq, style, renderer, term_colors)
+                            cell_fg(sq, style, palette, term_colors)
                         }
                     };
                     fg_scratch.push(CellText {
@@ -1962,18 +2054,16 @@ pub fn build_row_fg(
         }
 
         let run_start = x;
-        // Sticky style_id — typical syntax-highlighted output has long
-        // stretches of cells sharing one style_id. While it stays equal
-        // we know shape flags match too, so skip the StyleSet vec read
-        // + bits/mask/compare. Mirrors ghostty `font/shaper/run.zig:140`
-        // (`if (prev_cell.style_id == cell.style_id) break :style;`).
+        // Sticky style_id: equal ids imply equal resolved styles (the
+        // per-row styles are resolved from these very ids, and overlay
+        // label cells carry the reserved HINT_LABEL_STYLE_ID), so the
+        // flags comparison only runs on id changes.
         let mut prev_style_id = run_start_style_id;
 
         // Kitty Unicode placeholder shapes as a space — the cell
         // joins the run, the shaper emits an invisible space glyph
         // (no notdef tofu), and the kitty image overlay is drawn on
-        // top to fill the cell. Mirrors ghostty's
-        // `font/shaper/run.zig:264-267`.
+        // top to fill the cell.
         let shape_ch = if ch == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
             ' '
         } else {
@@ -1995,7 +2085,15 @@ pub fn build_row_fg(
         #[cfg(not(target_os = "macos"))]
         {
             rasterizer.run_str_scratch.clear();
+            rasterizer.run_cell_starts.clear();
+            rasterizer.run_cell_starts.push(0);
             rasterizer.run_str_scratch.push(shape_ch);
+        }
+        // Attached combining marks shape together with their base so
+        // `e` + U+0301 composes; kitty placeholder cells are excluded —
+        // their `zerowidth` encodes image-slice coordinates, not text.
+        if ch != rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+            push_cluster_text(rasterizer, extras_table, sq);
         }
         rasterizer.run_cell_columns.clear();
         rasterizer.run_cell_columns.push(x as u16);
@@ -2087,7 +2185,7 @@ pub fn build_row_fg(
             }
             let style2_id = sq2.style_id();
             if style2_id != prev_style_id {
-                let f = (resolve_style(style_table, sq2).flags.bits() & SHAPING_FLAG_MASK)
+                let f = (resolve_style(row_styles, end).flags.bits() & SHAPING_FLAG_MASK)
                     as u8;
                 if f != run_style_flags {
                     break;
@@ -2119,7 +2217,13 @@ pub fn build_row_fg(
             }
             #[cfg(not(target_os = "macos"))]
             {
+                rasterizer
+                    .run_cell_starts
+                    .push(rasterizer.run_str_scratch.len() as u32);
                 rasterizer.run_str_scratch.push(shape_ch2);
+            }
+            if ch2 != rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+                push_cluster_text(rasterizer, extras_table, sq2);
             }
             // Stamp the cell into the per-run hasher with its relative
             // cluster offset (`end - run_start`, captured *before* the
@@ -2178,32 +2282,19 @@ pub fn build_row_fg(
             let glyphs =
                 run_cache_get(&mut rasterizer.run_cache, hash).expect("just inserted");
             let mut cell_idx_in_run: u16 = 0;
-            #[cfg(target_os = "macos")]
-            {
-                let cell_starts = &rasterizer.run_cell_starts;
-                for g in glyphs {
-                    while (cell_idx_in_run as usize + 1) < cell_starts.len()
-                        && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
-                    {
-                        cell_idx_in_run = cell_idx_in_run.saturating_add(1);
-                    }
-                    glyph_emits.push((g.id, cell_idx_in_run));
+            // Both platforms record explicit per-cell starts into the
+            // shaping buffer (UTF-16 units on macOS, UTF-8 bytes on
+            // swash), so one walk serves both. A per-char cursor would
+            // miscount: cells with combining marks contribute several
+            // chars each.
+            let cell_starts = &rasterizer.run_cell_starts;
+            for g in glyphs {
+                while (cell_idx_in_run as usize + 1) < cell_starts.len()
+                    && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
+                {
+                    cell_idx_in_run = cell_idx_in_run.saturating_add(1);
                 }
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                let mut char_cursor =
-                    rasterizer.run_str_scratch.char_indices().peekable();
-                for g in glyphs {
-                    while let Some(&(byte_offset, _)) = char_cursor.peek() {
-                        if (byte_offset as u32) >= g.cluster {
-                            break;
-                        }
-                        char_cursor.next();
-                        cell_idx_in_run = cell_idx_in_run.saturating_add(1);
-                    }
-                    glyph_emits.push((g.id, cell_idx_in_run));
-                }
+                glyph_emits.push((g.id, cell_idx_in_run));
             }
         }
 
@@ -2248,7 +2339,7 @@ pub fn build_row_fg(
             // `grid_col` above.
             let src_col = (grid_col as usize).min(cols.saturating_sub(1));
             let src_sq = row[Column(src_col)];
-            let src_style = resolve_style(style_table, src_sq);
+            let src_style = resolve_style(row_styles, src_col);
             let (atlas, color) = if is_color {
                 // Colour glyphs (emoji) don't take the selection-fg /
                 // hint-fg swap — behaviour for
@@ -2259,7 +2350,7 @@ pub fn build_row_fg(
                 // this row.
                 (
                     CellText::ATLAS_GRAYSCALE,
-                    cell_fg(src_sq, src_style, renderer, term_colors),
+                    cell_fg(src_sq, src_style, palette, term_colors),
                 )
             } else {
                 let is_sel = cell_in_row_sel(row_sel, src_col as u16);
@@ -2271,17 +2362,17 @@ pub fn build_row_fg(
                 if is_sel {
                     (
                         CellText::ATLAS_GRAYSCALE,
-                        cell_fg_selected(src_sq, src_style, renderer, term_colors),
+                        cell_fg_selected(src_sq, src_style, palette, term_colors),
                     )
                 } else if let Some(tag) = hint_tag {
                     // Hint-fg wins over the cell's own fg, matching
                     // `.search` / `.search_selected` branches at
                     // `generic.zig:2829-2833` (the fg picker mirrors bg).
-                    (CellText::ATLAS_GRAYSCALE, cell_fg_hinted(tag, renderer))
+                    (CellText::ATLAS_GRAYSCALE, cell_fg_hinted(tag, palette))
                 } else {
                     (
                         CellText::ATLAS_GRAYSCALE,
-                        cell_fg(src_sq, src_style, renderer, term_colors),
+                        cell_fg(src_sq, src_style, palette, term_colors),
                     )
                 }
             };
@@ -2308,7 +2399,7 @@ pub fn build_row_fg(
     // BOOL_IS_CURSOR_GLYPH set, so the glyph reads inverted against
     // the cursor-colored block painted in `build_row_bg`.
     if let Some(pre) = preedit {
-        let text_fg = normalized_to_u8(renderer.named_colors.background.0);
+        let text_fg = normalized_to_u8(palette.named_colors().background.0);
         for col in pre.line.start_col..pre.line.end_col().min(cols) {
             let Some(PreeditCell::Start(cluster)) = pre.cell(col) else {
                 continue;
@@ -2336,8 +2427,8 @@ pub fn build_row_fg(
         row,
         cols,
         y,
-        style_table,
-        renderer,
+        row_styles,
+        palette,
         term_colors,
         grid,
         cell_w_u32,
@@ -2360,7 +2451,7 @@ pub fn build_row_fg(
             PreeditCaret::OnCell(col) => Some((
                 col,
                 DecorationStyle::ImeCaretUnderline,
-                normalized_to_u8(renderer.named_colors.background.0),
+                normalized_to_u8(palette.named_colors().background.0),
             )),
             PreeditCaret::PastEnd(col) => {
                 Some((col, DecorationStyle::ImeCaretBeam, pre.block_bg))
@@ -2557,12 +2648,12 @@ fn emit_preedit_caret(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn emit_underlines(
+fn emit_underlines<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
     y: u16,
-    style_table: &[Style],
-    renderer: &Renderer,
+    row_styles: &[Style],
+    palette: &P,
     term_colors: &TermColors,
     grid: &mut GridRenderer,
     cell_w: u32,
@@ -2580,7 +2671,7 @@ fn emit_underlines(
             continue;
         }
         let sq = row[Column(x)];
-        let style = resolve_style(style_table, sq);
+        let style = resolve_style(row_styles, x);
         let col = x as u16;
         // SGR underline (UNDER, double, curly, …) wins over the
         // hover-only forced underline. When the cell has no SGR
@@ -2606,18 +2697,18 @@ fn emit_underlines(
             // it stays visible against the selection bg. SGR 58 is
             // suppressed here — a theme's selection_foreground
             // overrides per-cell decoration color.
-            cell_fg_selected(sq, style, renderer, term_colors)
+            cell_fg_selected(sq, style, palette, term_colors)
         } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
             // Same reasoning as selection: underline inside a hint
             // should stay legible on the hint bg.
-            cell_fg_hinted(tag, renderer)
+            cell_fg_hinted(tag, palette)
         } else if hover_force {
             // Hover-only forced underline: use the cell fg so the
             // underline tracks the hyperlink text color (matches
             // hyperlink hover affordance).
-            cell_fg(sq, style, renderer, term_colors)
+            cell_fg(sq, style, palette, term_colors)
         } else {
-            decoration_color(sq, &style, renderer, term_colors)
+            decoration_color(sq, &style, palette, term_colors)
         };
         fg_scratch.push(CellText {
             glyph_pos: [slot.x as u32, slot.y as u32],
@@ -2634,12 +2725,12 @@ fn emit_underlines(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn emit_strikethroughs(
+fn emit_strikethroughs<P: GridPalette>(
     row: &Row<Square>,
     cols: usize,
     y: u16,
-    style_table: &[Style],
-    renderer: &Renderer,
+    row_styles: &[Style],
+    palette: &P,
     term_colors: &TermColors,
     grid: &mut GridRenderer,
     cell_w: u32,
@@ -2657,7 +2748,7 @@ fn emit_strikethroughs(
             continue;
         }
         let sq = row[Column(x)];
-        let style = resolve_style(style_table, sq);
+        let style = resolve_style(row_styles, x);
         if !style.flags.contains(StyleFlags::STRIKEOUT) {
             continue;
         }
@@ -2677,11 +2768,11 @@ fn emit_strikethroughs(
         // Strikethrough always uses the cell fg (there's no SGR for
         // a separate strike color, matching ).
         let color = if cell_in_row_sel(row_sel, col) {
-            cell_fg_selected(sq, style, renderer, term_colors)
+            cell_fg_selected(sq, style, palette, term_colors)
         } else if let Some(tag) = cell_in_row_hints(row_hints, col) {
-            cell_fg_hinted(tag, renderer)
+            cell_fg_hinted(tag, palette)
         } else {
-            cell_fg(sq, style, renderer, term_colors)
+            cell_fg(sq, style, palette, term_colors)
         };
         fg_scratch.push(CellText {
             glyph_pos: [slot.x as u32, slot.y as u32],
@@ -3000,7 +3091,6 @@ fn rasterize_glyph_native(
 #[cfg(test)]
 mod hint_label_tests {
     use super::*;
-    use crate::context::renderable::HintLabel;
 
     fn label(row: i32, col: usize, ch: char, is_first: bool) -> HintLabel {
         HintLabel {
@@ -3011,38 +3101,46 @@ mod hint_label_tests {
     }
 
     #[test]
-    fn push_hint_label_styles_appends_two_bold_badges() {
+    fn hint_label_styles_are_bold_badges() {
         use rio_backend::config::colors::ColorRgb;
-        let mut table = vec![Style::default()];
         let fg = [0.1, 0.1, 0.1, 1.0];
         let bg = [1.0, 0.5, 0.0, 1.0];
-        let base = push_hint_label_styles(&mut table, fg, bg);
-        assert_eq!(base, 1);
-        assert_eq!(table.len(), 3);
-        assert!(table[1].flags.contains(StyleFlags::BOLD));
-        assert!(table[2].flags.contains(StyleFlags::BOLD));
-        assert_eq!(table[1].bg, AnsiColor::Spec(ColorRgb::from_color_arr(bg)));
+        let (first, rest) = hint_label_styles(fg, bg);
+        assert!(first.flags.contains(StyleFlags::BOLD));
+        assert!(rest.flags.contains(StyleFlags::BOLD));
+        assert_eq!(first.bg, AnsiColor::Spec(ColorRgb::from_color_arr(bg)));
         assert_eq!(
-            table[2].bg,
+            rest.bg,
             AnsiColor::Spec(ColorRgb::from_color_arr([0.8, 0.4, 0.0, 1.0]))
         );
     }
 
     #[test]
     fn overlay_substitutes_label_squares_on_matching_row_only() {
+        let fg = [0.1, 0.1, 0.1, 1.0];
+        let bg = [1.0, 0.5, 0.0, 1.0];
+        let (first_style, rest_style) = hint_label_styles(fg, bg);
+        let pair = (first_style, rest_style);
         let row: Row<Square> = Row::new(10);
+        let row_styles = vec![Style::default(); 10];
         let labels = [label(3, 2, 'j', true), label(3, 3, 'f', false)];
         let mut hints = Vec::new();
 
-        assert!(overlay_hint_labels(&row, &labels, 2, 0, 5, &mut hints).is_none());
+        assert!(
+            overlay_hint_labels(&row, &row_styles, &labels, 2, 0, pair, &mut hints)
+                .is_none()
+        );
         assert!(hints.is_empty());
 
-        let overlaid = overlay_hint_labels(&row, &labels, 3, 0, 5, &mut hints).unwrap();
+        let (overlaid, styles) =
+            overlay_hint_labels(&row, &row_styles, &labels, 3, 0, pair, &mut hints)
+                .unwrap();
         assert_eq!(overlaid[Column(2)].c(), 'j');
-        assert_eq!(overlaid[Column(2)].style_id(), 5);
+        assert_eq!(styles[2], first_style);
         assert_eq!(overlaid[Column(3)].c(), 'f');
-        assert_eq!(overlaid[Column(3)].style_id(), 6);
+        assert_eq!(styles[3], rest_style);
         assert_eq!(overlaid[Column(4)].c(), row[Column(4)].c());
+        assert_eq!(styles[4], Style::default());
         assert_eq!(hints.len(), 2);
         assert!(hints.iter().all(|h| h.tag == HintTag::Label));
         assert_eq!(cell_in_row_hints(&hints, 2), Some(HintTag::Label));
@@ -3053,17 +3151,78 @@ mod hint_label_tests {
             hi: 9,
             tag: HintTag::Match,
         }];
-        overlay_hint_labels(&row, &labels, 3, 0, 5, &mut hints).unwrap();
+        overlay_hint_labels(&row, &row_styles, &labels, 3, 0, pair, &mut hints).unwrap();
         assert_eq!(cell_in_row_hints(&hints, 2), Some(HintTag::Label));
         assert_eq!(cell_in_row_hints(&hints, 5), Some(HintTag::Match));
 
         let mut hints = Vec::new();
-        assert!(overlay_hint_labels(&row, &labels, 3, 2, 5, &mut hints).is_none());
-        assert!(overlay_hint_labels(&row, &labels, 5, 2, 5, &mut hints).is_some());
+        assert!(
+            overlay_hint_labels(&row, &row_styles, &labels, 3, 2, pair, &mut hints)
+                .is_none()
+        );
+        assert!(
+            overlay_hint_labels(&row, &row_styles, &labels, 5, 2, pair, &mut hints)
+                .is_some()
+        );
 
         let oob = [label(3, 99, 'x', true)];
         let mut hints = Vec::new();
-        assert!(overlay_hint_labels(&row, &oob, 3, 0, 5, &mut hints).is_none());
+        assert!(
+            overlay_hint_labels(&row, &row_styles, &oob, 3, 0, pair, &mut hints)
+                .is_none()
+        );
         assert!(hints.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod cluster_text_tests {
+    use super::*;
+
+    /// The shaping buffer must receive attached combining marks (so
+    /// the shaper can compose them) but never variation selectors,
+    /// whose effect is already resolved into the font choice.
+    #[test]
+    fn push_cluster_chars_appends_marks_and_skips_selectors() {
+        let mut r = GridGlyphRasterizer::new();
+
+        #[cfg(target_os = "macos")]
+        {
+            let mut buf = [0u16; 2];
+            r.run_utf16_scratch
+                .extend_from_slice('e'.encode_utf16(&mut buf));
+            push_cluster_chars(&mut r, &['\u{301}', '\u{FE0F}', '\u{302}']);
+            let s = String::from_utf16(&r.run_utf16_scratch).unwrap();
+            assert_eq!(s, "e\u{301}\u{302}");
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            r.run_str_scratch.push('e');
+            push_cluster_chars(&mut r, &['\u{301}', '\u{FE0F}', '\u{302}']);
+            assert_eq!(r.run_str_scratch, "e\u{301}\u{302}");
+        }
+    }
+
+    /// Cell-start bookkeeping: with marks in the buffer, per-cell
+    /// starts (not a per-char cursor) must map shaped clusters back to
+    /// cells. Simulates a run of `e`+U+0301 then `x`: a glyph whose
+    /// cluster points at the mark still belongs to cell 0, and `x`'s
+    /// glyph to cell 1.
+    #[test]
+    fn cell_starts_attribute_marked_cells_correctly() {
+        // Buffer layout (UTF-8 bytes): e=0, U+0301=1..3, x=3.
+        let cell_starts: Vec<u32> = vec![0, 3];
+        let clusters = [0u32, 1, 3];
+        let mut cell_idx: u16 = 0;
+        let mut out = Vec::new();
+        for g in clusters {
+            while (cell_idx as usize + 1) < cell_starts.len()
+                && cell_starts[cell_idx as usize + 1] <= g
+            {
+                cell_idx = cell_idx.saturating_add(1);
+            }
+            out.push(cell_idx);
+        }
+        assert_eq!(out, [0, 0, 1]);
     }
 }

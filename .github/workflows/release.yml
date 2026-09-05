@@ -47,6 +47,24 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Metainfo carries this release
+        # Flathub builds from the tag, so the AppStream release entry
+        # must be in the tagged tree; a post-tag fixup is forever one
+        # release behind (the list once drifted 17 releases).
+        # misc/prepare-release.sh adds it together with the version
+        # bump; this gate makes skipping that impossible.
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          if ! grep -qF "release version=\"$v\"" misc/com.rioterm.Rio.metainfo.xml; then
+            echo "misc/com.rioterm.Rio.metainfo.xml has no <release> entry for $v." >&2
+            echo "Run misc/prepare-release.sh $v before tagging (it adds the entry" >&2
+            echo "alongside the workspace version bump)." >&2
+            echo "The tag already exists, so after fixing: retag with" >&2
+            echo "  git tag -f v$v && git push -f origin v$v" >&2
+            exit 1
+          fi
       - uses: actions/cache@v5
         with:
           path: dist/${{ matrix.cache-subdir }}
@@ -106,6 +124,36 @@ jobs:
           distribution: goreleaser-pro
           version: nightly
           args: release --clean --split ${{ matrix._ids }} --nightly --skip=winget
+  # Full gnu-toolchain coverage (LTO release profile on all three MSYS2
+  # flavors) runs here as a release gate instead of on every push.
+  msys2-build:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        sys: [MINGW64, UCRT64, CLANG64]
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.sys }}
+          release: false
+          update: false
+          install: base-devel git
+          pacboy: >-
+            rust:p
+            cc:p
+            pkgconf:p
+            cmake:p
+            freetype:p
+            python:p
+            fontconfig:p
+      - name: Build (release)
+        shell: msys2 {0}
+        run: cargo build --release --features wgpu
+
   release:
     # skip if cache exists for same commit, since we probably already released
     if: needs.build.outputs.cache-hit != 'true'

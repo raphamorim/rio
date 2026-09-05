@@ -32,8 +32,9 @@ impl Handler for TestHandler {
         self.graphics.push(data);
     }
 
-    fn place_graphic(&mut self, placement: PlacementRequest) {
+    fn place_graphic(&mut self, placement: PlacementRequest) -> bool {
         self.placements.push(placement);
+        true
     }
 
     fn delete_graphics(&mut self, delete: DeleteRequest) {
@@ -249,18 +250,34 @@ fn test_query_response() {
     let mut handler = TestHandler::default();
     let mut state = KittyGraphicsState::default();
 
-    // Parse query request
-    let params = vec![b"G".as_ref(), b"a=q,i=1".as_ref()];
-
+    // A query runs the real decode path: valid data answers OK…
+    let params = vec![
+        b"G".as_ref(),
+        b"a=q,i=1,f=32,s=1,v=1".as_ref(),
+        b"AAAAAA==".as_ref(),
+    ];
     if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
         if let Some(response_str) = response.response {
             handler.kitty_graphics_response(response_str);
         }
     }
-
-    // Verify response was generated
     assert_eq!(handler.responses.len(), 1, "Should generate one response");
     assert!(handler.responses[0].contains("Gi=1;OK"));
+
+    // …and a query the terminal cannot decode reports the failure so
+    // the client keeps its fallback path.
+    let params = vec![b"G".as_ref(), b"a=q,i=1".as_ref()];
+    if let Some(response) = kitty_graphics_protocol::parse(&params, &mut state) {
+        if let Some(response_str) = response.response {
+            handler.kitty_graphics_response(response_str);
+        }
+    }
+    assert_eq!(handler.responses.len(), 2);
+    assert!(
+        !handler.responses[1].contains(";OK"),
+        "undecodable query must not report OK: {}",
+        handler.responses[1]
+    );
 }
 
 #[test]
@@ -4873,13 +4890,14 @@ fn test_reclaim_cadence_trigger() {
     let mut term = geometry_test_term();
     assert!(!term.grid.extras_table.should_reclaim());
 
-    // Burn through the allocation cadence with throwaway slots.
-    for _ in 0..4096 {
-        let id = term
-            .grid
-            .extras_table
-            .alloc(crate::crosswords::square::Extras::default());
-        term.grid.extras_table.free(id);
+    // Burn through the allocation cadence. Contents must be unique:
+    // slots are interned, so repeat content reuses its slot without
+    // counting as an allocation (and per-slot free no longer exists —
+    // the sweep is the only reclamation).
+    for i in 0..4096u32 {
+        let mut extras = crate::crosswords::square::Extras::default();
+        extras.zerowidth.push(char::from_u32(0x1000 + i).unwrap());
+        let _ = term.grid.extras_table.alloc(extras);
     }
     assert!(term.grid.extras_table.should_reclaim(), "cadence elapsed");
 

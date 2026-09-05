@@ -90,25 +90,6 @@ impl<T: EventListener> Context<T> {
     }
 
     #[inline]
-    pub fn set_hyperlink_range(&mut self, hyperlink_range: Option<SelectionRange>) {
-        let old_hyperlink = self.renderable_content.hyperlink_range;
-
-        if old_hyperlink != hyperlink_range {
-            // Hyperlinks affect terminal line rendering, so use terminal damage
-            self.renderable_content
-                .pending_update
-                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
-        }
-
-        self.renderable_content.hyperlink_range = hyperlink_range;
-    }
-
-    #[inline]
-    pub fn has_hyperlink_range(&self) -> bool {
-        self.renderable_content.hyperlink_range.is_some()
-    }
-
-    #[inline]
     pub fn cursor_from_ref(&self) -> Cursor {
         Cursor {
             state: self.renderable_content.cursor.state.new_from_self(),
@@ -140,6 +121,7 @@ pub struct ContextManagerConfig {
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
     pub scrollback_history_limit: usize,
+    pub grapheme_clustering: bool,
 }
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
@@ -215,6 +197,20 @@ pub fn create_mock_context<
     .unwrap()
 }
 
+/// Where `current_index` lands after removing the tab at `removed`:
+/// the focused tab falls back to its left neighbor, and a background
+/// removal shifts the focused index left only when the removed tab
+/// sat before it. Pure, so the arithmetic the tmux SIGHUP crash
+/// hinged on stays testable without a GPU.
+#[inline]
+fn current_index_after_tab_removal(current: usize, removed: usize) -> usize {
+    if removed <= current {
+        current.saturating_sub(1)
+    } else {
+        current
+    }
+}
+
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     fn create_context(
@@ -251,6 +247,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             route_id,
             config.scrollback_history_limit,
         );
+        terminal.set_grapheme_clustering(config.grapheme_clustering);
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
@@ -471,56 +468,53 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         route_id: usize,
         sugarloaf: &mut Sugarloaf,
     ) -> bool {
-        let requires_change_route = self.current_route == route_id;
+        // Called when terminal.exit() fires: a tab-close action (the
+        // context is already gone, nothing found below, return false)
+        // or a PTY that exited on its own. The exiting PTY can live
+        // ANYWHERE: a background tab, or a background split of any
+        // tab (`tmux new -X` SIGHUPs a shell the user is not even
+        // looking at), so the search covers every panel of every tab
+        // rather than assuming the focused one.
+        let Some(tab_index) = self
+            .contexts
+            .iter_mut()
+            .position(|grid| grid.get_by_route_id(route_id).is_some())
+        else {
+            return self.contexts.is_empty();
+        };
 
-        // should_close_context_manager is only called when terminal.exit()
-        // is triggered. The terminal.exit() happens for any drop on context
-        // by tab removal or if the Pty is exited (e.g: exit/control+d)
-        //
-        // In the tab case we already have removed the context with the
-        // specified route_id so isn't gonna find anything. Then will be false.
-        //
-        // However if the tab is killed by Pty and not a tab action then
-        // it means we need to clean the context with the specified route_id.
-        // If there's no context then should return true and kill the window.
-        if !self.contexts.is_empty() {
-            // In case Grid has more than one item
-            if self.current_grid().len() > 1 {
-                if self.current().route_id == route_id {
-                    self.remove_current_grid(sugarloaf);
-                }
-
-                return false;
+        // A split dies: remove just that panel, keep the tab. When
+        // the tab is focused and its focused panel was the one that
+        // died, the sibling selection becomes the current route.
+        if self.contexts[tab_index].len() > 1 {
+            self.contexts[tab_index].remove_by_route(route_id, sugarloaf);
+            if tab_index == self.current_index {
+                self.current_route = self.contexts[tab_index].current().route_id;
             }
-
-            // In case Grid has only one item
-            if let Some(index_to_remove) = self
-                .contexts
-                .iter()
-                .position(|ctx| ctx.current().route_id == route_id)
-            {
-                let mut should_set_current = false;
-                if requires_change_route {
-                    if index_to_remove > 1 {
-                        self.set_current(index_to_remove - 1);
-                    } else {
-                        should_set_current = true;
-                    }
-                }
-                self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
-                self.contexts.remove(index_to_remove);
-
-                if should_set_current {
-                    self.set_current(0);
-                }
-
-                if !self.contexts.is_empty() {
-                    self.keep_only_active_context_visible(sugarloaf);
-                }
-            };
+            return false;
         }
 
-        self.contexts.is_empty()
+        // A whole tab dies.
+        self.contexts[tab_index].remove_from_sugarloaf(sugarloaf);
+        self.contexts.remove(tab_index);
+
+        if self.contexts.is_empty() {
+            return true;
+        }
+
+        // Removing a tab shifts every index after it. Adjusting only
+        // when the focused tab itself died leaves `current_index`
+        // past the end when a background tab exits first (the tmux
+        // SIGHUP crash: len 1, index 1).
+        let new_index = current_index_after_tab_removal(self.current_index, tab_index);
+        if tab_index == self.current_index {
+            self.set_current(new_index);
+        } else {
+            self.current_index = new_index;
+        }
+
+        self.keep_only_active_context_visible(sugarloaf);
+        false
     }
 
     #[inline]
@@ -575,10 +569,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn close_unfocused_tabs(&mut self) {
+    pub fn close_unfocused_tabs(&mut self, sugarloaf: &mut Sugarloaf) {
         let current_route_id = self.current().route_id;
-        self.contexts
-            .retain(|ctx| ctx.current().route_id == current_route_id);
+        self.contexts.retain(|ctx| {
+            let keep = ctx.current().route_id == current_route_id;
+            if !keep {
+                ctx.remove_from_sugarloaf(sugarloaf);
+            }
+            keep
+        });
         self.current_route = self.contexts[0].current().route_id;
         self.set_current(0);
     }
@@ -885,7 +884,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         // Remove all rich text from the grid before removing the context
-        self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
+        self.contexts[index_to_remove].remove_from_sugarloaf(sugarloaf);
         self.contexts.remove(index_to_remove);
 
         if should_set_current {
@@ -1085,6 +1084,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title: config.title,
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
+            grapheme_clustering: config.grapheme_clustering,
         };
 
         let current = self.current();
@@ -1313,6 +1313,23 @@ pub mod test {
 
         assert_eq!(context_manager.len(), 3);
         assert_eq!(context_manager.capacity, 3);
+    }
+
+    /// The tmux `new -ADXs` crash (#1848): SIGHUP kills a BACKGROUND
+    /// tab's shell, the tab at a lower index is removed, and the
+    /// focused index must shift left with it or the very next
+    /// `contexts[current_index]` is out of bounds (len 1, index 1).
+    #[test]
+    fn current_index_adjusts_after_tab_removal() {
+        // Background tab before the focused one dies: shift left.
+        assert_eq!(current_index_after_tab_removal(1, 0), 0);
+        assert_eq!(current_index_after_tab_removal(3, 1), 2);
+        // Background tab after the focused one: nothing shifts.
+        assert_eq!(current_index_after_tab_removal(0, 1), 0);
+        assert_eq!(current_index_after_tab_removal(2, 3), 2);
+        // The focused tab itself: fall back to the left neighbor.
+        assert_eq!(current_index_after_tab_removal(0, 0), 0);
+        assert_eq!(current_index_after_tab_removal(2, 2), 1);
     }
 
     #[test]

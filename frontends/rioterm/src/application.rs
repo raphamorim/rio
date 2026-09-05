@@ -466,7 +466,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::UpdateGraphics { route_id, queues }) => {
+                use rio_backend::sugarloaf::route_image_key;
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    // A batch the VT thread queued before the user
+                    // closed its tab or split would otherwise land
+                    // under a route nothing will ever release.
+                    if route
+                        .window
+                        .screen
+                        .context_manager
+                        .get_by_route_id(route_id)
+                        .is_none()
+                    {
+                        return;
+                    }
+
                     // Process graphics directly in sugarloaf
                     let sugarloaf = &mut route.window.screen.sugarloaf;
 
@@ -474,19 +488,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // texture store with kitty images, in a disjoint key
                     // namespace.
                     for graphic_data in queues.pending {
-                        let key = crate::renderer::atlas_image_key(graphic_data.id.get());
+                        let key = route_image_key(
+                            route_id,
+                            crate::renderer::atlas_image_key(graphic_data.id.get()),
+                        );
                         sugarloaf.image_data.insert(
                             key,
-                            rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
-                                graphic_data,
-                            ),
-                        );
-                    }
-
-                    // Image textures (kitty) → separate store, no clone
-                    for (image_id, graphic_data) in queues.pending_images {
-                        sugarloaf.image_data.insert(
-                            crate::renderer::kitty_image_key(image_id),
                             rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
                                 graphic_data,
                             ),
@@ -496,8 +503,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Removals arrive as final image keys (atlas refs
                     // dropped off scrollback, kitty evictions) and free
                     // both the pixel store and the cached GPU texture.
+                    // They run before the kitty uploads so a batch that
+                    // frees a key and resends it keeps the new pixels.
                     for key in queues.remove_queue {
-                        sugarloaf.remove_image(key);
+                        sugarloaf.remove_image(route_image_key(route_id, key));
+                    }
+
+                    // Image textures (kitty) → separate store, no clone
+                    for (image_id, graphic_data) in queues.pending_images {
+                        sugarloaf.image_data.insert(
+                            route_image_key(
+                                route_id,
+                                crate::renderer::kitty_image_key(image_id),
+                            ),
+                            rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
+                                graphic_data,
+                            ),
+                        );
                     }
 
                     // Mark the panel dirty: the renderer skips non-dirty
@@ -1177,6 +1199,30 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
             WindowEvent::ModifiersChanged(modifiers) => {
                 route.window.screen.set_modifiers(modifiers);
+
+                // Hint mods (cmd on macOS) are pressed with the pointer
+                // already parked over the link, and `CursorMoved` only
+                // recomputes hints when the pointer crosses a cell
+                // boundary. Without refreshing here the link is never
+                // highlighted, so the click that follows has nothing to
+                // activate. The set half only runs with the pointer inside
+                // the text area (a clamped chrome position must not light
+                // up a link it is not over), but the clear half always
+                // runs: a highlight left behind would outlive its modifier
+                // and hijack the next plain click.
+                if route.path == RoutePath::Terminal
+                    && (if route.window.screen.mouse.inside_text_area {
+                        route.window.screen.update_highlighted_hints()
+                    } else {
+                        route.window.screen.clear_highlighted_hint()
+                    })
+                {
+                    route
+                        .window
+                        .winit_window
+                        .set_cursor(route.window.screen.mouse_cursor_icon());
+                    route.window.screen.context_manager.request_render();
+                }
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
@@ -1201,6 +1247,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     {
                         route.window.screen.mouse.left_button_state =
                             ElementState::Released;
+                        // A release swallowed here must also drop the hint
+                        // latch, or a later chrome-consumed press would
+                        // release against a hint it never landed on.
+                        route.window.screen.mouse.hint_click_latched = None;
                         if let Some(ref mut island) = route.window.screen.renderer.island
                         {
                             island.cancel_drag();
@@ -1359,9 +1409,29 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // Always try panel switching first: if the click
                         // targets a different panel, switch to it regardless
                         // of mouse mode (e.g. neovim capturing clicks).
+                        //
+                        // A left click on a highlighted hint bypasses mouse
+                        // reporting the same way shift does: the hint's mods
+                        // are held, so the user is following the link, not
+                        // clicking inside the application. The hint itself is
+                        // latched for the release handler: re-evaluating
+                        // there would split a press from its release when
+                        // the modifier changes mid-click, and the release
+                        // must know which hint the press landed on.
+                        let latched = if button == MouseButton::Left {
+                            route.window.screen.highlighted_hint().cloned()
+                        } else {
+                            None
+                        };
+                        let hint_click = latched.is_some();
+                        if button == MouseButton::Left {
+                            route.window.screen.mouse.hint_click_latched = latched;
+                        }
+
                         if route.window.screen.select_current_based_on_mouse() {
                             route.request_redraw();
                         } else if !route.window.screen.modifiers.state().shift_key()
+                            && !hint_click
                             && route.window.screen.mouse_mode()
                         {
                             // Process mouse press before bindings to update the `click_state`.
@@ -1387,10 +1457,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 &mut self.router.clipboard,
                             );
                         } else {
-                            if route.window.screen.trigger_hyperlink() {
-                                return;
-                            }
-
                             // Load mouse point, treating message bar and padding as the closest square.
                             let display_offset = route.window.screen.display_offset();
 
@@ -1448,7 +1514,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
+                        // Consume the press handler's latched hint so press
+                        // and release always take the same path, even when
+                        // the hint modifier changed mid-click. The
+                        // application never sees one without the other.
+                        let latched_hint = if button == MouseButton::Left {
+                            route.window.screen.mouse.hint_click_latched.take()
+                        } else {
+                            None
+                        };
+                        let hint_click = latched_hint.is_some();
+
                         if !route.window.screen.modifiers.state().shift_key()
+                            && !hint_click
                             && route.window.screen.mouse_mode()
                         {
                             let code = match button {
@@ -1473,10 +1551,42 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // plain clicks only, when no selection exists.
                         if route.window.screen.selection_is_empty() {
                             if button == MouseButton::Left {
-                                route
-                                    .window
-                                    .screen
-                                    .trigger_hint(&mut self.router.clipboard);
+                                // Only a latched press opens a link, and only
+                                // when the release lands on the same span the
+                                // press did. Mouse mode never turns the drag
+                                // into a selection, so without the span check
+                                // a press on one link released over another
+                                // would open the wrong one; and a press the
+                                // chrome consumed (which never latches) must
+                                // not open a highlight it never touched. The
+                                // latched match is what executes: a modifier
+                                // change mid-click can swap which hint config
+                                // the same span resolves to.
+                                if let Some(latched) = latched_hint {
+                                    let same_span = route
+                                        .window
+                                        .screen
+                                        .highlighted_hint()
+                                        .is_some_and(|h| {
+                                            h.text == latched.text
+                                                && h.start == latched.start
+                                                && h.end == latched.end
+                                        });
+                                    if same_span {
+                                        route.window.screen.open_latched_hint(
+                                            latched,
+                                            &mut self.router.clipboard,
+                                        );
+                                        // Paint the cleared highlight now: an
+                                        // action that steals no focus (Copy)
+                                        // schedules no frame of its own.
+                                        route
+                                            .window
+                                            .screen
+                                            .context_manager
+                                            .request_render();
+                                    }
+                                }
                             }
                         } else if matches!(button, MouseButton::Left | MouseButton::Right)
                             && self.config.copy_on_select
@@ -1622,17 +1732,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.request_redraw();
                 }
 
-                // Only force the default cursor while the island is
-                // visible — when it's hidden (hide_if_single + single
-                // tab on macOS) the band at the top has no tabs to
-                // hover, and the I-beam from the terminal grid below
-                // should stay during top-edge drags.
+                // The macOS full-size content view keeps this band as custom
+                // window chrome even when hide-if-single hides the island.
+                // Other platforms only reserve it while the island is drawn.
                 use crate::renderer::island::ISLAND_HEIGHT;
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
                 let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
                 let num_tabs = route.window.screen.ctx().len();
                 let nav = &route.window.screen.renderer.navigation;
-                if nav.island_visible(num_tabs) && y <= island_height_px {
+                if nav.chrome_band_reserved(num_tabs) && y <= island_height_px {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
                 }
@@ -1668,6 +1776,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             delta,
                             &mut route.window.screen.sugarloaf,
                         );
+                    // Dragging a split divider displaces panel origins;
+                    // that is layout, not cursor travel.
+                    route.window.screen.renderer.trail_cursor.snap();
                     let cursor = match border.direction {
                         crate::layout::BorderDirection::Vertical => CursorIcon::ColResize,
                         crate::layout::BorderDirection::Horizontal => {
@@ -1769,35 +1880,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     && (route.window.screen.modifiers.state().shift_key()
                         || !route.window.screen.mouse_mode());
 
-                if !is_selecting && route.window.screen.update_highlighted_hints() {
-                    route.window.winit_window.set_cursor(CursorIcon::Pointer);
-                    route.window.screen.context_manager.request_render();
-                } else if !is_selecting {
-                    let cursor_icon =
-                        if !route.window.screen.modifiers.state().shift_key()
-                            && route.window.screen.mouse_mode()
-                        {
-                            CursorIcon::Default
-                        } else {
-                            CursorIcon::Text
-                        };
-
-                    route.window.winit_window.set_cursor(cursor_icon);
-
-                    // In case hyperlink range has cleaned trigger one more render
-                    if route
+                if !is_selecting {
+                    let hint_changed = route.window.screen.update_highlighted_hints();
+                    route
                         .window
-                        .screen
-                        .context_manager
-                        .current()
-                        .has_hyperlink_range()
-                    {
-                        route
-                            .window
-                            .screen
-                            .context_manager
-                            .current_mut()
-                            .set_hyperlink_range(None);
+                        .winit_window
+                        .set_cursor(route.window.screen.mouse_cursor_icon());
+
+                    if hint_changed {
                         route.window.screen.context_manager.request_render();
                     }
                 }
@@ -1811,7 +1901,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 } else if cell_changed && route.window.screen.has_mouse_motion_and_drag()
                 {
                     if lmb_pressed {
-                        route.window.screen.mouse_report(32, ElementState::Pressed);
+                        // A latched hint click hides its press and release
+                        // from the application; a drag report leaking out
+                        // mid-click would arrive with no press around it.
+                        if route.window.screen.mouse.hint_click_latched.is_none() {
+                            route.window.screen.mouse_report(32, ElementState::Pressed);
+                        }
                     } else if route.window.screen.mouse.middle_button_state
                         == ElementState::Pressed
                     {

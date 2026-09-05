@@ -213,6 +213,7 @@ pub enum RegisterError {
     HintingUnsupported,
     MalformedPayload,
     PayloadTooLarge,
+    OutlineTooLarge,
 }
 
 impl RegisterError {
@@ -223,6 +224,7 @@ impl RegisterError {
             RegisterError::HintingUnsupported => "hinting_unsupported",
             RegisterError::MalformedPayload => "malformed_payload",
             RegisterError::PayloadTooLarge => "payload_too_large",
+            RegisterError::OutlineTooLarge => "outline_too_large",
         }
     }
 }

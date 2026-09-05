@@ -16,8 +16,8 @@
 //!
 //! [`Handler::input_codepoints`]: crate::performer::handler::Handler::input_codepoints
 
+use rio_unicode::UnicodeWidthChar;
 use std::sync::OnceLock;
-use unicode_width::UnicodeWidthChar;
 
 const TABLE_LEN: usize = 0x2_0000;
 const SENTINEL_NONE: u8 = 0xFF;

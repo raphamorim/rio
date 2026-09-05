@@ -1,3 +1,5 @@
+pub use rio_grid::preedit::PreeditCursor;
+
 #[derive(Debug, Default)]
 pub struct Ime {
     /// Whether the IME is enabled.
@@ -37,19 +39,6 @@ impl Ime {
     pub fn preedit(&self) -> Option<&Preedit> {
         self.preedit.as_ref()
     }
-}
-
-/// Where the IME put its caret, as the platform reported it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PreeditCursor {
-    /// The IME asked for no visible caret. Wayland (`cursor_begin =
-    /// -1`) and Windows deliver this with non-empty text while the
-    /// user pages through conversion candidates; drawing a caret then
-    /// would contradict the IME's own UI.
-    Hidden,
-    /// Caret before the cluster containing this byte offset; offsets
-    /// at or past the end of the text mean end-of-text.
-    Byte(usize),
 }
 
 #[derive(Debug, PartialEq, Eq)]

@@ -38,10 +38,23 @@ const SYNC_ESCAPE_LEN: usize = 8;
 /// BSU CSI sequence for beginning or extending synchronized updates.
 const BSU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026h";
 
+/// Shortest synchronized-update escape (the DCS form).
+const SYNC_ESCAPE_MIN_LEN: usize = 7;
+
+/// BSU in the legacy iTerm2 DCS form (`DCS = 1 s ST`). Terminfo files in
+/// the wild advertise this via the `Sync` capability, and tmux brackets
+/// every redraw with whatever that capability says, so both forms must
+/// gate presentation or a multiplexer believes its frames are atomic
+/// while the terminal paints mid-redraw states.
+const BSU_DCS: [u8; SYNC_ESCAPE_MIN_LEN] = *b"\x1bP=1s\x1b\\";
+
 /// ESU CSI sequence for terminating synchronized updates.
 const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
 
-fn parse_sgr_color(params: &mut dyn Iterator<Item = u16>) -> Option<AnsiColor> {
+/// ESU in the legacy iTerm2 DCS form (`DCS = 2 s ST`).
+const ESU_DCS: [u8; SYNC_ESCAPE_MIN_LEN] = *b"\x1bP=2s\x1b\\";
+
+fn parse_sgr_color(params: &mut impl Iterator<Item = u16>) -> Option<AnsiColor> {
     match params.next() {
         Some(2) => Some(AnsiColor::Spec(ColorRgb {
             r: u8::try_from(params.next()?).ok()?,
@@ -379,7 +392,16 @@ pub trait Handler {
     }
 
     /// Place an existing graphic at a specific location (for a=p).
-    fn place_graphic(&mut self, _placement: kitty_graphics_protocol::PlacementRequest) {}
+    /// Place a previously transmitted kitty graphic (for `a=p`).
+    /// Returns whether the referenced image exists — the dispatcher
+    /// answers ENOENT instead of OK when it does not, so clients can
+    /// retransmit evicted images instead of waiting on a blank cell.
+    fn place_graphic(
+        &mut self,
+        _placement: kitty_graphics_protocol::PlacementRequest,
+    ) -> bool {
+        false
+    }
 
     /// Delete graphics based on the specified criteria.
     fn delete_graphics(&mut self, _delete: kitty_graphics_protocol::DeleteRequest) {}
@@ -680,29 +702,40 @@ impl Processor {
     where
         H: Handler,
     {
-        // Get constraints within which a new escape character might be relevant.
+        // Get constraints within which a new escape character might be
+        // relevant. The lookback covers the longest escape; the scan end
+        // leaves room for the shortest, with per-candidate bounds checks
+        // below covering the difference.
         let buffer_len = self.state.sync_state.buffer.len();
         let start_offset = (buffer_len - new_bytes).saturating_sub(SYNC_ESCAPE_LEN - 1);
-        let end_offset = buffer_len.saturating_sub(SYNC_ESCAPE_LEN - 1);
+        let end_offset = buffer_len.saturating_sub(SYNC_ESCAPE_MIN_LEN - 1);
         let search_buffer = &self.state.sync_state.buffer[start_offset..end_offset];
 
         // Search for termination/extension escapes in the added bytes.
         //
         // NOTE: It is technically legal to specify multiple private modes in the same
-        // escape, but we only allow EXACTLY `\e[?2026h`/`\e[?2026l` to keep the parser
-        // more simple.
+        // escape, but we only allow EXACTLY `\e[?2026h`/`\e[?2026l` (or their DCS
+        // `\eP=1s\e\\`/`\eP=2s\e\\` equivalents) to keep the parser more simple.
         let mut bsu_offset = None;
         for index in memchr::memchr_iter(0x1B, search_buffer).rev() {
             let offset = start_offset + index;
-            let escape = &self.state.sync_state.buffer[offset..offset + SYNC_ESCAPE_LEN];
+            let buffer = &self.state.sync_state.buffer;
+            let is_bsu = buffer.get(offset..offset + SYNC_ESCAPE_LEN)
+                == Some(BSU_CSI.as_slice())
+                || buffer.get(offset..offset + SYNC_ESCAPE_MIN_LEN)
+                    == Some(BSU_DCS.as_slice());
+            let is_esu = buffer.get(offset..offset + SYNC_ESCAPE_LEN)
+                == Some(ESU_CSI.as_slice())
+                || buffer.get(offset..offset + SYNC_ESCAPE_MIN_LEN)
+                    == Some(ESU_DCS.as_slice());
 
-            if escape == BSU_CSI {
+            if is_bsu {
                 self.state
                     .sync_state
                     .timeout
                     .set_timeout(SYNC_UPDATE_TIMEOUT);
                 bsu_offset = Some(offset);
-            } else if escape == ESU_CSI {
+            } else if is_esu {
                 self.stop_sync_internal(handler, bsu_offset);
                 break;
             }
@@ -812,7 +845,7 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                 return;
             };
 
-            if let Some(response) =
+            if let Some(mut response) =
                 kitty_graphics_protocol::parse(&kitty_params, chunking_state)
             {
                 if response.incomplete {
@@ -848,8 +881,12 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                         placement.image_id
                     );
 
-                    // a=p: Display previously stored image
-                    self.handler.place_graphic(placement);
+                    // a=p: Display previously stored image. A placement
+                    // of an unknown image answers ENOENT rather than OK,
+                    // matching kitty, so the client knows to retransmit.
+                    if !self.handler.place_graphic(placement) {
+                        response.response = response.error_response.take();
+                    }
                 }
 
                 if let Some(delete) = response.delete_request {
@@ -994,6 +1031,28 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 // XTGETTCAP request: DCS + q <hex-encoded-names> ST
                 self.state.xtgettcap_state.active = true;
                 self.state.xtgettcap_state.buffer.clear();
+            }
+            // Legacy iTerm2 synchronized updates (`DCS = 1 s ST` begin,
+            // `DCS = 2 s ST` end), the form older `Sync` terminfo
+            // capabilities advertise. Mirrors the CSI ?2026 intercepts.
+            ('s', [b'=']) => {
+                let param = params.iter().next().map(|p| p[0]).unwrap_or(0);
+                match param {
+                    1 => {
+                        self.state
+                            .sync_state
+                            .timeout
+                            .set_timeout(SYNC_UPDATE_TIMEOUT);
+                        self.handler
+                            .set_private_mode(NamedPrivateMode::SyncUpdate.into());
+                    }
+                    2 => {
+                        self.state.sync_state.timeout.clear_timeout();
+                        self.handler
+                            .unset_private_mode(NamedPrivateMode::SyncUpdate.into());
+                    }
+                    _ => (),
+                }
             }
             _ => debug!(
                 "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
@@ -1549,6 +1608,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
     /// default OSC buffer size (1024 bytes).
     fn apc_put(&mut self, byte: u8) {
         self.state.apc_state.buffer.push(byte);
+    }
+
+    fn apc_put_slice(&mut self, bytes: &[u8]) {
+        self.state.apc_state.buffer.extend_from_slice(bytes);
     }
 
     /// Called when the APC sequence ends. Processes the accumulated APC data.
@@ -2176,6 +2239,76 @@ mod tests {
         }
     }
 
+    /// Captures kitty graphics replies and simulates an image store, so
+    /// the dispatch's success/failure reply selection can be observed.
+    #[derive(Default)]
+    struct KittyReplyHandler {
+        stored: std::collections::HashSet<u32>,
+        replies: Vec<String>,
+        chunking: kitty_graphics_protocol::KittyGraphicsState,
+    }
+
+    impl Handler for KittyReplyHandler {
+        fn place_graphic(
+            &mut self,
+            placement: kitty_graphics_protocol::PlacementRequest,
+        ) -> bool {
+            self.stored.contains(&placement.image_id)
+        }
+
+        fn kitty_graphics_response(&mut self, response: String) {
+            self.replies.push(response);
+        }
+
+        fn kitty_chunking_state_mut(
+            &mut self,
+        ) -> Option<&mut kitty_graphics_protocol::KittyGraphicsState> {
+            Some(&mut self.chunking)
+        }
+    }
+
+    /// `a=p` referencing an image the terminal does not hold must answer
+    /// ENOENT — kitty clients use it to retransmit evicted images. An
+    /// unconditional OK left them waiting on a permanently blank cell.
+    #[test]
+    fn placement_of_missing_image_replies_enoent() {
+        let mut handler = KittyReplyHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=99\x1b\\");
+        assert_eq!(handler.replies.len(), 1);
+        assert!(
+            handler.replies[0].contains("ENOENT"),
+            "missing image must be ENOENT: {:?}",
+            handler.replies[0]
+        );
+        assert!(handler.replies[0].contains("i=99"));
+
+        handler.replies.clear();
+        handler.stored.insert(99);
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=99\x1b\\");
+        assert_eq!(handler.replies.len(), 1);
+        assert!(
+            handler.replies[0].contains(";OK"),
+            "existing image must be OK: {:?}",
+            handler.replies[0]
+        );
+    }
+
+    /// `q=2` suppresses both outcomes, `q=1` still reports failures.
+    #[test]
+    fn placement_replies_respect_quiet_levels() {
+        let mut handler = KittyReplyHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=7,q=2\x1b\\");
+        assert!(handler.replies.is_empty(), "q=2 must suppress ENOENT");
+
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=7,q=1\x1b\\");
+        assert_eq!(handler.replies.len(), 1, "q=1 must still report errors");
+        assert!(handler.replies[0].contains("ENOENT"));
+    }
+
     #[test]
     fn sync_update_inline_bsu_esu_disarms_timeout() {
         let mut handler = SyncHandler::default();
@@ -2203,6 +2336,74 @@ mod tests {
         assert_eq!(handler.printed, "hidden");
         assert!(processor.sync_timeout().sync_timeout().is_none());
         assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// The legacy iTerm2 DCS form (`DCS = 1 s ST` / `DCS = 2 s ST`) must
+    /// gate presentation exactly like CSI ?2026: terminfo `Sync`
+    /// capabilities in the wild advertise this form, and tmux brackets
+    /// its redraws with whatever the capability says.
+    #[test]
+    fn sync_update_dcs_form_inline_disarms_timeout() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"a\x1bP=1s\x1b\\b\x1bP=2s\x1b\\c");
+
+        assert_eq!(handler.printed, "abc");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    #[test]
+    fn sync_update_dcs_form_buffers_across_chunks_until_esu() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1bP=1s\x1b\\");
+        assert!(processor.sync_timeout().sync_timeout().is_some());
+
+        processor.advance(&mut handler, b"hidden");
+        assert_eq!(handler.printed, "");
+
+        processor.advance(&mut handler, b"\x1bP=2s\x1b\\");
+        assert_eq!(handler.printed, "hidden");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+        assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// A DCS end may terminate a CSI-started update and the other way
+    /// around: both name the same mode.
+    #[test]
+    fn sync_update_forms_interoperate() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        processor.advance(&mut handler, b"one");
+        processor.advance(&mut handler, b"\x1bP=2s\x1b\\");
+        assert_eq!(handler.printed, "one");
+
+        processor.advance(&mut handler, b"\x1bP=1s\x1b\\");
+        processor.advance(&mut handler, b"two");
+        assert_eq!(handler.printed, "one");
+        processor.advance(&mut handler, b"\x1b[?2026l");
+        assert_eq!(handler.printed, "onetwo");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
+    }
+
+    /// A DCS sync marker split across reads must still be recognized
+    /// once complete (the scanner re-examines the lookback window).
+    #[test]
+    fn sync_update_dcs_form_split_across_chunks() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1bP=1s\x1b\\");
+        processor.advance(&mut handler, b"hidden\x1bP=2");
+        assert_eq!(handler.printed, "");
+        processor.advance(&mut handler, b"s\x1b\\after");
+        assert_eq!(handler.printed, "hiddenafter");
+        assert!(processor.sync_timeout().sync_timeout().is_none());
     }
 
     #[test]

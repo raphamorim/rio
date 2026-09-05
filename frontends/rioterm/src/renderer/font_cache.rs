@@ -3,7 +3,7 @@ use rio_backend::sugarloaf::swash::Attributes;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use tracing::debug;
-use unicode_width::UnicodeWidthChar;
+use rio_unicode::UnicodeWidthChar;
 
 /// Maximum number of font cache entries to keep in memory
 /// Increased for better performance with complex terminal content

@@ -49,7 +49,7 @@ use swash::{tag_from_bytes, CacheKey, FontRef, Synthesis};
 pub use swash::{Style, Weight};
 
 /// Which font face slot a spec is being resolved for. Drives bold/italic
-/// trait selection (Ghostty-style), so the user's spec doesn't need to
+/// trait selection, so the user's spec doesn't need to
 /// carry a CSS weight number — the slot itself encodes intent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Slot {
@@ -543,7 +543,7 @@ pub struct SymbolMap {
 
 /// Per-slot entry in the font library. `Owned` holds an actual
 /// `FontData`; `Alias` redirects to another id whose `Owned` entry
-/// the slot should reuse. Mirrors Ghostty's `EntryOrAlias` so that a
+/// the slot should reuse, so that a
 /// missing italic/bold variant doesn't have to clone the regular
 /// face — the `metrics_cache`, `path`, `postscript_name`, etc. all
 /// stay single-instance.
@@ -1531,8 +1531,8 @@ impl FontData {
     }
 
     /// Like [`from_static_slice`] but optionally bakes a `wght` axis
-    /// value into the loaded face. Mirrors ghostty's `Face.setVariations`
-    /// pattern: load the same variable-font bytes for every weight slot,
+    /// value into the loaded face: load the same variable-font bytes
+    /// for every weight slot,
     /// then set the `wght` axis post-construction so the rasterizer pulls
     /// the right outlines (regular vs. bold) from a single source file.
     ///
@@ -2301,8 +2301,7 @@ fn find_font(
 }
 
 /// Load a bundled fallback face for `slot` from the embedded Cascadia Code
-/// variable font. Mirrors ghostty's `SharedGridSet` setup (see
-/// `ghostty/src/font/SharedGridSet.zig:264-317`): regular and bold load
+/// variable font: regular and bold load
 /// the same upright variable file, italic and bold-italic load the same
 /// italic variable file, and the bold slots set the `wght` axis to 700.
 fn load_fallback_from_memory(slot: Slot) -> FontData {

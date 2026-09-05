@@ -1,0 +1,4 @@
+module SugarloafKit {
+    umbrella header "libsugarloaf.h"
+    export *
+}

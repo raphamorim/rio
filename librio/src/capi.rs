@@ -2,7 +2,7 @@
 
 use crate::{
     Action, Engine, Key, KeyAction, KeyEvent, Modifiers, RenderState, SelectionKind,
-    Side, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
+    Side, Square, Style, StyleFlags, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
 use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -19,6 +19,9 @@ pub const RIO_ACTION_PROGRESS: u32 = 3;
 pub const RIO_COLOR_NAMED: u8 = 0;
 pub const RIO_COLOR_INDEXED: u8 = 1;
 pub const RIO_COLOR_RGB: u8 = 2;
+/// An absent color (value and rgb are zero). Only returned by
+/// [`rio_render_state_cell_underline_color`].
+pub const RIO_COLOR_NONE: u8 = 3;
 
 pub const RIO_KEY_CHAR: u32 = 0;
 pub const RIO_KEY_ENTER: u32 = 1;
@@ -58,6 +61,11 @@ pub const RIO_SELECTION_WORD: u8 = 1;
 pub const RIO_SELECTION_LINE: u8 = 2;
 pub const RIO_SELECTION_BLOCK: u8 = 3;
 
+pub const RIO_CURSOR_BLOCK: u8 = 0;
+pub const RIO_CURSOR_UNDERLINE: u8 = 1;
+pub const RIO_CURSOR_BEAM: u8 = 2;
+pub const RIO_CURSOR_HIDDEN: u8 = 3;
+
 #[repr(C)]
 pub struct rio_action_s {
     pub tag: u32,
@@ -95,6 +103,10 @@ pub struct rio_surface_config_s {
     pub args_len: usize,
 }
 
+/// A color in its original form (`RIO_COLOR_NAMED` / `_INDEXED` /
+/// `_RGB`; `value` holds the named id or palette index), with `r`/`g`/`b`
+/// resolved for every kind except [`RIO_COLOR_NONE`], which means no
+/// color at all: `value` and `r`/`g`/`b` are zero.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct rio_color_s {
@@ -105,6 +117,10 @@ pub struct rio_color_s {
     pub b: u8,
 }
 
+/// A renderable cell. `fg`/`bg` are exported pre-swap: when the flags
+/// carry `StyleFlags::INVERSE` the host swaps them when drawing, as
+/// rio's own renderer does. They have kind [`RIO_COLOR_NONE`] only on a
+/// missing cell (NULL state or out-of-range query).
 #[repr(C)]
 pub struct rio_cell_s {
     pub codepoint: u32,
@@ -438,9 +454,9 @@ fn named_rgb(t: &rio_vt::config::Colors, n: NamedColor) -> (u8, u8, u8) {
 }
 
 /// Convert a terminal color to the C representation. `kind`/`value` keep
-/// the original form (named / indexed / rgb) for callers that want it, but
-/// `r`/`g`/`b` are ALWAYS the resolved RGB so a CPU renderer can read them
-/// directly without owning a palette.
+/// the original form (named / indexed / rgb, never `RIO_COLOR_NONE`) for
+/// callers that want it, but `r`/`g`/`b` are always the resolved RGB so a
+/// CPU renderer can read them directly without owning a palette.
 fn color_to_c(color: AnsiColor) -> rio_color_s {
     let (r, g, b) = match color {
         AnsiColor::Named(named) => named_rgb(&theme_lock().read().unwrap(), named),
@@ -470,6 +486,35 @@ fn color_to_c(color: AnsiColor) -> rio_color_s {
             b,
         },
     }
+}
+
+/// Resolve a cell color, honoring the terminal's dynamic OSC overrides
+/// before falling back to the process-global theme. Those OSC-set colors
+/// live per-terminal in the frame's `term_colors` snapshot: `OSC 10/11`
+/// override the default foreground/background, `OSC 4` overrides an ANSI
+/// palette slot. A named or indexed cell that has an override resolves to
+/// it here, mirroring rioterm's and libsugarloaf's canonical
+/// `term_colors[idx].unwrap_or(base)`, rather than resolving to the
+/// host's own scheme. Direct-RGB cells carry their color inline and are
+/// untouched. (Dim/bold intensity remapping isn't applied here, matching
+/// `color_to_c`; it travels in the cell's style flags.)
+fn resolve_cell_color(color: AnsiColor, term_colors: &crate::TermColors) -> rio_color_s {
+    let (idx, value, kind) = match color {
+        AnsiColor::Named(named) => (named as usize, named as u16, RIO_COLOR_NAMED),
+        AnsiColor::Indexed(index) => (index as usize, index as u16, RIO_COLOR_INDEXED),
+        AnsiColor::Spec(_) => return color_to_c(color),
+    };
+    if let Some(arr) = term_colors[idx] {
+        let rgb = ColorRgb::from_color_arr(arr);
+        return rio_color_s {
+            kind,
+            value,
+            r: rgb.r,
+            g: rgb.g,
+            b: rgb.b,
+        };
+    }
+    color_to_c(color)
 }
 
 unsafe fn cstr_opt(ptr: *const c_char) -> Option<String> {
@@ -563,6 +608,26 @@ pub unsafe extern "C" fn rio_surface_id(surface: *const Surface) -> usize {
     .unwrap_or(0)
 }
 
+/// Pid of the spawned program (a session leader on unix, the conpty
+/// child on Windows), 0 without a PTY or when the pid was unavailable.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_child_pid(surface: *const Surface) -> u32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return 0;
+        }
+        #[cfg(feature = "pty")]
+        {
+            unsafe { &*surface }.child_pid()
+        }
+        #[cfg(not(feature = "pty"))]
+        {
+            0
+        }
+    }))
+    .unwrap_or(0)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn rio_surface_text(
     surface: *mut Surface,
@@ -575,6 +640,21 @@ pub unsafe extern "C" fn rio_surface_text(
         }
         let slice = unsafe { std::slice::from_raw_parts(bytes as *const u8, len) };
         unsafe { &*surface }.write(slice.to_vec());
+    }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_paste(
+    surface: *mut Surface,
+    bytes: *const c_char,
+    len: usize,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() || bytes.is_null() {
+            return;
+        }
+        let slice = unsafe { std::slice::from_raw_parts(bytes as *const u8, len) };
+        unsafe { &*surface }.paste(&String::from_utf8_lossy(slice));
     }));
 }
 
@@ -652,6 +732,17 @@ pub unsafe extern "C" fn rio_surface_key(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn rio_surface_mode_bits(surface: *const Surface) -> u32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return 0;
+        }
+        unsafe { &*surface }.mode_bits()
+    }))
+    .unwrap_or(0)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn rio_surface_set_alt_is_meta(
     surface: *mut Surface,
     enabled: bool,
@@ -661,6 +752,19 @@ pub unsafe extern "C" fn rio_surface_set_alt_is_meta(
             return;
         }
         unsafe { &*surface }.set_alt_is_meta(enabled);
+    }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_set_grapheme_clustering(
+    surface: *mut Surface,
+    enabled: bool,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return;
+        }
+        unsafe { &*surface }.set_grapheme_clustering(enabled);
     }));
 }
 
@@ -920,6 +1024,26 @@ pub unsafe extern "C" fn rio_render_state_reset_dirty(state: *mut RenderState) {
     }));
 }
 
+/// The no-color value: kind [`RIO_COLOR_NONE`], everything else zero.
+fn none_color() -> rio_color_s {
+    rio_color_s {
+        kind: RIO_COLOR_NONE,
+        ..rio_color_s::default()
+    }
+}
+
+/// The "no such cell" result: a blank whose fg/bg have kind
+/// [`RIO_COLOR_NONE`], so a miss is detectable and never mistaken for a
+/// real black cell.
+fn empty_cell() -> rio_cell_s {
+    rio_cell_s {
+        codepoint: ' ' as u32,
+        fg: none_color(),
+        bg: none_color(),
+        style_flags: 0,
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_cell(
     state: *const RenderState,
@@ -927,33 +1051,177 @@ pub unsafe extern "C" fn rio_render_state_cell(
     column: u16,
 ) -> rio_cell_s {
     catch_unwind(AssertUnwindSafe(|| {
-        let empty = rio_cell_s {
-            codepoint: ' ' as u32,
-            fg: rio_color_s::default(),
-            bg: rio_color_s::default(),
-            style_flags: 0,
-        };
         if state.is_null() {
-            return empty;
+            return empty_cell();
+        }
+        let state = unsafe { &*state };
+        let Some((square, style)) = cell_style(state, line, column) else {
+            return empty_cell();
+        };
+        let mut markers = 0;
+        if state.cluster_of(square).is_some() {
+            markers |= RIO_CELL_HAS_CLUSTER;
+        }
+        if style.underline_color.is_some() {
+            markers |= RIO_CELL_HAS_UNDERLINE_COLOR;
+        }
+        let tc = state.term_colors();
+        rio_cell_s {
+            codepoint: square.c() as u32,
+            fg: resolve_cell_color(style.fg, tc),
+            bg: resolve_cell_color(style.bg, tc),
+            style_flags: style.flags.bits() | markers,
+        }
+    }))
+    .unwrap_or_else(|_| empty_cell())
+}
+
+/// Shared lookup for the per-cell accessors: the square at (line, column)
+/// and its resolved style, or `None` out of bounds.
+fn cell_style(state: &RenderState, line: u16, column: u16) -> Option<(&Square, Style)> {
+    let square = state.square(line as usize, column as usize)?;
+    let style = state.style_at(line as usize, column as usize, square);
+    Some((square, style))
+}
+
+/// The cell's explicit SGR 58 underline color, or kind
+/// [`RIO_COLOR_NONE`] when the cell has none (also for a NULL state, an
+/// out-of-range cell, or an internal error); see
+/// [`RIO_CELL_HAS_UNDERLINE_COLOR`].
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_cell_underline_color(
+    state: *const RenderState,
+    line: u16,
+    column: u16,
+) -> rio_color_s {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return none_color();
+        }
+        let state = unsafe { &*state };
+        let Some((_, style)) = cell_style(state, line, column) else {
+            return none_color();
+        };
+        let Some(underline) = style.underline_color else {
+            return none_color();
+        };
+        resolve_cell_color(underline, state.term_colors())
+    }))
+    .unwrap_or_else(|_| none_color())
+}
+
+/// Set in `rio_cell_s.style_flags` when the cell carries attached
+/// cluster codepoints (combining marks, or a mode-2027 grapheme
+/// cluster) beyond `codepoint`. Fetch the full text with
+/// [`rio_render_state_cell_cluster`] and draw that instead of the
+/// base char. StyleFlags proper occupies bits 0-12 (the
+/// `RIO_STYLE_*` constants in librio.h); this is bit 15.
+pub const RIO_CELL_HAS_CLUSTER: u16 = 1 << 15;
+
+/// Set in `rio_cell_s.style_flags` when the cell carries an explicit
+/// SGR 58 underline color; fetch it with
+/// [`rio_render_state_cell_underline_color`]. Without it the underline
+/// takes the glyph's color. This is bit 14.
+pub const RIO_CELL_HAS_UNDERLINE_COLOR: u16 = 1 << 14;
+
+// librio.h's RIO_STYLE_* and RIO_COLOR_* defines hand-mirror these
+// values, and StyleFlags shares the u16 with the RIO_CELL_* marker bits:
+// renumbering or colliding breaks the ABI silently, so pin every
+// exported value.
+const _: () = {
+    assert!(RIO_COLOR_NAMED == 0);
+    assert!(RIO_COLOR_INDEXED == 1);
+    assert!(RIO_COLOR_RGB == 2);
+    assert!(RIO_COLOR_NONE == 3);
+    assert!(StyleFlags::INVERSE.bits() == 1 << 0);
+    assert!(StyleFlags::BOLD.bits() == 1 << 1);
+    assert!(StyleFlags::ITALIC.bits() == 1 << 2);
+    assert!(StyleFlags::DIM.bits() == 1 << 3);
+    assert!(StyleFlags::HIDDEN.bits() == 1 << 4);
+    assert!(StyleFlags::STRIKEOUT.bits() == 1 << 5);
+    assert!(StyleFlags::UNDERLINE.bits() == 1 << 6);
+    assert!(StyleFlags::DOUBLE_UNDERLINE.bits() == 1 << 7);
+    assert!(StyleFlags::UNDERCURL.bits() == 1 << 8);
+    assert!(StyleFlags::DOTTED_UNDERLINE.bits() == 1 << 9);
+    assert!(StyleFlags::DASHED_UNDERLINE.bits() == 1 << 10);
+    assert!(StyleFlags::SLOW_BLINK.bits() == 1 << 11);
+    assert!(StyleFlags::RAPID_BLINK.bits() == 1 << 12);
+    assert!(
+        StyleFlags::all().bits() & (RIO_CELL_HAS_CLUSTER | RIO_CELL_HAS_UNDERLINE_COLOR)
+            == 0
+    );
+};
+
+/// Write the full text of a cell (base codepoint plus attached
+/// cluster codepoints) as UTF-32 into `out` (capacity `cap` code
+/// units). Returns the total codepoint count, which may exceed `cap`
+/// (call again with a larger buffer); 0 for plain cells, so callers
+/// can treat 0 as "draw `codepoint` as usual".
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_cell_cluster(
+    state: *const RenderState,
+    line: u16,
+    column: u16,
+    out: *mut u32,
+    cap: usize,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return 0;
         }
         let state = unsafe { &*state };
         let Some(square) = state.square(line as usize, column as usize) else {
-            return empty;
+            return 0;
         };
-        let style = state.style_of(square);
-        rio_cell_s {
-            codepoint: square.c() as u32,
-            fg: color_to_c(style.fg),
-            bg: color_to_c(style.bg),
-            style_flags: style.flags.bits(),
+        let Some(cluster) = state.cluster_of(square) else {
+            return 0;
+        };
+        let total = 1 + cluster.len();
+        if !out.is_null() {
+            let write = total.min(cap);
+            let dst = unsafe { core::slice::from_raw_parts_mut(out, write) };
+            let mut src = core::iter::once(square.c()).chain(cluster.iter().copied());
+            for slot in dst.iter_mut() {
+                *slot = src.next().unwrap_or('\0') as u32;
+            }
         }
+        total
     }))
-    .unwrap_or(rio_cell_s {
-        codepoint: ' ' as u32,
-        fg: rio_color_s::default(),
-        bg: rio_color_s::default(),
-        style_flags: 0,
-    })
+    .unwrap_or(0)
+}
+
+/// Measure the first grapheme cluster in a UTF-32 buffer: returns the
+/// number of codepoints the cluster spans and writes its terminal
+/// cell width to `out_width` when non-null (2 for wide, 1 for narrow,
+/// 0 for bare zero-width marks). Returns 0 for a null or empty
+/// buffer. Segmentation and width follow the same rules
+/// the terminal applies when printing under grapheme clustering, so
+/// embedders can size text for cells without replaying input. The
+/// buffer must contain a complete first cluster or the logical end of
+/// the text; values that are not Unicode scalars measure as one
+/// single-width codepoint when first and terminate the cluster when
+/// later.
+#[no_mangle]
+pub unsafe extern "C" fn rio_cluster_width(
+    codepoints: *const u32,
+    len: usize,
+    out_width: *mut u8,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if codepoints.is_null() || len == 0 {
+            if !out_width.is_null() {
+                unsafe { *out_width = 0 };
+            }
+            return 0;
+        }
+        let cps = unsafe { core::slice::from_raw_parts(codepoints, len) };
+        let (cluster_len, width) = crate::cluster_width(cps);
+        if !out_width.is_null() {
+            unsafe { *out_width = width };
+        }
+        cluster_len
+    }))
+    .unwrap_or(0)
 }
 
 /// Lines the view is scrolled up into history; 0 means the live screen.
@@ -971,7 +1239,7 @@ pub unsafe extern "C" fn rio_render_state_display_offset(
     .unwrap_or(0)
 }
 
-/// Symbols-only Nerd Font, embedded the way libghostty embeds it, so every
+/// Symbols-only Nerd Font, embedded in the library itself, so every
 /// embedder can offer icon glyphs (Powerline, Font Awesome, Material, ...)
 /// without shipping a font file or requiring one installed. Pair with
 /// [`rio_nerd_constrain`] for patched-font-quality scaling.
@@ -998,7 +1266,7 @@ pub struct rio_glyph_box_s {
 }
 
 /// Apply the Nerd Fonts patcher's scaling/alignment rules to a glyph
-/// (the same generated table ghostty and sugarloaf use). `glyph` is the
+/// (the same generated table sugarloaf uses). `glyph` is the
 /// glyph's bounding box; `constraint_width` is how many cells are
 /// horizontally free (1 or 2). Writes the adjusted box to `out` and
 /// returns true when the codepoint has a rule; returns false (out
@@ -1077,6 +1345,60 @@ pub unsafe extern "C" fn rio_surface_scroll_wheel(
             lines,
             col,
             row,
+            Modifiers::from_bits_truncate(mods),
+        )
+    }))
+    .unwrap_or(false)
+}
+
+/// Report a mouse button press/release to the program if it asked for mouse
+/// events. `button` is 0=left, 1=middle, 2=right; `mods` uses the same bits
+/// as rio_surface_scroll_wheel. Returns true when a report reached the
+/// program (the host should then skip its own selection); false when nothing
+/// grabs the mouse, or shift bypasses to a local selection.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_mouse_button(
+    surface: *const Surface,
+    col: u16,
+    row: u16,
+    button: u8,
+    pressed: bool,
+    mods: u8,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return false;
+        }
+        unsafe { &*surface }.mouse_button(
+            col,
+            row,
+            button,
+            pressed,
+            Modifiers::from_bits_truncate(mods),
+        )
+    }))
+    .unwrap_or(false)
+}
+
+/// Report pointer motion for button-event (1002) / any-event (1003) modes.
+/// `button` is 0/1/2 for the button held during a drag, or 3 for none.
+/// Returns true when a report was emitted.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_mouse_motion(
+    surface: *const Surface,
+    col: u16,
+    row: u16,
+    button: u8,
+    mods: u8,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return false;
+        }
+        unsafe { &*surface }.mouse_motion(
+            col,
+            row,
+            button,
             Modifiers::from_bits_truncate(mods),
         )
     }))
@@ -1258,6 +1580,74 @@ pub unsafe extern "C" fn rio_render_state_cursor(
         }
     }))
     .unwrap_or(rio_cursor_s { line: 0, column: 0 })
+}
+
+/// The cursor's visual shape for this frame, as RIO_CURSOR_*: the program's
+/// DECSCUSR choice (block / underline / beam), or RIO_CURSOR_HIDDEN when it
+/// hid the cursor (DECTCEM) or the view is scrolled into history. Hosts that
+/// paint the cursor themselves read this next to `rio_render_state_cursor`.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_cursor_shape(state: *const RenderState) -> u8 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return RIO_CURSOR_HIDDEN;
+        }
+        let state = unsafe { &*state };
+        if !state.cursor_visible() {
+            return RIO_CURSOR_HIDDEN;
+        }
+        use rio_vt::ansi::CursorShape;
+        match state.cursor_shape() {
+            CursorShape::Block => RIO_CURSOR_BLOCK,
+            CursorShape::Underline => RIO_CURSOR_UNDERLINE,
+            CursorShape::Beam => RIO_CURSOR_BEAM,
+            CursorShape::Hidden => RIO_CURSOR_HIDDEN,
+        }
+    }))
+    .unwrap_or(RIO_CURSOR_HIDDEN)
+}
+
+/// This frame's dynamic (OSC 10/11/12) default colors. `which`:
+/// 0 = foreground, 1 = background, 2 = cursor. Writes the resolved RGB
+/// into `out` and returns true when the program has set that color via
+/// OSC; returns false and leaves `out` untouched when it is unset, so the
+/// host falls back to its own scheme (this also covers OSC 110/111/112
+/// reset, which clears the override). Cell colors already follow the
+/// override via `rio_render_state_cell` (and the GPU grid palette); the
+/// host reads this only for the parts that aren't cells: the solid pane
+/// ground a default-bg cell shows through, and the cursor color.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_dynamic_color(
+    state: *const RenderState,
+    which: u8,
+    out: *mut rio_rgb_s,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() || out.is_null() {
+            return false;
+        }
+        let named = match which {
+            0 => NamedColor::Foreground,
+            1 => NamedColor::Background,
+            2 => NamedColor::Cursor,
+            _ => return false,
+        };
+        match unsafe { &*state }.term_colors()[named] {
+            Some(arr) => {
+                let rgb = ColorRgb::from_color_arr(arr);
+                unsafe {
+                    *out = rio_rgb_s {
+                        r: rgb.r,
+                        g: rgb.g,
+                        b: rgb.b,
+                    };
+                }
+                true
+            }
+            None => false,
+        }
+    }))
+    .unwrap_or(false)
 }
 
 #[cfg(test)]

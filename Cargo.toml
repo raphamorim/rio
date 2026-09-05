@@ -8,16 +8,19 @@ members = [
     "rio-vt",
     "rio-backend",
     "rio-grapheme-width",
+    "rio-unicode",
     "rio-window",
     "rio-notifier",
+    "rio-grid",
     "frontends/rioterm",
     "librio",
     "librio-wasm",
+    "libsugarloaf",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.5.20"
+version = "0.5.27"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -29,19 +32,18 @@ documentation = "https://github.com/raphamorim/rio#readme"
 readme = "README.md"
 
 [workspace.dependencies]
-# Note: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#multiple-locations
-# Sugarloaf example uses path when used locally, but uses
-# version from crates.io when published.
-teletypewriter = { path = "teletypewriter", version = "0.5.20" }
-rio-backend = { path = "rio-backend", version = "0.5.20" }
-rio-window = { path = "rio-window", version = "0.5.20", default-features = false }
-rio-notifier = { path = "rio-notifier", version = "0.5.20" }
-rio-grapheme-width = { path = "rio-grapheme-width", version = "0.5.20" }
-sugarloaf = { path = "sugarloaf", version = "0.5.20" }
-corcovado = { path = "corcovado", version = "0.5.20" }
-rio-graphics = { path = "rio-graphics", version = "0.5.20" }
-rio-fonts = { path = "rio-fonts", version = "0.5.20" }
-rio-vt = { path = "rio-vt", version = "0.5.20" }
+teletypewriter = { path = "teletypewriter", version = "0.5.27" }
+rio-backend = { path = "rio-backend", version = "0.5.27" }
+rio-window = { path = "rio-window", version = "0.5.27", default-features = false }
+rio-notifier = { path = "rio-notifier", version = "0.5.27" }
+rio-grapheme-width = { path = "rio-grapheme-width", version = "0.5.27" }
+sugarloaf = { path = "sugarloaf", version = "0.5.27" }
+corcovado = { path = "corcovado", version = "0.5.27" }
+rio-graphics = { path = "rio-graphics", version = "0.5.27" }
+rio-fonts = { path = "rio-fonts", version = "0.5.27" }
+rio-vt = { path = "rio-vt", version = "0.5.27" }
+rio-grid = { path = "rio-grid", version = "0.5.27" }
+rio-unicode = { path = "rio-unicode", version = "0.5.27" }
 
 raw-window-handle = { version = "0.6.2", features = ["std"] }
 parking_lot = { version = "0.12.5", features = [
@@ -50,9 +52,6 @@ parking_lot = { version = "0.12.5", features = [
 ] }
 rustc-hash = "2.1.3"
 smallvec = { version = "1.15.2", default-features = false }
-
-# unicode-width = "0.2.0"
-unicode-width = { package = "unicode-width-16", version = "0.1.0" }
 simdutf = "0.7.0"
 base64 = "0.23.0"
 image_rs = { package = "image", version = "0.25.10", default-features = false, features = [
@@ -67,9 +66,10 @@ image_rs = { package = "image", version = "0.25.10", default-features = false, f
 ] }
 regex = "1.12.3"
 onig = { version = "6.5.3", default-features = false }
+onig_sys = { version = "69.9.3", default-features = false }
 bytemuck = { version = "1.25.2", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
-wgpu = "30.0.0"
+wgpu = "30.0.1"
 libc = "0.2.189"
 smol_str = "0.3.2"
 futures = "0.3.31"

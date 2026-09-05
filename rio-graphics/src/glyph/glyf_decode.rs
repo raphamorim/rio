@@ -22,6 +22,10 @@
 use skrifa::raw::tables::glyf::{CurvePoint, SimpleGlyph};
 use skrifa::raw::{FontData, FontRead};
 
+/// Decoded-size budget from Glyph Protocol v1.10 (§8.2): 64 KiB at
+/// 12 bytes per point, per outline and per registration.
+pub const MAX_DECODED_POINTS: usize = (64 * 1024) / 12;
+
 /// Reasons a `glyf` record can be rejected. Maps onto Glyph Protocol v1
 /// `reason=` error codes where applicable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +38,8 @@ pub enum DecodeError {
     /// Payload ended before the decoder expected, or a structural
     /// invariant was violated.
     Malformed,
+    /// The outline decodes past [`MAX_DECODED_POINTS`] (spec §8.2).
+    TooLarge,
 }
 
 /// A single decoded point.
@@ -103,6 +109,12 @@ pub fn decode(data: &[u8]) -> Result<Outline, DecodeError> {
         }
     }
     let num_points = end_pts[end_pts.len() - 1] + 1;
+    // §8.2 decoded-size budget: the point count comes straight from
+    // endPtsOfContours, so the check runs before any point storage
+    // is allocated.
+    if num_points > MAX_DECODED_POINTS {
+        return Err(DecodeError::TooLarge);
+    }
 
     let pts: Vec<CurvePoint> = glyph.points().collect();
     if pts.len() != num_points {
@@ -132,6 +144,29 @@ pub fn decode(data: &[u8]) -> Result<Outline, DecodeError> {
         x_max,
         y_max,
     })
+}
+
+/// Point count of a simple-glyph record without decoding it. O(1),
+/// no allocation: numberOfContours and the last endPtsOfContours
+/// entry sit at fixed offsets. Lets the register path enforce the
+/// §8.2 per-registration budget across a colour container's
+/// outlines without paying for a full decode of each one.
+pub fn peek_point_count(data: &[u8]) -> Result<usize, DecodeError> {
+    if data.len() < 10 {
+        return Err(DecodeError::Malformed);
+    }
+    let num_contours = i16::from_be_bytes([data[0], data[1]]);
+    if num_contours < 0 {
+        return Err(DecodeError::Composite);
+    }
+    if num_contours == 0 {
+        return Ok(0);
+    }
+    let last = 10 + 2 * (num_contours as usize - 1);
+    if data.len() < last + 2 {
+        return Err(DecodeError::Malformed);
+    }
+    Ok(u16::from_be_bytes([data[last], data[last + 1]]) as usize + 1)
 }
 
 /// A single path command produced by [`Outline::walk`]. Intentionally
@@ -380,6 +415,60 @@ mod tests {
         assert_eq!(out.contours[0].len(), 4);
         assert_eq!(out.contours[0][3].x, 40);
         assert_eq!(out.contours[0][3].y, 0);
+    }
+
+    /// Encode `n` points in as few wire bytes as possible: every
+    /// flag carries X_SAME | Y_SAME (both deltas omitted, zero) and
+    /// REPEAT compresses the flag array to two bytes per 256 points.
+    /// This is the §8.2 amplification attack in miniature.
+    fn dense_bytes(n: usize) -> Vec<u8> {
+        const FLAG_X_SAME: u8 = 0x10;
+        const FLAG_Y_SAME: u8 = 0x20;
+        let mut v = Vec::new();
+        v.extend_from_slice(&1i16.to_be_bytes()); // numberOfContours
+        v.extend_from_slice(&[0u8; 8]); // bounding box
+        v.extend_from_slice(&((n - 1) as u16).to_be_bytes()); // endPts
+        v.extend_from_slice(&0u16.to_be_bytes()); // instructionLength
+        let flag = FLAG_ON_CURVE | FLAG_REPEAT | FLAG_X_SAME | FLAG_Y_SAME;
+        // Runs of 255, not 256: read-fonts tracks the repeat count in
+        // a u8 and a repeat byte of 255 overflows it in debug builds.
+        let mut left = n;
+        while left > 0 {
+            let run = left.min(255);
+            v.push(flag);
+            v.push((run - 1) as u8);
+            left -= run;
+        }
+        v
+    }
+
+    #[test]
+    fn rejects_outline_over_decoded_budget() {
+        let v = dense_bytes(MAX_DECODED_POINTS + 1);
+        // The whole attack payload is under 100 wire bytes.
+        assert!(v.len() < 100);
+        assert_eq!(decode(&v), Err(DecodeError::TooLarge));
+    }
+
+    #[test]
+    fn accepts_outline_at_decoded_budget() {
+        let v = dense_bytes(MAX_DECODED_POINTS);
+        let out = decode(&v).unwrap();
+        assert_eq!(out.contours[0].len(), MAX_DECODED_POINTS);
+    }
+
+    #[test]
+    fn peek_matches_decode() {
+        assert_eq!(peek_point_count(&triangle_bytes()), Ok(3));
+        assert_eq!(
+            peek_point_count(&dense_bytes(MAX_DECODED_POINTS + 1)),
+            Ok(MAX_DECODED_POINTS + 1)
+        );
+        assert_eq!(peek_point_count(&[]), Err(DecodeError::Malformed));
+        let mut composite = Vec::new();
+        composite.extend_from_slice(&(-1i16).to_be_bytes());
+        composite.extend_from_slice(&[0u8; 8]);
+        assert_eq!(peek_point_count(&composite), Err(DecodeError::Composite));
     }
 
     #[test]

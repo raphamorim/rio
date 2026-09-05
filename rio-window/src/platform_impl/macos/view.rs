@@ -1023,8 +1023,7 @@ impl WinitView {
 
     fn current_input_source(&self) -> String {
         self.inputContext()
-            .expect("input context")
-            .selectedKeyboardInputSource()
+            .and_then(|context| context.selectedKeyboardInputSource())
             .map(|input_source| input_source.to_string())
             .unwrap_or_default()
     }

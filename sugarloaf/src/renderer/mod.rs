@@ -403,7 +403,7 @@ impl MetalRenderer {
             .unwrap();
         // Must match the drawable format in `context/metal.rs` — HW will
         // reject the pipeline otherwise. Plain `BGRA8Unorm` → gamma-space
-        // alpha blending (ghostty `alpha-blending = native`).
+        // alpha blending.
         color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         color_attachment.set_blending_enabled(true);
         // Match WGSL BLEND settings exactly:
@@ -803,9 +803,7 @@ pub struct ImageInstance {
     pub source_rect: [f32; 4],
 }
 
-/// Which layer to render the image in. Mirrors ghostty's
-/// three-bucket split (`renderer/image.zig:94-97`,
-/// `renderer/generic.zig:1647-1695`):
+/// Which layer to render the image in. Three buckets:
 ///
 /// - `BelowBg`   — `z < BG_LIMIT`. Drawn before the cell-bg pass; sits
 ///   underneath everything terminal-related.
@@ -820,9 +818,7 @@ enum ImageLayer {
     AboveText,
 }
 
-/// Threshold separating `BelowBg` from `BelowText`. Matches ghostty's
-/// `bg_limit = std.math.minInt(i32) / 2` at
-/// `renderer/image.zig:377`.
+/// Threshold separating `BelowBg` from `BelowText`: `i32::MIN / 2`.
 pub(crate) const IMAGE_BG_LIMIT: i32 = i32::MIN / 2;
 
 /// A single image draw command for the image pipeline.
@@ -866,8 +862,7 @@ pub struct Renderer {
     background_image_texture: Option<ImageTextureEntry>,
     /// Metal swap-chain state. One semaphore + one frame index for
     /// the whole renderer regardless of how many split-pane grids
-    /// exist — mirrors ghostty's `SwapChain` at
-    /// `renderer/generic.zig:247`. Each render acquires one permit,
+    /// exist. Each render acquires one permit,
     /// advances the index, hands the index to every grid's
     /// `render_bg_metal` / `render_text_metal`, and releases the
     /// permit from the command-buffer completion handler.
@@ -955,10 +950,9 @@ fn upload_background_image_texture(
             // image sampler, the HW interpolates between texels in the
             // texture's native space. With a non-sRGB format the texels
             // are gamma-encoded, so interpolation happens in gamma space
-            // and midtones at scaled edges come out visibly darker than
-            // ghostty's. With `_sRGB` the HW decodes each texel to linear
+            // and midtones at scaled edges come out visibly darker.
+            // With `_sRGB` the HW decodes each texel to linear
             // before mixing, producing the correct linear-light blend
-            // (matches ghostty's `bgra8unorm_srgb` in `Metal.zig:374`).
             // The fragment shader then `unlinearize`s the sampled value
             // back to gamma-encoded sRGB before writing to the gamma
             // framebuffer.
@@ -1668,6 +1662,18 @@ impl Renderer {
         }
     }
 
+    pub fn evict_route_textures(&mut self, route_id: usize) {
+        let mut freed = 0;
+        self.image_textures.retain(|key, entry| {
+            let keep = crate::sugarloaf::graphics::image_key_route(*key) != route_id;
+            if !keep {
+                freed += entry.bytes;
+            }
+            keep
+        });
+        self.image_texture_bytes -= freed;
+    }
+
     #[inline]
     pub fn clear_atlas(&mut self) {
         self.images.clear_atlas();
@@ -2189,9 +2195,8 @@ impl Renderer {
 
         // Acquire one swap-chain permit for the whole renderer.
         // Blocks if 3 frames are already in flight — backpressure
-        // that keeps the CPU from outrunning the GPU. Mirrors
-        // ghostty's `SwapChain.nextFrame` at
-        // `renderer/generic.zig:295`. Single Arc, single permit, no
+        // that keeps the CPU from outrunning the GPU. Single Arc,
+        // single permit, no
         // matter how many split-pane grids the renderer is driving.
         crate::grid::metal::acquire_frame_permit(&self.metal_frame_permits);
         self.metal_frame_index =
@@ -2268,8 +2273,7 @@ impl Renderer {
                 }
                 true
             })();
-            // Three-bucket image z-ordering — mirrors ghostty's
-            // `renderer/generic.zig:1640-1695`:
+            // Three-bucket image z-ordering:
             //
             //   bg fill / image (already drawn above)
             //   ↓

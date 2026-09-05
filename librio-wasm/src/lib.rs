@@ -69,8 +69,15 @@ pub const COLOR_INDEXED: u32 = 1;
 pub const COLOR_RGB: u32 = 2;
 
 /// u32 words per cell in [`RioTerm::write_cells`]:
-/// `[codepoint | wide << 21, fg, bg, style_flags]`.
+/// `[codepoint | wide << 21 | flags, fg, bg, style_flags]`.
 pub const CELL_WORDS: usize = 4;
+
+/// Word-0 flag: the cell carries attached cluster codepoints
+/// (combining marks, or a mode-2027 grapheme cluster tail) beyond the
+/// base codepoint in bits 0..21. Fetch the full text with
+/// [`RioTerm::cluster_text`] and draw that instead of the base char;
+/// a renderer that ignores the bit simply keeps drawing bases.
+pub const CELL_HAS_CLUSTER: u32 = 1 << 23;
 
 enum Event {
     Output(Vec<u8>),
@@ -287,15 +294,16 @@ impl RioTerm {
         self.flush();
     }
 
-    /// Send text to the child (a paste, or synthetic input). Reaches JS
-    /// back through the `output` callback.
+    /// Send raw text to the child (synthetic input; use `paste` for
+    /// clipboard text). Reaches JS back through the `output` callback.
     pub fn send_text(&self, text: &str) {
         self.surface.text(text);
         self.flush();
     }
 
-    /// Paste text: newlines normalized to CR and wrapped in
-    /// bracketed-paste markers when the program enabled the mode.
+    /// Paste text: sent verbatim inside bracketed-paste markers (minus
+    /// ESC/ETX) when the program enabled mode 2004, otherwise with
+    /// newlines normalized to CR.
     pub fn paste(&self, text: &str) {
         self.surface.paste(text);
         self.flush();
@@ -376,6 +384,14 @@ impl RioTerm {
 
     pub fn set_alt_is_meta(&self, enabled: bool) {
         self.surface.set_alt_is_meta(enabled);
+    }
+
+    /// Grapheme cluster processing (DEC private mode 2027) as the
+    /// default for cell layout. On by default; a renderer that does
+    /// not read `CELL_HAS_CLUSTER` / `cluster_text()` yet can turn it
+    /// off to keep legacy wcwidth layout.
+    pub fn set_grapheme_clustering(&self, enabled: bool) {
+        self.surface.set_grapheme_clustering(enabled);
     }
 
     /// Wheel scroll: the running program gets first claim (mouse reports,
@@ -658,6 +674,32 @@ impl RioTerm {
     pub fn kitty_image_rgba(&self, image_id: u32, out: &mut [u8]) -> usize {
         self.state.kitty_image_rgba(image_id, out)
     }
+
+    /// The full text of a cell flagged [`CELL_HAS_CLUSTER`]: the base
+    /// codepoint followed by its attached cluster codepoints
+    /// (combining marks, or a mode-2027 grapheme cluster). Draw this
+    /// string in place of the base char so a ZWJ emoji or a
+    /// decomposed accent renders as the glyph the sequence means.
+    /// `undefined` for cells without attachments.
+    pub fn cluster_text(&self, line: usize, column: usize) -> Option<String> {
+        self.state.cell_cluster_text(line, column)
+    }
+}
+
+/// Measure the first grapheme cluster in a UTF-32 buffer: returns
+/// `[len, width]`, the number of codepoints the cluster spans and its
+/// terminal cell width (2 wide, 1 narrow, 0 for bare zero-width
+/// marks); `[0, 0]` for an empty buffer. Same
+/// segmentation and width rules as printing under grapheme clustering
+/// (DEC mode 2027), so renderers can size text for cells without
+/// replaying input. The buffer must contain a complete first cluster
+/// or the logical end of the text; values that are not Unicode
+/// scalars measure as one single-width codepoint when first and
+/// terminate the cluster when later.
+#[wasm_bindgen]
+pub fn cluster_width(codepoints: &[u32]) -> Vec<u32> {
+    let (len, width) = librio::cluster_width(codepoints);
+    vec![len as u32, width as u32]
 }
 
 impl RioTerm {
@@ -666,9 +708,15 @@ impl RioTerm {
             let base = col * CELL_WORDS;
             match self.state.square(line, col) {
                 Some(square) => {
-                    let style = self.state.style_of(square);
-                    out[base] =
-                        (square.c() as u32 & 0x1F_FFFF) | ((square.wide() as u32) << 21);
+                    let style = self.state.style_at(line, col, square);
+                    let cluster = if self.state.cluster_of(square).is_some() {
+                        CELL_HAS_CLUSTER
+                    } else {
+                        0
+                    };
+                    out[base] = (square.c() as u32 & 0x1F_FFFF)
+                        | ((square.wide() as u32) << 21)
+                        | cluster;
                     out[base + 1] = pack_color(style.fg);
                     out[base + 2] = pack_color(style.bg);
                     out[base + 3] = style.flags.bits() as u32;

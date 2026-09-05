@@ -27,9 +27,21 @@
 //! (`display_offset != 0`), where the cursor row is off-screen and the
 //! anchor would lie.
 
-use crate::ime::{Preedit, PreeditCursor};
-use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
+use rio_unicode::grapheme::GraphemeIndices;
+use rio_unicode::UnicodeWidthStr;
+
+/// Where the IME put its caret, as the platform reported it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreeditCursor {
+    /// The IME asked for no visible caret. Wayland (`cursor_begin =
+    /// -1`) and Windows deliver this with non-empty text while the
+    /// user pages through conversion candidates; drawing a caret then
+    /// would contradict the IME's own UI.
+    Hidden,
+    /// Caret before the cluster containing this byte offset; offsets
+    /// at or past the end of the text mean end-of-text.
+    Byte(usize),
+}
 
 /// One cell of the composition line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,15 +78,19 @@ pub struct PreeditLine {
 }
 
 impl PreeditLine {
-    /// Lay out `preedit` anchored at the cursor cell. Returns `None`
-    /// for an empty composition or a degenerate grid.
+    /// Lay out the composition `text` anchored at the cursor cell.
+    /// Returns `None` for an empty composition or a degenerate grid.
+    /// `cursor` byte offsets never slice `text`, so a non-boundary
+    /// offset is safe here (the frontend snaps those to end-of-text
+    /// before this is reached).
     pub fn new(
-        preedit: &Preedit,
+        text: &str,
+        cursor: PreeditCursor,
         cursor_row: usize,
         cursor_col: usize,
         columns: usize,
     ) -> Option<Self> {
-        if preedit.text.is_empty() || columns == 0 {
+        if text.is_empty() || columns == 0 {
             return None;
         }
 
@@ -84,9 +100,7 @@ impl PreeditLine {
             cluster: &'a str,
             width: usize,
         }
-        let mut segs: Vec<Seg> = preedit
-            .text
-            .grapheme_indices(true)
+        let mut segs: Vec<Seg> = GraphemeIndices::new(text)
             .map(|(byte_start, cluster)| Seg {
                 byte_start,
                 cluster,
@@ -103,7 +117,7 @@ impl PreeditLine {
         // The caret sits before the first cluster starting at or past
         // the byte offset (mid-cluster offsets snap to the cluster).
         // A hidden caret (candidate paging) stays hidden.
-        let mut caret_index = match preedit.cursor {
+        let mut caret_index = match cursor {
             PreeditCursor::Hidden => None,
             PreeditCursor::Byte(offset) => Some(
                 segs.iter()
@@ -209,15 +223,24 @@ impl PreeditLine {
 mod tests {
     use super::*;
 
-    fn preedit(text: &str, caret: Option<usize>) -> Preedit {
+    fn layout(text: &str, caret: Option<usize>) -> Option<PreeditLine> {
+        layout_at(text, caret, 0, 0)
+    }
+
+    fn layout_at(
+        text: &str,
+        caret: Option<usize>,
+        row: usize,
+        col: usize,
+    ) -> Option<PreeditLine> {
         // `None` = end-of-text, the common IME idiom while composing.
         let cursor = PreeditCursor::Byte(caret.unwrap_or(text.len()));
-        Preedit::new(text.to_string(), cursor)
+        PreeditLine::new(text, cursor, row, col, 80)
     }
 
     #[test]
     fn ascii_at_cursor() {
-        let line = PreeditLine::new(&preedit("abc", Some(3)), 5, 10, 80).unwrap();
+        let line = layout_at("abc", Some(3), 5, 10).unwrap();
         assert_eq!(line.row, 5);
         assert_eq!(line.start_col, 10);
         assert_eq!(line.cell(10), Some(PreeditCell::Start(0)));
@@ -230,7 +253,7 @@ mod tests {
     #[test]
     fn wide_clusters_take_two_cells() {
         // "日本" = two clusters, two cells each.
-        let line = PreeditLine::new(&preedit("日本", None), 0, 0, 80).unwrap();
+        let line = layout("日本", None).unwrap();
         assert_eq!(line.cell(0), Some(PreeditCell::Start(0)));
         assert_eq!(line.cell(1), Some(PreeditCell::Continuation));
         assert_eq!(line.cell(2), Some(PreeditCell::Start(1)));
@@ -241,7 +264,7 @@ mod tests {
     #[test]
     fn grapheme_clusters_stay_whole() {
         // Decomposed e + combining circumflex: one cluster, one cell.
-        let line = PreeditLine::new(&preedit("e\u{302}x", None), 0, 0, 80).unwrap();
+        let line = layout("e\u{302}x", None).unwrap();
         assert_eq!(line.cell(0), Some(PreeditCell::Start(0)));
         assert_eq!(line.cluster(0), "e\u{302}");
         assert_eq!(line.cell(1), Some(PreeditCell::Start(1)));
@@ -249,7 +272,7 @@ mod tests {
 
         // ZWJ family emoji: one cluster, clamped to two cells.
         let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
-        let line = PreeditLine::new(&preedit(family, None), 0, 0, 80).unwrap();
+        let line = layout(family, None).unwrap();
         assert_eq!(line.cell(0), Some(PreeditCell::Start(0)));
         assert_eq!(line.cell(1), Some(PreeditCell::Continuation));
         assert_eq!(line.cell(2), None);
@@ -259,7 +282,7 @@ mod tests {
     #[test]
     fn slides_left_at_the_right_edge() {
         // Cursor at col 77 of 80; "日本語" needs 6 cells → starts at 74.
-        let line = PreeditLine::new(&preedit("日本語", None), 24, 77, 80).unwrap();
+        let line = layout_at("日本語", None, 24, 77).unwrap();
         assert_eq!(line.start_col, 74);
         assert_eq!(line.end_col(), 80);
         // Caret would land at col 80 — clamped to an underline on 語.
@@ -271,7 +294,7 @@ mod tests {
     #[test]
     fn longer_than_the_row_keeps_the_tail() {
         let text = "あ".repeat(50); // 100 cells wide
-        let line = PreeditLine::new(&preedit(&text, None), 0, 10, 80).unwrap();
+        let line = layout_at(&text, None, 0, 10).unwrap();
         // 10 clusters dropped: 40 remain (80 cells), flush to col 0.
         assert_eq!(line.start_col, 0);
         assert_eq!(line.end_col(), 80);
@@ -282,16 +305,12 @@ mod tests {
     #[test]
     fn caret_inside_composition_is_an_underline() {
         // Caret before 本 (byte offset 3).
-        let line = PreeditLine::new(&preedit("日本語", Some(3)), 0, 0, 80).unwrap();
+        let line = layout("日本語", Some(3)).unwrap();
         assert_eq!(line.caret, PreeditCaret::OnCell(2));
-        // A non-boundary offset is dropped by `Preedit::new` and the
-        // caret falls back to end-of-text.
-        let line = PreeditLine::new(&preedit("日本語", Some(4)), 0, 0, 80).unwrap();
-        assert_eq!(line.caret, PreeditCaret::PastEnd(6));
         // A char-boundary offset inside a grapheme cluster (between
         // `e` and its combining mark) snaps forward to the next
         // cluster boundary.
-        let line = PreeditLine::new(&preedit("e\u{302}x", Some(1)), 0, 0, 80).unwrap();
+        let line = layout("e\u{302}x", Some(1)).unwrap();
         assert_eq!(line.caret, PreeditCaret::OnCell(1));
     }
 
@@ -300,7 +319,7 @@ mod tests {
         let text = "あ".repeat(50);
         // Caret at the very start, which gets dropped: clamps to the
         // first visible cluster.
-        let line = PreeditLine::new(&preedit(&text, Some(0)), 0, 0, 80).unwrap();
+        let line = layout(&text, Some(0)).unwrap();
         assert_eq!(line.caret, PreeditCaret::OnCell(0));
     }
 
@@ -308,19 +327,18 @@ mod tests {
     fn hidden_caret_draws_no_caret() {
         // Wayland/Windows report a hidden caret while the user pages
         // through candidates; no caret may render then.
-        let p = Preedit::new("日本語".to_string(), PreeditCursor::Hidden);
-        let line = PreeditLine::new(&p, 0, 0, 80).unwrap();
+        let line = PreeditLine::new("日本語", PreeditCursor::Hidden, 0, 0, 80).unwrap();
         assert_eq!(line.caret, PreeditCaret::Hidden);
         assert_eq!(line.popup_anchor_col(), 5);
         // Cropping keeps it hidden too.
-        let long = Preedit::new("あ".repeat(50), PreeditCursor::Hidden);
-        let line = PreeditLine::new(&long, 0, 0, 80).unwrap();
+        let long = "あ".repeat(50);
+        let line = PreeditLine::new(&long, PreeditCursor::Hidden, 0, 0, 80).unwrap();
         assert_eq!(line.caret, PreeditCaret::Hidden);
     }
 
     #[test]
     fn empty_and_degenerate_input() {
-        assert!(PreeditLine::new(&preedit("", None), 0, 0, 80).is_none());
-        assert!(PreeditLine::new(&preedit("a", None), 0, 0, 0).is_none());
+        assert!(layout("", None).is_none());
+        assert!(PreeditLine::new("a", PreeditCursor::Byte(1), 0, 0, 0).is_none());
     }
 }
