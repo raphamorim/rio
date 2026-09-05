@@ -19,6 +19,9 @@ pub const RIO_ACTION_PROGRESS: u32 = 3;
 pub const RIO_COLOR_NAMED: u8 = 0;
 pub const RIO_COLOR_INDEXED: u8 = 1;
 pub const RIO_COLOR_RGB: u8 = 2;
+/// An absent color (value and rgb are zero). Only returned by
+/// [`rio_render_state_cell_underline_color`].
+pub const RIO_COLOR_NONE: u8 = 3;
 
 pub const RIO_KEY_CHAR: u32 = 0;
 pub const RIO_KEY_ENTER: u32 = 1;
@@ -105,6 +108,9 @@ pub struct rio_color_s {
     pub b: u8,
 }
 
+/// A renderable cell. `fg`/`bg` are exported pre-swap: when the flags
+/// carry `StyleFlags::INVERSE` the host swaps them when drawing, as
+/// rio's own renderer does.
 #[repr(C)]
 pub struct rio_cell_s {
     pub codepoint: u32,
@@ -1039,30 +1045,33 @@ fn cell_style(state: &RenderState, line: u16, column: u16) -> Option<(&Square, S
     Some((square, style))
 }
 
-/// The cell's explicit SGR 58 underline color. Meaningful only when the
-/// cell's `style_flags` carry [`RIO_CELL_HAS_UNDERLINE_COLOR`]; without
-/// that bit, draw the underline in the color used for the glyph (the fg
-/// after any INVERSE swap), the fallback rio's own renderer applies.
+/// The cell's explicit SGR 58 underline color, or kind
+/// [`RIO_COLOR_NONE`] when the cell (or the call) has none; see
+/// [`RIO_CELL_HAS_UNDERLINE_COLOR`].
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_cell_underline_color(
     state: *const RenderState,
     line: u16,
     column: u16,
 ) -> rio_color_s {
+    let none = rio_color_s {
+        kind: RIO_COLOR_NONE,
+        ..rio_color_s::default()
+    };
     catch_unwind(AssertUnwindSafe(|| {
         if state.is_null() {
-            return rio_color_s::default();
+            return none;
         }
         let state = unsafe { &*state };
         let Some((_, style)) = cell_style(state, line, column) else {
-            return rio_color_s::default();
+            return none;
         };
         let Some(underline) = style.underline_color else {
-            return rio_color_s::default();
+            return none;
         };
         resolve_cell_color(underline, state.term_colors())
     }))
-    .unwrap_or_default()
+    .unwrap_or(none)
 }
 
 /// Set in `rio_cell_s.style_flags` when the cell carries attached
