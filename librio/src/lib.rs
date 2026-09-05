@@ -334,94 +334,6 @@ fn trailing_url_punctuation(text: &str) -> usize {
     trimmed
 }
 
-/// Emit `\x1b[0m` plus the minimal SGR codes reproducing `style`.
-fn serialize_style(out: &mut String, style: &Style) {
-    use std::fmt::Write as _;
-
-    out.push_str("\x1b[0");
-    let color = |prefix38: bool, color: &AnsiColor| match color {
-        AnsiColor::Named(n) => {
-            let n = *n as u16;
-            let code = match (n, prefix38) {
-                (0..=7, true) => 30 + n,
-                (0..=7, false) => 40 + n,
-                (8..=15, true) => 90 + (n - 8),
-                (8..=15, false) => 100 + (n - 8),
-                (_, true) => 39,
-                (_, false) => 49,
-            };
-            format!(";{code}")
-        }
-        AnsiColor::Indexed(i) => {
-            format!(";{};5;{i}", if prefix38 { 38 } else { 48 })
-        }
-        AnsiColor::Spec(rgb) => {
-            format!(
-                ";{};2;{};{};{}",
-                if prefix38 { 38 } else { 48 },
-                rgb.r,
-                rgb.g,
-                rgb.b
-            )
-        }
-    };
-    let fg = color(true, &style.fg);
-    let bg = color(false, &style.bg);
-    out.push_str(&fg);
-    out.push_str(&bg);
-
-    let flags = style.flags;
-    if flags.contains(StyleFlags::BOLD) {
-        out.push_str(";1");
-    }
-    if flags.contains(StyleFlags::DIM) {
-        out.push_str(";2");
-    }
-    if flags.contains(StyleFlags::ITALIC) {
-        out.push_str(";3");
-    }
-    if flags.contains(StyleFlags::UNDERLINE) {
-        out.push_str(";4");
-    } else if flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
-        out.push_str(";4:2");
-    } else if flags.contains(StyleFlags::UNDERCURL) {
-        out.push_str(";4:3");
-    } else if flags.contains(StyleFlags::DOTTED_UNDERLINE) {
-        out.push_str(";4:4");
-    } else if flags.contains(StyleFlags::DASHED_UNDERLINE) {
-        out.push_str(";4:5");
-    }
-    if flags.contains(StyleFlags::SLOW_BLINK) {
-        out.push_str(";5");
-    } else if flags.contains(StyleFlags::RAPID_BLINK) {
-        out.push_str(";6");
-    }
-    if flags.contains(StyleFlags::INVERSE) {
-        out.push_str(";7");
-    }
-    if flags.contains(StyleFlags::HIDDEN) {
-        out.push_str(";8");
-    }
-    if flags.contains(StyleFlags::STRIKEOUT) {
-        out.push_str(";9");
-    }
-    out.push('m');
-
-    if let Some(underline) = &style.underline_color {
-        match underline {
-            AnsiColor::Indexed(i) => {
-                let _ = write!(out, "\x1b[58;5;{i}m");
-            }
-            AnsiColor::Spec(rgb) => {
-                let _ = write!(out, "\x1b[58;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
-            }
-            AnsiColor::Named(n) => {
-                let _ = write!(out, "\x1b[58;5;{}m", *n as u16);
-            }
-        }
-    }
-}
-
 pub struct Surface {
     id: SurfaceId,
     alt_is_meta: std::sync::atomic::AtomicBool,
@@ -1034,7 +946,7 @@ impl Surface {
 
                 let cell_style = grid.style_of(&square);
                 if cell_style != style {
-                    serialize_style(&mut out, &cell_style);
+                    rio_vt::crosswords::formatter::write_sgr(&mut out, &cell_style);
                     style = cell_style;
                 }
 
@@ -1687,8 +1599,9 @@ mod tests {
         surface.inject_output(b"1mred");
         let dump = surface.dump();
         assert_eq!(dump.trim_end(), "red", "no literal escape tail: {dump:?}");
-        // The style applied: serialize carries the red foreground.
-        assert!(surface.serialize().contains("\x1b[0;31;49m"));
+        // The style applied: serialize carries the red foreground (the
+        // default bg is covered by the leading reset).
+        assert!(surface.serialize().contains("\x1b[0;31m"));
 
         // Split inside an OSC title too.
         surface.inject_output(b"\x1b]0;hel");

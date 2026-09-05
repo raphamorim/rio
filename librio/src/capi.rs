@@ -1030,6 +1030,31 @@ pub unsafe extern "C" fn rio_render_state_cell(
     })
 }
 
+/// Color to draw the cell's underline with: the SGR 58 underline color
+/// when the program set one, else the cell's foreground — the same
+/// preference rio's own renderer applies. Only meaningful when the
+/// cell's `style_flags` carry an underline kind bit.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_cell_underline_color(
+    state: *const RenderState,
+    line: u16,
+    column: u16,
+) -> rio_color_s {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return rio_color_s::default();
+        }
+        let state = unsafe { &*state };
+        let Some(square) = state.square(line as usize, column as usize) else {
+            return rio_color_s::default();
+        };
+        let style = state.style_at(line as usize, column as usize, square);
+        let tc = state.term_colors();
+        resolve_cell_color(style.underline_color.unwrap_or(style.fg), tc)
+    }))
+    .unwrap_or_default()
+}
+
 /// Set in `rio_cell_s.style_flags` when the cell carries attached
 /// cluster codepoints (combining marks, or a mode-2027 grapheme
 /// cluster) beyond `codepoint`. Fetch the full text with

@@ -52,6 +52,38 @@ bitflags! {
     }
 }
 
+/// The five one-hot underline kinds behind `StyleFlags` bits 6-10.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnderlineKind {
+    Single,
+    Double,
+    Curly,
+    Dotted,
+    Dashed,
+}
+
+impl StyleFlags {
+    /// The underline kind these flags carry, or `None` without one. The
+    /// kind bits are one-hot (the parser clears `ALL_UNDERLINES` before
+    /// setting one); the priority order here settles any corrupt state.
+    #[inline]
+    pub fn underline_kind(self) -> Option<UnderlineKind> {
+        if self.contains(StyleFlags::UNDERLINE) {
+            Some(UnderlineKind::Single)
+        } else if self.contains(StyleFlags::DOUBLE_UNDERLINE) {
+            Some(UnderlineKind::Double)
+        } else if self.contains(StyleFlags::UNDERCURL) {
+            Some(UnderlineKind::Curly)
+        } else if self.contains(StyleFlags::DOTTED_UNDERLINE) {
+            Some(UnderlineKind::Dotted)
+        } else if self.contains(StyleFlags::DASHED_UNDERLINE) {
+            Some(UnderlineKind::Dashed)
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Style {
     pub fg: AnsiColor,

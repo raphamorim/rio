@@ -175,10 +175,13 @@ impl<U: EventListener> Crosswords<U> {
 }
 
 /// Write the SGR sequence for `style` directly into `out`, starting with `0`
-/// (reset) then re-applying. Written inline (no intermediate allocation);
-/// the caller only calls this when the style actually changes. Colors keep
-/// their original named / indexed / rgb form.
-fn write_sgr(out: &mut String, style: &Style) {
+/// (reset) then re-applying: styles are fully self-contained. Written inline
+/// (no intermediate allocation); call it only when the style actually
+/// changes. Colors keep their original named / indexed / rgb form. Also the
+/// style emitter for librio's `Surface::serialize`.
+pub fn write_sgr(out: &mut String, style: &Style) {
+    use crate::crosswords::style::UnderlineKind;
+
     out.push_str("\x1b[0");
     let flags = style.flags;
     if flags.contains(StyleFlags::BOLD) {
@@ -190,16 +193,13 @@ fn write_sgr(out: &mut String, style: &Style) {
     if flags.contains(StyleFlags::ITALIC) {
         out.push_str(";3");
     }
-    if flags.contains(StyleFlags::UNDERLINE) {
-        out.push_str(";4");
-    } else if flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
-        out.push_str(";4:2");
-    } else if flags.contains(StyleFlags::UNDERCURL) {
-        out.push_str(";4:3");
-    } else if flags.contains(StyleFlags::DOTTED_UNDERLINE) {
-        out.push_str(";4:4");
-    } else if flags.contains(StyleFlags::DASHED_UNDERLINE) {
-        out.push_str(";4:5");
+    match flags.underline_kind() {
+        None => {}
+        Some(UnderlineKind::Single) => out.push_str(";4"),
+        Some(UnderlineKind::Double) => out.push_str(";4:2"),
+        Some(UnderlineKind::Curly) => out.push_str(";4:3"),
+        Some(UnderlineKind::Dotted) => out.push_str(";4:4"),
+        Some(UnderlineKind::Dashed) => out.push_str(";4:5"),
     }
     if flags.contains(StyleFlags::SLOW_BLINK) {
         out.push_str(";5");
@@ -230,7 +230,12 @@ fn write_sgr(out: &mut String, style: &Style) {
                 let _ = write!(out, "\x1b[58;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
             }
             AnsiColor::Named(n) => {
-                let _ = write!(out, "\x1b[58;5;{}m", n as u16);
+                // Specials (Foreground = 256 and up) have no palette
+                // index; SGR 58 cannot express them, so leave the reset's
+                // unset underline color rather than emit an invalid index.
+                if let Ok(idx) = u8::try_from(n as u16) {
+                    let _ = write!(out, "\x1b[58;5;{idx}m");
+                }
             }
         }
     }

@@ -328,6 +328,12 @@ size_t rio_cluster_width(const uint32_t *codepoints, size_t len,
 
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
+/* Color to draw the cell's underline with: the SGR 58 underline color when
+ * the program set one, else the cell's foreground (the same preference
+ * rio's own renderer applies). Only meaningful when the cell's style_flags
+ * carry an underline kind bit. */
+rio_color_s rio_render_state_cell_underline_color(const rio_render_state_t *state,
+                                                  uint16_t line, uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
 
 /* This frame's dynamic (OSC 10/11/12) default colors. `which`: 0 =
