@@ -27,7 +27,7 @@ use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 // Global atomic counter for generating unique route IDs
 static ROUTE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
@@ -138,7 +138,6 @@ pub struct ContextManager<T: EventListener> {
     event_proxy: T,
     window_id: WindowId,
     pub config: ContextManagerConfig,
-    last_title_update: Option<Instant>,
 }
 
 pub fn create_dead_context<T: rio_backend::event::EventListener>(
@@ -425,7 +424,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config: ctx_config,
-            last_title_update: None,
         })
     }
 
@@ -463,7 +461,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config,
-            last_title_update: None,
         })
     }
 
@@ -759,6 +756,41 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
+    /// A pane rang the bell. Flags its tab so the strip can surface it;
+    /// the focused tab is skipped since the user is already looking at it.
+    /// The ringing pane can live in any tab (background split of a
+    /// background tab included), so every tab is searched.
+    #[inline]
+    pub fn ring_bell(&mut self, route_id: usize) -> bool {
+        let Some(tab_index) = self
+            .contexts
+            .iter_mut()
+            .position(|grid| grid.get_by_route_id(route_id).is_some())
+        else {
+            return false;
+        };
+
+        if tab_index == self.current_index {
+            return false;
+        }
+
+        self.contexts[tab_index].bell = true;
+        true
+    }
+
+    #[inline]
+    pub fn bell(&self, index: usize) -> bool {
+        self.contexts.get(index).is_some_and(|grid| grid.bell)
+    }
+
+    /// Clears the focused tab's bell flag. Called every frame so the mark
+    /// drops the moment the tab is shown, whatever brought it to the front.
+    #[inline]
+    pub fn clear_current_bell(&mut self) -> bool {
+        let grid = &mut self.contexts[self.current_index];
+        std::mem::replace(&mut grid.bell, false)
+    }
+
     #[inline]
     pub fn resize_all_grids(
         &mut self,
@@ -771,29 +803,47 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
-    pub fn update_titles(&mut self) {
-        let interval_time = Duration::from_secs(2);
-        if self
-            .last_title_update
-            .map(|i| i.elapsed() > interval_time)
-            .unwrap_or(true)
-        {
-            self.last_title_update = Some(Instant::now());
-            for grid in self.contexts.iter_mut() {
-                let content = update_title(&self.config.title.content, grid.current());
+    /// Recompute the tab title for a single pane, used when its terminal
+    /// title changed (OSC 0/2). The poll below only paces the variables
+    /// that have no event to hang off (`{{program}}`, paths), so waiting
+    /// on it made a title the PTY already told us about show up seconds
+    /// late. Returns whether the tab's title actually changed.
+    pub fn update_title_for_route(&mut self, route_id: usize) -> bool {
+        let template = self.config.title.content.clone();
+        let should_update_title_extra = self.config.should_update_title_extra;
+        let Some(item) = self.get_by_route_id(route_id) else {
+            return false;
+        };
 
-                self.event_proxy
-                    .send_event(RioEvent::Title(content.to_owned()), self.window_id);
-
-                let extra = if self.config.should_update_title_extra {
-                    create_title_extra_from_context(grid.current())
-                } else {
-                    None
-                };
-
-                grid.current_mut().title = ContextTitle { content, extra };
-            }
+        let content = update_title(&template, item.context());
+        if content == item.context().title.content {
+            return false;
         }
+
+        let extra = if should_update_title_extra {
+            create_title_extra_from_context(item.context())
+        } else {
+            None
+        };
+        item.context_mut().title = ContextTitle { content, extra };
+        true
+    }
+
+    /// Recompute every tab's title on the poll tick. This is what picks up
+    /// the variables no PTY event announces (`{{program}}`, paths); OSC
+    /// title changes arrive immediately via `update_title_for_route`.
+    /// Returns whether any tab's title changed, so the caller can repaint.
+    pub fn update_titles(&mut self) -> bool {
+        let mut changed = false;
+        for index in 0..self.contexts.len() {
+            let route_id = self.contexts[index].current().route_id;
+            changed |= self.update_title_for_route(route_id);
+
+            let content = self.contexts[index].current().title.content.clone();
+            self.event_proxy
+                .send_event(RioEvent::Title(route_id, content), self.window_id);
+        }
+        changed
     }
 
     #[inline]
@@ -1360,6 +1410,35 @@ pub mod test {
 
         context_manager.set_current(8);
         assert_eq!(context_manager.current_index, 3);
+    }
+
+    #[test]
+    fn bell_marks_background_tabs_only_and_clears_on_focus() {
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
+                .unwrap();
+        cm.add_context(true, 0);
+        cm.add_context(true, 0);
+        cm.set_current(0);
+
+        let background_route = cm.contexts[2].current().route_id;
+        let focused_route = cm.contexts[0].current().route_id;
+
+        assert!(cm.ring_bell(background_route));
+        assert!(cm.bell(2));
+
+        // The focused tab is never marked: the user is looking at it.
+        assert!(!cm.ring_bell(focused_route));
+        assert!(!cm.bell(0));
+
+        // Unknown routes (already-closed panes) are a no-op.
+        assert!(!cm.ring_bell(usize::MAX));
+
+        // Focusing the tab drops the mark on the next rendered frame.
+        cm.set_current(2);
+        assert!(cm.bell(2));
+        assert!(cm.clear_current_bell());
+        assert!(!cm.bell(2));
     }
 
     fn set_tab_title(cm: &mut ContextManager<VoidListener>, index: usize, content: &str) {
