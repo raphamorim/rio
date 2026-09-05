@@ -2532,7 +2532,7 @@ fn emit_preedit_cluster(
     #[cfg(not(target_os = "macos"))]
     {
         rasterizer.run_str_scratch.clear();
-        rasterizer.run_str_scratch.extend(cluster.chars());
+        rasterizer.run_str_scratch.push_str(cluster);
     }
 
     // Composition runs get their own cache namespace (the leading

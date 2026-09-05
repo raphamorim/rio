@@ -1232,6 +1232,9 @@ pub unsafe extern "C" fn sl_render_surface(
                     &term_colors,
                     row_sel,
                     &hint_scratch,
+                    // IME composition is a frontend concern; the C API
+                    // renders no preedit overlay.
+                    None,
                     &mut bg_scratch,
                 );
                 // Break shaping runs around the cursor cell so partial
@@ -1260,6 +1263,7 @@ pub unsafe extern "C" fn sl_render_surface(
                     cell_h,
                     row_sel,
                     &hint_scratch,
+                    None,
                     &font_library,
                     0,
                     cursor_col_for_row,
