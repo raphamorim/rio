@@ -83,7 +83,7 @@ pub struct Screen<'screen> {
     /// be rebuilt when the composition moves or ends even when
     /// terminal damage reports nothing.
     last_preedit_row: Option<usize>,
-    last_ime_cursor_pos: Option<(f32, f32)>,
+    last_ime_cursor_pos: Option<(f32, f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
     /// Hint regexes compiled on first use, keyed by pattern. Hover
     /// hit-testing runs on every mouse move; recompiling the URL
@@ -4666,25 +4666,34 @@ impl Screen<'_> {
         // not the terminal cursor: the composition renders inline and
         // can slide away from the cursor cell, and a popup opening
         // tens of cells from the caret overlaps the freshly drawn
-        // text. Mirrors the layout the renderer uses (same inputs).
+        // text. The reported area's width spans from the caret to the
+        // composition's end, so the OS also knows how much freshly
+        // drawn text to avoid covering.
+        // Mirrors the layout the renderer uses (same inputs).
         let content = &current_item.val.renderable_content;
-        let (anchor_row, anchor_col) = match self.ime.preedit().filter(|_| {
-            content.display_offset == 0 && content.columns > 0 && content.screen_lines > 0
-        }) {
-            Some(preedit) => match rio_grid::preedit::PreeditLine::new(
-                &preedit.text,
-                preedit.cursor,
-                (cursor_pos.row.0.max(0) as usize).min(content.screen_lines - 1),
-                cursor_pos.col.0,
-                content.columns,
-            ) {
-                Some(line) => {
-                    (line.row, line.popup_anchor_col().min(content.columns - 1))
-                }
-                None => (cursor_pos.row.0.max(0) as usize, cursor_pos.col.0),
-            },
-            None => (cursor_pos.row.0.max(0) as usize, cursor_pos.col.0),
-        };
+        let (anchor_row, anchor_col, anchor_cells) =
+            match self.ime.preedit().filter(|_| {
+                content.display_offset == 0
+                    && content.columns > 0
+                    && content.screen_lines > 0
+            }) {
+                Some(preedit) => match rio_grid::preedit::PreeditLine::new(
+                    &preedit.text,
+                    preedit.cursor,
+                    (cursor_pos.row.0.max(0) as usize).min(content.screen_lines - 1),
+                    cursor_pos.col.0,
+                    content.columns,
+                ) {
+                    Some(line) => {
+                        let col = line.popup_anchor_col().min(content.columns - 1);
+                        let cells =
+                            line.end_col().min(content.columns).max(col + 1) - col;
+                        (line.row, col, cells)
+                    }
+                    None => (cursor_pos.row.0.max(0) as usize, cursor_pos.col.0, 1),
+                },
+                None => (cursor_pos.row.0.max(0) as usize, cursor_pos.col.0, 1),
+            };
 
         // Calculate pixel position of cursor — canonical integer
         // stride (line_height already baked into cell_height).
@@ -4717,20 +4726,27 @@ impl Screen<'_> {
             return;
         }
 
-        // Check if position has changed significantly to avoid unnecessary updates
-        if let Some((last_x, last_y)) = self.last_ime_cursor_pos {
-            if (pixel_x - last_x).abs() < 1.0 && (pixel_y - last_y).abs() < 1.0 {
-                return; // Position hasn't changed significantly
+        // A PastEnd caret sits one cell past the composition, where
+        // `end_col - col` is 0; the area is always at least one cell.
+        let area_width = anchor_cells as f32 * cell_width;
+
+        // Check if the area changed significantly to avoid unnecessary updates
+        if let Some((last_x, last_y, last_w)) = self.last_ime_cursor_pos {
+            if (pixel_x - last_x).abs() < 1.0
+                && (pixel_y - last_y).abs() < 1.0
+                && (area_width - last_w).abs() < 1.0
+            {
+                return; // Area hasn't changed significantly
             }
         }
 
-        // Update last position
-        self.last_ime_cursor_pos = Some((pixel_x, pixel_y));
+        // Update last area
+        self.last_ime_cursor_pos = Some((pixel_x, pixel_y, area_width));
 
         // Set IME cursor area
         window.set_ime_cursor_area(
             rio_window::dpi::PhysicalPosition::new(pixel_x as f64, pixel_y as f64),
-            rio_window::dpi::PhysicalSize::new(cell_width as f64, cell_height as f64),
+            rio_window::dpi::PhysicalSize::new(area_width as f64, cell_height as f64),
         );
     }
 
