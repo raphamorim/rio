@@ -158,24 +158,30 @@ impl<U: EventListener> Crosswords<U> {
         self.row_last_content_col(line as i32, cols, true).is_some()
     }
 
-    /// Rightmost column with a non-blank glyph, or `None` for a blank row.
+    /// Rightmost column with a non-blank glyph or a non-default style (a
+    /// bg-colored or underlined blank still renders, so it is content),
+    /// or `None` for a row with neither.
     fn row_last_content_col(&self, line: i32, cols: usize, trim: bool) -> Option<usize> {
         if !trim {
             return Some(cols.saturating_sub(1));
         }
         let row = &self.grid[Line(line)];
         (0..cols).rev().find(|&col| {
-            let c = row[Column(col)].c();
-            c != ' ' && c != '\0'
+            let square = &row[Column(col)];
+            let c = square.c();
+            (c != ' ' && c != '\0') || self.grid.style_of(square) != Style::default()
         })
     }
 }
 
 /// Write the SGR sequence for `style` directly into `out`, starting with `0`
-/// (reset) then re-applying. Written inline (no intermediate allocation);
-/// the caller only calls this when the style actually changes. Colors keep
-/// their original named / indexed / rgb form.
-fn write_sgr(out: &mut String, style: &Style) {
+/// (reset) then re-applying: styles are fully self-contained. Written inline
+/// (no intermediate allocation); call it only when the style actually
+/// changes. Colors keep their original named / indexed / rgb form. Also the
+/// style emitter for librio's `Surface::serialize`.
+pub fn write_sgr(out: &mut String, style: &Style) {
+    use crate::crosswords::style::UnderlineKind;
+
     out.push_str("\x1b[0");
     let flags = style.flags;
     if flags.contains(StyleFlags::BOLD) {
@@ -187,8 +193,18 @@ fn write_sgr(out: &mut String, style: &Style) {
     if flags.contains(StyleFlags::ITALIC) {
         out.push_str(";3");
     }
-    if flags.contains(StyleFlags::UNDERLINE) {
-        out.push_str(";4");
+    match flags.underline_kind() {
+        None => {}
+        Some(UnderlineKind::Single) => out.push_str(";4"),
+        Some(UnderlineKind::Double) => out.push_str(";4:2"),
+        Some(UnderlineKind::Curly) => out.push_str(";4:3"),
+        Some(UnderlineKind::Dotted) => out.push_str(";4:4"),
+        Some(UnderlineKind::Dashed) => out.push_str(";4:5"),
+    }
+    if flags.contains(StyleFlags::SLOW_BLINK) {
+        out.push_str(";5");
+    } else if flags.contains(StyleFlags::RAPID_BLINK) {
+        out.push_str(";6");
     }
     if flags.contains(StyleFlags::INVERSE) {
         out.push_str(";7");
@@ -202,6 +218,27 @@ fn write_sgr(out: &mut String, style: &Style) {
     push_color(out, style.fg, true);
     push_color(out, style.bg, false);
     out.push('m');
+
+    // Underline color travels as its own sequence; the leading reset
+    // already cleared any previous one.
+    if let Some(underline) = style.underline_color {
+        match underline {
+            AnsiColor::Indexed(i) => {
+                let _ = write!(out, "\x1b[58;5;{i}m");
+            }
+            AnsiColor::Spec(rgb) => {
+                let _ = write!(out, "\x1b[58;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
+            }
+            AnsiColor::Named(n) => {
+                // Specials (Foreground = 256 and up) have no palette
+                // index; SGR 58 cannot express them, so leave the reset's
+                // unset underline color rather than emit an invalid index.
+                if let Ok(idx) = u8::try_from(n as u16) {
+                    let _ = write!(out, "\x1b[58;5;{idx}m");
+                }
+            }
+        }
+    }
 }
 
 fn push_color(params: &mut String, color: AnsiColor, fg: bool) {
@@ -257,8 +294,13 @@ mod tests {
     #[test]
     fn vt_roundtrip_preserves_text_and_style() {
         let mut a = term(20, 4);
-        // red "hello", default space, bold-blue "world".
-        feed(&mut a, b"\x1b[31mhello\x1b[0m \x1b[1;34mworld\x1b[0m");
+        // rapid-blink red "hello", default space, bold-blink-blue "world",
+        // then a red-undercurled "curl" on the next line.
+        feed(
+            &mut a,
+            b"\x1b[6;31mhello\x1b[0m \x1b[1;5;34mworld\x1b[0m\r\n\
+                      \x1b[4:3;58;2;255;0;0mcurl\x1b[0m",
+        );
         let snapshot = a.contents_formatted();
 
         // The snapshot must carry the colors (index form, not resolved rgb).
@@ -281,6 +323,47 @@ mod tests {
         assert_eq!(sb.c(), 'w');
         assert_eq!(a.grid.style_of(&sa).fg, b.grid.style_of(&sb).fg);
         assert!(b.grid.style_of(&sb).flags.contains(StyleFlags::BOLD));
+        assert!(b.grid.style_of(&sb).flags.contains(StyleFlags::SLOW_BLINK));
+        let hb = *(&b.grid[Line(0)][Column(0)] as &Square);
+        assert!(b.grid.style_of(&hb).flags.contains(StyleFlags::RAPID_BLINK));
+
+        // Underline kind and color survive too. 'c' of "curl" is at (1, 0).
+        let cb = *(&b.grid[Line(1)][Column(0)] as &Square);
+        assert_eq!(cb.c(), 'c');
+        let curl = b.grid.style_of(&cb);
+        assert!(curl.flags.contains(StyleFlags::UNDERCURL));
+        assert_eq!(
+            curl.underline_color,
+            Some(AnsiColor::Spec(crate::config::colors::ColorRgb {
+                r: 255,
+                g: 0,
+                b: 0
+            }))
+        );
+    }
+
+    #[test]
+    fn vt_roundtrip_preserves_styled_blanks() {
+        use crate::config::colors::NamedColor;
+
+        // Red-background trailing spaces after "AB" render, so the trim
+        // must keep them.
+        let mut a = term(20, 4);
+        feed(&mut a, b"AB\x1b[41m   \x1b[0m");
+        let snapshot = a.contents_formatted();
+        let text = String::from_utf8(snapshot.clone()).unwrap();
+        assert!(text.contains(";41"), "missing red bg: {text:?}");
+
+        let mut b = term(20, 4);
+        feed(&mut b, &snapshot);
+        let sb = *(&b.grid[Line(0)][Column(3)] as &Square);
+        assert_eq!(b.grid.style_of(&sb).bg, AnsiColor::Named(NamedColor::Red));
+
+        // A row made only of styled blanks must not be dropped as blank.
+        let mut c = term(20, 4);
+        feed(&mut c, b"top\r\n\x1b[44m    \x1b[0m");
+        let text = String::from_utf8(c.contents_formatted()).unwrap();
+        assert!(text.contains(";44"), "styled-blank row dropped: {text:?}");
     }
 
     #[test]

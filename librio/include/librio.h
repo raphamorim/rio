@@ -25,6 +25,10 @@ typedef size_t rio_surface_id_t;
 #define RIO_COLOR_NAMED 0u
 #define RIO_COLOR_INDEXED 1u
 #define RIO_COLOR_RGB 2u
+/* An absent color (value and rgb are zero). Returned by
+ * rio_render_state_cell_underline_color for cells without an explicit
+ * underline color, and as the fg/bg of a missing cell. */
+#define RIO_COLOR_NONE 3u
 
 #define RIO_KEY_CHAR 0u
 #define RIO_KEY_ENTER 1u
@@ -117,11 +121,13 @@ typedef struct {
 
 typedef struct {
   /* Original form: RIO_COLOR_NAMED / _INDEXED / _RGB. `value` holds the
-     named-color id or palette index for the first two. */
+     named-color id or palette index for the first two. Kind
+     RIO_COLOR_NONE means no color at all: value and r/g/b are zero and
+     nothing should be drawn from them. */
   uint8_t kind;
   uint16_t value;
-  /* Always the resolved RGB, regardless of `kind`, so a CPU renderer can
-     read r/g/b directly without owning a palette. */
+  /* The resolved RGB for every kind except RIO_COLOR_NONE, so a CPU
+     renderer can read r/g/b directly without owning a palette. */
   uint8_t r;
   uint8_t g;
   uint8_t b;
@@ -133,6 +139,26 @@ typedef struct {
   rio_color_s bg;
   uint16_t style_flags;
 } rio_cell_s;
+
+/* Bit assignments for rio_cell_s.style_flags. Bits 6-10 are the
+ * underline kind; at most one is set. At most one blink bit is set.
+ * Bits 14-15 are the RIO_CELL_* markers, not styles.
+ *
+ * rio_cell_s.fg/bg are exported pre-swap: when RIO_STYLE_INVERSE is
+ * set the host swaps them when drawing, as rio's own renderer does. */
+#define RIO_STYLE_INVERSE (1u << 0)
+#define RIO_STYLE_BOLD (1u << 1)
+#define RIO_STYLE_ITALIC (1u << 2)
+#define RIO_STYLE_DIM (1u << 3)
+#define RIO_STYLE_HIDDEN (1u << 4)
+#define RIO_STYLE_STRIKEOUT (1u << 5)
+#define RIO_STYLE_UNDERLINE (1u << 6)
+#define RIO_STYLE_DOUBLE_UNDERLINE (1u << 7)
+#define RIO_STYLE_UNDERCURL (1u << 8)
+#define RIO_STYLE_DOTTED_UNDERLINE (1u << 9)
+#define RIO_STYLE_DASHED_UNDERLINE (1u << 10)
+#define RIO_STYLE_SLOW_BLINK (1u << 11)
+#define RIO_STYLE_RAPID_BLINK (1u << 12)
 
 typedef struct {
   uint8_t r;
@@ -299,8 +325,8 @@ void rio_render_state_reset_dirty(rio_render_state_t *state);
 /* Set in rio_cell_s.style_flags when the cell carries attached cluster
  * codepoints (combining marks, or a DEC-2027 grapheme cluster) beyond
  * `codepoint`. Fetch the full text with rio_render_state_cell_cluster
- * and draw that instead of the base char. StyleFlags proper occupies
- * bits 0..10; this is bit 15. */
+ * and draw that instead of the base char. Style flags proper occupy
+ * bits 0-12 (RIO_STYLE_*); this is bit 15. */
 #define RIO_CELL_HAS_CLUSTER (1u << 15)
 
 /* Write the full text of a cell (base codepoint plus attached cluster
@@ -322,8 +348,22 @@ size_t rio_render_state_cell_cluster(const rio_render_state_t *state,
 size_t rio_cluster_width(const uint32_t *codepoints, size_t len,
                          uint8_t *out_width);
 
+/* The cell at (line, column). A NULL state or out-of-range query returns
+ * a blank cell whose fg/bg have kind RIO_COLOR_NONE, so a miss is never
+ * mistaken for a real black cell; real cells always carry a drawable
+ * fg/bg kind. */
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
+/* Set in rio_cell_s.style_flags when the cell carries an explicit SGR 58
+ * underline color; fetch it with rio_render_state_cell_underline_color.
+ * Without this bit, draw the underline in the color used for the glyph:
+ * the fallback rio's own renderer applies. This is bit 14. */
+#define RIO_CELL_HAS_UNDERLINE_COLOR (1u << 14)
+/* The cell's explicit SGR 58 underline color, or kind RIO_COLOR_NONE
+ * when the cell has none (also for a NULL state, an out-of-range cell,
+ * or an internal error); see RIO_CELL_HAS_UNDERLINE_COLOR. */
+rio_color_s rio_render_state_cell_underline_color(const rio_render_state_t *state,
+                                                  uint16_t line, uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
 /* RIO_CURSOR_*; see the defines. */
 uint8_t rio_render_state_cursor_shape(const rio_render_state_t *state);

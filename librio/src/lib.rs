@@ -334,89 +334,6 @@ fn trailing_url_punctuation(text: &str) -> usize {
     trimmed
 }
 
-/// Emit `\x1b[0m` plus the minimal SGR codes reproducing `style`.
-fn serialize_style(out: &mut String, style: &Style) {
-    use std::fmt::Write as _;
-
-    out.push_str("\x1b[0");
-    let color = |prefix38: bool, color: &AnsiColor| match color {
-        AnsiColor::Named(n) => {
-            let n = *n as u16;
-            let code = match (n, prefix38) {
-                (0..=7, true) => 30 + n,
-                (0..=7, false) => 40 + n,
-                (8..=15, true) => 90 + (n - 8),
-                (8..=15, false) => 100 + (n - 8),
-                (_, true) => 39,
-                (_, false) => 49,
-            };
-            format!(";{code}")
-        }
-        AnsiColor::Indexed(i) => {
-            format!(";{};5;{i}", if prefix38 { 38 } else { 48 })
-        }
-        AnsiColor::Spec(rgb) => {
-            format!(
-                ";{};2;{};{};{}",
-                if prefix38 { 38 } else { 48 },
-                rgb.r,
-                rgb.g,
-                rgb.b
-            )
-        }
-    };
-    let fg = color(true, &style.fg);
-    let bg = color(false, &style.bg);
-    out.push_str(&fg);
-    out.push_str(&bg);
-
-    let flags = style.flags;
-    if flags.contains(StyleFlags::BOLD) {
-        out.push_str(";1");
-    }
-    if flags.contains(StyleFlags::DIM) {
-        out.push_str(";2");
-    }
-    if flags.contains(StyleFlags::ITALIC) {
-        out.push_str(";3");
-    }
-    if flags.contains(StyleFlags::UNDERLINE) {
-        out.push_str(";4");
-    } else if flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
-        out.push_str(";4:2");
-    } else if flags.contains(StyleFlags::UNDERCURL) {
-        out.push_str(";4:3");
-    } else if flags.contains(StyleFlags::DOTTED_UNDERLINE) {
-        out.push_str(";4:4");
-    } else if flags.contains(StyleFlags::DASHED_UNDERLINE) {
-        out.push_str(";4:5");
-    }
-    if flags.contains(StyleFlags::INVERSE) {
-        out.push_str(";7");
-    }
-    if flags.contains(StyleFlags::HIDDEN) {
-        out.push_str(";8");
-    }
-    if flags.contains(StyleFlags::STRIKEOUT) {
-        out.push_str(";9");
-    }
-    out.push('m');
-
-    if let Some(underline) = &style.underline_color {
-        match underline {
-            AnsiColor::Indexed(i) => {
-                let _ = write!(out, "\x1b[58;5;{i}m");
-            }
-            AnsiColor::Spec(rgb) => {
-                let _ = write!(out, "\x1b[58;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
-            }
-            AnsiColor::Named(n) => {
-                let _ = write!(out, "\x1b[58;5;{}m", *n as u16);
-            }
-        }
-    }
-}
-
 pub struct Surface {
     id: SurfaceId,
     alt_is_meta: std::sync::atomic::AtomicBool,
@@ -1030,7 +947,7 @@ impl Surface {
 
                 let cell_style = grid.style_of(&square);
                 if cell_style != style {
-                    serialize_style(&mut out, &cell_style);
+                    rio_vt::crosswords::formatter::write_sgr(&mut out, &cell_style);
                     style = cell_style;
                 }
 
@@ -1623,15 +1540,66 @@ mod tests {
             b"\x1b[31mred\x1b[0m plain \x1b[1;4;38;5;208morange\x1b[0m\r\n\
               \x1b[48;2;10;20;30mrgb bg\x1b[0m \
               \x1b]8;;https://rioterm.com\x1b\\link\x1b]8;;\x1b\\\r\n\
+              \x1b[5mslow\x1b[0m \x1b[6mfast\x1b[0m\r\n\
               wide: \xe4\xbd\xa0\xe5\xa5\xbd",
         );
         let first = surface.serialize();
         assert!(first.contains("\x1b]8;;https://rioterm.com\x1b\\"));
+        assert!(first.contains(";5m"), "missing slow blink: {first:?}");
+        assert!(first.contains(";6m"), "missing rapid blink: {first:?}");
 
         let replica = quiet_surface(40, 10);
         replica.inject_output(first.as_bytes());
         assert_eq!(replica.dump(), surface.dump());
         assert_eq!(replica.serialize(), first);
+    }
+
+    // The C ABI marks cells carrying an explicit SGR 58 underline color
+    // and hands the color out; unmarked cells take the glyph's color.
+    #[test]
+    fn capi_reports_underline_color() {
+        use crate::capi::{
+            rio_render_state_cell, rio_render_state_cell_underline_color,
+            RIO_CELL_HAS_UNDERLINE_COLOR, RIO_COLOR_INDEXED, RIO_COLOR_NONE,
+            RIO_COLOR_RGB,
+        };
+
+        let surface = quiet_surface(10, 3);
+        surface.inject_output(b"\x1b[4;58;2;10;20;30ma\x1b[0mb\x1b[4;58;5;196mc\x1b[0m");
+        let mut state = RenderState::new(&surface);
+        state.update();
+
+        let marked = unsafe { rio_render_state_cell(&state, 0, 0) };
+        assert_ne!(marked.style_flags & RIO_CELL_HAS_UNDERLINE_COLOR, 0);
+        let color = unsafe { rio_render_state_cell_underline_color(&state, 0, 0) };
+        assert_eq!(color.kind, RIO_COLOR_RGB);
+        assert_eq!((color.r, color.g, color.b), (10, 20, 30));
+
+        let plain = unsafe { rio_render_state_cell(&state, 0, 1) };
+        assert_eq!(plain.style_flags & RIO_CELL_HAS_UNDERLINE_COLOR, 0);
+        // The NONE sentinel promises zeroed value and rgb.
+        let absent = unsafe { rio_render_state_cell_underline_color(&state, 0, 1) };
+        assert_eq!(absent.kind, RIO_COLOR_NONE);
+        assert_eq!(absent.value, 0);
+        assert_eq!((absent.r, absent.g, absent.b), (0, 0, 0));
+
+        // Indexed colors keep their form and still resolve rgb (256-color
+        // cube index 196 is pure red).
+        let indexed = unsafe { rio_render_state_cell_underline_color(&state, 0, 2) };
+        assert_eq!(indexed.kind, RIO_COLOR_INDEXED);
+        assert_eq!(indexed.value, 196);
+        assert_eq!((indexed.r, indexed.g, indexed.b), (255, 0, 0));
+
+        // A NULL state and an out-of-range cell also answer NONE, and a
+        // missing cell's fg/bg carry the NONE kind.
+        let null =
+            unsafe { rio_render_state_cell_underline_color(std::ptr::null(), 0, 0) };
+        assert_eq!(null.kind, RIO_COLOR_NONE);
+        let oob = unsafe { rio_render_state_cell_underline_color(&state, 99, 99) };
+        assert_eq!(oob.kind, RIO_COLOR_NONE);
+        let missing = unsafe { rio_render_state_cell(&state, 99, 99) };
+        assert_eq!(missing.fg.kind, RIO_COLOR_NONE);
+        assert_eq!(missing.bg.kind, RIO_COLOR_NONE);
     }
 
     // Scrollback rows come first, and wrapped rows are emitted without a
@@ -1691,8 +1659,9 @@ mod tests {
         surface.inject_output(b"1mred");
         let dump = surface.dump();
         assert_eq!(dump.trim_end(), "red", "no literal escape tail: {dump:?}");
-        // The style applied: serialize carries the red foreground.
-        assert!(surface.serialize().contains("\x1b[0;31;49m"));
+        // The style applied: serialize carries the red foreground (the
+        // default bg is covered by the leading reset).
+        assert!(surface.serialize().contains("\x1b[0;31m"));
 
         // Split inside an OSC title too.
         surface.inject_output(b"\x1b]0;hel");

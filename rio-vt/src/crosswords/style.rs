@@ -33,12 +33,15 @@ bitflags! {
         const DIM              = 1 << 3;
         const HIDDEN           = 1 << 4;
         const STRIKEOUT        = 1 << 5;
-        // 3-bit underline kind packed into bits 6-8.
+        // One-hot underline kind in bits 6-10; at most one is set.
         const UNDERLINE        = 1 << 6;
         const DOUBLE_UNDERLINE = 1 << 7;
         const UNDERCURL        = 1 << 8;
         const DOTTED_UNDERLINE = 1 << 9;
         const DASHED_UNDERLINE = 1 << 10;
+        const SLOW_BLINK       = 1 << 11;
+        const RAPID_BLINK      = 1 << 12;
+        const ALL_BLINK        = Self::SLOW_BLINK.bits() | Self::RAPID_BLINK.bits();
         const ALL_UNDERLINES   = Self::UNDERLINE.bits()
                                | Self::DOUBLE_UNDERLINE.bits()
                                | Self::UNDERCURL.bits()
@@ -46,6 +49,62 @@ bitflags! {
                                | Self::DASHED_UNDERLINE.bits();
         // Combined intensity for shaping decisions.
         const DIM_BOLD         = Self::DIM.bits() | Self::BOLD.bits();
+    }
+}
+
+/// The five one-hot underline kinds behind `StyleFlags` bits 6-10.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnderlineKind {
+    Single,
+    Double,
+    Curly,
+    Dotted,
+    Dashed,
+}
+
+impl UnderlineKind {
+    /// The one-hot `StyleFlags` bit for this kind.
+    #[inline]
+    pub fn flag(self) -> StyleFlags {
+        match self {
+            UnderlineKind::Single => StyleFlags::UNDERLINE,
+            UnderlineKind::Double => StyleFlags::DOUBLE_UNDERLINE,
+            UnderlineKind::Curly => StyleFlags::UNDERCURL,
+            UnderlineKind::Dotted => StyleFlags::DOTTED_UNDERLINE,
+            UnderlineKind::Dashed => StyleFlags::DASHED_UNDERLINE,
+        }
+    }
+}
+
+impl StyleFlags {
+    /// Replace the underline kind (`None` removes it), keeping the kind
+    /// bits one-hot. The write side of `underline_kind`.
+    #[inline]
+    pub fn set_underline(&mut self, kind: Option<UnderlineKind>) {
+        self.remove(StyleFlags::ALL_UNDERLINES);
+        if let Some(kind) = kind {
+            self.insert(kind.flag());
+        }
+    }
+
+    /// The underline kind these flags carry, or `None` without one. The
+    /// kind bits are one-hot (`set_underline` keeps them so); the
+    /// priority order here settles any corrupt state.
+    #[inline]
+    pub fn underline_kind(self) -> Option<UnderlineKind> {
+        if self.contains(StyleFlags::UNDERLINE) {
+            Some(UnderlineKind::Single)
+        } else if self.contains(StyleFlags::DOUBLE_UNDERLINE) {
+            Some(UnderlineKind::Double)
+        } else if self.contains(StyleFlags::UNDERCURL) {
+            Some(UnderlineKind::Curly)
+        } else if self.contains(StyleFlags::DOTTED_UNDERLINE) {
+            Some(UnderlineKind::Dotted)
+        } else if self.contains(StyleFlags::DASHED_UNDERLINE) {
+            Some(UnderlineKind::Dashed)
+        } else {
+            None
+        }
     }
 }
 

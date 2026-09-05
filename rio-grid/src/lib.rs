@@ -33,7 +33,7 @@ use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::{Column, Line, Pos};
 use rio_backend::crosswords::search::Match;
 use rio_backend::crosswords::square::{ContentTag, Extras, Square};
-use rio_backend::crosswords::style::{Style, StyleFlags};
+use rio_backend::crosswords::style::{Style, StyleFlags, UnderlineKind};
 use rio_backend::selection::SelectionRange;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
@@ -975,23 +975,16 @@ fn ensure_decoration_slot(
 }
 
 /// Pick the decoration enum value for a cell's `StyleFlags`, or `None`
-/// if the cell has no underline. Bit-test order matches StyleFlags
-/// ordering in `rio-backend/src/crosswords/style.rs`.
+/// if the cell has no underline.
 #[inline]
 fn underline_style_from_flags(flags: StyleFlags) -> Option<DecorationStyle> {
-    if flags.contains(StyleFlags::UNDERLINE) {
-        Some(DecorationStyle::Underline)
-    } else if flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
-        Some(DecorationStyle::DoubleUnderline)
-    } else if flags.contains(StyleFlags::UNDERCURL) {
-        Some(DecorationStyle::CurlyUnderline)
-    } else if flags.contains(StyleFlags::DOTTED_UNDERLINE) {
-        Some(DecorationStyle::DottedUnderline)
-    } else if flags.contains(StyleFlags::DASHED_UNDERLINE) {
-        Some(DecorationStyle::DashedUnderline)
-    } else {
-        None
-    }
+    flags.underline_kind().map(|kind| match kind {
+        UnderlineKind::Single => DecorationStyle::Underline,
+        UnderlineKind::Double => DecorationStyle::DoubleUnderline,
+        UnderlineKind::Curly => DecorationStyle::CurlyUnderline,
+        UnderlineKind::Dotted => DecorationStyle::DottedUnderline,
+        UnderlineKind::Dashed => DecorationStyle::DashedUnderline,
+    })
 }
 
 /// Decoration color: SGR 58 `underline_color` if set, else the cell's

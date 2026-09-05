@@ -2,7 +2,7 @@
 
 use crate::{
     Action, Engine, Key, KeyAction, KeyEvent, Modifiers, RenderState, SelectionKind,
-    Side, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
+    Side, Square, Style, StyleFlags, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
 use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -19,6 +19,9 @@ pub const RIO_ACTION_PROGRESS: u32 = 3;
 pub const RIO_COLOR_NAMED: u8 = 0;
 pub const RIO_COLOR_INDEXED: u8 = 1;
 pub const RIO_COLOR_RGB: u8 = 2;
+/// An absent color (value and rgb are zero). Only returned by
+/// [`rio_render_state_cell_underline_color`].
+pub const RIO_COLOR_NONE: u8 = 3;
 
 pub const RIO_KEY_CHAR: u32 = 0;
 pub const RIO_KEY_ENTER: u32 = 1;
@@ -100,6 +103,10 @@ pub struct rio_surface_config_s {
     pub args_len: usize,
 }
 
+/// A color in its original form (`RIO_COLOR_NAMED` / `_INDEXED` /
+/// `_RGB`; `value` holds the named id or palette index), with `r`/`g`/`b`
+/// resolved for every kind except [`RIO_COLOR_NONE`], which means no
+/// color at all: `value` and `r`/`g`/`b` are zero.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct rio_color_s {
@@ -110,6 +117,10 @@ pub struct rio_color_s {
     pub b: u8,
 }
 
+/// A renderable cell. `fg`/`bg` are exported pre-swap: when the flags
+/// carry `StyleFlags::INVERSE` the host swaps them when drawing, as
+/// rio's own renderer does. They have kind [`RIO_COLOR_NONE`] only on a
+/// missing cell (NULL state or out-of-range query).
 #[repr(C)]
 pub struct rio_cell_s {
     pub codepoint: u32,
@@ -443,9 +454,9 @@ fn named_rgb(t: &rio_vt::config::Colors, n: NamedColor) -> (u8, u8, u8) {
 }
 
 /// Convert a terminal color to the C representation. `kind`/`value` keep
-/// the original form (named / indexed / rgb) for callers that want it, but
-/// `r`/`g`/`b` are ALWAYS the resolved RGB so a CPU renderer can read them
-/// directly without owning a palette.
+/// the original form (named / indexed / rgb, never `RIO_COLOR_NONE`) for
+/// callers that want it, but `r`/`g`/`b` are always the resolved RGB so a
+/// CPU renderer can read them directly without owning a palette.
 fn color_to_c(color: AnsiColor) -> rio_color_s {
     let (r, g, b) = match color {
         AnsiColor::Named(named) => named_rgb(&theme_lock().read().unwrap(), named),
@@ -1013,6 +1024,26 @@ pub unsafe extern "C" fn rio_render_state_reset_dirty(state: *mut RenderState) {
     }));
 }
 
+/// The no-color value: kind [`RIO_COLOR_NONE`], everything else zero.
+fn none_color() -> rio_color_s {
+    rio_color_s {
+        kind: RIO_COLOR_NONE,
+        ..rio_color_s::default()
+    }
+}
+
+/// The "no such cell" result: a blank whose fg/bg have kind
+/// [`RIO_COLOR_NONE`], so a miss is detectable and never mistaken for a
+/// real black cell.
+fn empty_cell() -> rio_cell_s {
+    rio_cell_s {
+        codepoint: ' ' as u32,
+        fg: none_color(),
+        bg: none_color(),
+        style_flags: 0,
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_cell(
     state: *const RenderState,
@@ -1020,47 +1051,106 @@ pub unsafe extern "C" fn rio_render_state_cell(
     column: u16,
 ) -> rio_cell_s {
     catch_unwind(AssertUnwindSafe(|| {
-        let empty = rio_cell_s {
-            codepoint: ' ' as u32,
-            fg: rio_color_s::default(),
-            bg: rio_color_s::default(),
-            style_flags: 0,
-        };
         if state.is_null() {
-            return empty;
+            return empty_cell();
         }
         let state = unsafe { &*state };
-        let Some(square) = state.square(line as usize, column as usize) else {
-            return empty;
+        let Some((square, style)) = cell_style(state, line, column) else {
+            return empty_cell();
         };
-        let style = state.style_at(line as usize, column as usize, square);
-        let cluster = if state.cluster_of(square).is_some() {
-            RIO_CELL_HAS_CLUSTER
-        } else {
-            0
-        };
+        let mut markers = 0;
+        if state.cluster_of(square).is_some() {
+            markers |= RIO_CELL_HAS_CLUSTER;
+        }
+        if style.underline_color.is_some() {
+            markers |= RIO_CELL_HAS_UNDERLINE_COLOR;
+        }
         let tc = state.term_colors();
         rio_cell_s {
             codepoint: square.c() as u32,
             fg: resolve_cell_color(style.fg, tc),
             bg: resolve_cell_color(style.bg, tc),
-            style_flags: style.flags.bits() | cluster,
+            style_flags: style.flags.bits() | markers,
         }
     }))
-    .unwrap_or(rio_cell_s {
-        codepoint: ' ' as u32,
-        fg: rio_color_s::default(),
-        bg: rio_color_s::default(),
-        style_flags: 0,
-    })
+    .unwrap_or_else(|_| empty_cell())
+}
+
+/// Shared lookup for the per-cell accessors: the square at (line, column)
+/// and its resolved style, or `None` out of bounds.
+fn cell_style(state: &RenderState, line: u16, column: u16) -> Option<(&Square, Style)> {
+    let square = state.square(line as usize, column as usize)?;
+    let style = state.style_at(line as usize, column as usize, square);
+    Some((square, style))
+}
+
+/// The cell's explicit SGR 58 underline color, or kind
+/// [`RIO_COLOR_NONE`] when the cell has none (also for a NULL state, an
+/// out-of-range cell, or an internal error); see
+/// [`RIO_CELL_HAS_UNDERLINE_COLOR`].
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_cell_underline_color(
+    state: *const RenderState,
+    line: u16,
+    column: u16,
+) -> rio_color_s {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return none_color();
+        }
+        let state = unsafe { &*state };
+        let Some((_, style)) = cell_style(state, line, column) else {
+            return none_color();
+        };
+        let Some(underline) = style.underline_color else {
+            return none_color();
+        };
+        resolve_cell_color(underline, state.term_colors())
+    }))
+    .unwrap_or_else(|_| none_color())
 }
 
 /// Set in `rio_cell_s.style_flags` when the cell carries attached
 /// cluster codepoints (combining marks, or a mode-2027 grapheme
 /// cluster) beyond `codepoint`. Fetch the full text with
 /// [`rio_render_state_cell_cluster`] and draw that instead of the
-/// base char. StyleFlags proper occupies bits 0..10; this is bit 15.
+/// base char. StyleFlags proper occupies bits 0-12 (the
+/// `RIO_STYLE_*` constants in librio.h); this is bit 15.
 pub const RIO_CELL_HAS_CLUSTER: u16 = 1 << 15;
+
+/// Set in `rio_cell_s.style_flags` when the cell carries an explicit
+/// SGR 58 underline color; fetch it with
+/// [`rio_render_state_cell_underline_color`]. Without it the underline
+/// takes the glyph's color. This is bit 14.
+pub const RIO_CELL_HAS_UNDERLINE_COLOR: u16 = 1 << 14;
+
+// librio.h's RIO_STYLE_* and RIO_COLOR_* defines hand-mirror these
+// values, and StyleFlags shares the u16 with the RIO_CELL_* marker bits:
+// renumbering or colliding breaks the ABI silently, so pin every
+// exported value.
+const _: () = {
+    assert!(RIO_COLOR_NAMED == 0);
+    assert!(RIO_COLOR_INDEXED == 1);
+    assert!(RIO_COLOR_RGB == 2);
+    assert!(RIO_COLOR_NONE == 3);
+    assert!(StyleFlags::INVERSE.bits() == 1 << 0);
+    assert!(StyleFlags::BOLD.bits() == 1 << 1);
+    assert!(StyleFlags::ITALIC.bits() == 1 << 2);
+    assert!(StyleFlags::DIM.bits() == 1 << 3);
+    assert!(StyleFlags::HIDDEN.bits() == 1 << 4);
+    assert!(StyleFlags::STRIKEOUT.bits() == 1 << 5);
+    assert!(StyleFlags::UNDERLINE.bits() == 1 << 6);
+    assert!(StyleFlags::DOUBLE_UNDERLINE.bits() == 1 << 7);
+    assert!(StyleFlags::UNDERCURL.bits() == 1 << 8);
+    assert!(StyleFlags::DOTTED_UNDERLINE.bits() == 1 << 9);
+    assert!(StyleFlags::DASHED_UNDERLINE.bits() == 1 << 10);
+    assert!(StyleFlags::SLOW_BLINK.bits() == 1 << 11);
+    assert!(StyleFlags::RAPID_BLINK.bits() == 1 << 12);
+    assert!(
+        StyleFlags::all().bits() & (RIO_CELL_HAS_CLUSTER | RIO_CELL_HAS_UNDERLINE_COLOR)
+            == 0
+    );
+};
 
 /// Write the full text of a cell (base codepoint plus attached
 /// cluster codepoints) as UTF-32 into `out` (capacity `cap` code
