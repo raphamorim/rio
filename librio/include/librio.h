@@ -129,7 +129,7 @@ typedef struct {
 
 /* Bit assignments for rio_cell_s.style_flags. Bits 6-10 are the
  * underline kind; at most one is set. At most one blink bit is set.
- * Bit 15 is RIO_CELL_HAS_CLUSTER, not a style. */
+ * Bits 14-15 are the RIO_CELL_* markers, not styles. */
 #define RIO_STYLE_INVERSE (1u << 0)
 #define RIO_STYLE_BOLD (1u << 1)
 #define RIO_STYLE_ITALIC (1u << 2)
@@ -328,10 +328,14 @@ size_t rio_cluster_width(const uint32_t *codepoints, size_t len,
 
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
-/* Color to draw the cell's underline with: the SGR 58 underline color when
- * the program set one, else the cell's foreground (the same preference
- * rio's own renderer applies). Only meaningful when the cell's style_flags
- * carry an underline kind bit. */
+/* Set in rio_cell_s.style_flags when the cell carries an explicit SGR 58
+ * underline color; fetch it with rio_render_state_cell_underline_color.
+ * Without this bit, draw the underline in the color used for the glyph
+ * (the fg after any INVERSE swap): the fallback rio's own renderer
+ * applies. This is bit 14. */
+#define RIO_CELL_HAS_UNDERLINE_COLOR (1u << 14)
+/* The cell's explicit SGR 58 underline color; meaningful only when
+ * style_flags carry RIO_CELL_HAS_UNDERLINE_COLOR. */
 rio_color_s rio_render_state_cell_underline_color(const rio_render_state_t *state,
                                                   uint16_t line, uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);

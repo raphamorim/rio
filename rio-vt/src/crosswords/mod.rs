@@ -3375,7 +3375,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
         trace!("Setting attribute: {:?}", attr);
-        use crate::crosswords::style::StyleFlags;
+        use crate::crosswords::style::{StyleFlags, UnderlineKind};
         match attr {
             Attr::Foreground(color) => self.grid.update_template_style(|s| s.fg = color),
             Attr::Background(color) => self.grid.update_template_style(|s| s.bg = color),
@@ -3410,24 +3410,19 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 .grid
                 .update_template_style(|s| s.flags.remove(StyleFlags::ITALIC)),
             Attr::Underline => self.grid.update_template_style(|s| {
-                s.flags.remove(StyleFlags::ALL_UNDERLINES);
-                s.flags.insert(StyleFlags::UNDERLINE);
+                s.flags.set_underline(Some(UnderlineKind::Single))
             }),
             Attr::DoubleUnderline => self.grid.update_template_style(|s| {
-                s.flags.remove(StyleFlags::ALL_UNDERLINES);
-                s.flags.insert(StyleFlags::DOUBLE_UNDERLINE);
+                s.flags.set_underline(Some(UnderlineKind::Double))
             }),
             Attr::Undercurl => self.grid.update_template_style(|s| {
-                s.flags.remove(StyleFlags::ALL_UNDERLINES);
-                s.flags.insert(StyleFlags::UNDERCURL);
+                s.flags.set_underline(Some(UnderlineKind::Curly))
             }),
             Attr::DottedUnderline => self.grid.update_template_style(|s| {
-                s.flags.remove(StyleFlags::ALL_UNDERLINES);
-                s.flags.insert(StyleFlags::DOTTED_UNDERLINE);
+                s.flags.set_underline(Some(UnderlineKind::Dotted))
             }),
             Attr::DashedUnderline => self.grid.update_template_style(|s| {
-                s.flags.remove(StyleFlags::ALL_UNDERLINES);
-                s.flags.insert(StyleFlags::DASHED_UNDERLINE);
+                s.flags.set_underline(Some(UnderlineKind::Dashed))
             }),
             Attr::BlinkSlow => self.grid.update_template_style(|s| {
                 s.flags.remove(StyleFlags::ALL_BLINK);
@@ -3442,7 +3437,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 .update_template_style(|s| s.flags.remove(StyleFlags::ALL_BLINK)),
             Attr::CancelUnderline => self
                 .grid
-                .update_template_style(|s| s.flags.remove(StyleFlags::ALL_UNDERLINES)),
+                .update_template_style(|s| s.flags.set_underline(None)),
             Attr::Hidden => self
                 .grid
                 .update_template_style(|s| s.flags.insert(StyleFlags::HIDDEN)),

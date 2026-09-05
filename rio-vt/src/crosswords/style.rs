@@ -62,10 +62,34 @@ pub enum UnderlineKind {
     Dashed,
 }
 
+impl UnderlineKind {
+    /// The one-hot `StyleFlags` bit for this kind.
+    #[inline]
+    pub fn flag(self) -> StyleFlags {
+        match self {
+            UnderlineKind::Single => StyleFlags::UNDERLINE,
+            UnderlineKind::Double => StyleFlags::DOUBLE_UNDERLINE,
+            UnderlineKind::Curly => StyleFlags::UNDERCURL,
+            UnderlineKind::Dotted => StyleFlags::DOTTED_UNDERLINE,
+            UnderlineKind::Dashed => StyleFlags::DASHED_UNDERLINE,
+        }
+    }
+}
+
 impl StyleFlags {
+    /// Replace the underline kind (`None` removes it), keeping the kind
+    /// bits one-hot. The write side of `underline_kind`.
+    #[inline]
+    pub fn set_underline(&mut self, kind: Option<UnderlineKind>) {
+        self.remove(StyleFlags::ALL_UNDERLINES);
+        if let Some(kind) = kind {
+            self.insert(kind.flag());
+        }
+    }
+
     /// The underline kind these flags carry, or `None` without one. The
-    /// kind bits are one-hot (the parser clears `ALL_UNDERLINES` before
-    /// setting one); the priority order here settles any corrupt state.
+    /// kind bits are one-hot (`set_underline` keeps them so); the
+    /// priority order here settles any corrupt state.
     #[inline]
     pub fn underline_kind(self) -> Option<UnderlineKind> {
         if self.contains(StyleFlags::UNDERLINE) {

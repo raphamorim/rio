@@ -1542,6 +1542,29 @@ mod tests {
         assert_eq!(replica.serialize(), first);
     }
 
+    // The C ABI marks cells carrying an explicit SGR 58 underline color
+    // and hands the color out; unmarked cells take the glyph's color.
+    #[test]
+    fn capi_reports_underline_color() {
+        use crate::capi::{
+            rio_render_state_cell, rio_render_state_cell_underline_color,
+            RIO_CELL_HAS_UNDERLINE_COLOR,
+        };
+
+        let surface = quiet_surface(10, 3);
+        surface.inject_output(b"\x1b[4;58;2;10;20;30ma\x1b[0mb");
+        let mut state = RenderState::new(&surface);
+        state.update();
+
+        let marked = unsafe { rio_render_state_cell(&state, 0, 0) };
+        assert_ne!(marked.style_flags & RIO_CELL_HAS_UNDERLINE_COLOR, 0);
+        let color = unsafe { rio_render_state_cell_underline_color(&state, 0, 0) };
+        assert_eq!((color.r, color.g, color.b), (10, 20, 30));
+
+        let plain = unsafe { rio_render_state_cell(&state, 0, 1) };
+        assert_eq!(plain.style_flags & RIO_CELL_HAS_UNDERLINE_COLOR, 0);
+    }
+
     // Scrollback rows come first, and wrapped rows are emitted without a
     // newline so the replica re-wraps them at the same width.
     #[test]

@@ -2,7 +2,7 @@
 
 use crate::{
     Action, Engine, Key, KeyAction, KeyEvent, Modifiers, RenderState, SelectionKind,
-    Side, StyleFlags, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
+    Side, Square, Style, StyleFlags, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
 use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -1005,21 +1005,22 @@ pub unsafe extern "C" fn rio_render_state_cell(
             return empty;
         }
         let state = unsafe { &*state };
-        let Some(square) = state.square(line as usize, column as usize) else {
+        let Some((square, style)) = cell_style(state, line, column) else {
             return empty;
         };
-        let style = state.style_at(line as usize, column as usize, square);
-        let cluster = if state.cluster_of(square).is_some() {
-            RIO_CELL_HAS_CLUSTER
-        } else {
-            0
-        };
+        let mut markers = 0;
+        if state.cluster_of(square).is_some() {
+            markers |= RIO_CELL_HAS_CLUSTER;
+        }
+        if style.underline_color.is_some() {
+            markers |= RIO_CELL_HAS_UNDERLINE_COLOR;
+        }
         let tc = state.term_colors();
         rio_cell_s {
             codepoint: square.c() as u32,
             fg: resolve_cell_color(style.fg, tc),
             bg: resolve_cell_color(style.bg, tc),
-            style_flags: style.flags.bits() | cluster,
+            style_flags: style.flags.bits() | markers,
         }
     }))
     .unwrap_or(rio_cell_s {
@@ -1030,10 +1031,18 @@ pub unsafe extern "C" fn rio_render_state_cell(
     })
 }
 
-/// Color to draw the cell's underline with: the SGR 58 underline color
-/// when the program set one, else the cell's foreground — the same
-/// preference rio's own renderer applies. Only meaningful when the
-/// cell's `style_flags` carry an underline kind bit.
+/// Shared lookup for the per-cell accessors: the square at (line, column)
+/// and its resolved style, or `None` out of bounds.
+fn cell_style(state: &RenderState, line: u16, column: u16) -> Option<(&Square, Style)> {
+    let square = state.square(line as usize, column as usize)?;
+    let style = state.style_at(line as usize, column as usize, square);
+    Some((square, style))
+}
+
+/// The cell's explicit SGR 58 underline color. Meaningful only when the
+/// cell's `style_flags` carry [`RIO_CELL_HAS_UNDERLINE_COLOR`]; without
+/// that bit, draw the underline in the color used for the glyph (the fg
+/// after any INVERSE swap), the fallback rio's own renderer applies.
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_cell_underline_color(
     state: *const RenderState,
@@ -1045,12 +1054,13 @@ pub unsafe extern "C" fn rio_render_state_cell_underline_color(
             return rio_color_s::default();
         }
         let state = unsafe { &*state };
-        let Some(square) = state.square(line as usize, column as usize) else {
+        let Some((_, style)) = cell_style(state, line, column) else {
             return rio_color_s::default();
         };
-        let style = state.style_at(line as usize, column as usize, square);
-        let tc = state.term_colors();
-        resolve_cell_color(style.underline_color.unwrap_or(style.fg), tc)
+        let Some(underline) = style.underline_color else {
+            return rio_color_s::default();
+        };
+        resolve_cell_color(underline, state.term_colors())
     }))
     .unwrap_or_default()
 }
@@ -1063,9 +1073,15 @@ pub unsafe extern "C" fn rio_render_state_cell_underline_color(
 /// `RIO_STYLE_*` constants in librio.h); this is bit 15.
 pub const RIO_CELL_HAS_CLUSTER: u16 = 1 << 15;
 
+/// Set in `rio_cell_s.style_flags` when the cell carries an explicit
+/// SGR 58 underline color; fetch it with
+/// [`rio_render_state_cell_underline_color`]. Without it the underline
+/// takes the glyph's color. This is bit 14.
+pub const RIO_CELL_HAS_UNDERLINE_COLOR: u16 = 1 << 14;
+
 // librio.h's RIO_STYLE_* defines hand-mirror these bit positions, and
-// StyleFlags shares the u16 with RIO_CELL_HAS_CLUSTER: renumbering or
-// colliding breaks the ABI silently, so pin every exported bit.
+// StyleFlags shares the u16 with the RIO_CELL_* marker bits: renumbering
+// or colliding breaks the ABI silently, so pin every exported bit.
 const _: () = {
     assert!(StyleFlags::INVERSE.bits() == 1 << 0);
     assert!(StyleFlags::BOLD.bits() == 1 << 1);
@@ -1080,7 +1096,10 @@ const _: () = {
     assert!(StyleFlags::DASHED_UNDERLINE.bits() == 1 << 10);
     assert!(StyleFlags::SLOW_BLINK.bits() == 1 << 11);
     assert!(StyleFlags::RAPID_BLINK.bits() == 1 << 12);
-    assert!(StyleFlags::all().bits() & RIO_CELL_HAS_CLUSTER == 0);
+    assert!(
+        StyleFlags::all().bits() & (RIO_CELL_HAS_CLUSTER | RIO_CELL_HAS_UNDERLINE_COLOR)
+            == 0
+    );
 };
 
 /// Write the full text of a cell (base codepoint plus attached
