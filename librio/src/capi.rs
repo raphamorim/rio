@@ -1034,12 +1034,29 @@ pub unsafe extern "C" fn rio_render_state_cell(
 /// cluster codepoints (combining marks, or a mode-2027 grapheme
 /// cluster) beyond `codepoint`. Fetch the full text with
 /// [`rio_render_state_cell_cluster`] and draw that instead of the
-/// base char. StyleFlags proper occupies bits 0..12 (the
+/// base char. StyleFlags proper occupies bits 0-12 (the
 /// `RIO_STYLE_*` constants in librio.h); this is bit 15.
 pub const RIO_CELL_HAS_CLUSTER: u16 = 1 << 15;
 
-// StyleFlags shares the u16 with this bit; a new flag must not collide.
-const _: () = assert!(StyleFlags::all().bits() & RIO_CELL_HAS_CLUSTER == 0);
+// librio.h's RIO_STYLE_* defines hand-mirror these bit positions, and
+// StyleFlags shares the u16 with RIO_CELL_HAS_CLUSTER: renumbering or
+// colliding breaks the ABI silently, so pin every exported bit.
+const _: () = {
+    assert!(StyleFlags::INVERSE.bits() == 1 << 0);
+    assert!(StyleFlags::BOLD.bits() == 1 << 1);
+    assert!(StyleFlags::ITALIC.bits() == 1 << 2);
+    assert!(StyleFlags::DIM.bits() == 1 << 3);
+    assert!(StyleFlags::HIDDEN.bits() == 1 << 4);
+    assert!(StyleFlags::STRIKEOUT.bits() == 1 << 5);
+    assert!(StyleFlags::UNDERLINE.bits() == 1 << 6);
+    assert!(StyleFlags::DOUBLE_UNDERLINE.bits() == 1 << 7);
+    assert!(StyleFlags::UNDERCURL.bits() == 1 << 8);
+    assert!(StyleFlags::DOTTED_UNDERLINE.bits() == 1 << 9);
+    assert!(StyleFlags::DASHED_UNDERLINE.bits() == 1 << 10);
+    assert!(StyleFlags::SLOW_BLINK.bits() == 1 << 11);
+    assert!(StyleFlags::RAPID_BLINK.bits() == 1 << 12);
+    assert!(StyleFlags::all().bits() & RIO_CELL_HAS_CLUSTER == 0);
+};
 
 /// Write the full text of a cell (base codepoint plus attached
 /// cluster codepoints) as UTF-32 into `out` (capacity `cap` code

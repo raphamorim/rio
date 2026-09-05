@@ -33,7 +33,7 @@ bitflags! {
         const DIM              = 1 << 3;
         const HIDDEN           = 1 << 4;
         const STRIKEOUT        = 1 << 5;
-        // 3-bit underline kind packed into bits 6-8.
+        // One-hot underline kind in bits 6-10; at most one is set.
         const UNDERLINE        = 1 << 6;
         const DOUBLE_UNDERLINE = 1 << 7;
         const UNDERCURL        = 1 << 8;

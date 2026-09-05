@@ -304,7 +304,7 @@ void rio_render_state_reset_dirty(rio_render_state_t *state);
  * codepoints (combining marks, or a DEC-2027 grapheme cluster) beyond
  * `codepoint`. Fetch the full text with rio_render_state_cell_cluster
  * and draw that instead of the base char. Style flags proper occupy
- * bits 0..12 (RIO_STYLE_*); this is bit 15. */
+ * bits 0-12 (RIO_STYLE_*); this is bit 15. */
 #define RIO_CELL_HAS_CLUSTER (1u << 15)
 
 /* Write the full text of a cell (base codepoint plus attached cluster

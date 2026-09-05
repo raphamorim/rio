@@ -189,6 +189,14 @@ fn write_sgr(out: &mut String, style: &Style) {
     }
     if flags.contains(StyleFlags::UNDERLINE) {
         out.push_str(";4");
+    } else if flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
+        out.push_str(";4:2");
+    } else if flags.contains(StyleFlags::UNDERCURL) {
+        out.push_str(";4:3");
+    } else if flags.contains(StyleFlags::DOTTED_UNDERLINE) {
+        out.push_str(";4:4");
+    } else if flags.contains(StyleFlags::DASHED_UNDERLINE) {
+        out.push_str(";4:5");
     }
     if flags.contains(StyleFlags::SLOW_BLINK) {
         out.push_str(";5");
@@ -207,6 +215,22 @@ fn write_sgr(out: &mut String, style: &Style) {
     push_color(out, style.fg, true);
     push_color(out, style.bg, false);
     out.push('m');
+
+    // Underline color travels as its own sequence; the leading reset
+    // already cleared any previous one.
+    if let Some(underline) = style.underline_color {
+        match underline {
+            AnsiColor::Indexed(i) => {
+                let _ = write!(out, "\x1b[58;5;{i}m");
+            }
+            AnsiColor::Spec(rgb) => {
+                let _ = write!(out, "\x1b[58;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
+            }
+            AnsiColor::Named(n) => {
+                let _ = write!(out, "\x1b[58;5;{}m", n as u16);
+            }
+        }
+    }
 }
 
 fn push_color(params: &mut String, color: AnsiColor, fg: bool) {
@@ -262,8 +286,13 @@ mod tests {
     #[test]
     fn vt_roundtrip_preserves_text_and_style() {
         let mut a = term(20, 4);
-        // rapid-blink red "hello", default space, bold-blink-blue "world".
-        feed(&mut a, b"\x1b[6;31mhello\x1b[0m \x1b[1;5;34mworld\x1b[0m");
+        // rapid-blink red "hello", default space, bold-blink-blue "world",
+        // then a red-undercurled "curl" on the next line.
+        feed(
+            &mut a,
+            b"\x1b[6;31mhello\x1b[0m \x1b[1;5;34mworld\x1b[0m\r\n\
+                      \x1b[4:3;58;2;255;0;0mcurl\x1b[0m",
+        );
         let snapshot = a.contents_formatted();
 
         // The snapshot must carry the colors (index form, not resolved rgb).
@@ -289,6 +318,20 @@ mod tests {
         assert!(b.grid.style_of(&sb).flags.contains(StyleFlags::SLOW_BLINK));
         let hb = *(&b.grid[Line(0)][Column(0)] as &Square);
         assert!(b.grid.style_of(&hb).flags.contains(StyleFlags::RAPID_BLINK));
+
+        // Underline kind and color survive too. 'c' of "curl" is at (1, 0).
+        let cb = *(&b.grid[Line(1)][Column(0)] as &Square);
+        assert_eq!(cb.c(), 'c');
+        let curl = b.grid.style_of(&cb);
+        assert!(curl.flags.contains(StyleFlags::UNDERCURL));
+        assert_eq!(
+            curl.underline_color,
+            Some(AnsiColor::Spec(crate::config::colors::ColorRgb {
+                r: 255,
+                g: 0,
+                b: 0
+            }))
+        );
     }
 
     #[test]
