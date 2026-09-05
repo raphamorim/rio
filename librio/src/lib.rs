@@ -1109,8 +1109,13 @@ impl Surface {
     /// configured `shell` program). It is a session leader, so a host that
     /// must take the whole process tree down on teardown can `killpg` it:
     /// dropping the surface only hangs up the pty and signals this pid.
+    /// 0 on Windows, where the surface does not track the conpty child.
     #[cfg(feature = "pty")]
     pub fn child_pid(&self) -> u32 {
+        #[cfg(target_os = "windows")]
+        return 0;
+
+        #[cfg(not(target_os = "windows"))]
         self.shell_pid
     }
 
