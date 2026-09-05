@@ -701,6 +701,7 @@ impl Screen<'_> {
             terminal.scroll_display(Scroll::Bottom);
         }
         drop(terminal);
+        self.refresh_hints_after_scroll();
     }
 
     #[inline]
@@ -818,8 +819,7 @@ impl Screen<'_> {
             return;
         }
 
-        let ignore_chars = self.process_key_bindings(key, &mode, mods, clipboard);
-        if ignore_chars {
+        if self.process_key_bindings(key, &mode, mods, clipboard) {
             return;
         }
 
@@ -1130,6 +1130,7 @@ impl Screen<'_> {
                             .set_terminal_damage(
                                 rio_backend::event::TerminalDamage::Full,
                             );
+                        self.refresh_hints_after_scroll();
                         self.mark_dirty();
                     }
                     Act::Vi(ViAction::ToggleNormalSelection) => {
@@ -1262,6 +1263,7 @@ impl Screen<'_> {
                         let mut terminal = current.terminal.lock();
                         terminal.scroll_to_prompt(false);
                         drop(terminal);
+                        self.refresh_hints_after_scroll();
                         self.renderer.scrollbar.notify_scroll(rtid);
                         self.mark_dirty();
                     }
@@ -1271,6 +1273,7 @@ impl Screen<'_> {
                         let mut terminal = current.terminal.lock();
                         terminal.scroll_to_prompt(true);
                         drop(terminal);
+                        self.refresh_hints_after_scroll();
                         self.renderer.scrollbar.notify_scroll(rtid);
                         self.mark_dirty();
                     }
@@ -1284,6 +1287,7 @@ impl Screen<'_> {
                             terminal.vi_mode_cursor.scroll(&terminal, scroll_lines);
                         terminal.scroll_display(Scroll::PageUp);
                         drop(terminal);
+                        self.refresh_hints_after_scroll();
                         self.renderer.scrollbar.notify_scroll(rtid);
                         self.mark_dirty();
                     }
@@ -1299,6 +1303,7 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::PageDown);
                         drop(terminal);
+                        self.refresh_hints_after_scroll();
                         self.renderer.scrollbar.notify_scroll(rtid);
                         self.mark_dirty();
                     }
@@ -1314,6 +1319,7 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
+                        self.refresh_hints_after_scroll();
                         self.renderer.scrollbar.notify_scroll(rtid);
                         self.mark_dirty();
                     }
@@ -1329,6 +1335,7 @@ impl Screen<'_> {
 
                         terminal.scroll_display(Scroll::Delta(scroll_lines));
                         drop(terminal);
+                        self.refresh_hints_after_scroll();
                         self.renderer.scrollbar.notify_scroll(rtid);
                         self.mark_dirty();
                     }
@@ -1342,6 +1349,7 @@ impl Screen<'_> {
                         terminal.vi_mode_cursor.pos.row = topmost_line;
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
+                        self.refresh_hints_after_scroll();
                         self.renderer.scrollbar.notify_scroll(rtid);
                         self.mark_dirty();
                     }
@@ -1358,6 +1366,7 @@ impl Screen<'_> {
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         terminal.vi_motion(ViMotion::FirstOccupied);
                         drop(terminal);
+                        self.refresh_hints_after_scroll();
                         self.renderer.scrollbar.notify_scroll(rtid);
                         self.mark_dirty();
                     }
@@ -1367,6 +1376,7 @@ impl Screen<'_> {
                         let mut terminal = current.terminal.lock();
                         terminal.scroll_display(Scroll::Delta(*delta));
                         drop(terminal);
+                        self.refresh_hints_after_scroll();
                         self.renderer.scrollbar.notify_scroll(rtid);
                         self.mark_dirty();
                     }
@@ -1531,7 +1541,8 @@ impl Screen<'_> {
             }
         }
 
-        ignore_chars.unwrap_or(false)
+        // Hint activation always consumes its key, even with an overlapping `ReceiveChar`.
+        ignore_chars.unwrap_or(false) || self.hint_state.is_active()
     }
 
     pub fn split_right_with_config(&mut self, config: rio_backend::config::Config) {
@@ -1822,6 +1833,7 @@ impl Screen<'_> {
         terminal.scroll_display(Scroll::Delta(-self.search_state.display_offset_delta));
         drop(terminal);
         self.search_state.origin = new_origin;
+        self.refresh_hints_after_scroll();
     }
 
     /// Whether we should send `ESC` due to `Alt` being pressed.
@@ -2013,9 +2025,8 @@ impl Screen<'_> {
         // pure geometry, so an unchanged probe skips without even
         // taking the terminal lock. While a highlight is shown the
         // probe always reruns, so text changing under the underline
-        // still refreshes it. Wheel scrolling resets the probe in
-        // `Self::scroll`; content sliding under a stationary cursor
-        // without one is stale until the mouse crosses a cell.
+        // still refreshes it. Viewport changes invalidate the probe
+        // through `Self::refresh_hints_after_scroll`.
         let viewport_point = self.mouse_position(0);
         if !had_highlight && self.last_hint_probe == Some((viewport_point, mods)) {
             return false;
@@ -2420,6 +2431,7 @@ impl Screen<'_> {
         let mut terminal = self.context_manager.current_mut().terminal.lock();
         terminal.scroll_display(Scroll::Delta(delta));
         drop(terminal);
+        self.refresh_hints_after_scroll();
 
         // Update selection to match the new scroll position.
         let display_offset = self.display_offset();
@@ -2661,8 +2673,13 @@ impl Screen<'_> {
                     let mut terminal = self.context_manager.current_mut().terminal.lock();
                     let current = terminal.display_offset();
                     let delta = new_offset as i32 - current as i32;
-                    terminal.scroll_display(Scroll::Delta(delta));
+                    if delta != 0 {
+                        terminal.scroll_display(Scroll::Delta(delta));
+                    }
                     drop(terminal);
+                    if delta != 0 {
+                        self.refresh_hints_after_scroll();
+                    }
                 }
             }
             self.mark_dirty();
@@ -2685,6 +2702,9 @@ impl Screen<'_> {
                 terminal.scroll_display(Scroll::Delta(delta));
             }
             drop(terminal);
+            if delta != 0 {
+                self.refresh_hints_after_scroll();
+            }
             self.mark_dirty();
         }
         true
@@ -3320,6 +3340,7 @@ impl Screen<'_> {
             drop(terminal);
         }
         self.search_state.display_offset_delta = 0;
+        self.refresh_hints_after_scroll();
     }
 
     /// Jump to the first regex match from the search origin.
@@ -3387,6 +3408,8 @@ impl Screen<'_> {
 
         if should_reset_search_state {
             self.search_reset_state();
+        } else {
+            self.refresh_hints_after_scroll();
         }
     }
 
@@ -3541,10 +3564,7 @@ impl Screen<'_> {
 
     #[inline]
     pub fn scroll(&mut self, new_scroll_x_px: f64, new_scroll_y_px: f64) {
-        // Scrolling slides different text under the pointer while the
-        // viewport cell stays the same, so the hover-probe dedup key
-        // must not suppress the next probe.
-        self.last_hint_probe = None;
+        let old_display_offset = self.display_offset();
 
         let dim = self.context_manager.current().dimension.dimension;
         let width = dim.width as f64;
@@ -3629,8 +3649,35 @@ impl Screen<'_> {
             }
         }
 
+        if old_display_offset != self.display_offset() {
+            self.refresh_hints_after_scroll();
+        }
+
         self.mouse.accumulated_scroll.x %= width;
         self.mouse.accumulated_scroll.y %= height;
+    }
+
+    pub(crate) fn refresh_hints_after_scroll(&mut self) {
+        // Scrolling changes the grid point under a stationary cursor.
+        self.last_hint_probe = None;
+        self.mouse.inside_text_area = self.contains_point(self.mouse.x, self.mouse.y);
+
+        let quick_select_active = self.hint_state.is_active();
+        if quick_select_active {
+            let terminal = self.context_manager.current().terminal.lock();
+            self.hint_state.refresh_matches(&*terminal);
+            drop(terminal);
+            self.update_hint_state();
+        }
+
+        let hover_changed = if self.mouse.inside_text_area {
+            self.update_highlighted_hints()
+        } else {
+            self.clear_highlighted_hint()
+        };
+        if quick_select_active || hover_changed {
+            self.mark_dirty();
+        }
     }
 
     #[inline]
@@ -4672,7 +4719,7 @@ impl Screen<'_> {
     ) {
         self.hint_state.start(hint);
         let terminal = self.context_manager.current().terminal.lock();
-        self.hint_state.update_matches(&*terminal);
+        self.hint_state.refresh_matches(&*terminal);
         drop(terminal);
 
         // Update hint state and trigger damage tracking

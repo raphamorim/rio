@@ -841,6 +841,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .lock();
                     terminal.scroll_display(scroll);
                     drop(terminal);
+                    route.window.screen.refresh_hints_after_scroll();
+                    route
+                        .window
+                        .winit_window
+                        .set_cursor(route.window.screen.mouse_cursor_icon());
                 }
             }
             RioEventType::Rio(RioEvent::ClipboardLoad(
@@ -1973,6 +1978,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
 
+                route
+                    .window
+                    .winit_window
+                    .set_cursor(route.window.screen.mouse_cursor_icon());
                 route.request_redraw();
             }
 
@@ -1999,6 +2008,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     .window
                     .screen
                     .process_key_event(&key_event, &mut self.router.clipboard);
+                route
+                    .window
+                    .winit_window
+                    .set_cursor(route.window.screen.mouse_cursor_icon());
                 // `process_key_event` used to call `self.render()` for
                 // local-only keystrokes (VI mode, search input, hint
                 // mode). Now it just marks `pending_update.set_dirty()`
