@@ -1548,7 +1548,7 @@ mod tests {
     fn capi_reports_underline_color() {
         use crate::capi::{
             rio_render_state_cell, rio_render_state_cell_underline_color,
-            RIO_CELL_HAS_UNDERLINE_COLOR, RIO_COLOR_NONE,
+            RIO_CELL_HAS_UNDERLINE_COLOR, RIO_COLOR_NONE, RIO_COLOR_RGB,
         };
 
         let surface = quiet_surface(10, 3);
@@ -1559,12 +1559,16 @@ mod tests {
         let marked = unsafe { rio_render_state_cell(&state, 0, 0) };
         assert_ne!(marked.style_flags & RIO_CELL_HAS_UNDERLINE_COLOR, 0);
         let color = unsafe { rio_render_state_cell_underline_color(&state, 0, 0) };
+        assert_eq!(color.kind, RIO_COLOR_RGB);
         assert_eq!((color.r, color.g, color.b), (10, 20, 30));
 
         let plain = unsafe { rio_render_state_cell(&state, 0, 1) };
         assert_eq!(plain.style_flags & RIO_CELL_HAS_UNDERLINE_COLOR, 0);
+        // The NONE sentinel promises zeroed value and rgb.
         let absent = unsafe { rio_render_state_cell_underline_color(&state, 0, 1) };
         assert_eq!(absent.kind, RIO_COLOR_NONE);
+        assert_eq!(absent.value, 0);
+        assert_eq!((absent.r, absent.g, absent.b), (0, 0, 0));
     }
 
     // Scrollback rows come first, and wrapped rows are emitted without a

@@ -113,11 +113,13 @@ typedef struct {
 
 typedef struct {
   /* Original form: RIO_COLOR_NAMED / _INDEXED / _RGB. `value` holds the
-     named-color id or palette index for the first two. */
+     named-color id or palette index for the first two. Kind
+     RIO_COLOR_NONE means no color at all: value and r/g/b are zero and
+     nothing should be drawn from them. */
   uint8_t kind;
   uint16_t value;
-  /* Always the resolved RGB, regardless of `kind`, so a CPU renderer can
-     read r/g/b directly without owning a palette. */
+  /* The resolved RGB for every kind except RIO_COLOR_NONE, so a CPU
+     renderer can read r/g/b directly without owning a palette. */
   uint8_t r;
   uint8_t g;
   uint8_t b;
@@ -340,7 +342,8 @@ rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
  * the fallback rio's own renderer applies. This is bit 14. */
 #define RIO_CELL_HAS_UNDERLINE_COLOR (1u << 14)
 /* The cell's explicit SGR 58 underline color, or kind RIO_COLOR_NONE
- * when the cell has none; see RIO_CELL_HAS_UNDERLINE_COLOR. */
+ * when the cell (or the call: NULL state, out-of-range cell) has none;
+ * see RIO_CELL_HAS_UNDERLINE_COLOR. */
 rio_color_s rio_render_state_cell_underline_color(const rio_render_state_t *state,
                                                   uint16_t line, uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
