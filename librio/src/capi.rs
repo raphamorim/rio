@@ -98,6 +98,10 @@ pub struct rio_surface_config_s {
     pub args_len: usize,
 }
 
+/// A color in its original form (`RIO_COLOR_NAMED` / `_INDEXED` /
+/// `_RGB`; `value` holds the named id or palette index), with `r`/`g`/`b`
+/// resolved for every kind except [`RIO_COLOR_NONE`], which means no
+/// color at all: `value` and `r`/`g`/`b` are zero.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct rio_color_s {
@@ -110,7 +114,8 @@ pub struct rio_color_s {
 
 /// A renderable cell. `fg`/`bg` are exported pre-swap: when the flags
 /// carry `StyleFlags::INVERSE` the host swaps them when drawing, as
-/// rio's own renderer does.
+/// rio's own renderer does. They have kind [`RIO_COLOR_NONE`] only on a
+/// missing cell (NULL state or out-of-range query).
 #[repr(C)]
 pub struct rio_cell_s {
     pub codepoint: u32,
@@ -444,9 +449,9 @@ fn named_rgb(t: &rio_vt::config::Colors, n: NamedColor) -> (u8, u8, u8) {
 }
 
 /// Convert a terminal color to the C representation. `kind`/`value` keep
-/// the original form (named / indexed / rgb) for callers that want it, but
-/// `r`/`g`/`b` are ALWAYS the resolved RGB so a CPU renderer can read them
-/// directly without owning a palette.
+/// the original form (named / indexed / rgb, never `RIO_COLOR_NONE`) for
+/// callers that want it, but `r`/`g`/`b` are always the resolved RGB so a
+/// CPU renderer can read them directly without owning a palette.
 fn color_to_c(color: AnsiColor) -> rio_color_s {
     let (r, g, b) = match color {
         AnsiColor::Named(named) => named_rgb(&theme_lock().read().unwrap(), named),
@@ -994,6 +999,26 @@ pub unsafe extern "C" fn rio_render_state_reset_dirty(state: *mut RenderState) {
     }));
 }
 
+/// The no-color value: kind [`RIO_COLOR_NONE`], everything else zero.
+fn none_color() -> rio_color_s {
+    rio_color_s {
+        kind: RIO_COLOR_NONE,
+        ..rio_color_s::default()
+    }
+}
+
+/// The "no such cell" result: a blank whose fg/bg have kind
+/// [`RIO_COLOR_NONE`], so a miss is detectable and never mistaken for a
+/// real black cell.
+fn empty_cell() -> rio_cell_s {
+    rio_cell_s {
+        codepoint: ' ' as u32,
+        fg: none_color(),
+        bg: none_color(),
+        style_flags: 0,
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_cell(
     state: *const RenderState,
@@ -1001,18 +1026,12 @@ pub unsafe extern "C" fn rio_render_state_cell(
     column: u16,
 ) -> rio_cell_s {
     catch_unwind(AssertUnwindSafe(|| {
-        let empty = rio_cell_s {
-            codepoint: ' ' as u32,
-            fg: rio_color_s::default(),
-            bg: rio_color_s::default(),
-            style_flags: 0,
-        };
         if state.is_null() {
-            return empty;
+            return empty_cell();
         }
         let state = unsafe { &*state };
         let Some((square, style)) = cell_style(state, line, column) else {
-            return empty;
+            return empty_cell();
         };
         let mut markers = 0;
         if state.cluster_of(square).is_some() {
@@ -1029,12 +1048,7 @@ pub unsafe extern "C" fn rio_render_state_cell(
             style_flags: style.flags.bits() | markers,
         }
     }))
-    .unwrap_or(rio_cell_s {
-        codepoint: ' ' as u32,
-        fg: rio_color_s::default(),
-        bg: rio_color_s::default(),
-        style_flags: 0,
-    })
+    .unwrap_or_else(|_| empty_cell())
 }
 
 /// Shared lookup for the per-cell accessors: the square at (line, column)
@@ -1046,7 +1060,8 @@ fn cell_style(state: &RenderState, line: u16, column: u16) -> Option<(&Square, S
 }
 
 /// The cell's explicit SGR 58 underline color, or kind
-/// [`RIO_COLOR_NONE`] when the cell (or the call) has none; see
+/// [`RIO_COLOR_NONE`] when the cell has none (also for a NULL state, an
+/// out-of-range cell, or an internal error); see
 /// [`RIO_CELL_HAS_UNDERLINE_COLOR`].
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_cell_underline_color(
@@ -1054,24 +1069,20 @@ pub unsafe extern "C" fn rio_render_state_cell_underline_color(
     line: u16,
     column: u16,
 ) -> rio_color_s {
-    let none = rio_color_s {
-        kind: RIO_COLOR_NONE,
-        ..rio_color_s::default()
-    };
     catch_unwind(AssertUnwindSafe(|| {
         if state.is_null() {
-            return none;
+            return none_color();
         }
         let state = unsafe { &*state };
         let Some((_, style)) = cell_style(state, line, column) else {
-            return none;
+            return none_color();
         };
         let Some(underline) = style.underline_color else {
-            return none;
+            return none_color();
         };
         resolve_cell_color(underline, state.term_colors())
     }))
-    .unwrap_or(none)
+    .unwrap_or_else(|_| none_color())
 }
 
 /// Set in `rio_cell_s.style_flags` when the cell carries attached
@@ -1088,10 +1099,15 @@ pub const RIO_CELL_HAS_CLUSTER: u16 = 1 << 15;
 /// takes the glyph's color. This is bit 14.
 pub const RIO_CELL_HAS_UNDERLINE_COLOR: u16 = 1 << 14;
 
-// librio.h's RIO_STYLE_* defines hand-mirror these bit positions, and
-// StyleFlags shares the u16 with the RIO_CELL_* marker bits: renumbering
-// or colliding breaks the ABI silently, so pin every exported bit.
+// librio.h's RIO_STYLE_* and RIO_COLOR_* defines hand-mirror these
+// values, and StyleFlags shares the u16 with the RIO_CELL_* marker bits:
+// renumbering or colliding breaks the ABI silently, so pin every
+// exported value.
 const _: () = {
+    assert!(RIO_COLOR_NAMED == 0);
+    assert!(RIO_COLOR_INDEXED == 1);
+    assert!(RIO_COLOR_RGB == 2);
+    assert!(RIO_COLOR_NONE == 3);
     assert!(StyleFlags::INVERSE.bits() == 1 << 0);
     assert!(StyleFlags::BOLD.bits() == 1 << 1);
     assert!(StyleFlags::ITALIC.bits() == 1 << 2);

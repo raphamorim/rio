@@ -1548,11 +1548,12 @@ mod tests {
     fn capi_reports_underline_color() {
         use crate::capi::{
             rio_render_state_cell, rio_render_state_cell_underline_color,
-            RIO_CELL_HAS_UNDERLINE_COLOR, RIO_COLOR_NONE, RIO_COLOR_RGB,
+            RIO_CELL_HAS_UNDERLINE_COLOR, RIO_COLOR_INDEXED, RIO_COLOR_NONE,
+            RIO_COLOR_RGB,
         };
 
         let surface = quiet_surface(10, 3);
-        surface.inject_output(b"\x1b[4;58;2;10;20;30ma\x1b[0mb");
+        surface.inject_output(b"\x1b[4;58;2;10;20;30ma\x1b[0mb\x1b[4;58;5;196mc\x1b[0m");
         let mut state = RenderState::new(&surface);
         state.update();
 
@@ -1569,6 +1570,24 @@ mod tests {
         assert_eq!(absent.kind, RIO_COLOR_NONE);
         assert_eq!(absent.value, 0);
         assert_eq!((absent.r, absent.g, absent.b), (0, 0, 0));
+
+        // Indexed colors keep their form and still resolve rgb (256-color
+        // cube index 196 is pure red).
+        let indexed = unsafe { rio_render_state_cell_underline_color(&state, 0, 2) };
+        assert_eq!(indexed.kind, RIO_COLOR_INDEXED);
+        assert_eq!(indexed.value, 196);
+        assert_eq!((indexed.r, indexed.g, indexed.b), (255, 0, 0));
+
+        // A NULL state and an out-of-range cell also answer NONE, and a
+        // missing cell's fg/bg carry the NONE kind.
+        let null =
+            unsafe { rio_render_state_cell_underline_color(std::ptr::null(), 0, 0) };
+        assert_eq!(null.kind, RIO_COLOR_NONE);
+        let oob = unsafe { rio_render_state_cell_underline_color(&state, 99, 99) };
+        assert_eq!(oob.kind, RIO_COLOR_NONE);
+        let missing = unsafe { rio_render_state_cell(&state, 99, 99) };
+        assert_eq!(missing.fg.kind, RIO_COLOR_NONE);
+        assert_eq!(missing.bg.kind, RIO_COLOR_NONE);
     }
 
     // Scrollback rows come first, and wrapped rows are emitted without a

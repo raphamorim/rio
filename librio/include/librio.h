@@ -25,8 +25,9 @@ typedef size_t rio_surface_id_t;
 #define RIO_COLOR_NAMED 0u
 #define RIO_COLOR_INDEXED 1u
 #define RIO_COLOR_RGB 2u
-/* An absent color (value and rgb are zero). Only returned by
- * rio_render_state_cell_underline_color. */
+/* An absent color (value and rgb are zero). Returned by
+ * rio_render_state_cell_underline_color for cells without an explicit
+ * underline color, and as the fg/bg of a missing cell. */
 #define RIO_COLOR_NONE 3u
 
 #define RIO_KEY_CHAR 0u
@@ -334,6 +335,10 @@ size_t rio_render_state_cell_cluster(const rio_render_state_t *state,
 size_t rio_cluster_width(const uint32_t *codepoints, size_t len,
                          uint8_t *out_width);
 
+/* The cell at (line, column). A NULL state or out-of-range query returns
+ * a blank cell whose fg/bg have kind RIO_COLOR_NONE, so a miss is never
+ * mistaken for a real black cell; real cells always carry a drawable
+ * fg/bg kind. */
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
 /* Set in rio_cell_s.style_flags when the cell carries an explicit SGR 58
@@ -342,8 +347,8 @@ rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
  * the fallback rio's own renderer applies. This is bit 14. */
 #define RIO_CELL_HAS_UNDERLINE_COLOR (1u << 14)
 /* The cell's explicit SGR 58 underline color, or kind RIO_COLOR_NONE
- * when the cell (or the call: NULL state, out-of-range cell) has none;
- * see RIO_CELL_HAS_UNDERLINE_COLOR. */
+ * when the cell has none (also for a NULL state, an out-of-range cell,
+ * or an internal error); see RIO_CELL_HAS_UNDERLINE_COLOR. */
 rio_color_s rio_render_state_cell_underline_color(const rio_render_state_t *state,
                                                   uint16_t line, uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
