@@ -32,7 +32,7 @@ use rio_backend::config::colors::{AnsiColor, NamedColor};
 use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::{Column, Line, Pos};
 use rio_backend::crosswords::search::Match;
-use rio_backend::crosswords::square::{ContentTag, Extras, Square};
+use rio_backend::crosswords::square::{ContentTag, Extras, Square, Wide};
 use rio_backend::crosswords::style::{Style, StyleFlags, UnderlineKind};
 use rio_backend::selection::SelectionRange;
 use rustc_hash::FxHashMap;
@@ -1896,6 +1896,14 @@ pub fn build_row_fg<P: GridPalette>(
             x += 1;
             continue;
         }
+        // A wide glyph whose spacer lands on a composition cell would
+        // bleed its right half into the block: drop it while the
+        // composition covers it (the same rule the grid applies when
+        // half of a wide char is overwritten).
+        if sq.wide() == Wide::Wide && preedit.is_some_and(|p| p.cell(x + 1).is_some()) {
+            x += 1;
+            continue;
+        }
         if is_run_breaker(sq) {
             x += 1;
             continue;
@@ -2118,6 +2126,14 @@ pub fn build_row_fg<P: GridPalette>(
                 break;
             }
             let sq2 = row[Column(end)];
+            // Stop before a wide glyph whose spacer lands on a
+            // composition cell too: shaping it would bleed its right
+            // half into the block (see the run-start guard).
+            if sq2.wide() == Wide::Wide
+                && preedit.is_some_and(|p| p.cell(end + 1).is_some())
+            {
+                break;
+            }
             if is_run_breaker(sq2) {
                 break;
             }
@@ -2510,6 +2526,17 @@ fn emit_preedit_cluster(
 ) {
     let Some(base) = cluster.chars().next() else {
         return;
+    };
+    // Layout clamps every cluster to at most 2 cells (the widths a
+    // terminal expresses), but shaping draws natural-width ink: a
+    // >=3-cell cluster (a Devanagari conjunct, say) would paint
+    // bg-colored ink past the block onto normal background and over
+    // neighboring glyphs. Degrade those rare clusters to their base
+    // char, which fits the reserved cells.
+    let cluster = if rio_unicode::UnicodeWidthStr::width(cluster) > 2 {
+        &cluster[..base.len_utf8()]
+    } else {
+        cluster
     };
     let run_style_flags = 0u8;
     let (font_id, is_emoji) =

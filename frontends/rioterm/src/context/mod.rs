@@ -93,8 +93,7 @@ impl<T: EventListener> Context<T> {
     pub fn cursor_from_ref(&self) -> Cursor {
         Cursor {
             state: self.renderable_content.cursor.state.new_from_self(),
-            content: self.renderable_content.cursor.content_ref,
-            content_ref: self.renderable_content.cursor.content_ref,
+            content: self.renderable_content.cursor.content,
         }
     }
 }

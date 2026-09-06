@@ -114,15 +114,18 @@ impl PreeditLine {
             return None;
         }
 
-        // The caret sits before the first cluster starting at or past
-        // the byte offset (mid-cluster offsets snap to the cluster).
-        // A hidden caret (candidate paging) stays hidden.
+        // The caret sits on the cluster CONTAINING the byte offset, so
+        // an intra-cluster offset (jamo-level Korean IMEs report these)
+        // marks the cluster being edited, not its neighbor; offsets at
+        // or past the end mean end-of-text. A hidden caret (candidate
+        // paging) stays hidden.
         let mut caret_index = match cursor {
             PreeditCursor::Hidden => None,
+            PreeditCursor::Byte(offset) if offset >= text.len() => Some(segs.len()),
             PreeditCursor::Byte(offset) => Some(
                 segs.iter()
-                    .position(|seg| seg.byte_start >= offset)
-                    .unwrap_or(segs.len()),
+                    .rposition(|seg| seg.byte_start <= offset)
+                    .unwrap_or(0),
             ),
         };
 
@@ -308,10 +311,14 @@ mod tests {
         let line = layout("日本語", Some(3)).unwrap();
         assert_eq!(line.caret, PreeditCaret::OnCell(2));
         // A char-boundary offset inside a grapheme cluster (between
-        // `e` and its combining mark) snaps forward to the next
-        // cluster boundary.
+        // `e` and its combining mark) marks the cluster being edited:
+        // the one CONTAINING the offset, as jamo-level Korean IMEs
+        // expect.
         let line = layout("e\u{302}x", Some(1)).unwrap();
-        assert_eq!(line.caret, PreeditCaret::OnCell(1));
+        assert_eq!(line.caret, PreeditCaret::OnCell(0));
+        // An intra-cluster offset in a wide cluster stays on it.
+        let line = layout("日本語", Some(4)).unwrap();
+        assert_eq!(line.caret, PreeditCaret::OnCell(2));
     }
 
     #[test]

@@ -2016,26 +2016,27 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Ime(ime) => {
-                // The assistant swallows IME input, but clear events
-                // (empty Preedit, Disabled) must still pass: dropping
-                // them leaves the window-level preedit stuck, and the
-                // preedit gate in `process_key_event` then swallows
-                // every plain keystroke after the assistant closes.
-                let assistant_active = route.window.screen.renderer.assistant.is_active();
+                // Modal overlays (assistant, command palette) take
+                // their input through key events and never see IME
+                // ones: while one is up, swallow composition input but
+                // still CLEAR any stored preedit — a live composition
+                // would keep painting into the grid behind the overlay
+                // and its key gate would swallow every plain keystroke
+                // after the overlay closes. (Search stays open to IME:
+                // commits route into the search input via `paste`.)
+                let overlay_active = route.window.screen.renderer.assistant.is_active()
+                    || route.window.screen.renderer.command_palette.is_enabled();
 
                 match ime {
                     Ime::Commit(text) => {
-                        if assistant_active {
+                        if overlay_active {
                             return;
                         }
                         // Don't use bracketed paste for single char input.
                         route.window.screen.paste(&text, text.chars().count() > 1);
                     }
                     Ime::Preedit(text, cursor_offset) => {
-                        if assistant_active && !text.is_empty() {
-                            return;
-                        }
-                        let preedit = if text.is_empty() {
+                        let preedit = if text.is_empty() || overlay_active {
                             None
                         } else {
                             // The platform's `None` means the IME asked
@@ -2050,7 +2051,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         };
 
                         if route.window.screen.ime.preedit() != preedit.as_ref() {
+                            let composing = preedit.is_some();
                             route.window.screen.ime.set_preedit(preedit);
+                            if composing {
+                                // The composition anchors at the cursor
+                                // row: snap out of scrollback so it can
+                                // never be live but invisible while the
+                                // preedit key gate swallows input, and
+                                // drop the selection like typing does —
+                                // the composition is the active signal
+                                // now.
+                                route
+                                    .window
+                                    .screen
+                                    .scroll_bottom_when_cursor_not_visible();
+                                route.window.screen.clear_selection();
+                            }
                             // The overlay lives in the grid's CPU cell
                             // buffers and its rows are force-rebuilt
                             // each frame while composing; a plain
@@ -2058,14 +2074,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             // scheduled — full terminal damage would
                             // re-shape every visible row per
                             // keystroke for nothing.
-                            route
-                                .window
-                                .screen
-                                .context_manager
-                                .current_mut()
-                                .renderable_content
-                                .pending_update
-                                .set_dirty();
+                            route.window.screen.mark_dirty();
                             route.request_redraw();
                         }
                     }
@@ -2081,14 +2090,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         let had_preedit = route.window.screen.ime.preedit().is_some();
                         route.window.screen.ime.set_enabled(false);
                         if had_preedit {
-                            route
-                                .window
-                                .screen
-                                .context_manager
-                                .current_mut()
-                                .renderable_content
-                                .pending_update
-                                .set_dirty();
+                            route.window.screen.mark_dirty();
                             route.request_redraw();
                         }
                     }
