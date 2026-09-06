@@ -154,9 +154,12 @@ impl Route<'_> {
     }
 
     /// The modal overlay currently owning keyboard/IME input, in
-    /// dispatch priority order. THE roster: `has_key_wait`,
-    /// `modal_owns_input`, and `overlay_commit_text` all derive from
-    /// this, so a new overlay added here is gated everywhere at once.
+    /// dispatch priority order. THE roster for KEYBOARD AND IME
+    /// dispatch: `has_key_wait`, `modal_owns_input`, and
+    /// `overlay_commit_text` all derive from this, so a new overlay
+    /// added here is key/IME-gated at once. Mouse paths (hint
+    /// hover/click, the application.rs pointer handlers) still walk
+    /// their own overlay checks and need separate wiring.
     pub fn active_modal(&self) -> Option<Modal> {
         if self
             .window
@@ -174,7 +177,10 @@ impl Route<'_> {
         if self.window.screen.renderer.confirm_quit.is_active() {
             return Some(Modal::ConfirmQuit);
         }
-        if self.window.screen.renderer.assistant.is_active() {
+        // Only hard errors are modal: a warning toast (font not
+        // found on live reload, say) renders over a WORKING terminal
+        // and must never swallow typing or Ctrl+C.
+        if self.window.screen.renderer.assistant.is_error() {
             return Some(Modal::Assistant);
         }
         if self.path != RoutePath::Terminal {
@@ -216,11 +222,10 @@ impl Route<'_> {
     }
 
     /// Whether a modal overlay currently owns keyboard input, so IME
-    /// composition must not reach the terminal behind it. One
-    /// deliberate asymmetry with `has_key_wait`: the welcome screen
-    /// lets plain keys fall through to the hidden terminal, but IME
-    /// commits are blocked here; feeding composed text to a shell the
-    /// user cannot see helps nobody.
+    /// composition must not reach the terminal behind it. Derived from
+    /// the same roster as `has_key_wait`, so keys and IME are gated
+    /// identically (the welcome screen blocks both: its PTY is live
+    /// but invisible).
     #[inline]
     pub fn modal_owns_input(&self) -> bool {
         self.active_modal().is_some()
@@ -330,7 +335,7 @@ impl Route<'_> {
                             }
 
                             match selected_action {
-                                // `ListFonts` stays inside the palette —
+                                // `ListFonts` stays inside the palette:
                                 // swap the palette's contents from the
                                 // command list to the registered font
                                 // family names and keep it open.
@@ -355,7 +360,7 @@ impl Route<'_> {
                                         .screen
                                         .execute_palette_action(action, clipboard);
                                 }
-                                // No match at all — Enter just closes.
+                                // No match at all: Enter just closes.
                                 None => {
                                     self.window
                                         .screen
@@ -422,9 +427,15 @@ impl Route<'_> {
             // Path-independent, so a `report_error` toast raised at
             // `RoutePath::Terminal` blocks keys symmetrically with the
             // IME gate and Enter can dismiss it (previously only a mouse
-            // click could, while plain keys leaked to the shell).
+            // click could, while plain keys leaked to the shell). Only
+            // the press dismisses: acting on the release would let a
+            // toast appearing mid-keystroke vanish unseen, and would
+            // send the orphaned release to the PTY under kitty's
+            // report-event-types mode.
             Modal::Assistant => {
-                if key_event.logical_key == Key::Named(NamedKey::Enter) {
+                if key_event.state == ElementState::Pressed
+                    && key_event.logical_key == Key::Named(NamedKey::Enter)
+                {
                     self.assistant.clear();
                     self.window.screen.renderer.assistant.clear();
                     self.request_overlay_redraw();
@@ -433,14 +444,16 @@ impl Route<'_> {
             }
 
             Modal::Route => {
-                let is_enter = key_event.logical_key == Key::Named(NamedKey::Enter);
+                let is_enter = key_event.state == ElementState::Pressed
+                    && key_event.logical_key == Key::Named(NamedKey::Enter);
                 if self.path == RoutePath::Welcome && is_enter {
                     rio_backend::config::create_config_file(None);
                     self.path = RoutePath::Terminal;
                 }
-                // The welcome screen lets keys fall through (pre-existing
-                // leak to the hidden terminal, see `modal_owns_input`).
-                false
+                // Block everything else: the PTY behind the welcome
+                // screen is live, and keys reaching it would execute
+                // invisibly once the terminal appears.
+                true
             }
         }
     }

@@ -1807,7 +1807,7 @@ fn shape_cached(
     font_library: &FontLibrary,
 ) -> Option<(i16, f32)> {
     if let Some(entry) = run_cache_get(&mut rasterizer.run_cache, hash) {
-        // Cache hit — advance stored, ascent in its own cache.
+        // Cache hit: advance stored, ascent in its own cache.
         let advance = entry.advance;
         return Some((
             rasterizer
@@ -2753,6 +2753,29 @@ fn emit_preedit_caret(
     });
 }
 
+/// Whether a registered custom glyph's render span reaches the
+/// composition block from `col`: the fg pass drops such a glyph, so
+/// its decorations must vanish with it. One predicate for both
+/// decoration emitters; the span rule mirrors
+/// `ensure_custom_glyph_by_codepoint`'s clamp to the protocol's 1..=2.
+/// The `covers_ink(col, 2)` prefilter keeps the registry (an RwLock)
+/// out of cells that are not next to the block, and callers run this
+/// only after the cell is known to carry a decoration.
+fn custom_glyph_ink_covered(
+    pre: &PreeditRow<'_>,
+    registry: Option<&rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry>,
+    sq: Square,
+    col: usize,
+) -> bool {
+    let Some(registry) = registry else {
+        return false;
+    };
+    pre.covers_ink(col, 2)
+        && registry.get(sq.c() as u32).is_some_and(|entry| {
+            pre.covers_ink(col, (entry.width as u16).clamp(1, 2) as usize)
+        })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn emit_underlines<P: GridPalette>(
     row: &Row<Square>,
@@ -2779,20 +2802,6 @@ fn emit_underlines<P: GridPalette>(
         if preedit.is_some_and(|p| p.suppresses(sq, x)) {
             continue;
         }
-        // A registered custom glyph's render span can reach into the
-        // block from one logical column; the fg pass drops it for
-        // that, so drop its decoration too. `covers_ink(x, 2)` first:
-        // the registry (an RwLock) is only consulted next to the
-        // block.
-        if let (Some(pre), Some(registry)) = (preedit, glyph_registry) {
-            if pre.covers_ink(x, 2)
-                && registry.get(sq.c() as u32).is_some_and(|entry| {
-                    pre.covers_ink(x, (entry.width as u16).clamp(1, 2) as usize)
-                })
-            {
-                continue;
-            }
-        }
         let style = resolve_style(row_styles, x);
         let col = x as u16;
         // SGR underline (UNDER, double, curly, …) wins over the
@@ -2807,6 +2816,9 @@ fn emit_underlines<P: GridPalette>(
             }
             None => continue,
         };
+        if preedit.is_some_and(|p| custom_glyph_ink_covered(p, glyph_registry, sq, x)) {
+            continue;
+        }
         let Some(slot) = ensure_decoration_slot(grid, deco, cell_w, cell_h, thickness)
         else {
             continue;
@@ -2872,22 +2884,11 @@ fn emit_strikethroughs<P: GridPalette>(
         if preedit.is_some_and(|p| p.suppresses(sq, x)) {
             continue;
         }
-        // A registered custom glyph's render span can reach into the
-        // block from one logical column; the fg pass drops it for
-        // that, so drop its decoration too. `covers_ink(x, 2)` first:
-        // the registry (an RwLock) is only consulted next to the
-        // block.
-        if let (Some(pre), Some(registry)) = (preedit, glyph_registry) {
-            if pre.covers_ink(x, 2)
-                && registry.get(sq.c() as u32).is_some_and(|entry| {
-                    pre.covers_ink(x, (entry.width as u16).clamp(1, 2) as usize)
-                })
-            {
-                continue;
-            }
-        }
         let style = resolve_style(row_styles, x);
         if !style.flags.contains(StyleFlags::STRIKEOUT) {
+            continue;
+        }
+        if preedit.is_some_and(|p| custom_glyph_ink_covered(p, glyph_registry, sq, x)) {
             continue;
         }
         let Some(slot) = ensure_decoration_slot(

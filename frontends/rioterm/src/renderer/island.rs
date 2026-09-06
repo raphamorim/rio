@@ -1086,20 +1086,20 @@ impl Island {
 
     /// Handle keyboard input while the color picker (with rename field) is open.
     /// Returns true if input was consumed.
+    /// Handle one key event for the rename input. The caller
+    /// (`has_key_wait`'s `Modal::IslandRename` arm) already verified
+    /// the picker is open via `active_modal` and consumes the event
+    /// unconditionally, so there is nothing to return.
     pub fn handle_rename_input(
         &mut self,
         key_event: &rio_window::event::KeyEvent,
         context_manager: &mut ContextManager<EventProxy>,
-    ) -> bool {
+    ) {
         use rio_window::event::ElementState;
         use rio_window::keyboard::{Key, NamedKey};
 
-        if self.color_picker_tab.is_none() {
-            return false;
-        }
-
         if key_event.state != ElementState::Pressed {
-            return true; // consume release events too
+            return; // consume release events too
         }
 
         match &key_event.logical_key {
@@ -1122,7 +1122,6 @@ impl Island {
                 }
             }
         }
-        true
     }
 
     /// Append committed or typed text to the rename input, applying
