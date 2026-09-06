@@ -1118,13 +1118,24 @@ impl Island {
             }
             _ => {
                 if let Some(text) = key_event.text.as_ref() {
-                    let s = text.as_str();
-                    if !s.is_empty() && s.chars().all(|c| !c.is_control()) {
-                        self.rename_input.push_str(s);
-                        self.rename_caret_time = Instant::now();
-                    }
+                    self.append_rename_text(text.as_str());
                 }
             }
+        }
+        true
+    }
+
+    /// Append committed or typed text to the rename input, with the
+    /// field's input policy (non-empty, no control chars) applied in
+    /// ONE place for both the key path and the IME commit path.
+    /// Returns whether the field is open and consumed the text.
+    pub fn append_rename_text(&mut self, text: &str) -> bool {
+        if self.color_picker_tab.is_none() {
+            return false;
+        }
+        if !text.is_empty() && text.chars().all(|c| !c.is_control()) {
+            self.rename_input.push_str(text);
+            self.rename_caret_time = Instant::now();
         }
         true
     }

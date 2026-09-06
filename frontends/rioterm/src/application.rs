@@ -2027,25 +2027,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // input via `paste`).
                 match ime {
                     Ime::Commit(text) => {
-                        // Composed characters (dead keys, CJK) arrive
-                        // only as commits, never as key text: route
-                        // them into the palette query the way plain
-                        // key text reaches it in `has_key_wait`.
-                        if route.window.screen.renderer.command_palette.is_enabled() {
-                            if !text.is_empty() && text.chars().all(|c| !c.is_control()) {
-                                let query = format!(
-                                    "{}{}",
-                                    route.window.screen.renderer.command_palette.query,
-                                    text
-                                );
-                                route
-                                    .window
-                                    .screen
-                                    .renderer
-                                    .command_palette
-                                    .set_query(query);
-                                route.request_overlay_redraw();
-                            }
+                        // Text-input overlays (island rename, palette)
+                        // consume commits first, in `has_key_wait`'s
+                        // order; other modals swallow them; only a bare
+                        // terminal receives the text.
+                        if route.overlay_commit_text(&text) {
                             return;
                         }
                         if route.modal_owns_input() {

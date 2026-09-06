@@ -397,16 +397,21 @@ impl Screen<'_> {
     /// Window-level IME preedit update, with the side effects composing
     /// implies. Returns whether a repaint is needed.
     ///
-    /// Composing mirrors what the equivalent plain typing does:
-    /// - outside search, snap out of scrollback (a live composition
-    ///   must never be invisible while the preedit key gate swallows
-    ///   input) and drop the selection, like `send_bytes`;
-    /// - during search, never snap and keep a vi-mode selection, like
-    ///   `search_input`.
+    /// Composing always snaps out of scrollback: the overlay renders
+    /// only at `display_offset == 0` while the preedit key gate
+    /// swallows input, so a scrolled viewport would mean a live but
+    /// invisible composition and a terminal that looks frozen. This
+    /// holds during search too; the snap composes with the relative
+    /// `Scroll::Delta` restore in `search_reset_state` exactly like a
+    /// manual mid-search scroll does, and committing the query re-runs
+    /// `goto_match`, which scrolls back to the focused match. The snap
+    /// runs on every composition event, not only on changes: candidate
+    /// paging re-reports identical text, and that event must still
+    /// restore visibility after a mid-composition scroll.
     ///
-    /// The snap runs on every composition event, not only on changes:
-    /// candidate paging re-reports identical text, and that event must
-    /// still restore visibility after a mid-composition scroll.
+    /// Selection follows what the equivalent plain typing does: plain
+    /// input drops it (`send_bytes`), search typing drops it only
+    /// outside vi mode (`search_input` keeps a vi visual selection).
     pub fn set_ime_preedit(&mut self, preedit: Option<crate::ime::Preedit>) -> bool {
         let composing = preedit.is_some();
         let changed = self.ime.preedit() != preedit.as_ref();
@@ -416,19 +421,20 @@ impl Screen<'_> {
 
         let mut needs_render = changed;
         if composing {
-            if self.search_active() {
-                if changed && !self.get_mode().contains(Mode::VI) {
-                    // Clear selection so we do not obstruct any matches.
-                    self.context_manager.current_mut().set_selection(None);
-                }
-            } else {
-                let mut terminal = self.ctx_mut().current_mut().terminal.lock();
-                if terminal.display_offset() != 0 {
-                    terminal.scroll_display(Scroll::Bottom);
-                    needs_render = true;
-                }
-                drop(terminal);
-                if changed {
+            let mut terminal = self.ctx_mut().current_mut().terminal.lock();
+            if terminal.display_offset() != 0 {
+                terminal.scroll_display(Scroll::Bottom);
+                needs_render = true;
+            }
+            drop(terminal);
+
+            if changed {
+                if self.search_active() {
+                    if !self.get_mode().contains(Mode::VI) {
+                        // Clear selection so we do not obstruct any matches.
+                        self.context_manager.current_mut().set_selection(None);
+                    }
+                } else {
                     self.clear_selection();
                 }
             }

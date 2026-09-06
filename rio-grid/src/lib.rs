@@ -64,13 +64,30 @@ impl PreeditRow<'_> {
     }
 
     /// Whether ink drawn at `col` spanning `span` cells would land on
-    /// any composition cell. The one suppression predicate for every
-    /// fg emitter: glyphs (and their decorations) that would paint
-    /// into the block are dropped for the composition's duration, the
-    /// way the grid blanks a half-overwritten wide char.
+    /// any composition cell. Used where the span is dynamic (a custom
+    /// glyph's render span); per-cell emitters use [`Self::suppresses`].
     #[inline]
     fn covers_ink(&self, col: usize, span: usize) -> bool {
         (col..col.saturating_add(span)).any(|c| self.cell(c).is_some())
+    }
+
+    /// THE suppression policy for per-cell fg emitters (glyphs and
+    /// their decorations) while composing: drop the cell when it is
+    /// under the block, when it is a wide base whose spacer is, or
+    /// when it is a spacer whose base is. Half-covered wide glyphs
+    /// vanish whole (the rule the grid applies when half of a wide
+    /// char is overwritten), and neither half may leave a floating
+    /// decoration behind.
+    #[inline]
+    fn suppresses(&self, sq: Square, col: usize) -> bool {
+        if self.cell(col).is_some() {
+            return true;
+        }
+        match sq.wide() {
+            Wide::Wide => self.cell(col + 1).is_some(),
+            Wide::Spacer => col > 0 && self.cell(col - 1).is_some(),
+            _ => false,
+        }
     }
 }
 
@@ -1899,17 +1916,10 @@ pub fn build_row_fg<P: GridPalette>(
     let mut x: usize = 0;
     while x < max {
         let sq = row[Column(x)];
-        // Composition cells emit in their own pass below, shaped per
-        // grapheme cluster so they can't ligate with terminal text.
-        if preedit.is_some_and(|p| p.cell(x).is_some()) {
-            x += 1;
-            continue;
-        }
-        // A wide glyph whose spacer lands on a composition cell would
-        // bleed its right half into the block: drop it while the
-        // composition covers it (the same rule the grid applies when
-        // half of a wide char is overwritten).
-        if sq.wide() == Wide::Wide && preedit.is_some_and(|p| p.covers_ink(x, 2)) {
+        // Composition cells emit in their own pass below (shaped per
+        // grapheme cluster so they can't ligate with terminal text),
+        // and a wide glyph half-covered by the block is dropped whole.
+        if preedit.is_some_and(|p| p.suppresses(sq, x)) {
             x += 1;
             continue;
         }
@@ -2136,16 +2146,12 @@ pub fn build_row_fg<P: GridPalette>(
         // Extend the run while (font_id, style_flags) match.
         let mut end = x + 1;
         while end < cols {
-            // Stop before stepping onto composition cells — those are
-            // taken over by the preedit pass.
-            if preedit.is_some_and(|p| p.cell(end).is_some()) {
-                break;
-            }
             let sq2 = row[Column(end)];
-            // Stop before a wide glyph whose spacer lands on a
-            // composition cell too: shaping it would bleed its right
-            // half into the block (see the run-start guard).
-            if sq2.wide() == Wide::Wide && preedit.is_some_and(|p| p.covers_ink(end, 2)) {
+            // Stop before composition cells (taken over by the preedit
+            // pass) and before a wide glyph the block half-covers,
+            // whose shaping would bleed into it (see the run-start
+            // guard).
+            if preedit.is_some_and(|p| p.suppresses(sq2, end)) {
                 break;
             }
             if is_run_breaker(sq2) {
@@ -2525,6 +2531,64 @@ pub fn build_row_fg<P: GridPalette>(
     }
 }
 
+/// Fill the run scratch with `text`, hash it into the composition
+/// cache namespace (the leading "PREE" sentinel keeps it disjoint from
+/// the grid's per-cell keys), shape it (cached), and return
+/// `(hash, ascent, summed advance)`. `None` means no shaping handle.
+fn shape_preedit_text(
+    rasterizer: &mut GridGlyphRasterizer,
+    text: &str,
+    font_id: u32,
+    size_u16: u16,
+    size_bucket: u16,
+    font_library: &FontLibrary,
+) -> Option<(u64, i16, f32)> {
+    #[cfg(target_os = "macos")]
+    {
+        rasterizer.run_utf16_scratch.clear();
+        rasterizer.run_cell_starts.clear();
+        rasterizer
+            .run_cell_starts
+            .push(rasterizer.run_utf16_scratch.len() as u32);
+        let mut buf = [0u16; 2];
+        for ch in text.chars() {
+            rasterizer
+                .run_utf16_scratch
+                .extend_from_slice(ch.encode_utf16(&mut buf));
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        rasterizer.run_str_scratch.clear();
+        rasterizer.run_str_scratch.push_str(text);
+    }
+
+    rasterizer.run_hasher = rapidhash::fast::RapidHasher::default();
+    rasterizer.run_hasher.write_u32(0x5052_4545); // "PREE"
+    for (i, ch) in text.chars().enumerate() {
+        rasterizer.run_hasher.write_u32(ch as u32);
+        rasterizer.run_hasher.write_u32(i as u32);
+    }
+    rasterizer.run_hasher.write_u32(font_id);
+    rasterizer.run_hasher.write_u16(size_bucket);
+    let hash = rasterizer.run_hasher.finish();
+
+    let ascent_px = shape_cached(
+        rasterizer,
+        hash,
+        font_id,
+        size_u16,
+        size_bucket,
+        font_library,
+    )?;
+    let advance: f32 = run_cache_get(&mut rasterizer.run_cache, hash)
+        .expect("just inserted")
+        .iter()
+        .map(|g| g.advance)
+        .sum();
+    Some((hash, ascent_px, advance))
+}
+
 /// Shape one grapheme cluster as a standalone run and emit its glyphs
 /// at `(grid_col, y)` with a forced foreground color. Composition
 /// cells always shape in the plain style: composing text shouldn't
@@ -2557,52 +2621,31 @@ fn emit_preedit_cluster(
     // Layout reserves 1 or 2 cells per cluster; shaping draws natural
     // width. Per-char width sums misjudge both directions (a ZWJ emoji
     // sums to 6 cells yet shapes to ~2, a conjunct sums to 2 yet can
-    // ink 3), so the overflow decision uses the SHAPED advance: when
-    // the full cluster's advance overflows its reserved cells, retry
-    // with the base char, which fits. The half-cell slack absorbs
-    // color-font advance quirks.
+    // ink 3), so the overflow decision uses the SHAPED advance: a full
+    // cluster overflowing its reserved cells retries as the base char,
+    // and a base char that still overflows draws nothing rather than
+    // spill background-colored ink over the neighboring cell. The
+    // half-cell slack absorbs color-font advance quirks.
     let max_advance = reserved_cells as f32 * cell_w + cell_w * 0.5;
-    let mut text = cluster;
-    let (hash, ascent_px) = loop {
-        #[cfg(target_os = "macos")]
-        {
-            rasterizer.run_utf16_scratch.clear();
-            rasterizer.run_cell_starts.clear();
-            rasterizer
-                .run_cell_starts
-                .push(rasterizer.run_utf16_scratch.len() as u32);
-            let mut buf = [0u16; 2];
-            for ch in text.chars() {
-                rasterizer
-                    .run_utf16_scratch
-                    .extend_from_slice(ch.encode_utf16(&mut buf));
-            }
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            rasterizer.run_str_scratch.clear();
-            rasterizer.run_str_scratch.push_str(text);
-        }
-
-        // Composition runs get their own cache namespace (the leading
-        // sentinel): sharing keys with the grid's per-cell scheme would
-        // require proving the two hash layouts can never collide across
-        // every combining/cluster shape, and the composition holds a
-        // handful of entries at most, so disjointness is cheaper than
-        // the proof.
-        rasterizer.run_hasher = rapidhash::fast::RapidHasher::default();
-        rasterizer.run_hasher.write_u32(0x5052_4545); // "PREE"
-        for (i, ch) in text.chars().enumerate() {
-            rasterizer.run_hasher.write_u32(ch as u32);
-            rasterizer.run_hasher.write_u32(i as u32);
-        }
-        rasterizer.run_hasher.write_u32(font_id);
-        rasterizer.run_hasher.write_u16(size_bucket);
-        let hash = rasterizer.run_hasher.finish();
-
-        let Some(ascent_px) = shape_cached(
+    let base_str = &cluster[..base.len_utf8()];
+    let Some((hash, ascent_px, advance)) = shape_preedit_text(
+        rasterizer,
+        cluster,
+        font_id,
+        size_u16,
+        size_bucket,
+        font_library,
+    ) else {
+        return;
+    };
+    let (hash, ascent_px) = if advance <= max_advance {
+        (hash, ascent_px)
+    } else if base_str.len() == cluster.len() {
+        return;
+    } else {
+        let Some((hash, ascent_px, advance)) = shape_preedit_text(
             rasterizer,
-            hash,
+            base_str,
             font_id,
             size_u16,
             size_bucket,
@@ -2610,19 +2653,10 @@ fn emit_preedit_cluster(
         ) else {
             return;
         };
-
-        if text.len() > base.len_utf8() {
-            let advance: f32 = run_cache_get(&mut rasterizer.run_cache, hash)
-                .expect("just inserted")
-                .iter()
-                .map(|g| g.advance)
-                .sum();
-            if advance > max_advance {
-                text = &cluster[..base.len_utf8()];
-                continue;
-            }
+        if advance > max_advance {
+            return;
         }
-        break (hash, ascent_px);
+        (hash, ascent_px)
     };
 
     let (synthetic_bold, synthetic_italic) =
@@ -2728,16 +2762,11 @@ fn emit_underlines<P: GridPalette>(
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
-        // Composing text takes no decorations from whatever
-        // was underneath it.
-        if preedit.is_some_and(|p| p.cell(x).is_some()) {
-            continue;
-        }
         let sq = row[Column(x)];
-        // The fg pass drops a wide glyph whose spacer lands on the
-        // block; drop its decorations too, or they float under an
-        // empty cell next to the composition.
-        if sq.wide() == Wide::Wide && preedit.is_some_and(|p| p.covers_ink(x, 2)) {
+        // Composing text takes no decorations from whatever sat under
+        // it, and either half of a wide glyph the fg pass dropped must
+        // not leave a floating decoration next to the block.
+        if preedit.is_some_and(|p| p.suppresses(sq, x)) {
             continue;
         }
         let style = resolve_style(row_styles, x);
@@ -2811,16 +2840,11 @@ fn emit_strikethroughs<P: GridPalette>(
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
-        // Composing text takes no decorations from whatever
-        // was underneath it.
-        if preedit.is_some_and(|p| p.cell(x).is_some()) {
-            continue;
-        }
         let sq = row[Column(x)];
-        // The fg pass drops a wide glyph whose spacer lands on the
-        // block; drop its decorations too, or they float under an
-        // empty cell next to the composition.
-        if sq.wide() == Wide::Wide && preedit.is_some_and(|p| p.covers_ink(x, 2)) {
+        // Composing text takes no decorations from whatever sat under
+        // it, and either half of a wide glyph the fg pass dropped must
+        // not leave a floating decoration next to the block.
+        if preedit.is_some_and(|p| p.suppresses(sq, x)) {
             continue;
         }
         let style = resolve_style(row_styles, x);
@@ -3342,6 +3366,36 @@ mod preedit_suppression_tests {
         assert!(pre.covers_ink(5, 1));
         // Ink starting at the block's end is clear of it.
         assert!(!pre.covers_ink(8, 2));
+    }
+
+    /// A wide pair half-covered by the block suppresses BOTH halves,
+    /// whichever half the block touches: glyphs and decorations vanish
+    /// together, never a floating underline under an empty half-cell.
+    #[test]
+    fn suppresses_covers_half_covered_wide_pairs() {
+        // Block occupies columns 4..8 ("日本" at cursor col 4).
+        let line = PreeditLine::new("日本", PreeditCursor::Byte(6), 0, 4, 80).unwrap();
+        let pre = PreeditRow {
+            line: &line,
+            block_bg: [0; 4],
+        };
+        let narrow = Square::default();
+        let mut wide = Square::default();
+        wide.set_wide(Wide::Wide);
+        let mut spacer = Square::default();
+        spacer.set_wide(Wide::Spacer);
+
+        // Plain cells: only covered columns suppress.
+        assert!(!pre.suppresses(narrow, 3));
+        assert!(pre.suppresses(narrow, 4));
+        // Wide base at 3: its spacer at 4 is under the block.
+        assert!(pre.suppresses(wide, 3));
+        assert!(!pre.suppresses(wide, 1));
+        // Spacer at 8: its base at 7 is under the block.
+        assert!(pre.suppresses(spacer, 8));
+        assert!(!pre.suppresses(spacer, 9));
+        // Column 0 spacer never underflows.
+        assert!(!pre.suppresses(spacer, 0));
     }
 }
 

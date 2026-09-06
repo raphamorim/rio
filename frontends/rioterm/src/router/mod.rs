@@ -136,11 +136,43 @@ impl Route<'_> {
         self.request_overlay_redraw();
     }
 
-    /// Whether a modal overlay currently owns keyboard input: the same
-    /// roster `has_key_wait` walks (island rename input, command
-    /// palette, quit confirmation, and any non-terminal route such as
-    /// the assistant or welcome screens). IME composition must not
-    /// reach the terminal behind any of them.
+    /// Route committed IME text (dead keys, CJK) into whichever overlay
+    /// currently owns text input, walking the same order `has_key_wait`
+    /// walks for plain key text: the island rename input first, then
+    /// the command palette. Composed characters arrive ONLY as commits,
+    /// never as key text, so without this the overlays would be
+    /// ASCII-only. Returns whether an overlay consumed the text.
+    pub fn overlay_commit_text(&mut self, text: &str) -> bool {
+        if let Some(ref mut island) = self.window.screen.renderer.island {
+            if island.append_rename_text(text) {
+                self.request_overlay_redraw();
+                return true;
+            }
+        }
+        if self.window.screen.renderer.command_palette.is_enabled() {
+            if self
+                .window
+                .screen
+                .renderer
+                .command_palette
+                .append_query(text)
+            {
+                self.request_overlay_redraw();
+            }
+            return true;
+        }
+        false
+    }
+
+    /// Whether a modal overlay currently owns keyboard input, so IME
+    /// composition must not reach the terminal behind it: the island
+    /// rename input, the command palette, the quit confirmation, the
+    /// assistant (which `report_error` can activate WITHOUT leaving
+    /// `RoutePath::Terminal`), and any non-terminal route. One
+    /// deliberate asymmetry with `has_key_wait`: the welcome screen
+    /// lets plain keys fall through to the hidden terminal, but IME
+    /// commits are blocked here; feeding composed text to a shell the
+    /// user cannot see helps nobody.
     #[inline]
     pub fn modal_owns_input(&self) -> bool {
         self.window
@@ -151,6 +183,7 @@ impl Route<'_> {
             .is_some_and(|island| island.is_color_picker_open())
             || self.window.screen.renderer.command_palette.is_enabled()
             || self.window.screen.renderer.confirm_quit.is_active()
+            || self.window.screen.renderer.assistant.is_active()
             || self.path != RoutePath::Terminal
     }
 
@@ -307,23 +340,13 @@ impl Route<'_> {
                     }
                     _ => {
                         if let Some(text) = key_event.text.as_ref() {
-                            // Filter out control characters
-                            let text_str = text.as_str();
-                            if !text_str.is_empty()
-                                && text_str.chars().all(|c| !c.is_control())
+                            if self
+                                .window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .append_query(text.as_str())
                             {
-                                let current_query = self
-                                    .window
-                                    .screen
-                                    .renderer
-                                    .command_palette
-                                    .query
-                                    .clone();
-                                self.window
-                                    .screen
-                                    .renderer
-                                    .command_palette
-                                    .set_query(format!("{}{}", current_query, text_str));
                                 self.request_overlay_redraw();
                             }
                         }
