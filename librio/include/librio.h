@@ -25,6 +25,10 @@ typedef size_t rio_surface_id_t;
 #define RIO_COLOR_NAMED 0u
 #define RIO_COLOR_INDEXED 1u
 #define RIO_COLOR_RGB 2u
+/* An absent color (value and rgb are zero). Returned by
+ * rio_render_state_cell_underline_color for cells without an explicit
+ * underline color, and as the fg/bg of a missing cell. */
+#define RIO_COLOR_NONE 3u
 
 #define RIO_KEY_CHAR 0u
 #define RIO_KEY_ENTER 1u
@@ -63,6 +67,13 @@ typedef size_t rio_surface_id_t;
 #define RIO_SELECTION_WORD 1u
 #define RIO_SELECTION_LINE 2u
 #define RIO_SELECTION_BLOCK 3u
+
+/* rio_render_state_cursor_shape: DECSCUSR shape, or HIDDEN when the program
+   hid the cursor (DECTCEM) or the view is scrolled into history. */
+#define RIO_CURSOR_BLOCK 0u
+#define RIO_CURSOR_UNDERLINE 1u
+#define RIO_CURSOR_BEAM 2u
+#define RIO_CURSOR_HIDDEN 3u
 
 #define RIO_MOD_SHIFT (1u << 0)
 #define RIO_MOD_CTRL (1u << 1)
@@ -110,11 +121,13 @@ typedef struct {
 
 typedef struct {
   /* Original form: RIO_COLOR_NAMED / _INDEXED / _RGB. `value` holds the
-     named-color id or palette index for the first two. */
+     named-color id or palette index for the first two. Kind
+     RIO_COLOR_NONE means no color at all: value and r/g/b are zero and
+     nothing should be drawn from them. */
   uint8_t kind;
   uint16_t value;
-  /* Always the resolved RGB, regardless of `kind`, so a CPU renderer can
-     read r/g/b directly without owning a palette. */
+  /* The resolved RGB for every kind except RIO_COLOR_NONE, so a CPU
+     renderer can read r/g/b directly without owning a palette. */
   uint8_t r;
   uint8_t g;
   uint8_t b;
@@ -126,6 +139,26 @@ typedef struct {
   rio_color_s bg;
   uint16_t style_flags;
 } rio_cell_s;
+
+/* Bit assignments for rio_cell_s.style_flags. Bits 6-10 are the
+ * underline kind; at most one is set. At most one blink bit is set.
+ * Bits 14-15 are the RIO_CELL_* markers, not styles.
+ *
+ * rio_cell_s.fg/bg are exported pre-swap: when RIO_STYLE_INVERSE is
+ * set the host swaps them when drawing, as rio's own renderer does. */
+#define RIO_STYLE_INVERSE (1u << 0)
+#define RIO_STYLE_BOLD (1u << 1)
+#define RIO_STYLE_ITALIC (1u << 2)
+#define RIO_STYLE_DIM (1u << 3)
+#define RIO_STYLE_HIDDEN (1u << 4)
+#define RIO_STYLE_STRIKEOUT (1u << 5)
+#define RIO_STYLE_UNDERLINE (1u << 6)
+#define RIO_STYLE_DOUBLE_UNDERLINE (1u << 7)
+#define RIO_STYLE_UNDERCURL (1u << 8)
+#define RIO_STYLE_DOTTED_UNDERLINE (1u << 9)
+#define RIO_STYLE_DASHED_UNDERLINE (1u << 10)
+#define RIO_STYLE_SLOW_BLINK (1u << 11)
+#define RIO_STYLE_RAPID_BLINK (1u << 12)
 
 typedef struct {
   uint8_t r;
@@ -188,6 +221,8 @@ typedef struct {
   size_t text_len;
 } rio_key_event_s;
 
+/* Hosts on Linux should ignore SIGPIPE: internal wake pipes written from
+ * signal handlers expect EPIPE. On macOS/BSD the sockets opt out per-fd. */
 rio_engine_t *rio_engine_new(const rio_runtime_config_s *config);
 void rio_engine_free(rio_engine_t *engine);
 
@@ -201,9 +236,21 @@ rio_surface_t *rio_surface_new(rio_engine_t *engine,
                                const rio_surface_config_s *config);
 void rio_surface_free(rio_surface_t *surface);
 rio_surface_id_t rio_surface_id(const rio_surface_t *surface);
+/* Pid of the spawned program. On unix it is a session leader, so killpg()
+ * on it reaches everything the shell started; rio_surface_free only hangs
+ * up the pty and signals this pid. On Windows it is the conpty child's
+ * process id (terminate with TerminateProcess/taskkill). 0 when the
+ * surface has no PTY or the pid was unavailable. */
+uint32_t rio_surface_child_pid(const rio_surface_t *surface);
 
 /* Input entry points are callable from any thread. */
 void rio_surface_text(rio_surface_t *surface, const char *bytes, size_t len);
+/* Paste `bytes` (UTF-8), bracketed when the program has enabled mode 2004. */
+void rio_surface_paste(rio_surface_t *surface, const char *bytes, size_t len);
+/* Terminal modes for input decisions the host makes on its own: bit 0 mouse
+ * reporting, bit 1 application cursor keys, bit 2 alternate screen, bit 3
+ * bracketed paste. */
+uint32_t rio_surface_mode_bits(const rio_surface_t *surface);
 /* Returns true when the event was consumed and encoded to the PTY. */
 bool rio_surface_key(rio_surface_t *surface, const rio_key_event_s *event);
 /* Whether alt acts as meta, prefixing with ESC, instead of letting the text
@@ -278,8 +325,8 @@ void rio_render_state_reset_dirty(rio_render_state_t *state);
 /* Set in rio_cell_s.style_flags when the cell carries attached cluster
  * codepoints (combining marks, or a DEC-2027 grapheme cluster) beyond
  * `codepoint`. Fetch the full text with rio_render_state_cell_cluster
- * and draw that instead of the base char. StyleFlags proper occupies
- * bits 0..10; this is bit 15. */
+ * and draw that instead of the base char. Style flags proper occupy
+ * bits 0-12 (RIO_STYLE_*); this is bit 15. */
 #define RIO_CELL_HAS_CLUSTER (1u << 15)
 
 /* Write the full text of a cell (base codepoint plus attached cluster
@@ -301,9 +348,34 @@ size_t rio_render_state_cell_cluster(const rio_render_state_t *state,
 size_t rio_cluster_width(const uint32_t *codepoints, size_t len,
                          uint8_t *out_width);
 
+/* The cell at (line, column). A NULL state or out-of-range query returns
+ * a blank cell whose fg/bg have kind RIO_COLOR_NONE, so a miss is never
+ * mistaken for a real black cell; real cells always carry a drawable
+ * fg/bg kind. */
 rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column);
+/* Set in rio_cell_s.style_flags when the cell carries an explicit SGR 58
+ * underline color; fetch it with rio_render_state_cell_underline_color.
+ * Without this bit, draw the underline in the color used for the glyph:
+ * the fallback rio's own renderer applies. This is bit 14. */
+#define RIO_CELL_HAS_UNDERLINE_COLOR (1u << 14)
+/* The cell's explicit SGR 58 underline color, or kind RIO_COLOR_NONE
+ * when the cell has none (also for a NULL state, an out-of-range cell,
+ * or an internal error); see RIO_CELL_HAS_UNDERLINE_COLOR. */
+rio_color_s rio_render_state_cell_underline_color(const rio_render_state_t *state,
+                                                  uint16_t line, uint16_t column);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
+/* RIO_CURSOR_*; see the defines. */
+uint8_t rio_render_state_cursor_shape(const rio_render_state_t *state);
+
+/* This frame's dynamic (OSC 10/11/12) default colors. `which`: 0 =
+ * foreground, 1 = background, 2 = cursor. Writes the resolved RGB into
+ * `out` and returns true when the program has set that color via OSC;
+ * returns false and leaves `out` untouched when unset (including after an
+ * OSC 110/111/112 reset), so the host falls back to its own scheme. */
+bool rio_render_state_dynamic_color(const rio_render_state_t *state,
+                                    uint8_t which, rio_rgb_s *out);
+
 size_t rio_render_state_display_offset(const rio_render_state_t *state);
 bool rio_render_state_alt_screen(const rio_render_state_t *state);
 

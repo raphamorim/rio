@@ -22,6 +22,7 @@ tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "registry"] }
 wgpu = { workspace = true }
 rio-backend = { workspace = true }
+rio-grid = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
@@ -58,6 +59,12 @@ cpal = { version = "0.15", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc = { workspace = true }
+
+[build-dependencies]
+cfg_aliases = "0.2.1"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1.12"
 
 [target.'cfg(windows)'.dependencies]
 ahash = { version = "0.8.12", default-features = false, features = ["std"] }

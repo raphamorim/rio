@@ -427,9 +427,7 @@ impl Island {
     /// actively reporting. `progress_started_at` is reset only when the
     /// state actually transitions, so a TUI sending the same `OSC 9;4;3`
     /// every 100 ms (issue #1509) doesn't yank the indeterminate animation
-    /// phase back to zero on every report. Mirrors ghostty's split between
-    /// `glib.timeoutAdd` (heartbeat) and `GtkProgressBar`'s internal pulse
-    /// state (animation).
+    /// phase back to zero on every report.
     pub fn set_progress_report(&mut self, report: ProgressReport) {
         match report.state {
             ProgressState::Remove => {
@@ -1107,20 +1105,20 @@ impl Island {
 
     /// Handle keyboard input while the color picker (with rename field) is open.
     /// Returns true if input was consumed.
+    /// Handle one key event for the rename input. The caller
+    /// (`has_key_wait`'s `Modal::IslandRename` arm) already verified
+    /// the picker is open via `active_modal` and consumes the event
+    /// unconditionally, so there is nothing to return.
     pub fn handle_rename_input(
         &mut self,
         key_event: &rio_window::event::KeyEvent,
         context_manager: &mut ContextManager<EventProxy>,
-    ) -> bool {
+    ) {
         use rio_window::event::ElementState;
         use rio_window::keyboard::{Key, NamedKey};
 
-        if self.color_picker_tab.is_none() {
-            return false;
-        }
-
         if key_event.state != ElementState::Pressed {
-            return true; // consume release events too
+            return; // consume release events too
         }
 
         match &key_event.logical_key {
@@ -1139,14 +1137,23 @@ impl Island {
             }
             _ => {
                 if let Some(text) = key_event.text.as_ref() {
-                    let s = text.as_str();
-                    if !s.is_empty() && s.chars().all(|c| !c.is_control()) {
-                        self.rename_input.push_str(s);
-                        self.rename_caret_time = Instant::now();
-                    }
+                    self.append_rename_text(text.as_str());
                 }
             }
         }
+    }
+
+    /// Append committed or typed text to the rename input, applying
+    /// the shared overlay input policy (`is_printable_text`) so the
+    /// key path and the IME commit path can never drift. Returns
+    /// whether text was actually appended (same contract as
+    /// `CommandPalette::append_query`).
+    pub fn append_rename_text(&mut self, text: &str) -> bool {
+        if self.color_picker_tab.is_none() || !crate::renderer::is_printable_text(text) {
+            return false;
+        }
+        self.rename_input.push_str(text);
+        self.rename_caret_time = Instant::now();
         true
     }
 

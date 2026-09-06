@@ -427,3 +427,188 @@ fn grow_reflow_remap_tracks_unmerged_wide_char() {
     assert_eq!(remap.new_pos, vec![0, 1]);
     assert_eq!(grid[Line(1)][Column(0)], wide_cell('W'));
 }
+
+#[test]
+fn extras_sweep_resets_reclaim_cadence() {
+    use crate::crosswords::square::{Extras, Hyperlink};
+
+    let mut table = ExtrasTable::new();
+    for i in 0..EXTRAS_RECLAIM_CADENCE {
+        table.alloc(Extras {
+            zerowidth: Vec::new(),
+            hyperlink: Some(Hyperlink::new(Some(i.to_string()), i.to_string())),
+        });
+    }
+    assert!(table.should_reclaim());
+
+    // A sweep resets the cadence even when every slot stays live, so a
+    // fully-live table can't re-walk the ring on every allocation.
+    let live = vec![u64::MAX; ID_BITSET_WORDS];
+    table.sweep_unmarked(&live);
+    assert!(!table.should_reclaim());
+}
+
+#[test]
+fn style_sweep_marks_cursor_template() {
+    use crate::config::colors::{AnsiColor, NamedColor};
+    use crate::crosswords::style::Style;
+
+    let mut grid: Grid<Square> = Grid::new(4, 4, 10);
+
+    // Intern a style that ends up referenced by nothing once the
+    // template moves on: it must be swept.
+    grid.set_template_style(Style {
+        fg: AnsiColor::Named(NamedColor::Blue),
+        ..Style::default()
+    });
+    grid.sync_template_style();
+    let dead_id = grid.template_style_id();
+
+    // The template's current style is a live root even when no cell
+    // references it.
+    grid.set_template_style(Style {
+        fg: AnsiColor::Named(NamedColor::Red),
+        ..Style::default()
+    });
+    grid.sync_template_style();
+    let live_id = grid.template_style_id();
+
+    grid.reclaim_styles();
+    assert_eq!(
+        grid.style_set.get(live_id).fg,
+        AnsiColor::Named(NamedColor::Red)
+    );
+    assert_eq!(grid.style_set.get(dead_id), Style::default());
+}
+
+#[test]
+fn extras_reclaim_keeps_ids_of_hidden_cached_rows() {
+    use crate::crosswords::square::Extras;
+
+    let mut grid: Grid<Square> = Grid::new(4, 2, 10);
+    let id = grid.alloc_extras(Extras {
+        zerowidth: vec!['\u{301}'],
+        hyperlink: None,
+    });
+    grid[Line(3)][Column(0)].set_extras_id(Some(id));
+    grid[Line(3)].has_extras = true;
+    let dead = grid.alloc_extras(Extras {
+        zerowidth: vec!['\u{302}'],
+        hyperlink: None,
+    });
+
+    // Shrinking with the cursor at the top drops the bottom rows into
+    // Storage's hidden cache; their extras must stay live while the
+    // unreferenced slot is freed.
+    grid.resize(false, 2, 2);
+    grid.reclaim_extras();
+    assert!(grid.extras_table.get(id).is_some());
+    assert!(grid.extras_table.get(dead).is_none());
+}
+
+#[test]
+fn row_hint_follows_reset_template() {
+    use crate::config::colors::{AnsiColor, NamedColor};
+    use crate::crosswords::style::Style;
+
+    let mut grid: Grid<Square> = Grid::new(2, 4, 0);
+    grid.set_template_style(Style {
+        fg: AnsiColor::Named(NamedColor::Red),
+        ..Style::default()
+    });
+    grid.sync_template_style();
+    let styled_template = grid.cursor.template;
+    assert!(styled_template.carries_style());
+
+    let mut row: Row<Square> = Row::new(4);
+    assert!(!row.has_styles);
+    row.reset(&styled_template);
+    assert!(row.has_styles);
+
+    row.reset(&Square::default());
+    assert!(!row.has_styles);
+}
+
+#[test]
+fn row_hint_propagates_and_clears() {
+    let mut styled: Row<Square> = Row::new(4);
+    styled[Column(0)].set_style_id(9);
+    styled.has_styles = true;
+
+    let mut dst: Row<Square> = Row::new(4);
+    dst.copy_from(&styled);
+    assert!(dst.has_styles);
+
+    dst.recycle(4);
+    assert!(!dst.has_styles);
+}
+
+#[test]
+fn row_splices_recompute_hint_exactly() {
+    // Unstyled cells moving in must not pin the row into the sweep walk.
+    let mut dst: Row<Square> = Row::new(2);
+    let mut plain = vec![Square::default(), Square::default()];
+    dst.append(&mut plain);
+    assert!(!dst.has_styles);
+
+    let mut styled_vec = vec![Square::default().with_style_id(3)];
+    dst.append(&mut styled_vec);
+    assert!(dst.has_styles);
+
+    // append_front_of scans only the moved span.
+    let mut src: Row<Square> = Row::new(4);
+    src[Column(3)].set_style_id(5);
+    src.has_styles = true;
+    let mut dst2: Row<Square> = Row::new(1);
+    dst2.append_front_of(&mut src, 2);
+    assert!(!dst2.has_styles);
+    let mut dst3: Row<Square> = Row::new(1);
+    dst3.append_front_of(&mut src, 2);
+    assert!(dst3.has_styles);
+
+    // from_vec derives the hint from its contents.
+    assert!(!Row::from_vec(vec![Square::default(); 3], 0).has_styles);
+    assert!(Row::from_vec(vec![Square::default().with_style_id(1)], 1).has_styles);
+}
+
+#[test]
+fn bg_only_cells_do_not_count_as_styled() {
+    let mut bg = Square::default();
+    bg.set_bg_rgb(10, 20, 30);
+    assert!(!bg.carries_style());
+
+    let mut row: Row<Square> = Row::new(2);
+    let mut moved = vec![bg];
+    row.append(&mut moved);
+    assert!(!row.has_styles);
+}
+
+#[test]
+fn resolver_fast_path_matches_slow_path() {
+    use crate::config::colors::{AnsiColor, NamedColor};
+    use crate::crosswords::style::Style;
+
+    let mut grid: Grid<Square> = Grid::new(2, 3, 0);
+    grid.set_template_style(Style {
+        fg: AnsiColor::Named(NamedColor::Blue),
+        ..Style::default()
+    });
+    grid.sync_template_style();
+    let id = grid.template_style_id();
+
+    // Styled row: full resolution.
+    let mut styled: Row<Square> = Row::new(3);
+    styled[Column(1)].set_style_id(id);
+    styled.has_styles = true;
+    let mut out = Vec::new();
+    grid.resolve_row_styles(&styled, &mut out);
+    assert_eq!(out.len(), 3);
+    assert_eq!(out[0], Style::default());
+    assert_eq!(out[1].fg, AnsiColor::Named(NamedColor::Blue));
+
+    // Unstyled row: fast fill must be indistinguishable.
+    let plain: Row<Square> = Row::new(3);
+    let mut fast = Vec::new();
+    grid.resolve_row_styles(&plain, &mut fast);
+    assert_eq!(fast, vec![Style::default(); 3]);
+}

@@ -10,6 +10,7 @@
 // Kitty image overlays composite via `draw_image_overlay`.
 
 use crate::context::cpu::CpuContext;
+use crate::premul::{pack_opaque, pack_premul};
 use crate::renderer::compositor::Vertex;
 use crate::renderer::image_cache::ImageCache;
 use crate::renderer::Renderer;
@@ -58,19 +59,13 @@ struct CachedGlyph {
     h: u16,
 }
 
-#[inline(always)]
-fn pack_premul(r: u8, g: u8, b: u8, a: u8) -> u32 {
-    ((a as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
-}
-
-#[inline(always)]
-fn pack_opaque(r: u8, g: u8, b: u8) -> u32 {
-    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
-}
-
-/// Scalar SWAR Porter-Duff source-over with premultiplied source against
-/// opaque dest. Computes channels of R+B together in one multiply, G in
-/// another. ~30% faster than the naive 3-multiply scalar form.
+/// Scalar SWAR premultiplied source-over for all four channels (RGBA).
+/// Pairs R+B in one u32 lane pair (`00RR00BB`) and A+G in the other
+/// (`00AA00GG`), so the fourth channel costs no extra multiply over the
+/// old opaque three-channel form. Result preserves the premultiplied
+/// invariant so chained blends stay valid, which lets
+/// `window.opacity < 1` survive into the final framebuffer instead of
+/// getting masked back to alpha = 0.
 #[inline(always)]
 fn blend_over_swar(src_premul: u32, dst: u32) -> u32 {
     let sa = (src_premul >> 24) & 0xff;
@@ -78,42 +73,41 @@ fn blend_over_swar(src_premul: u32, dst: u32) -> u32 {
         return dst;
     }
     if sa == 255 {
-        return src_premul & 0x00ff_ffff;
+        return src_premul;
     }
     let inv = 255 - sa;
     // R and B share a u32: 00RR00BB.
     let rb = (dst & 0x00ff_00ff) * inv;
     let rb = ((rb + 0x0080_0080 + ((rb >> 8) & 0x00ff_00ff)) >> 8) & 0x00ff_00ff;
-    // G alone.
-    let g = ((dst >> 8) & 0xff) * inv;
-    let g = ((g + 0x80 + (g >> 8)) >> 8) & 0xff;
-    let dst_blended = rb | (g << 8);
-    let src_rgb = src_premul & 0x00ff_ffff;
-    // Premultiplied src guarantees src.rgb <= src.a, so adding to the
-    // attenuated dst can't carry into the next channel.
-    let out_rb = ((src_rgb & 0x00ff_00ff) + (dst_blended & 0x00ff_00ff)) & 0x00ff_00ff;
-    let out_g = (((src_rgb >> 8) & 0xff) + ((dst_blended >> 8) & 0xff)) & 0xff;
-    out_rb | (out_g << 8)
+    // A and G share the other pair: 00AA00GG.
+    let ag = ((dst >> 8) & 0x00ff_00ff) * inv;
+    let ag = ((ag + 0x0080_0080 + ((ag >> 8) & 0x00ff_00ff)) >> 8) & 0x00ff_00ff;
+    let dst_blended = rb | (ag << 8);
+    // Premultiplied src guarantees src.rgb <= src.a (and src.a <= 0xff),
+    // so adding to the attenuated dst can't carry into the next channel.
+    let out_rb = ((src_premul & 0x00ff_00ff) + (dst_blended & 0x00ff_00ff)) & 0x00ff_00ff;
+    let out_ag = (((src_premul >> 8) & 0x00ff_00ff) + ((dst_blended >> 8) & 0x00ff_00ff))
+        & 0x00ff_00ff;
+    out_rb | (out_ag << 8)
 }
 
 /// SWAR source-over with constant src across all lanes (translucent rect).
-/// `src_v` is splat of `(src_premul & 0x00ff_ffff)`; `inv_v` is splat of
-/// `(255 - src.a)`. 4 dst pixels per call.
+/// `src_v` is splat of the full premultiplied src (RGBA, alpha in upper
+/// byte); `inv_v` is splat of `(255 - src.a)`. 4 dst pixels per call.
 #[inline(always)]
 fn blend_over_simd_const_src_x4(src_v: u32x4, inv_v: u32x4, dst: u32x4) -> u32x4 {
     let mask_rb = u32x4::splat(0x00ff_00ff);
     let half_rb = u32x4::splat(0x0080_0080);
-    let mask_g = u32x4::splat(0xff);
 
     let drb = (dst & mask_rb) * inv_v;
     let drb = ((drb + half_rb + ((drb >> 8) & mask_rb)) >> 8) & mask_rb;
 
-    let dg = (dst >> 8) & mask_g;
-    let dg = dg * inv_v;
-    let dg = ((dg + u32x4::splat(0x80) + (dg >> 8)) >> 8) & mask_g;
-    let dg = dg << 8;
+    // A and G pair as 00AA00GG, mirroring the R+B pair: four channels
+    // for the same two multiplies as the old opaque three-channel form.
+    let dag = ((dst >> 8) & mask_rb) * inv_v;
+    let dag = ((dag + half_rb + ((dag >> 8) & mask_rb)) >> 8) & mask_rb;
 
-    src_v + drb + dg
+    src_v + drb + (dag << 8)
 }
 
 /// 256-bit version of `blend_over_simd_const_src_x4` — 8 dst pixels per call.
@@ -123,17 +117,15 @@ fn blend_over_simd_const_src_x4(src_v: u32x4, inv_v: u32x4, dst: u32x4) -> u32x4
 fn blend_over_simd_const_src_x8(src_v: u32x8, inv_v: u32x8, dst: u32x8) -> u32x8 {
     let mask_rb = u32x8::splat(0x00ff_00ff);
     let half_rb = u32x8::splat(0x0080_0080);
-    let mask_g = u32x8::splat(0xff);
 
     let drb = (dst & mask_rb) * inv_v;
     let drb = ((drb + half_rb + ((drb >> 8) & mask_rb)) >> 8) & mask_rb;
 
-    let dg = (dst >> 8) & mask_g;
-    let dg = dg * inv_v;
-    let dg = ((dg + u32x8::splat(0x80) + (dg >> 8)) >> 8) & mask_g;
-    let dg = dg << 8;
+    // A and G pair as 00AA00GG, mirroring the R+B pair.
+    let dag = ((dst >> 8) & mask_rb) * inv_v;
+    let dag = ((dag + half_rb + ((dag >> 8) & mask_rb)) >> 8) & mask_rb;
 
-    src_v + drb + dg
+    src_v + drb + (dag << 8)
 }
 
 /// SWAR source-over with **per-lane** src and inv_a — used by glyph blit
@@ -145,21 +137,18 @@ fn blend_over_simd_var_src_x4(src: u32x4, dst: u32x4) -> u32x4 {
     let mask_byte = u32x4::splat(0xff);
     let mask_rb = u32x4::splat(0x00ff_00ff);
     let half_rb = u32x4::splat(0x0080_0080);
-    let mask_rgb = u32x4::splat(0x00ff_ffff);
 
     let sa = (src >> 24) & mask_byte;
     let inv_v = u32x4::splat(255) - sa;
-    let src_rgb = src & mask_rgb;
 
     let drb = (dst & mask_rb) * inv_v;
     let drb = ((drb + half_rb + ((drb >> 8) & mask_rb)) >> 8) & mask_rb;
 
-    let dg = (dst >> 8) & mask_byte;
-    let dg = dg * inv_v;
-    let dg = ((dg + u32x4::splat(0x80) + (dg >> 8)) >> 8) & mask_byte;
-    let dg = dg << 8;
+    // A and G pair as 00AA00GG, mirroring the R+B pair.
+    let dag = ((dst >> 8) & mask_rb) * inv_v;
+    let dag = ((dag + half_rb + ((dag >> 8) & mask_rb)) >> 8) & mask_rb;
 
-    src_rgb + drb + dg
+    src + drb + (dag << 8)
 }
 
 #[derive(Clone, Copy)]
@@ -402,12 +391,32 @@ pub fn render_cpu(
         }
     };
 
+    // Bg fill writes premultiplied RGBA on Windows only: softbuffer's GDI
+    // path copies the alpha byte through to the DWM redirection surface,
+    // where `DwmEnableBlurBehindWindow` makes `window.opacity` real. Its
+    // other presenters drop the byte (macOS `NoneSkipFirst`, Wayland
+    // `Xrgb8888`), so premultiplying there would darken the window with
+    // no transparency in return; those keep the full-brightness opaque
+    // fill and opacity stays a no-op on the CPU backend, as before.
     let bg_u32 = match background {
-        Some(c) => pack_opaque(
-            (c.r.clamp(0.0, 1.0) * 255.0) as u8,
-            (c.g.clamp(0.0, 1.0) * 255.0) as u8,
-            (c.b.clamp(0.0, 1.0) * 255.0) as u8,
-        ),
+        Some(c) => {
+            #[cfg(target_os = "windows")]
+            {
+                let a = c.a.clamp(0.0, 1.0);
+                pack_premul(
+                    (c.r.clamp(0.0, 1.0) * a * 255.0) as u8,
+                    (c.g.clamp(0.0, 1.0) * a * 255.0) as u8,
+                    (c.b.clamp(0.0, 1.0) * a * 255.0) as u8,
+                    (a * 255.0) as u8,
+                )
+            }
+            #[cfg(not(target_os = "windows"))]
+            pack_opaque(
+                (c.r.clamp(0.0, 1.0) * 255.0) as u8,
+                (c.g.clamp(0.0, 1.0) * 255.0) as u8,
+                (c.b.clamp(0.0, 1.0) * 255.0) as u8,
+            )
+        }
         None => 0,
     };
     buffer.fill(bg_u32);
@@ -675,14 +684,11 @@ fn fill_translucent_simd(
     let pg = (g as u32 * a_u + 127) / 255;
     let pb = (b as u32 * a_u + 127) / 255;
     let src_premul = pack_premul(pr as u8, pg as u8, pb as u8, a);
-    let src_rgb = src_premul & 0x00ff_ffff;
     let inv = 255 - a_u;
-    let src_v8 = u32x8::splat(src_rgb);
+    let src_v8 = u32x8::splat(src_premul);
     let inv_v8 = u32x8::splat(inv);
-    let src_v4 = u32x4::splat(src_rgb);
+    let src_v4 = u32x4::splat(src_premul);
     let inv_v4 = u32x4::splat(inv);
-    let mask_rgb_x8 = u32x8::splat(0x00ff_ffff);
-    let mask_rgb_x4 = u32x4::splat(0x00ff_ffff);
 
     let buf_w_us = buf_w as usize;
     for y in y0..y1 {
@@ -697,7 +703,7 @@ fn fill_translucent_simd(
                 chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
                 chunk[7],
             ]);
-            let out = blend_over_simd_const_src_x8(src_v8, inv_v8, dst) & mask_rgb_x8;
+            let out = blend_over_simd_const_src_x8(src_v8, inv_v8, dst);
             let arr = out.to_array();
             chunk.copy_from_slice(&arr);
         }
@@ -707,7 +713,7 @@ fn fill_translucent_simd(
         let mut chunks4 = tail.chunks_exact_mut(4);
         for chunk in &mut chunks4 {
             let dst = u32x4::new([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            let out = blend_over_simd_const_src_x4(src_v4, inv_v4, dst) & mask_rgb_x4;
+            let out = blend_over_simd_const_src_x4(src_v4, inv_v4, dst);
             let arr = out.to_array();
             chunk.copy_from_slice(&arr);
         }
@@ -810,8 +816,6 @@ fn draw_glyph(
     let buf_w_us = buf_w as usize;
     let g_w_us = glyph.w as usize;
 
-    let mask_rgb_x4 = u32x4::splat(0x00ff_ffff);
-
     for yy in 0..glyph.h as usize {
         let dst_y = y0 as usize + yy;
         let dst_row_off = dst_y * buf_w_us + x0 as usize;
@@ -826,7 +830,7 @@ fn draw_glyph(
         for (dchunk, schunk) in (&mut dst_chunks).zip(&mut src_chunks) {
             let dst = u32x4::new([dchunk[0], dchunk[1], dchunk[2], dchunk[3]]);
             let src = u32x4::new([schunk[0], schunk[1], schunk[2], schunk[3]]);
-            let out = blend_over_simd_var_src_x4(src, dst) & mask_rgb_x4;
+            let out = blend_over_simd_var_src_x4(src, dst);
             let arr = out.to_array();
             dchunk.copy_from_slice(&arr);
         }
@@ -998,6 +1002,139 @@ fn draw_quad_instance(
 }
 
 #[cfg(test)]
+mod blend_alpha_tests {
+    use super::*;
+
+    // Deterministic pseudo-random u32s, no rand dependency.
+    fn lcg(seed: &mut u64) -> u32 {
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (*seed >> 32) as u32
+    }
+
+    // Force a value into a valid premultiplied pixel: rgb <= a.
+    fn valid_premul(raw: u32) -> u32 {
+        let a = (raw >> 24) & 0xff;
+        let clamp = |c: u32| c.min(a);
+        (a << 24)
+            | (clamp((raw >> 16) & 0xff) << 16)
+            | (clamp((raw >> 8) & 0xff) << 8)
+            | clamp(raw & 0xff)
+    }
+
+    /// Blending anything over an opaque destination must stay opaque:
+    /// this is what keeps `opacity = 1.0` windows fully solid now that
+    /// the framebuffer carries real alpha. Exhaustive over source alpha.
+    #[test]
+    fn opaque_dst_stays_opaque_for_every_src_alpha() {
+        for sa in 0..=255u32 {
+            let src = valid_premul((sa << 24) | 0x0020_4060);
+            let dst = 0xff31_4159;
+            let out = blend_over_swar(src, dst);
+            assert_eq!(out >> 24, 0xff, "sa={sa}");
+        }
+    }
+
+    /// Transparent source leaves the destination untouched, alpha
+    /// included, so the cleared window-opacity alpha bleeds through
+    /// default-bg cells.
+    #[test]
+    fn zero_alpha_src_is_identity() {
+        let dst = 0x9912_3456;
+        assert_eq!(blend_over_swar(0, dst), dst);
+    }
+
+    /// Destination alpha follows Porter-Duff source-over, so stacked
+    /// translucent paints converge toward opaque instead of resetting.
+    #[test]
+    fn alpha_composes_source_over() {
+        let sa = 0x80u32;
+        let src = valid_premul((sa << 24) | 0x0040_2010);
+        let da = 0x99u32;
+        let dst = (da << 24) | 0x0030_5070;
+        let out = blend_over_swar(src, dst);
+        let oa = out >> 24;
+        let expected = sa as f64 + da as f64 * (255.0 - sa as f64) / 255.0;
+        assert!(
+            (oa as f64 - expected).abs() <= 1.0,
+            "oa={oa} expected~{expected}"
+        );
+        assert!(oa >= sa.max(da));
+    }
+
+    /// The three SIMD kernels must agree with the scalar SWAR blend bit
+    /// for bit, per lane: the A+G pairing may not change any rounding.
+    #[test]
+    fn simd_kernels_match_scalar_exactly() {
+        let mut seed = 0x5eed_cafe_f00d_u64;
+        for _ in 0..2000 {
+            let src = valid_premul(lcg(&mut seed));
+            let dst: Vec<u32> = (0..8).map(|_| lcg(&mut seed)).collect();
+            let scalar: Vec<u32> = dst.iter().map(|&d| blend_over_swar(src, d)).collect();
+
+            // The var-src kernel is documented branchless-correct for the
+            // extreme alphas too, so it is checked before the early-out
+            // skip the const-src kernels rely on their fill paths for.
+            let var = blend_over_simd_var_src_x4(
+                u32x4::splat(src),
+                u32x4::new(dst[..4].try_into().unwrap()),
+            )
+            .to_array();
+            assert_eq!(
+                &var[..],
+                &scalar[..4],
+                "var_src disagrees for src={src:08x}"
+            );
+
+            let sa = (src >> 24) & 0xff;
+            // The const-src kernels skip the scalar early-outs; those
+            // alphas are handled before dispatch in the fill paths.
+            if sa == 0 || sa == 255 {
+                continue;
+            }
+            let inv = 255 - sa;
+
+            let x8 = blend_over_simd_const_src_x8(
+                u32x8::splat(src),
+                u32x8::splat(inv),
+                u32x8::new(dst[..8].try_into().unwrap()),
+            )
+            .to_array();
+            assert_eq!(&x8[..], &scalar[..], "x8 disagrees for src={src:08x}");
+
+            let x4 = blend_over_simd_const_src_x4(
+                u32x4::splat(src),
+                u32x4::splat(inv),
+                u32x4::new(dst[..4].try_into().unwrap()),
+            )
+            .to_array();
+            assert_eq!(&x4[..], &scalar[..4], "x4 disagrees for src={src:08x}");
+        }
+    }
+
+    /// The premultiplied invariant survives the blend: output rgb never
+    /// exceeds output alpha, so chained blends stay valid premul colors.
+    #[test]
+    fn output_stays_valid_premul() {
+        let mut seed = 0xabcd_ef01_2345_u64;
+        for _ in 0..2000 {
+            let src = valid_premul(lcg(&mut seed));
+            let dst = valid_premul(lcg(&mut seed));
+            let out = blend_over_swar(src, dst);
+            let oa = out >> 24;
+            for shift in [16u32, 8, 0] {
+                let c = (out >> shift) & 0xff;
+                assert!(
+                    c <= oa,
+                    "channel {c:02x} > alpha {oa:02x} for src={src:08x} dst={dst:08x}"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod image_overlay_tests {
     use super::*;
 
@@ -1025,8 +1162,11 @@ mod image_overlay_tests {
         vec![0u32; w * h]
     }
 
-    const RED_PX: u32 = 0x00ff_0000;
-    const BLUE_PX: u32 = 0x0000_00ff;
+    // Opaque source pixels land premultiplied with alpha = 0xff: the
+    // framebuffer carries per-pixel alpha so `window.opacity` survives
+    // to the compositor.
+    const RED_PX: u32 = 0xffff_0000;
+    const BLUE_PX: u32 = 0xff00_00ff;
 
     #[test]
     fn one_to_one_blit_lands_on_exact_pixels() {

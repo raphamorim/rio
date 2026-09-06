@@ -9,14 +9,16 @@ pub use key::{
 };
 pub use render_state::{RenderState, ViewportSelection};
 pub use rio_vt::clipboard::ClipboardType;
+pub use rio_vt::config::colors::term::TermColors;
 pub use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
+pub use rio_vt::crosswords::grid::row::Row;
 pub use rio_vt::crosswords::pos::Column;
-pub use rio_vt::crosswords::square::Square;
+pub use rio_vt::crosswords::square::{Extras, Square};
 pub use rio_vt::crosswords::style::{Style, StyleFlags};
 pub use rio_vt::grapheme_lut::cluster_width;
 pub use rio_vt::selection::SelectionRange;
 
-use rio_vt::ansi::CursorShape;
+pub use rio_vt::ansi::CursorShape;
 pub use rio_vt::crosswords::pos::Side;
 use rio_vt::crosswords::pos::{Column as PosColumn, Line, Pos};
 use rio_vt::crosswords::{Crosswords, Mode};
@@ -332,89 +334,6 @@ fn trailing_url_punctuation(text: &str) -> usize {
     trimmed
 }
 
-/// Emit `\x1b[0m` plus the minimal SGR codes reproducing `style`.
-fn serialize_style(out: &mut String, style: &Style) {
-    use std::fmt::Write as _;
-
-    out.push_str("\x1b[0");
-    let color = |prefix38: bool, color: &AnsiColor| match color {
-        AnsiColor::Named(n) => {
-            let n = *n as u16;
-            let code = match (n, prefix38) {
-                (0..=7, true) => 30 + n,
-                (0..=7, false) => 40 + n,
-                (8..=15, true) => 90 + (n - 8),
-                (8..=15, false) => 100 + (n - 8),
-                (_, true) => 39,
-                (_, false) => 49,
-            };
-            format!(";{code}")
-        }
-        AnsiColor::Indexed(i) => {
-            format!(";{};5;{i}", if prefix38 { 38 } else { 48 })
-        }
-        AnsiColor::Spec(rgb) => {
-            format!(
-                ";{};2;{};{};{}",
-                if prefix38 { 38 } else { 48 },
-                rgb.r,
-                rgb.g,
-                rgb.b
-            )
-        }
-    };
-    let fg = color(true, &style.fg);
-    let bg = color(false, &style.bg);
-    out.push_str(&fg);
-    out.push_str(&bg);
-
-    let flags = style.flags;
-    if flags.contains(StyleFlags::BOLD) {
-        out.push_str(";1");
-    }
-    if flags.contains(StyleFlags::DIM) {
-        out.push_str(";2");
-    }
-    if flags.contains(StyleFlags::ITALIC) {
-        out.push_str(";3");
-    }
-    if flags.contains(StyleFlags::UNDERLINE) {
-        out.push_str(";4");
-    } else if flags.contains(StyleFlags::DOUBLE_UNDERLINE) {
-        out.push_str(";4:2");
-    } else if flags.contains(StyleFlags::UNDERCURL) {
-        out.push_str(";4:3");
-    } else if flags.contains(StyleFlags::DOTTED_UNDERLINE) {
-        out.push_str(";4:4");
-    } else if flags.contains(StyleFlags::DASHED_UNDERLINE) {
-        out.push_str(";4:5");
-    }
-    if flags.contains(StyleFlags::INVERSE) {
-        out.push_str(";7");
-    }
-    if flags.contains(StyleFlags::HIDDEN) {
-        out.push_str(";8");
-    }
-    if flags.contains(StyleFlags::STRIKEOUT) {
-        out.push_str(";9");
-    }
-    out.push('m');
-
-    if let Some(underline) = &style.underline_color {
-        match underline {
-            AnsiColor::Indexed(i) => {
-                let _ = write!(out, "\x1b[58;5;{i}m");
-            }
-            AnsiColor::Spec(rgb) => {
-                let _ = write!(out, "\x1b[58;2;{};{};{}m", rgb.r, rgb.g, rgb.b);
-            }
-            AnsiColor::Named(n) => {
-                let _ = write!(out, "\x1b[58;5;{}m", *n as u16);
-            }
-        }
-    }
-}
-
 pub struct Surface {
     id: SurfaceId,
     alt_is_meta: std::sync::atomic::AtomicBool,
@@ -433,7 +352,7 @@ pub struct Surface {
     delegate: Arc<dyn SurfaceDelegate>,
     #[cfg(feature = "pty")]
     channel: corcovado::channel::Sender<Msg>,
-    #[cfg(all(feature = "pty", not(target_os = "windows")))]
+    #[cfg(feature = "pty")]
     shell_pid: u32,
     #[cfg(all(feature = "pty", not(target_os = "windows")))]
     main_fd: std::os::fd::RawFd,
@@ -477,6 +396,15 @@ fn mouse_report(
         }
     }
     out
+}
+
+fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
+    if bracketed {
+        let filtered = text.replace(['\x1b', '\x03', '\u{9b}'], "");
+        format!("\x1b[200~{filtered}\x1b[201~").into_bytes()
+    } else {
+        text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
+    }
 }
 
 impl Surface {
@@ -579,6 +507,8 @@ impl Surface {
 
             #[cfg(not(target_os = "windows"))]
             let shell_pid = *pty.child.pid.clone() as u32;
+            #[cfg(target_os = "windows")]
+            let shell_pid = pty.child_watcher().pid().map(|pid| pid.get()).unwrap_or(0);
             #[cfg(not(target_os = "windows"))]
             let main_fd = *pty.child.id;
 
@@ -602,7 +532,6 @@ impl Surface {
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
                 channel,
-                #[cfg(not(target_os = "windows"))]
                 shell_pid,
                 #[cfg(not(target_os = "windows"))]
                 main_fd,
@@ -617,8 +546,8 @@ impl Surface {
 
     pub fn write<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
         // Input snaps the view back to the live screen and drops any
-        // selection, matching ghostty's scroll-to-bottom / clear-on-typing
-        // behavior (only reached when a key actually produced PTY bytes).
+        // selection, the scroll-to-bottom / clear-on-typing convention
+        // (only reached when a key actually produced PTY bytes).
         {
             use rio_vt::crosswords::grid::Scroll;
             let mut term = self.terminal.lock();
@@ -639,17 +568,18 @@ impl Surface {
         self.write(text.as_bytes().to_vec());
     }
 
-    /// Paste text the way terminals do: newlines normalized to CR, and the
-    /// whole run wrapped in bracketed-paste markers when the program asked
-    /// for them (so shells and editors can treat it as one atomic paste).
+    /// Paste text the way terminals do: when the program asked for
+    /// bracketed paste (mode 2004) the text is sent verbatim inside
+    /// ESC[200~/ESC[201~ markers, minus ESC, ETX and the 8-bit CSI so
+    /// the payload can never close the bracket early and inject
+    /// keystrokes; otherwise newlines are normalized to CR, what the
+    /// Enter key produces.
     pub fn paste(&self, text: &str) {
-        let normalized = text.replace("\r\n", "\r").replace('\n', "\r");
-        let bracketed = self.terminal.lock().mode().contains(Mode::BRACKETED_PASTE);
-        if bracketed {
-            self.write(format!("\x1b[200~{normalized}\x1b[201~").into_bytes());
-        } else {
-            self.write(normalized.into_bytes());
+        if text.is_empty() {
+            return;
         }
+        let bracketed = self.terminal.lock().mode().contains(Mode::BRACKETED_PASTE);
+        self.write(encode_paste(text, bracketed));
     }
 
     /// A stable, C-friendly view of the terminal modes an embedder needs
@@ -733,7 +663,7 @@ impl Surface {
     /// A wheel scroll, dispatched the way terminals do it: the program
     /// running in the terminal gets first claim.
     ///
-    /// Three cases, in order (the same order rio and ghostty use):
+    /// Three cases, in order:
     /// mouse reporting on, so the wheel is a mouse event; the alternate
     /// screen with alternate-scroll on, where there is no scrollback to
     /// move so the wheel becomes cursor keys and pagers scroll; and
@@ -977,7 +907,7 @@ impl Surface {
             let row = &grid[Line(last)];
             for col in 0..cols {
                 let square = row[PosColumn(col)];
-                if !square.is_empty() || square.style_id() != 0 {
+                if !square.is_empty() {
                     break 'trim;
                 }
             }
@@ -1001,7 +931,7 @@ impl Surface {
             if !wrapped {
                 while end > 0 {
                     let square = row[PosColumn(end - 1)];
-                    if !square.is_empty() || square.style_id() != 0 {
+                    if !square.is_empty() {
                         break;
                     }
                     end -= 1;
@@ -1017,12 +947,12 @@ impl Surface {
 
                 let cell_style = grid.style_of(&square);
                 if cell_style != style {
-                    serialize_style(&mut out, &cell_style);
+                    rio_vt::crosswords::formatter::write_sgr(&mut out, &cell_style);
                     style = cell_style;
                 }
 
                 let cell_link = square
-                    .extras_id()
+                    .extras_id_checked()
                     .and_then(|id| grid.extras_table.get(id))
                     .and_then(|extras| extras.hyperlink.as_ref())
                     .map(|h| h.uri().to_string());
@@ -1040,8 +970,9 @@ impl Surface {
 
                 let c = square.c();
                 out.push(if c == '\0' { ' ' } else { c });
-                if let Some(extras) =
-                    square.extras_id().and_then(|id| grid.extras_table.get(id))
+                if let Some(extras) = square
+                    .extras_id_checked()
+                    .and_then(|id| grid.extras_table.get(id))
                 {
                     for z in &extras.zerowidth {
                         out.push(*z);
@@ -1090,6 +1021,17 @@ impl Surface {
             }
         }
         Some(matches)
+    }
+
+    /// The pid of the program this surface spawned (the shell, or the
+    /// configured `shell` program). On unix it is a session leader, so a
+    /// host that must take the whole process tree down on teardown can
+    /// `killpg` it: dropping the surface only hangs up the pty and signals
+    /// this pid. On Windows it is the conpty child's process id (terminate
+    /// it with `TerminateProcess`/taskkill); 0 if the pid was unavailable.
+    #[cfg(feature = "pty")]
+    pub fn child_pid(&self) -> u32 {
+        self.shell_pid
     }
 
     /// The foreground process's name (the program the user is running
@@ -1491,10 +1433,32 @@ mod tests {
         assert_eq!(state.link_run(0, 0), None);
     }
 
-    // Paste wraps in bracketed-paste markers exactly when the program
-    // turned the mode on, and newlines never reach the shell as LF.
+    // Bracketed paste sends the text verbatim minus ESC/ETX, so a
+    // malicious payload cannot close the bracket and inject keystrokes;
+    // unbracketed paste normalizes newlines to CR.
     #[test]
-    fn paste_brackets_when_the_program_asks() {
+    fn paste_encoding_is_injection_safe() {
+        assert_eq!(
+            encode_paste("one\ntwo", true),
+            b"\x1b[200~one\ntwo\x1b[201~".to_vec()
+        );
+        assert_eq!(
+            encode_paste("a\x1b[201~rm -rf /\x03", true),
+            b"\x1b[200~a[201~rm -rf /\x1b[201~".to_vec()
+        );
+        assert_eq!(
+            encode_paste("a\u{9b}201~oops", true),
+            b"\x1b[200~a201~oops\x1b[201~".to_vec()
+        );
+        assert_eq!(
+            encode_paste("one\r\ntwo\nthree", false),
+            b"one\rtwo\rthree".to_vec()
+        );
+    }
+
+    // mode_bits mirrors the private modes programs toggle at runtime.
+    #[test]
+    fn mode_bits_track_private_modes() {
         let delegate = Arc::new(CountingDelegate {
             wakeups: AtomicUsize::new(0),
         });
@@ -1510,16 +1474,55 @@ mod tests {
         assert_eq!(surface.mode_bits(), 0b1111);
     }
 
+    // paste() keys off live terminal state: markers go to the child only
+    // once the program turned mode 2004 on. The sleeper child never reads,
+    // so what lands in the grid is the tty line discipline's echo, which
+    // renders the ESC of each marker as ^[ (ECHOCTL).
+    #[test]
+    fn paste_brackets_when_the_program_asks() {
+        let surface = quiet_surface(60, 10);
+        let mut state = RenderState::new(&surface);
+        std::thread::sleep(Duration::from_millis(150));
+
+        let grid_rows = |state: &mut RenderState, needle: &str| {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            loop {
+                state.update();
+                let rows: Vec<String> =
+                    (0..state.lines()).map(|i| state.text_row(i)).collect();
+                if rows.iter().any(|row| row.contains(needle)) {
+                    return rows;
+                }
+                if Instant::now() >= deadline {
+                    panic!("echo of {needle:?} never reached the grid: {rows:?}");
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        };
+
+        surface.paste("plain\n");
+        let rows = grid_rows(&mut state, "plain");
+        assert!(
+            !rows.iter().any(|row| row.contains("^[[200~")),
+            "unbracketed paste must not emit markers: {rows:?}"
+        );
+
+        surface.inject_output(b"\x1b[?2004h");
+        surface.paste("wrapped");
+        grid_rows(&mut state, "^[[200~wrapped^[[201~");
+    }
+
     // A child that never writes, so buffer contents are exactly what the
-    // test injected and comparisons can't race the shell prompt.
+    // test injected and comparisons can't race the shell prompt. Spawned
+    // via /bin/sh, the one binary the nix build sandbox provides.
     fn quiet_surface(cols: u16, rows: u16) -> Surface {
         let engine = Engine::new(Arc::new(CountingDelegate {
             wakeups: AtomicUsize::new(0),
         }));
         engine
             .create_surface(&SurfaceDesc {
-                shell: Some("/bin/sleep".to_string()),
-                args: vec!["300".to_string()],
+                shell: Some("/bin/sh".to_string()),
+                args: vec!["-c".to_string(), "sleep 300".to_string()],
                 cols,
                 rows,
                 ..SurfaceDesc::default()
@@ -1537,15 +1540,66 @@ mod tests {
             b"\x1b[31mred\x1b[0m plain \x1b[1;4;38;5;208morange\x1b[0m\r\n\
               \x1b[48;2;10;20;30mrgb bg\x1b[0m \
               \x1b]8;;https://rioterm.com\x1b\\link\x1b]8;;\x1b\\\r\n\
+              \x1b[5mslow\x1b[0m \x1b[6mfast\x1b[0m\r\n\
               wide: \xe4\xbd\xa0\xe5\xa5\xbd",
         );
         let first = surface.serialize();
         assert!(first.contains("\x1b]8;;https://rioterm.com\x1b\\"));
+        assert!(first.contains(";5m"), "missing slow blink: {first:?}");
+        assert!(first.contains(";6m"), "missing rapid blink: {first:?}");
 
         let replica = quiet_surface(40, 10);
         replica.inject_output(first.as_bytes());
         assert_eq!(replica.dump(), surface.dump());
         assert_eq!(replica.serialize(), first);
+    }
+
+    // The C ABI marks cells carrying an explicit SGR 58 underline color
+    // and hands the color out; unmarked cells take the glyph's color.
+    #[test]
+    fn capi_reports_underline_color() {
+        use crate::capi::{
+            rio_render_state_cell, rio_render_state_cell_underline_color,
+            RIO_CELL_HAS_UNDERLINE_COLOR, RIO_COLOR_INDEXED, RIO_COLOR_NONE,
+            RIO_COLOR_RGB,
+        };
+
+        let surface = quiet_surface(10, 3);
+        surface.inject_output(b"\x1b[4;58;2;10;20;30ma\x1b[0mb\x1b[4;58;5;196mc\x1b[0m");
+        let mut state = RenderState::new(&surface);
+        state.update();
+
+        let marked = unsafe { rio_render_state_cell(&state, 0, 0) };
+        assert_ne!(marked.style_flags & RIO_CELL_HAS_UNDERLINE_COLOR, 0);
+        let color = unsafe { rio_render_state_cell_underline_color(&state, 0, 0) };
+        assert_eq!(color.kind, RIO_COLOR_RGB);
+        assert_eq!((color.r, color.g, color.b), (10, 20, 30));
+
+        let plain = unsafe { rio_render_state_cell(&state, 0, 1) };
+        assert_eq!(plain.style_flags & RIO_CELL_HAS_UNDERLINE_COLOR, 0);
+        // The NONE sentinel promises zeroed value and rgb.
+        let absent = unsafe { rio_render_state_cell_underline_color(&state, 0, 1) };
+        assert_eq!(absent.kind, RIO_COLOR_NONE);
+        assert_eq!(absent.value, 0);
+        assert_eq!((absent.r, absent.g, absent.b), (0, 0, 0));
+
+        // Indexed colors keep their form and still resolve rgb (256-color
+        // cube index 196 is pure red).
+        let indexed = unsafe { rio_render_state_cell_underline_color(&state, 0, 2) };
+        assert_eq!(indexed.kind, RIO_COLOR_INDEXED);
+        assert_eq!(indexed.value, 196);
+        assert_eq!((indexed.r, indexed.g, indexed.b), (255, 0, 0));
+
+        // A NULL state and an out-of-range cell also answer NONE, and a
+        // missing cell's fg/bg carry the NONE kind.
+        let null =
+            unsafe { rio_render_state_cell_underline_color(std::ptr::null(), 0, 0) };
+        assert_eq!(null.kind, RIO_COLOR_NONE);
+        let oob = unsafe { rio_render_state_cell_underline_color(&state, 99, 99) };
+        assert_eq!(oob.kind, RIO_COLOR_NONE);
+        let missing = unsafe { rio_render_state_cell(&state, 99, 99) };
+        assert_eq!(missing.fg.kind, RIO_COLOR_NONE);
+        assert_eq!(missing.bg.kind, RIO_COLOR_NONE);
     }
 
     // Scrollback rows come first, and wrapped rows are emitted without a
@@ -1605,8 +1659,9 @@ mod tests {
         surface.inject_output(b"1mred");
         let dump = surface.dump();
         assert_eq!(dump.trim_end(), "red", "no literal escape tail: {dump:?}");
-        // The style applied: serialize carries the red foreground.
-        assert!(surface.serialize().contains("\x1b[0;31;49m"));
+        // The style applied: serialize carries the red foreground (the
+        // default bg is covered by the leading reset).
+        assert!(surface.serialize().contains("\x1b[0;31m"));
 
         // Split inside an OSC title too.
         surface.inject_output(b"\x1b]0;hel");
@@ -1864,10 +1919,10 @@ mod tests {
         state.update();
 
         let last = state.columns() - 1;
-        let el_fill = state.style_of(state.square(5, last).unwrap());
+        let el_fill = state.style_at(5, last, state.square(5, last).unwrap());
         assert_eq!(el_fill.bg, AnsiColor::Indexed(2));
 
-        let el2_fill = state.style_of(state.square(6, last).unwrap());
+        let el2_fill = state.style_at(6, last, state.square(6, last).unwrap());
         assert_eq!(el2_fill.bg, AnsiColor::Spec(ColorRgb { r: 9, g: 8, b: 7 }));
 
         // Snapshot text renders the fills as trimmable spaces, not NULs.

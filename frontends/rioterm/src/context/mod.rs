@@ -7,7 +7,6 @@ use crate::context::title::{
 };
 use crate::event::sync::FairMutex;
 use crate::event::{Msg, RioEvent};
-use crate::ime::Ime;
 pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
 use crate::performer::{self, Machine};
@@ -57,7 +56,6 @@ pub struct Context<T: EventListener> {
     pub rich_text_id: usize,
     pub dimension: ContextDimension,
     pub title: ContextTitle,
-    pub ime: Ime,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
 
@@ -95,9 +93,7 @@ impl<T: EventListener> Context<T> {
     pub fn cursor_from_ref(&self) -> Cursor {
         Cursor {
             state: self.renderable_content.cursor.state.new_from_self(),
-            content: self.renderable_content.cursor.content_ref,
-            content_ref: self.renderable_content.cursor.content_ref,
-            is_ime_enabled: false,
+            content: self.renderable_content.cursor.content,
         }
     }
 }
@@ -171,7 +167,6 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         rich_text_id,
         dimension,
         title: ContextTitle::default(),
-        ime: Ime::new(),
         _io_thread: None,
     }
 }
@@ -345,7 +340,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             renderable_content: RenderableContent::new(cursor_state.0.clone()),
             dimension,
             title: ContextTitle::default(),
-            ime: Ime::new(),
             _io_thread: io_thread,
         })
     }
@@ -497,7 +491,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         // A whole tab dies.
-        self.contexts[tab_index].remove_all_rich_text(sugarloaf);
+        self.contexts[tab_index].remove_from_sugarloaf(sugarloaf);
         self.contexts.remove(tab_index);
 
         if self.contexts.is_empty() {
@@ -571,10 +565,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn close_unfocused_tabs(&mut self) {
+    pub fn close_unfocused_tabs(&mut self, sugarloaf: &mut Sugarloaf) {
         let current_route_id = self.current().route_id;
-        self.contexts
-            .retain(|ctx| ctx.current().route_id == current_route_id);
+        self.contexts.retain(|ctx| {
+            let keep = ctx.current().route_id == current_route_id;
+            if !keep {
+                ctx.remove_from_sugarloaf(sugarloaf);
+            }
+            keep
+        });
         self.current_route = self.contexts[0].current().route_id;
         self.set_current(0);
     }
@@ -934,7 +933,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         // Remove all rich text from the grid before removing the context
-        self.contexts[index_to_remove].remove_all_rich_text(sugarloaf);
+        self.contexts[index_to_remove].remove_from_sugarloaf(sugarloaf);
         self.contexts.remove(index_to_remove);
 
         if should_set_current {

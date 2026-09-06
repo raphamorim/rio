@@ -22,12 +22,15 @@ pub enum WindowUpdate {
     Background(BackgroundState),
 }
 
+/// `content` is the configured cursor shape as a char, read once to
+/// seed the terminal's cursor shape. The glyph actually drawn each
+/// frame comes from `state`; the old `content`/`content_ref` pair
+/// (drawn vs configured) collapsed when the IME preview stopped
+/// swapping the drawn char.
 #[derive(Default, Clone, Debug)]
 pub struct Cursor {
     pub state: CursorState,
     pub content: char,
-    pub content_ref: char,
-    pub is_ime_enabled: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -71,7 +74,10 @@ pub struct RenderableContent {
     /// virtual-placement overlay path. Single source of truth — only
     /// one terminal lock + one materialize pass per frame per panel.
     pub visible_rows: Vec<Row<Square>>,
-    pub style_table: Vec<rio_backend::crosswords::style::Style>,
+    /// Per-row resolved cell styles, index-parallel to `visible_rows`.
+    /// Values, not ids: rows copied on earlier frames can't be
+    /// retinted by later style-table mutations.
+    pub row_styles: Vec<Vec<rio_backend::crosswords::style::Style>>,
     /// Per-frame snapshot of extras (zero-width chars, hyperlinks,
     /// sixel/iterm graphics) actually referenced by visible cells —
     /// keyed by the cell's `extras_id`. Refreshed per-dirty-row by
@@ -121,7 +127,7 @@ impl RenderableContent {
             background: None,
             frame_damage: TerminalDamage::Full,
             visible_rows: Vec::new(),
-            style_table: Vec::new(),
+            row_styles: Vec::new(),
             extras: rustc_hash::FxHashMap::default(),
             term_colors: TermColors::default(),
             display_offset: 0,
@@ -141,9 +147,7 @@ impl RenderableContent {
     pub fn from_cursor_config(config_cursor: &CursorConfig) -> Self {
         let cursor = Cursor {
             content: config_cursor.shape.into(),
-            content_ref: config_cursor.shape.into(),
             state: CursorState::new(config_cursor.shape.into()),
-            is_ime_enabled: false,
         };
         Self::new(cursor)
     }
@@ -284,7 +288,7 @@ mod pipeline_tests {
     /// painted mirror standing in for the GPU grid.
     struct Frame {
         visible_rows: Vec<Row<Square>>,
-        style_table: Vec<rio_backend::crosswords::style::Style>,
+        row_styles: Vec<Vec<rio_backend::crosswords::style::Style>>,
         extras: FxHashMap<u16, Extras>,
         painted: Vec<String>,
     }
@@ -293,7 +297,7 @@ mod pipeline_tests {
         fn new() -> Self {
             Self {
                 visible_rows: Vec::new(),
-                style_table: Vec::new(),
+                row_styles: Vec::new(),
                 extras: FxHashMap::default(),
                 painted: vec![String::new(); ROWS],
             }
@@ -320,9 +324,8 @@ mod pipeline_tests {
                 matches!(damage, TerminalDamage::Full) || self.visible_rows.len() != rows;
             term.snapshot_visible(
                 &damage,
-                cols,
                 &mut self.visible_rows,
-                &mut self.style_table,
+                &mut self.row_styles,
                 &mut self.extras,
             );
             self.painted.resize(rows, String::new());

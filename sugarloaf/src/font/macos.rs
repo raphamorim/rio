@@ -301,8 +301,7 @@ impl FontHandle {
 
     /// Return a derived `FontHandle` with the `wght` variation axis pinned
     /// to `value`. Used to bake the bold weight into Rio's bold/bold-italic
-    /// fallback slots from a single variable-font file (matches ghostty's
-    /// `Face.setVariations` flow in `face/coretext.zig:225-254`).
+    /// fallback slots from a single variable-font file.
     ///
     /// The returned CTFont references the same underlying font data — only
     /// the descriptor's variation attributes change. Returns `None` if
@@ -1416,8 +1415,7 @@ fn build_utf16_to_utf8_map(text: &str) -> Vec<usize> {
 /// `CFStringCreateWithCharactersNoCopy`, and `ShapedGlyph.cluster`
 /// comes back as a UTF-16 code-unit offset. Skips the UTF-8 → UTF-16
 /// conversion inside `CFString::new` AND the UTF-16 → UTF-8 mapping
-/// pass after CoreText. CoreText shaper at
-/// `ghostty/src/font/shaper/coretext.zig:652-680`.
+/// pass after CoreText.
 pub fn shape_text_utf16(
     handle: &FontHandle,
     utf16: &[u16],

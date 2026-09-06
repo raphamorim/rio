@@ -54,7 +54,7 @@ const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
 /// ESU in the legacy iTerm2 DCS form (`DCS = 2 s ST`).
 const ESU_DCS: [u8; SYNC_ESCAPE_MIN_LEN] = *b"\x1bP=2s\x1b\\";
 
-fn parse_sgr_color(params: &mut dyn Iterator<Item = u16>) -> Option<AnsiColor> {
+fn parse_sgr_color(params: &mut impl Iterator<Item = u16>) -> Option<AnsiColor> {
     match params.next() {
         Some(2) => Some(AnsiColor::Spec(ColorRgb {
             r: u8::try_from(params.next()?).ok()?,

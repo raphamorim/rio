@@ -37,7 +37,17 @@ pub struct Row<T> {
     /// placeholder scan on rows where this is `false`.
     pub kitty_virtual_placeholder: bool,
 
+    /// Conservative "some cell in this row may carry an extras id"
+    /// hint. Load-bearing for correctness, not just a fast path: the
+    /// extras mark-and-sweep skips rows where this is `false`, so a
+    /// write path that stamps an extras id without setting it lets the
+    /// sweep free a live slot.
     pub has_extras: bool,
+
+    /// Conservative "some cell in this row may carry a non-default
+    /// style id" hint, maintained the same way as `has_extras` and
+    /// load-bearing for the style mark-and-sweep's row skip.
+    pub has_styles: bool,
 
     /// OSC 133 semantic prompt mark. Travels with the row into
     /// scrollback; cleared when the row is recycled.
@@ -59,6 +69,7 @@ impl<T> Default for Row<T> {
             occ: 0,
             kitty_virtual_placeholder: false,
             has_extras: false,
+            has_styles: false,
             semantic_prompt: SemanticPrompt::None,
             dirty: true,
         }
@@ -98,6 +109,7 @@ impl<T: Clone + Default> Row<T> {
             occ: 0,
             kitty_virtual_placeholder: false,
             has_extras: false,
+            has_styles: false,
             semantic_prompt: SemanticPrompt::None,
             dirty: true,
         }
@@ -115,6 +127,7 @@ impl<T: Clone + Default> Row<T> {
         self.occ = src.occ;
         self.kitty_virtual_placeholder = src.kitty_virtual_placeholder;
         self.has_extras = src.has_extras;
+        self.has_styles = src.has_styles;
         self.semantic_prompt = src.semantic_prompt;
     }
 
@@ -131,6 +144,7 @@ impl<T: Clone + Default> Row<T> {
         self.occ = 0;
         self.kitty_virtual_placeholder = false;
         self.has_extras = false;
+        self.has_styles = false;
         self.semantic_prompt = SemanticPrompt::None;
         self.dirty = true;
     }
@@ -216,6 +230,7 @@ impl<T: Clone + Default> Row<T> {
         self.occ = 0;
         self.kitty_virtual_placeholder = false;
         self.has_extras = false;
+        self.has_styles = template.carries_style();
         self.semantic_prompt = SemanticPrompt::None;
         self.dirty = true;
     }
@@ -224,12 +239,17 @@ impl<T: Clone + Default> Row<T> {
 #[allow(clippy::len_without_is_empty)]
 impl<T> Row<T> {
     #[inline]
-    pub fn from_vec(vec: Vec<T>, occ: usize) -> Row<T> {
+    pub fn from_vec(vec: Vec<T>, occ: usize) -> Row<T>
+    where
+        T: GridSquare,
+    {
+        let has_styles = vec.iter().any(GridSquare::carries_style);
         Row {
             inner: vec,
             occ,
             kitty_virtual_placeholder: false,
             has_extras: true,
+            has_styles,
             semantic_prompt: SemanticPrompt::None,
             dirty: true,
         }
@@ -260,6 +280,9 @@ impl<T> Row<T> {
         self.occ += vec.len();
         self.dirty = true;
         self.has_extras = true;
+        // Exact recompute over the moved span, so splices don't leave
+        // rows permanently pinned into the style sweep's walk.
+        self.has_styles |= vec.iter().any(GridSquare::carries_style);
         self.inner.append(vec);
     }
 
@@ -270,12 +293,13 @@ impl<T> Row<T> {
     #[inline]
     pub fn append_front_of(&mut self, src: &mut Row<T>, count: usize)
     where
-        T: Copy,
+        T: Copy + GridSquare,
     {
         self.inner.extend_from_slice(&src.inner[..count]);
         self.occ += count;
         self.dirty = true;
         self.has_extras = true;
+        self.has_styles |= src.inner[..count].iter().any(GridSquare::carries_style);
 
         src.inner.drain(..count);
         src.occ = src.occ.saturating_sub(count);
@@ -283,10 +307,14 @@ impl<T> Row<T> {
     }
 
     #[inline]
-    pub fn append_front(&mut self, mut vec: Vec<T>) {
+    pub fn append_front(&mut self, mut vec: Vec<T>)
+    where
+        T: GridSquare,
+    {
         self.occ += vec.len();
         self.dirty = true;
         self.has_extras = true;
+        self.has_styles |= vec.iter().any(GridSquare::carries_style);
 
         vec.append(&mut self.inner);
         self.inner = vec;
