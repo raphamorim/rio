@@ -422,11 +422,21 @@ impl Screen<'_> {
         let mut needs_render = changed;
         if composing {
             let mut terminal = self.ctx_mut().current_mut().terminal.lock();
-            if terminal.display_offset() != 0 {
+            let snapped_offset = terminal.display_offset();
+            if snapped_offset != 0 {
                 terminal.scroll_display(Scroll::Bottom);
                 needs_render = true;
             }
             drop(terminal);
+            if snapped_offset != 0 && self.search_active() {
+                // Keep the vi-origin restore honest: `search_reset_state`
+                // applies a relative `Scroll::Delta`, so the snap's
+                // displacement must be recorded the way `goto_match`
+                // records its own scrolls, or Esc after composing lands
+                // the viewport clamped at the bottom instead of at the
+                // vi origin.
+                self.search_state.display_offset_delta += snapped_offset as i32;
+            }
 
             if changed {
                 if self.search_active() {

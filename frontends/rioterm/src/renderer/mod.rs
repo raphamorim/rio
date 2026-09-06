@@ -1,3 +1,11 @@
+/// The input policy every overlay text sink applies, in ONE place so
+/// the key path and the IME commit path can never drift: non-empty and
+/// free of control characters.
+#[inline]
+pub(crate) fn is_printable_text(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| !c.is_control())
+}
+
 pub mod assistant;
 pub mod command_palette;
 pub mod confirm_quit;

@@ -1125,18 +1125,17 @@ impl Island {
         true
     }
 
-    /// Append committed or typed text to the rename input, with the
-    /// field's input policy (non-empty, no control chars) applied in
-    /// ONE place for both the key path and the IME commit path.
-    /// Returns whether the field is open and consumed the text.
+    /// Append committed or typed text to the rename input, applying
+    /// the shared overlay input policy (`is_printable_text`) so the
+    /// key path and the IME commit path can never drift. Returns
+    /// whether text was actually appended (same contract as
+    /// `CommandPalette::append_query`).
     pub fn append_rename_text(&mut self, text: &str) -> bool {
-        if self.color_picker_tab.is_none() {
+        if self.color_picker_tab.is_none() || !crate::renderer::is_printable_text(text) {
             return false;
         }
-        if !text.is_empty() && text.chars().all(|c| !c.is_control()) {
-            self.rename_input.push_str(text);
-            self.rename_caret_time = Instant::now();
-        }
+        self.rename_input.push_str(text);
+        self.rename_caret_time = Instant::now();
         true
     }
 

@@ -1292,6 +1292,9 @@ struct ShapedGlyph {
 }
 
 struct RunCacheEntry {
+    /// Summed glyph advance, computed once at insert so per-frame
+    /// consumers (the preedit overflow check) never re-walk glyphs.
+    advance: f32,
     /// 64-bit rapidhash of (font_id, size_bucket, style_flags, run bytes).
     /// We key on the hash alone — no stored run string, no equality
     /// check on lookup. `CellCacheTable` pattern
@@ -1632,7 +1635,7 @@ fn is_skipped_spacer(sq: Square) -> bool {
 fn run_cache_get(
     buckets: &mut [Vec<RunCacheEntry>],
     hash: u64,
-) -> Option<&[ShapedGlyph]> {
+) -> Option<&RunCacheEntry> {
     let idx = (hash as usize) & (RUN_BUCKET_COUNT - 1);
     let bucket = &mut buckets[idx];
     let last = bucket.len().checked_sub(1)?;
@@ -1641,7 +1644,7 @@ fn run_cache_get(
             if i != last {
                 bucket[i..=last].rotate_left(1);
             }
-            return Some(&bucket[last].glyphs);
+            return Some(&bucket[last]);
         }
     }
     None
@@ -1790,10 +1793,11 @@ fn shape_run_swash(
 // Emission
 
 /// Shape the rasterizer's current run scratch, keyed in the run cache
-/// by `hash`, and return the ascent for `(font_id, size_bucket)`; on a
-/// miss the shaped glyphs are stored under `hash`. `None` means
-/// shaping failed (no font handle). The one shaping-cache protocol,
-/// shared by the grid run path and the preedit path.
+/// by `hash`, and return `(ascent, summed advance)` for
+/// `(font_id, size_bucket)`; on a miss the shaped glyphs are stored
+/// under `hash` with their advance. `None` means shaping failed (no
+/// font handle). The one shaping-cache protocol, shared by the grid
+/// run path and the preedit path.
 fn shape_cached(
     rasterizer: &mut GridGlyphRasterizer,
     hash: u64,
@@ -1801,16 +1805,18 @@ fn shape_cached(
     size_u16: u16,
     size_bucket: u16,
     font_library: &FontLibrary,
-) -> Option<i16> {
-    if run_cache_get(&mut rasterizer.run_cache, hash).is_some() {
-        // Cache hit — ascent already stored.
-        return Some(
+) -> Option<(i16, f32)> {
+    if let Some(entry) = run_cache_get(&mut rasterizer.run_cache, hash) {
+        // Cache hit — advance stored, ascent in its own cache.
+        let advance = entry.advance;
+        return Some((
             rasterizer
                 .ascent_cache
                 .get(&(font_id, size_bucket))
                 .copied()
                 .unwrap_or(0),
-        );
+            advance,
+        ));
     }
     #[cfg(target_os = "macos")]
     let shaped_opt =
@@ -1819,8 +1825,16 @@ fn shape_cached(
     let shaped_opt =
         shape_run_swash(rasterizer, font_id, size_u16, size_bucket, font_library);
     let (glyphs, ascent_px) = shaped_opt?;
-    run_cache_put(&mut rasterizer.run_cache, RunCacheEntry { hash, glyphs });
-    Some(ascent_px)
+    let advance: f32 = glyphs.iter().map(|g| g.advance).sum();
+    run_cache_put(
+        &mut rasterizer.run_cache,
+        RunCacheEntry {
+            hash,
+            glyphs,
+            advance,
+        },
+    );
+    Some((ascent_px, advance))
 }
 
 /// Run-level fg emission. Shapes once per run, emits one CellText per
@@ -1901,6 +1915,7 @@ pub fn build_row_fg<P: GridPalette>(
         row_sel,
         row_hints,
         preedit,
+        glyph_registry.as_ref(),
         fg_scratch,
     );
 
@@ -2284,7 +2299,7 @@ pub fn build_row_fg<P: GridPalette>(
         let hash = rasterizer.run_hasher.finish();
 
         // Shape (cached) and capture ascent for this (font_id, size).
-        let Some(ascent_px) = shape_cached(
+        let Some((ascent_px, _)) = shape_cached(
             rasterizer,
             hash,
             font_id,
@@ -2315,8 +2330,9 @@ pub fn build_row_fg<P: GridPalette>(
         // shaped emoji runs that outgrow 64 slots spill to heap once.
         let mut glyph_emits: SmallVec<[(u16, u16); 64]> = SmallVec::new();
         {
-            let glyphs =
-                run_cache_get(&mut rasterizer.run_cache, hash).expect("just inserted");
+            let glyphs = &run_cache_get(&mut rasterizer.run_cache, hash)
+                .expect("just inserted")
+                .glyphs;
             let mut cell_idx_in_run: u16 = 0;
             // Both platforms record explicit per-cell starts into the
             // shaping buffer (UTF-16 units on macOS, UTF-8 bytes on
@@ -2480,6 +2496,7 @@ pub fn build_row_fg<P: GridPalette>(
         row_sel,
         row_hints,
         preedit,
+        glyph_registry.as_ref(),
         fg_scratch,
     );
 
@@ -2573,7 +2590,7 @@ fn shape_preedit_text(
     rasterizer.run_hasher.write_u16(size_bucket);
     let hash = rasterizer.run_hasher.finish();
 
-    let ascent_px = shape_cached(
+    let (ascent_px, advance) = shape_cached(
         rasterizer,
         hash,
         font_id,
@@ -2581,11 +2598,6 @@ fn shape_preedit_text(
         size_bucket,
         font_library,
     )?;
-    let advance: f32 = run_cache_get(&mut rasterizer.run_cache, hash)
-        .expect("just inserted")
-        .iter()
-        .map(|g| g.advance)
-        .sum();
     Some((hash, ascent_px, advance))
 }
 
@@ -2622,9 +2634,10 @@ fn emit_preedit_cluster(
     // width. Per-char width sums misjudge both directions (a ZWJ emoji
     // sums to 6 cells yet shapes to ~2, a conjunct sums to 2 yet can
     // ink 3), so the overflow decision uses the SHAPED advance: a full
-    // cluster overflowing its reserved cells retries as the base char,
-    // and a base char that still overflows draws nothing rather than
-    // spill background-colored ink over the neighboring cell. The
+    // cluster overflowing its reserved cells retries as the base char.
+    // A base (or single) char that still overflows draws anyway:
+    // hiding the character the user is actively composing is a worse
+    // artifact than its transient spill next to the block. The
     // half-cell slack absorbs color-font advance quirks.
     let max_advance = reserved_cells as f32 * cell_w + cell_w * 0.5;
     let base_str = &cluster[..base.len_utf8()];
@@ -2638,12 +2651,10 @@ fn emit_preedit_cluster(
     ) else {
         return;
     };
-    let (hash, ascent_px) = if advance <= max_advance {
+    let (hash, ascent_px) = if advance <= max_advance || base_str.len() == cluster.len() {
         (hash, ascent_px)
-    } else if base_str.len() == cluster.len() {
-        return;
     } else {
-        let Some((hash, ascent_px, advance)) = shape_preedit_text(
+        let Some((hash, ascent_px, _)) = shape_preedit_text(
             rasterizer,
             base_str,
             font_id,
@@ -2653,9 +2664,6 @@ fn emit_preedit_cluster(
         ) else {
             return;
         };
-        if advance > max_advance {
-            return;
-        }
         (hash, ascent_px)
     };
 
@@ -2664,8 +2672,9 @@ fn emit_preedit_cluster(
 
     let mut glyph_ids: SmallVec<[u16; 4]> = SmallVec::new();
     {
-        let glyphs =
-            run_cache_get(&mut rasterizer.run_cache, hash).expect("just inserted");
+        let glyphs = &run_cache_get(&mut rasterizer.run_cache, hash)
+            .expect("just inserted")
+            .glyphs;
         for g in glyphs {
             glyph_ids.push(g.id);
         }
@@ -2759,6 +2768,7 @@ fn emit_underlines<P: GridPalette>(
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
     preedit: Option<&PreeditRow<'_>>,
+    glyph_registry: Option<&rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry>,
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
@@ -2768,6 +2778,20 @@ fn emit_underlines<P: GridPalette>(
         // not leave a floating decoration next to the block.
         if preedit.is_some_and(|p| p.suppresses(sq, x)) {
             continue;
+        }
+        // A registered custom glyph's render span can reach into the
+        // block from one logical column; the fg pass drops it for
+        // that, so drop its decoration too. `covers_ink(x, 2)` first:
+        // the registry (an RwLock) is only consulted next to the
+        // block.
+        if let (Some(pre), Some(registry)) = (preedit, glyph_registry) {
+            if pre.covers_ink(x, 2)
+                && registry.get(sq.c() as u32).is_some_and(|entry| {
+                    pre.covers_ink(x, (entry.width as u16).clamp(1, 2) as usize)
+                })
+            {
+                continue;
+            }
         }
         let style = resolve_style(row_styles, x);
         let col = x as u16;
@@ -2837,6 +2861,7 @@ fn emit_strikethroughs<P: GridPalette>(
     row_sel: Option<RowSelection>,
     row_hints: &[RowHint],
     preedit: Option<&PreeditRow<'_>>,
+    glyph_registry: Option<&rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry>,
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
@@ -2846,6 +2871,20 @@ fn emit_strikethroughs<P: GridPalette>(
         // not leave a floating decoration next to the block.
         if preedit.is_some_and(|p| p.suppresses(sq, x)) {
             continue;
+        }
+        // A registered custom glyph's render span can reach into the
+        // block from one logical column; the fg pass drops it for
+        // that, so drop its decoration too. `covers_ink(x, 2)` first:
+        // the registry (an RwLock) is only consulted next to the
+        // block.
+        if let (Some(pre), Some(registry)) = (preedit, glyph_registry) {
+            if pre.covers_ink(x, 2)
+                && registry.get(sq.c() as u32).is_some_and(|entry| {
+                    pre.covers_ink(x, (entry.width as u16).clamp(1, 2) as usize)
+                })
+            {
+                continue;
+            }
         }
         let style = resolve_style(row_styles, x);
         if !style.flags.contains(StyleFlags::STRIKEOUT) {
@@ -3279,9 +3318,10 @@ mod preedit_suppression_tests {
     use super::*;
     use preedit::{PreeditCursor, PreeditLine};
 
-    /// Shape `text` as one run with the real default font library and
-    /// return the summed advance, exactly the quantity the composed-
-    /// cluster overflow fallback in `emit_preedit_cluster` keys on.
+    /// Shape `text` through the REAL production path
+    /// (`shape_preedit_text`, the fn `emit_preedit_cluster` calls) and
+    /// return the summed advance: exactly the quantity the composed-
+    /// cluster overflow fallback keys on, from the same code.
     fn shaped_advance(
         r: &mut GridGlyphRasterizer,
         lib: &FontLibrary,
@@ -3290,25 +3330,8 @@ mod preedit_suppression_tests {
     ) -> Option<f32> {
         let base = text.chars().next()?;
         let (font_id, _) = r.resolve_font(base, 0, lib, 0);
-        #[cfg(target_os = "macos")]
-        let glyphs = {
-            r.run_utf16_scratch.clear();
-            r.run_cell_starts.clear();
-            r.run_cell_starts.push(0);
-            let mut buf = [0u16; 2];
-            for ch in text.chars() {
-                r.run_utf16_scratch
-                    .extend_from_slice(ch.encode_utf16(&mut buf));
-            }
-            shape_run_ct(r, font_id, size, size, lib)?.0
-        };
-        #[cfg(not(target_os = "macos"))]
-        let glyphs = {
-            r.run_str_scratch.clear();
-            r.run_str_scratch.push_str(text);
-            shape_run_swash(r, font_id, size, size, lib)?.0
-        };
-        Some(glyphs.iter().map(|g| g.advance).sum())
+        shape_preedit_text(r, text, font_id, size, size, lib)
+            .map(|(_, _, advance)| advance)
     }
 
     /// A ZWJ emoji must fit its 2 reserved cells under the shaped-
@@ -3330,7 +3353,11 @@ mod preedit_suppression_tests {
         assert!(family_advance > 0.0);
 
         // In a monospace font every narrow advance IS the cell width.
-        let cell_w = shaped_advance(&mut r, &font_library, "m", size).unwrap();
+        // Skip like the emoji guard above when the primary font has no
+        // shaping handle in this environment.
+        let Some(cell_w) = shaped_advance(&mut r, &font_library, "m", size) else {
+            return;
+        };
         // Reserved 2 cells + the fallback's half-cell slack.
         let max_advance = 2.0 * cell_w + cell_w * 0.5;
         // Strict only where CI ships a real emoji font (Apple Color
