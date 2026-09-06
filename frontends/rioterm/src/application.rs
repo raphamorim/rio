@@ -741,10 +741,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if let Some(island) = &mut route.window.screen.renderer.island {
                         island.set_progress_report(report);
-                        // Chrome: a bare redraw is dropped by the
-                        // present gate when no terminal cells changed
-                        // (a determinate progress-value change is
-                        // exactly that).
                         route.request_overlay_redraw();
                     }
                 }
@@ -829,20 +825,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     );
                 }
             }
-            RioEventType::Rio(RioEvent::Title(route_id, title)) => {
-                // `title` is the raw OSC string; only RENDERED titles
-                // reach the OS titlebar or the strip, so it is unused.
-                let _ = title;
+            RioEventType::Rio(RioEvent::Title(route_id, _)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let changed = route
+                    let (content_changed, displayed_changed) = route
                         .window
                         .screen
                         .context_manager
                         .update_title_for_route(route_id);
-                    // Chrome repaints only for the pane its tab displays:
-                    // a hidden split's title is recomputed above but shows
-                    // nothing until the split surfaces.
-                    if changed
+                    if displayed_changed
                         && route
                             .window
                             .screen
@@ -851,11 +841,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     {
                         route.request_overlay_redraw();
                     }
-                    // The native titlebar follows the FOCUSED tab's pane
-                    // only (it used to be rewritten by every tab, last
-                    // writer winning, flashing raw OSC text until the
-                    // next poll).
-                    if route.window.screen.context_manager.current().route_id == route_id
+                    if content_changed
+                        && route.window.screen.context_manager.current().route_id
+                            == route_id
                     {
                         let rendered = route
                             .window
@@ -867,6 +855,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .clone();
                         route.set_window_title(&rendered);
                     }
+                }
+            }
+            RioEventType::Rio(RioEvent::WindowTitle(title)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.set_window_title(&title);
                 }
             }
             RioEventType::Rio(RioEvent::TitleWithSubtitle(title, subtitle)) => {

@@ -82,9 +82,13 @@ fn shorten_path(absolute: &str) -> String {
 }
 
 #[inline]
+/// Render the title template. `prefetched_program` reuses a foreground
+/// process name the caller already fetched (the extra needs it too),
+/// so one pane refresh never runs the process inspection twice.
 pub fn update_title<T: rio_backend::event::EventListener>(
     template: &str,
     context: &Context<T>,
+    prefetched_program: Option<&str>,
 ) -> String {
     if template.is_empty() {
         return template.to_string();
@@ -147,10 +151,13 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                 "program" => {
                     #[cfg(unix)]
                     {
-                        let program = teletypewriter::foreground_process_name(
-                            *context.main_fd,
-                            context.shell_pid,
-                        );
+                        let program = match prefetched_program {
+                            Some(program) => program.to_string(),
+                            None => teletypewriter::foreground_process_name(
+                                *context.main_fd,
+                                context.shell_pid,
+                            ),
+                        };
 
                         new_template = new_template.replace(to_replace_str, &program);
                         matched = true;
@@ -284,25 +291,40 @@ pub mod test {
             rich_text_id,
             context_dimension,
         );
-        assert_eq!(update_title("", &context), String::from(""));
-        assert_eq!(update_title("{{columns}}", &context), String::from("64"));
-        assert_eq!(update_title("{{COLUMNS}}", &context), String::from("64"));
-        assert_eq!(update_title("{{ COLUMNS }}", &context), String::from("64"));
-        assert_eq!(update_title("{{ columns }}", &context), String::from("64"));
+        assert_eq!(update_title("", &context, None), String::from(""));
         assert_eq!(
-            update_title("hello {{ COLUMNS }} AbC", &context),
+            update_title("{{columns}}", &context, None),
+            String::from("64")
+        );
+        assert_eq!(
+            update_title("{{COLUMNS}}", &context, None),
+            String::from("64")
+        );
+        assert_eq!(
+            update_title("{{ COLUMNS }}", &context, None),
+            String::from("64")
+        );
+        assert_eq!(
+            update_title("{{ columns }}", &context, None),
+            String::from("64")
+        );
+        assert_eq!(
+            update_title("hello {{ COLUMNS }} AbC", &context, None),
             String::from("hello 64 AbC")
         );
         assert_eq!(
-            update_title("hello {{ Lines }} AbC", &context),
+            update_title("hello {{ Lines }} AbC", &context, None),
             String::from("hello 84 AbC")
         );
         assert_eq!(
-            update_title("{{ columns }}x{{lines}}", &context),
+            update_title("{{ columns }}x{{lines}}", &context, None),
             String::from("64x84")
         );
 
-        assert_eq!(update_title("{{ title }}", &context), String::from(""));
+        assert_eq!(
+            update_title("{{ title }}", &context, None),
+            String::from("")
+        );
 
         // #[cfg(unix)]
         // assert_eq!(
@@ -344,17 +366,17 @@ pub mod test {
             rich_text_id,
             context_dimension,
         );
-        assert_eq!(update_title("", &context), String::from(""));
+        assert_eq!(update_title("", &context, None), String::from(""));
         // Title always starts empty
-        assert_eq!(update_title("{{title}}", &context), String::from(""));
+        assert_eq!(update_title("{{title}}", &context, None), String::from(""));
 
         assert_eq!(
-            update_title("{{ title || columns }}", &context),
+            update_title("{{ title || columns }}", &context, None),
             String::from("64")
         );
 
         assert_eq!(
-            update_title("{{ title || title }}", &context),
+            update_title("{{ title || title }}", &context, None),
             String::from("")
         );
 
@@ -365,12 +387,12 @@ pub mod test {
         };
 
         assert_eq!(
-            update_title("{{ title || columns }}", &context),
+            update_title("{{ title || columns }}", &context, None),
             String::from("Something")
         );
 
         assert_eq!(
-            update_title("{{ columns || title }}", &context),
+            update_title("{{ columns || title }}", &context, None),
             String::from("64")
         );
 
@@ -384,12 +406,12 @@ pub mod test {
         };
 
         assert_eq!(
-            update_title("{{ absolute_path || title }}", &context),
+            update_title("{{ absolute_path || title }}", &context, None),
             String::from("/rio-sandbox-test-dir"),
         );
 
         assert_eq!(
-            update_title("{{ relative_path || title }}", &context),
+            update_title("{{ relative_path || title }}", &context, None),
             String::from("/rio-sandbox-test-dir"),
         );
     }

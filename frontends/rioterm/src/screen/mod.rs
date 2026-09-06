@@ -3877,10 +3877,6 @@ impl Screen<'_> {
 
     pub(crate) fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
         self.update_close_button_hover(self.mouse.x, self.mouse.y);
-        // The bell mark drops the first time its tab is SHOWN to the
-        // user, whatever brought it to the front; an unfocused window
-        // still renders on PTY damage, and clearing there would wipe a
-        // mark nobody has seen yet.
         if self.renderer.is_window_focused {
             self.context_manager.clear_current_bell();
         }

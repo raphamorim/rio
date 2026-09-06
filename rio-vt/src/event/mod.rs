@@ -193,6 +193,12 @@ pub enum RioEvent {
     /// Terminal title change from the PTY identified by `route_id`.
     Title(usize, String),
 
+    /// Set the native window title to an ALREADY-RENDERED string, with
+    /// no re-render or template work in the handler. Emitted when the
+    /// displayed pane changes (tab switch, tab close) or when the poll
+    /// sees the current tab's rendered title change.
+    WindowTitle(String),
+
     /// Window title change.
     TitleWithSubtitle(String, String),
 
@@ -308,6 +314,9 @@ impl Debug for RioEvent {
             }
             RioEvent::Title(route_id, title) => {
                 write!(f, "Title route {route_id} ({title})")
+            }
+            RioEvent::WindowTitle(title) => {
+                write!(f, "WindowTitle({title})")
             }
             RioEvent::TitleWithSubtitle(title, subtitle) => {
                 write!(f, "TitleWithSubtitle({title}, {subtitle})")

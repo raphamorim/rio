@@ -789,8 +789,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.contexts.get(index).is_some_and(|grid| grid.bell)
     }
 
-    /// Clears the focused tab's bell flag. Called every frame so the mark
-    /// drops the moment the tab is shown, whatever brought it to the front.
+    /// Clears the focused tab's bell flag. Called every FOCUSED frame so
+    /// the mark drops the moment the tab is shown to the user, whatever
+    /// brought it to the front; an unfocused window still renders on PTY
+    /// damage, and clearing there would wipe a mark nobody has seen yet.
     #[inline]
     pub fn clear_current_bell(&mut self) -> bool {
         let grid = &mut self.contexts[self.current_index];
@@ -814,35 +816,49 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// color-automation) refreshes even when the rendered content is
     /// unchanged: it tracks the running program, which changes without
     /// any title event. Returns whether anything changed.
+    /// Re-render one pane's title. The extra tracks the running
+    /// program, which changes without any title event, so it refreshes
+    /// even when the rendered content is unchanged; the fetched program
+    /// is reused for the template render, so a refresh runs the process
+    /// inspection at most once. Returns
+    /// `(content_changed, displayed_changed)`: the strip shows the
+    /// content, falling back to the program only when the content is
+    /// empty, so extra-only churn repaints nothing.
     fn refresh_item_title(
         template: &str,
         should_update_title_extra: bool,
         context: &mut Context<T>,
-    ) -> bool {
-        let content = update_title(template, context);
+    ) -> (bool, bool) {
         let extra = if should_update_title_extra {
             create_title_extra_from_context(context)
         } else {
             None
         };
-        let title = ContextTitle { content, extra };
-        if title == context.title {
-            return false;
+        let content = update_title(
+            template,
+            context,
+            extra.as_ref().map(|e| e.program.as_str()),
+        );
+        let content_changed = content != context.title.content;
+        let extra_changed = extra != context.title.extra;
+        if !content_changed && !extra_changed {
+            return (false, false);
         }
-        context.title = title;
-        true
+        let displayed_changed = content_changed || content.is_empty();
+        context.title = ContextTitle { content, extra };
+        (content_changed, displayed_changed)
     }
 
     /// Recompute the tab title for a single pane, used when its terminal
     /// title changed (OSC 0/2). The poll below only paces the variables
     /// that have no event to hang off (`{{program}}`, paths), so waiting
     /// on it made a title the PTY already told us about show up seconds
-    /// late. Returns whether the tab's title actually changed.
-    pub fn update_title_for_route(&mut self, route_id: usize) -> bool {
+    /// late. Returns `(content_changed, displayed_changed)`.
+    pub fn update_title_for_route(&mut self, route_id: usize) -> (bool, bool) {
         let template = self.config.title.content.clone();
         let should_update_title_extra = self.config.should_update_title_extra;
         let Some(item) = self.get_by_route_id(route_id) else {
-            return false;
+            return (false, false);
         };
         Self::refresh_item_title(&template, should_update_title_extra, item.context_mut())
     }
@@ -850,24 +866,40 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// Recompute every tab's title on the poll tick. This is what picks up
     /// the variables no PTY event announces (`{{program}}`, paths); OSC
     /// title changes arrive immediately via `update_title_for_route`.
-    /// A `Title` event goes out only for tabs that changed (the handler
-    /// updates the OS titlebar); the repaint rides the returned flag.
+    /// The titles are committed HERE: the only event is a `WindowTitle`
+    /// carrying the current tab's already-rendered content when it
+    /// changed (the native titlebar is the one consumer outside this
+    /// struct), so nothing round-trips back into a second render. The
+    /// chrome repaint rides the returned flag.
     pub fn update_titles(&mut self) -> bool {
         let template = self.config.title.content.clone();
         let should_update_title_extra = self.config.should_update_title_extra;
-        let mut changed = false;
+        let mut repaint = false;
         for index in 0..self.contexts.len() {
+            let current_index = self.current_index;
             let context = self.contexts[index].current_mut();
-            if !Self::refresh_item_title(&template, should_update_title_extra, context) {
-                continue;
+            let (content_changed, displayed_changed) =
+                Self::refresh_item_title(&template, should_update_title_extra, context);
+            repaint |= displayed_changed;
+            if content_changed && index == current_index {
+                let content = context.title.content.clone();
+                self.event_proxy
+                    .send_event(RioEvent::WindowTitle(content), self.window_id);
             }
-            changed = true;
-            let route_id = context.route_id;
-            let content = context.title.content.clone();
-            self.event_proxy
-                .send_event(RioEvent::Title(route_id, content), self.window_id);
         }
-        changed
+        repaint
+    }
+
+    /// Push the newly displayed pane's rendered title to the native
+    /// titlebar. Runs on every current-tab change: the titlebar only
+    /// otherwise updates when a title CHANGES, so switching to a tab
+    /// with a stable title would leave the previous tab's name up
+    /// forever.
+    fn sync_window_title(&mut self) {
+        self.event_proxy.send_event(
+            RioEvent::WindowTitle(self.current().title.content.clone()),
+            self.window_id,
+        );
     }
 
     #[inline]
@@ -938,6 +970,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if context_id < self.contexts.len() {
             self.current_index = context_id;
             self.current_route = self.current().route_id;
+            self.sync_window_title();
         }
     }
 
@@ -1008,6 +1041,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         self.current_route = self.current().route_id;
+        self.sync_window_title();
     }
 
     #[inline]
@@ -1025,6 +1059,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         self.current_route = self.current().route_id;
+        self.sync_window_title();
     }
 
     #[inline]
@@ -1263,6 +1298,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     if redirect {
                         self.current_index = last_index;
                         self.current_route = self.current().route_id;
+                        self.sync_window_title();
                     }
                 }
                 Err(..) => {
@@ -1451,17 +1487,12 @@ pub mod test {
         assert!(cm.ring_bell(background_route, true));
         assert!(cm.bell(2));
 
-        // Edge-triggered: a BEL flood repaints once, not per byte.
         assert!(!cm.ring_bell(background_route, true));
         assert!(cm.bell(2));
 
-        // The current tab of a FOCUSED window is never marked: the
-        // user is looking at it.
         assert!(!cm.ring_bell(focused_route, true));
         assert!(!cm.bell(0));
 
-        // The current tab of an UNFOCUSED window is marked; nothing
-        // else records the ring.
         assert!(cm.ring_bell(focused_route, false));
         assert!(cm.bell(0));
         cm.contexts[0].bell = false;

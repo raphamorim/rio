@@ -29,10 +29,12 @@ const TITLE_ELLIPSIS: char = '…';
 /// Bell dot for tabs that rang while in the background, and the gap
 /// between it and the tab title. A dot, not a glyph: the UI text layer
 /// resolves one font per run, so a bell glyph exists only where an
-/// emoji font is installed and resolvable, while a rect renders
-/// identically everywhere (the same reason ghostty's font-free bell
-/// indicator is a border, not a drawn bell).
+/// emoji font is installed and resolvable, while a dot renders
+/// identically everywhere. Drawn at rect order 1: the tab backgrounds
+/// are submitted at order 0 AFTER the title pass, so a same-order dot
+/// would be painted over and invisible in every multi-tab strip.
 const BELL_DOT_SIZE: f32 = 6.0;
+const BELL_DOT_ORDER: u8 = 1;
 const BELL_GAP: f32 = 4.0;
 const DRAG_THRESHOLD: f32 = 4.0;
 const DRAG_ANIMATION_LENGTH: f32 = 0.15;
@@ -904,12 +906,8 @@ impl Island {
                 };
                 let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
                 if bell {
-                    // Vertically centred on the strip, in the title's
-                    // own color. Rects paint under the text pass, so a
-                    // dragged floating tab can occlude the dot; its
-                    // title is already skipped in that state.
                     let dot_y = (ISLAND_HEIGHT - BELL_DOT_SIZE) / 2.0;
-                    sugarloaf.rect(
+                    sugarloaf.rounded_rect(
                         None,
                         text_x,
                         dot_y,
@@ -917,7 +915,8 @@ impl Island {
                         BELL_DOT_SIZE,
                         text_color,
                         0.0,
-                        0,
+                        BELL_DOT_SIZE / 2.0,
+                        BELL_DOT_ORDER,
                     );
                 }
                 sugarloaf.text_mut().draw(

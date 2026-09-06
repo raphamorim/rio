@@ -851,8 +851,9 @@ impl<'a> RouteWindow<'a> {
             window_id: winit_window.id(),
         };
 
-        let screen = Screen::new(properties, config, event_proxy, font_library, open_url)
-            .expect("Screen not created");
+        let mut screen =
+            Screen::new(properties, config, event_proxy, font_library, open_url)
+                .expect("Screen not created");
 
         if config.window.columns.is_some() || config.window.rows.is_some() {
             let (physical_width, physical_height) = compute_window_size_from_grid(
@@ -892,10 +893,18 @@ impl<'a> RouteWindow<'a> {
             Duration::from_micros(frame_time_us)
         };
 
+        // A window can be created without focus (`open -g`, spawned
+        // behind another app) and may never receive a Focused(false)
+        // correcting a hardcoded `true`; a stale-true default makes
+        // focus-gated paths (the bell mark, its clear) treat an
+        // invisible window as watched.
+        let is_focused = winit_window.has_focus();
+        screen.renderer.is_window_focused = is_focused;
+
         Self {
             vblank_interval: monitor_vblank_interval,
             render_timestamp: Instant::now(),
-            is_focused: true,
+            is_focused,
             is_occluded: false,
             needs_render_after_occlusion: false,
             #[cfg(target_os = "windows")]
