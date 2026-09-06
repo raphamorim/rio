@@ -26,9 +26,13 @@ const TAB_GAP: f32 = 6.0;
 const TAB_INSET_Y: f32 = 7.0;
 const TAB_RADIUS: f32 = 6.0;
 const TITLE_ELLIPSIS: char = '…';
-/// Bell mark for tabs that rang while in the background, and the gap
-/// between it and the tab title.
-const BELL_MARK: &str = "🔔";
+/// Bell dot for tabs that rang while in the background, and the gap
+/// between it and the tab title. A dot, not a glyph: the UI text layer
+/// resolves one font per run, so a bell glyph exists only where an
+/// emoji font is installed and resolvable, while a rect renders
+/// identically everywhere (the same reason ghostty's font-free bell
+/// indicator is a border, not a drawn bell).
+const BELL_DOT_SIZE: f32 = 6.0;
 const BELL_GAP: f32 = 4.0;
 const DRAG_THRESHOLD: f32 = 4.0;
 const DRAG_ANIMATION_LENGTH: f32 = 0.15;
@@ -867,11 +871,7 @@ impl Island {
             // a single font per draw from the run's first char, so gluing it
             // onto the title would shape the whole title in the emoji font.
             let bell = context_manager.bell(tab_index);
-            let bell_width = if bell {
-                sugarloaf.text_mut().measure(BELL_MARK, &title_opts) + BELL_GAP
-            } else {
-                0.0
-            };
+            let bell_width = if bell { BELL_DOT_SIZE + BELL_GAP } else { 0.0 };
 
             let max_text_width = if single {
                 single_title_budget(window_width, scale_factor, left_margin) - bell_width
@@ -895,8 +895,8 @@ impl Island {
                 // Measure → centre → draw. Immediate mode, no cached
                 // text_id bookkeeping. The bell mark and the title are
                 // centred as one group.
-                let ui = sugarloaf.text_mut();
-                let text_width = ui.measure(&title, &title_opts) + bell_width;
+                let text_width =
+                    sugarloaf.text_mut().measure(&title, &title_opts) + bell_width;
                 let text_x = if single {
                     single_title_x(window_width, scale_factor, text_width, left_margin)
                 } else {
@@ -904,9 +904,28 @@ impl Island {
                 };
                 let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
                 if bell {
-                    ui.draw(text_x, text_y, BELL_MARK, &title_opts);
+                    // Vertically centred on the strip, in the title's
+                    // own color. Rects paint under the text pass, so a
+                    // dragged floating tab can occlude the dot; its
+                    // title is already skipped in that state.
+                    let dot_y = (ISLAND_HEIGHT - BELL_DOT_SIZE) / 2.0;
+                    sugarloaf.rect(
+                        None,
+                        text_x,
+                        dot_y,
+                        BELL_DOT_SIZE,
+                        BELL_DOT_SIZE,
+                        text_color,
+                        0.0,
+                        0,
+                    );
                 }
-                ui.draw(text_x + bell_width, text_y, &title, &title_opts);
+                sugarloaf.text_mut().draw(
+                    text_x + bell_width,
+                    text_y,
+                    &title,
+                    &title_opts,
+                );
             }
 
             // Nothing is drawn behind a lone title.
