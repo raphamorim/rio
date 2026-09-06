@@ -3255,6 +3255,73 @@ mod preedit_suppression_tests {
     use super::*;
     use preedit::{PreeditCursor, PreeditLine};
 
+    /// Shape `text` as one run with the real default font library and
+    /// return the summed advance, exactly the quantity the composed-
+    /// cluster overflow fallback in `emit_preedit_cluster` keys on.
+    fn shaped_advance(
+        r: &mut GridGlyphRasterizer,
+        lib: &FontLibrary,
+        text: &str,
+        size: u16,
+    ) -> Option<f32> {
+        let base = text.chars().next()?;
+        let (font_id, _) = r.resolve_font(base, 0, lib, 0);
+        #[cfg(target_os = "macos")]
+        let glyphs = {
+            r.run_utf16_scratch.clear();
+            r.run_cell_starts.clear();
+            r.run_cell_starts.push(0);
+            let mut buf = [0u16; 2];
+            for ch in text.chars() {
+                r.run_utf16_scratch
+                    .extend_from_slice(ch.encode_utf16(&mut buf));
+            }
+            shape_run_ct(r, font_id, size, size, lib)?.0
+        };
+        #[cfg(not(target_os = "macos"))]
+        let glyphs = {
+            r.run_str_scratch.clear();
+            r.run_str_scratch.push_str(text);
+            shape_run_swash(r, font_id, size, size, lib)?.0
+        };
+        Some(glyphs.iter().map(|g| g.advance).sum())
+    }
+
+    /// A ZWJ emoji must fit its 2 reserved cells under the shaped-
+    /// advance overflow rule, or IME candidate selection would degrade
+    /// it to the base person glyph. Per-char width sums say 6 cells;
+    /// the shaped advance is the truth this pins.
+    #[test]
+    fn zwj_emoji_shaped_advance_fits_reserved_cells() {
+        let font_library = FontLibrary::default();
+        let mut r = GridGlyphRasterizer::new();
+        let size: u16 = 28;
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+        let Some(family_advance) = shaped_advance(&mut r, &font_library, family, size)
+        else {
+            // No shaping handle for this font in the environment:
+            // nothing to measure.
+            return;
+        };
+        assert!(family_advance > 0.0);
+
+        // In a monospace font every narrow advance IS the cell width.
+        let cell_w = shaped_advance(&mut r, &font_library, "m", size).unwrap();
+        // Reserved 2 cells + the fallback's half-cell slack.
+        let max_advance = 2.0 * cell_w + cell_w * 0.5;
+        // Strict only where CI ships a real emoji font (Apple Color
+        // Emoji); a fontless Linux container may shape to notdef with
+        // arbitrary metrics.
+        #[cfg(target_os = "macos")]
+        assert!(
+            family_advance <= max_advance,
+            "family emoji advance {family_advance} exceeds {max_advance}: \
+             the IME composition would degrade it to the base glyph"
+        );
+        #[cfg(not(target_os = "macos"))]
+        let _ = max_advance;
+    }
+
     /// `covers_ink` is the one predicate every fg emitter consults to
     /// drop ink that would land on the composition block (wide glyphs
     /// whose spacer sits under it, custom glyphs whose render span
