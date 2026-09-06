@@ -1595,7 +1595,6 @@ fn is_run_breaker(sq: Square) -> bool {
 /// run text + hash + cluster mapping.
 #[inline(always)]
 fn is_skipped_spacer(sq: Square) -> bool {
-    use rio_backend::crosswords::square::Wide;
     matches!(sq.wide(), Wide::Spacer | Wide::LeadingSpacer)
 }
 
