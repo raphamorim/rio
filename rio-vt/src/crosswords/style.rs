@@ -116,6 +116,25 @@ pub struct Style {
     pub flags: StyleFlags,
 }
 
+impl Style {
+    /// Whether this style renders anything on a BLANK cell: a
+    /// non-default background, an underline, a strikeout, or inverse
+    /// (which paints the fg color as the cell's ground). Fg-only
+    /// attributes (color, bold, dim, italic, hidden, blink) draw
+    /// nothing without a glyph. The single authority for
+    /// serialization trimming; renderers adding a new visible-on-blank
+    /// attribute (an overline, say) must extend this, or snapshots
+    /// will silently trim cells that render.
+    #[inline]
+    pub fn renders_on_blank(&self) -> bool {
+        self.bg != AnsiColor::Named(NamedColor::Background)
+            || self.flags.underline_kind().is_some()
+            || self
+                .flags
+                .intersects(StyleFlags::STRIKEOUT | StyleFlags::INVERSE)
+    }
+}
+
 impl Default for Style {
     #[inline]
     fn default() -> Self {

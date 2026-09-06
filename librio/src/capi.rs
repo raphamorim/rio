@@ -19,8 +19,9 @@ pub const RIO_ACTION_PROGRESS: u32 = 3;
 pub const RIO_COLOR_NAMED: u8 = 0;
 pub const RIO_COLOR_INDEXED: u8 = 1;
 pub const RIO_COLOR_RGB: u8 = 2;
-/// An absent color (value and rgb are zero). Only returned by
-/// [`rio_render_state_cell_underline_color`].
+/// An absent color (value and rgb are zero). Returned by
+/// [`rio_render_state_cell_underline_color`] for cells without an
+/// explicit underline color, and as the fg/bg of a missing cell.
 pub const RIO_COLOR_NONE: u8 = 3;
 
 pub const RIO_KEY_CHAR: u32 = 0;

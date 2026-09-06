@@ -158,9 +158,13 @@ impl<U: EventListener> Crosswords<U> {
         self.row_last_content_col(line as i32, cols, true).is_some()
     }
 
-    /// Rightmost column with a non-blank glyph or a non-default style (a
-    /// bg-colored or underlined blank still renders, so it is content),
-    /// or `None` for a row with neither.
+    /// Rightmost column with a non-blank glyph or a style that renders
+    /// on a blank cell (`Style::renders_on_blank`), or `None` for a row
+    /// with neither. Fg-only attributes must NOT count as content:
+    /// `ED`/`EL` reset cells with the full cursor template style, so
+    /// after `\x1b[31m` + `clear` every blank carries a red fg, and
+    /// trimming on any non-default style would then emit the whole
+    /// screen as styled spaces.
     fn row_last_content_col(&self, line: i32, cols: usize, trim: bool) -> Option<usize> {
         if !trim {
             return Some(cols.saturating_sub(1));
@@ -169,7 +173,7 @@ impl<U: EventListener> Crosswords<U> {
         (0..cols).rev().find(|&col| {
             let square = &row[Column(col)];
             let c = square.c();
-            (c != ' ' && c != '\0') || self.grid.style_of(square) != Style::default()
+            (c != ' ' && c != '\0') || self.grid.style_of(square).renders_on_blank()
         })
     }
 }
@@ -364,6 +368,21 @@ mod tests {
         feed(&mut c, b"top\r\n\x1b[44m    \x1b[0m");
         let text = String::from_utf8(c.contents_formatted()).unwrap();
         assert!(text.contains(";44"), "styled-blank row dropped: {text:?}");
+    }
+
+    #[test]
+    fn vt_trims_fg_only_erased_cells() {
+        // ED resets cells with the full cursor template, so after
+        // `\x1b[31m` + clear every blank carries a red fg. Fg-only
+        // attributes render nothing on a blank: the snapshot must trim
+        // them, not emit the whole screen as styled spaces.
+        let mut a = term(20, 4);
+        feed(&mut a, b"\x1b[31mhi\x1b[2J\x1b[H");
+        let text = String::from_utf8(a.contents_formatted()).unwrap();
+        assert!(
+            !text.contains(' '),
+            "erased fg-styled blanks not trimmed: {text:?}"
+        );
     }
 
     #[test]
