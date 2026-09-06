@@ -5817,6 +5817,20 @@ mod tests {
     use crate::crosswords::CrosswordsSize;
     use crate::event::VoidListener;
 
+    /// Event-capturing listener for tests that assert on emitted
+    /// `RioEvent`s. One definition; four tests used to carry
+    /// byte-identical local copies.
+    #[derive(Clone)]
+    struct TestListener {
+        events: std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>,
+    }
+
+    impl EventListener for TestListener {
+        fn send_event(&self, event: RioEvent, _id: WindowId) {
+            self.events.borrow_mut().push(event);
+        }
+    }
+
     fn make_crosswords() -> Crosswords<VoidListener> {
         let size = CrosswordsSize::new(4, 4);
         let window_id = crate::event::WindowId::from(0);
@@ -7810,18 +7824,6 @@ mod tests {
         use std::cell::RefCell;
         use std::rc::Rc;
 
-        // Create a custom event listener that captures PtyWrite events
-        #[derive(Clone)]
-        struct TestListener {
-            events: Rc<RefCell<Vec<RioEvent>>>,
-        }
-
-        impl EventListener for TestListener {
-            fn send_event(&self, event: RioEvent, _id: WindowId) {
-                self.events.borrow_mut().push(event);
-            }
-        }
-
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
         let events = Rc::new(RefCell::new(Vec::new()));
@@ -7866,17 +7868,6 @@ mod tests {
         use std::cell::RefCell;
         use std::rc::Rc;
 
-        #[derive(Clone)]
-        struct TestListener {
-            events: Rc<RefCell<Vec<RioEvent>>>,
-        }
-
-        impl EventListener for TestListener {
-            fn send_event(&self, event: RioEvent, _id: WindowId) {
-                self.events.borrow_mut().push(event);
-            }
-        }
-
         let events = Rc::new(RefCell::new(Vec::new()));
         let mut term = Crosswords::new(
             CrosswordsSize::new(10, 10),
@@ -7905,17 +7896,6 @@ mod tests {
     fn bell_emits_bell_event_for_its_route() {
         use std::cell::RefCell;
         use std::rc::Rc;
-
-        #[derive(Clone)]
-        struct TestListener {
-            events: Rc<RefCell<Vec<RioEvent>>>,
-        }
-
-        impl EventListener for TestListener {
-            fn send_event(&self, event: RioEvent, _id: WindowId) {
-                self.events.borrow_mut().push(event);
-            }
-        }
 
         let events = Rc::new(RefCell::new(Vec::new()));
         let mut term = Crosswords::new(
@@ -10426,17 +10406,6 @@ mod tests {
         use crate::performer::handler::Processor;
         use std::cell::RefCell;
         use std::rc::Rc;
-
-        #[derive(Clone)]
-        struct TestListener {
-            events: Rc<RefCell<Vec<RioEvent>>>,
-        }
-
-        impl EventListener for TestListener {
-            fn send_event(&self, event: RioEvent, _id: WindowId) {
-                self.events.borrow_mut().push(event);
-            }
-        }
 
         let events = Rc::new(RefCell::new(Vec::new()));
         let mut term = Crosswords::new(
