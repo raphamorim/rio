@@ -1,10 +1,12 @@
 use crate::context::Context;
 use std::path::Path;
 
+#[derive(PartialEq)]
 pub struct ContextTitleExtra {
     pub program: String,
 }
 
+#[derive(PartialEq)]
 pub struct ContextTitle {
     pub content: String,
     pub extra: Option<ContextTitleExtra>,

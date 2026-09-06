@@ -471,11 +471,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // tab (`tmux new -X` SIGHUPs a shell the user is not even
         // looking at), so the search covers every panel of every tab
         // rather than assuming the focused one.
-        let Some(tab_index) = self
-            .contexts
-            .iter_mut()
-            .position(|grid| grid.get_by_route_id(route_id).is_some())
-        else {
+        let Some(tab_index) = self.tab_index_for_route(route_id) else {
             return self.contexts.is_empty();
         };
 
@@ -750,26 +746,42 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
-    /// A pane rang the bell. Flags its tab so the strip can surface it;
-    /// the focused tab is skipped since the user is already looking at it.
-    /// The ringing pane can live in any tab (background split of a
-    /// background tab included), so every tab is searched.
+    /// Index of the tab containing `route_id`'s pane. Per-route state
+    /// can live ANYWHERE (a background split of a background tab
+    /// included), so the search covers every panel of every tab.
     #[inline]
-    pub fn ring_bell(&mut self, route_id: usize) -> bool {
-        let Some(tab_index) = self
-            .contexts
+    pub fn tab_index_for_route(&mut self, route_id: usize) -> Option<usize> {
+        self.contexts
             .iter_mut()
             .position(|grid| grid.get_by_route_id(route_id).is_some())
-        else {
+    }
+
+    /// Whether `route_id` is the pane its tab currently displays: the
+    /// pane whose title the tab strip shows for that tab. Chrome only
+    /// repaints for these; a hidden split's state changes display
+    /// nothing until it surfaces.
+    #[inline]
+    pub fn is_displayed_pane(&mut self, route_id: usize) -> bool {
+        self.tab_index_for_route(route_id)
+            .is_some_and(|index| self.contexts[index].current().route_id == route_id)
+    }
+
+    /// A pane rang the bell. Flags its tab so the strip can surface it.
+    /// The current tab is skipped only while the window has focus: the
+    /// user is already looking at it then, but a ring in the visible
+    /// tab of an UNFOCUSED window would otherwise leave no trace at
+    /// all. Edge-triggered: a BEL flood marks once and repaints once.
+    #[inline]
+    pub fn ring_bell(&mut self, route_id: usize, window_focused: bool) -> bool {
+        let Some(tab_index) = self.tab_index_for_route(route_id) else {
             return false;
         };
 
-        if tab_index == self.current_index {
+        if window_focused && tab_index == self.current_index {
             return false;
         }
 
-        self.contexts[tab_index].bell = true;
-        true
+        !std::mem::replace(&mut self.contexts[tab_index].bell, true)
     }
 
     #[inline]
@@ -797,6 +809,30 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
+    /// Re-render one pane's title into its `ContextTitle`. The extra
+    /// (foreground program, for `{{program}}` fallbacks and
+    /// color-automation) refreshes even when the rendered content is
+    /// unchanged: it tracks the running program, which changes without
+    /// any title event. Returns whether anything changed.
+    fn refresh_item_title(
+        template: &str,
+        should_update_title_extra: bool,
+        context: &mut Context<T>,
+    ) -> bool {
+        let content = update_title(template, context);
+        let extra = if should_update_title_extra {
+            create_title_extra_from_context(context)
+        } else {
+            None
+        };
+        let title = ContextTitle { content, extra };
+        if title == context.title {
+            return false;
+        }
+        context.title = title;
+        true
+    }
+
     /// Recompute the tab title for a single pane, used when its terminal
     /// title changed (OSC 0/2). The poll below only paces the variables
     /// that have no event to hang off (`{{program}}`, paths), so waiting
@@ -808,32 +844,26 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let Some(item) = self.get_by_route_id(route_id) else {
             return false;
         };
-
-        let content = update_title(&template, item.context());
-        if content == item.context().title.content {
-            return false;
-        }
-
-        let extra = if should_update_title_extra {
-            create_title_extra_from_context(item.context())
-        } else {
-            None
-        };
-        item.context_mut().title = ContextTitle { content, extra };
-        true
+        Self::refresh_item_title(&template, should_update_title_extra, item.context_mut())
     }
 
     /// Recompute every tab's title on the poll tick. This is what picks up
     /// the variables no PTY event announces (`{{program}}`, paths); OSC
     /// title changes arrive immediately via `update_title_for_route`.
-    /// Returns whether any tab's title changed, so the caller can repaint.
+    /// A `Title` event goes out only for tabs that changed (the handler
+    /// updates the OS titlebar); the repaint rides the returned flag.
     pub fn update_titles(&mut self) -> bool {
+        let template = self.config.title.content.clone();
+        let should_update_title_extra = self.config.should_update_title_extra;
         let mut changed = false;
         for index in 0..self.contexts.len() {
-            let route_id = self.contexts[index].current().route_id;
-            changed |= self.update_title_for_route(route_id);
-
-            let content = self.contexts[index].current().title.content.clone();
+            let context = self.contexts[index].current_mut();
+            if !Self::refresh_item_title(&template, should_update_title_extra, context) {
+                continue;
+            }
+            changed = true;
+            let route_id = context.route_id;
+            let content = context.title.content.clone();
             self.event_proxy
                 .send_event(RioEvent::Title(route_id, content), self.window_id);
         }
@@ -1418,15 +1448,26 @@ pub mod test {
         let background_route = cm.contexts[2].current().route_id;
         let focused_route = cm.contexts[0].current().route_id;
 
-        assert!(cm.ring_bell(background_route));
+        assert!(cm.ring_bell(background_route, true));
         assert!(cm.bell(2));
 
-        // The focused tab is never marked: the user is looking at it.
-        assert!(!cm.ring_bell(focused_route));
+        // Edge-triggered: a BEL flood repaints once, not per byte.
+        assert!(!cm.ring_bell(background_route, true));
+        assert!(cm.bell(2));
+
+        // The current tab of a FOCUSED window is never marked: the
+        // user is looking at it.
+        assert!(!cm.ring_bell(focused_route, true));
         assert!(!cm.bell(0));
 
+        // The current tab of an UNFOCUSED window is marked; nothing
+        // else records the ring.
+        assert!(cm.ring_bell(focused_route, false));
+        assert!(cm.bell(0));
+        cm.contexts[0].bell = false;
+
         // Unknown routes (already-closed panes) are a no-op.
-        assert!(!cm.ring_bell(usize::MAX));
+        assert!(!cm.ring_bell(usize::MAX, true));
 
         // Focusing the tab drops the mark on the next rendered frame.
         cm.set_current(2);

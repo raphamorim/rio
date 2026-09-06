@@ -741,7 +741,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if let Some(island) = &mut route.window.screen.renderer.island {
                         island.set_progress_report(report);
-                        route.request_redraw();
+                        // Chrome: a bare redraw is dropped by the
+                        // present gate when no terminal cells changed
+                        // (a determinate progress-value change is
+                        // exactly that).
+                        route.request_overlay_redraw();
                     }
                 }
             }
@@ -759,11 +763,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if self.config.bell.tab_indicator {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        if route.window.screen.context_manager.ring_bell(route_id) {
-                            // The mark is window chrome, not terminal cells:
-                            // a bare redraw request is dropped by the
-                            // `any_panel_dirty` present gate, so the frame
-                            // has to be marked dirty for it to reach screen.
+                        let focused = route.window.is_focused;
+                        if route
+                            .window
+                            .screen
+                            .context_manager
+                            .ring_bell(route_id, focused)
+                        {
                             route.request_overlay_redraw();
                         }
                     }
@@ -824,19 +830,42 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::Title(route_id, title)) => {
+                // `title` is the raw OSC string; only RENDERED titles
+                // reach the OS titlebar or the strip, so it is unused.
+                let _ = title;
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    route.set_window_title(&title);
-                    // The tab strip is window chrome: a bare redraw request
-                    // is dropped by the `any_panel_dirty` present gate, so
-                    // the new title needs the frame marked dirty to appear
-                    // before the terminal next changes on its own.
-                    if route
+                    let changed = route
                         .window
                         .screen
                         .context_manager
-                        .update_title_for_route(route_id)
+                        .update_title_for_route(route_id);
+                    // Chrome repaints only for the pane its tab displays:
+                    // a hidden split's title is recomputed above but shows
+                    // nothing until the split surfaces.
+                    if changed
+                        && route
+                            .window
+                            .screen
+                            .context_manager
+                            .is_displayed_pane(route_id)
                     {
                         route.request_overlay_redraw();
+                    }
+                    // The native titlebar follows the FOCUSED tab's pane
+                    // only (it used to be rewritten by every tab, last
+                    // writer winning, flashing raw OSC text until the
+                    // next poll).
+                    if route.window.screen.context_manager.current().route_id == route_id
+                    {
+                        let rendered = route
+                            .window
+                            .screen
+                            .context_manager
+                            .current()
+                            .title
+                            .content
+                            .clone();
+                        route.set_window_title(&rendered);
                     }
                 }
             }
