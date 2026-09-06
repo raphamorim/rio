@@ -2016,31 +2016,50 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::Ime(ime) => {
-                // Modal overlays (assistant, command palette) take
-                // their input through key events and never see IME
-                // ones: while one is up, swallow composition input but
-                // still CLEAR any stored preedit — a live composition
-                // would keep painting into the grid behind the overlay
-                // and its key gate would swallow every plain keystroke
-                // after the overlay closes. (Search stays open to IME:
-                // commits route into the search input via `paste`.)
-                let overlay_active = route.window.screen.renderer.assistant.is_active()
-                    || route.window.screen.renderer.command_palette.is_enabled();
-
+                // Modal overlays own keyboard input (`modal_owns_input`
+                // walks the `has_key_wait` roster): while one is up,
+                // composition input must not reach the terminal, but
+                // any stored preedit must still CLEAR: a live
+                // composition would keep painting into the grid behind
+                // the overlay and its key gate would swallow every
+                // plain keystroke after the overlay closes. Search
+                // stays open to IME (commits route into the search
+                // input via `paste`).
                 match ime {
                     Ime::Commit(text) => {
-                        if overlay_active {
+                        // Composed characters (dead keys, CJK) arrive
+                        // only as commits, never as key text: route
+                        // them into the palette query the way plain
+                        // key text reaches it in `has_key_wait`.
+                        if route.window.screen.renderer.command_palette.is_enabled() {
+                            if !text.is_empty() && text.chars().all(|c| !c.is_control()) {
+                                let query = format!(
+                                    "{}{}",
+                                    route.window.screen.renderer.command_palette.query,
+                                    text
+                                );
+                                route
+                                    .window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .set_query(query);
+                                route.request_overlay_redraw();
+                            }
+                            return;
+                        }
+                        if route.modal_owns_input() {
                             return;
                         }
                         // Don't use bracketed paste for single char input.
                         route.window.screen.paste(&text, text.chars().count() > 1);
                     }
                     Ime::Preedit(text, cursor_offset) => {
-                        let preedit = if text.is_empty() || overlay_active {
+                        let preedit = if text.is_empty() || route.modal_owns_input() {
                             None
                         } else {
                             // The platform's `None` means the IME asked
-                            // for a hidden caret (candidate paging) —
+                            // for a hidden caret (candidate paging),
                             // NOT end-of-text, which arrives as an
                             // explicit offset.
                             let cursor = match cursor_offset {
@@ -2050,31 +2069,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             Some(Preedit::new(text, cursor))
                         };
 
-                        if route.window.screen.ime.preedit() != preedit.as_ref() {
-                            let composing = preedit.is_some();
-                            route.window.screen.ime.set_preedit(preedit);
-                            if composing {
-                                // The composition anchors at the cursor
-                                // row: snap out of scrollback so it can
-                                // never be live but invisible while the
-                                // preedit key gate swallows input, and
-                                // drop the selection like typing does —
-                                // the composition is the active signal
-                                // now.
-                                route
-                                    .window
-                                    .screen
-                                    .scroll_bottom_when_cursor_not_visible();
-                                route.window.screen.clear_selection();
-                            }
-                            // The overlay lives in the grid's CPU cell
-                            // buffers and its rows are force-rebuilt
-                            // each frame while composing; a plain
-                            // dirty mark is enough to get a frame
-                            // scheduled — full terminal damage would
-                            // re-shape every visible row per
-                            // keystroke for nothing.
-                            route.window.screen.mark_dirty();
+                        // `set_ime_preedit` owns the composing side
+                        // effects (scroll snap, selection, dirty mark)
+                        // and their search-mode exceptions.
+                        if route.window.screen.set_ime_preedit(preedit) {
                             route.request_redraw();
                         }
                     }

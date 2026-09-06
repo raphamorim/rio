@@ -80,9 +80,9 @@ pub struct PreeditLine {
 impl PreeditLine {
     /// Lay out the composition `text` anchored at the cursor cell.
     /// Returns `None` for an empty composition or a degenerate grid.
-    /// `cursor` byte offsets never slice `text`, so a non-boundary
-    /// offset is safe here (the frontend snaps those to end-of-text
-    /// before this is reached).
+    /// `cursor` byte offsets never slice `text`, only compare against
+    /// cluster starts, so intra-cluster and non-char-boundary offsets
+    /// are safe and mark the cluster containing them.
     pub fn new(
         text: &str,
         cursor: PreeditCursor,
@@ -319,6 +319,23 @@ mod tests {
         // An intra-cluster offset in a wide cluster stays on it.
         let line = layout("日本語", Some(4)).unwrap();
         assert_eq!(line.caret, PreeditCaret::OnCell(2));
+    }
+
+    #[test]
+    fn korean_intra_syllable_caret_marks_the_syllable() {
+        // Jamo-level Korean IMEs report byte offsets inside an NFC
+        // syllable while it is being edited; the caret must sit on
+        // that syllable, not at the end of the composition.
+        let line = layout("한글", Some(1)).unwrap();
+        assert_eq!(line.caret, PreeditCaret::OnCell(0));
+        let line = layout("한글", Some(4)).unwrap();
+        assert_eq!(line.caret, PreeditCaret::OnCell(2));
+        // The syllable boundary itself belongs to the next syllable.
+        let line = layout("한글", Some(3)).unwrap();
+        assert_eq!(line.caret, PreeditCaret::OnCell(2));
+        // End-of-text stays a PastEnd beam.
+        let line = layout("한글", Some(6)).unwrap();
+        assert_eq!(line.caret, PreeditCaret::PastEnd(4));
     }
 
     #[test]

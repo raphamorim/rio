@@ -136,6 +136,24 @@ impl Route<'_> {
         self.request_overlay_redraw();
     }
 
+    /// Whether a modal overlay currently owns keyboard input: the same
+    /// roster `has_key_wait` walks (island rename input, command
+    /// palette, quit confirmation, and any non-terminal route such as
+    /// the assistant or welcome screens). IME composition must not
+    /// reach the terminal behind any of them.
+    #[inline]
+    pub fn modal_owns_input(&self) -> bool {
+        self.window
+            .screen
+            .renderer
+            .island
+            .as_ref()
+            .is_some_and(|island| island.is_color_picker_open())
+            || self.window.screen.renderer.command_palette.is_enabled()
+            || self.window.screen.renderer.confirm_quit.is_active()
+            || self.path != RoutePath::Terminal
+    }
+
     #[inline]
     pub fn quit(&mut self) {
         std::process::exit(0);

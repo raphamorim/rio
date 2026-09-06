@@ -48,20 +48,21 @@ pub struct Preedit {
 
     /// The IME caret.
     ///
-    /// Byte offsets that don't land on a char boundary (macOS reports
-    /// UTF-16 ranges that can split a surrogate pair) snap to
-    /// end-of-text rather than being trusted — slicing on one would
-    /// panic downstream.
+    /// Byte offsets are clamped to the text length but otherwise kept
+    /// verbatim, including intra-cluster and non-char-boundary values
+    /// (macOS reports UTF-16 ranges that can split a surrogate pair;
+    /// jamo-level Korean IMEs report offsets inside an NFC syllable).
+    /// Nothing downstream slices on the offset: the layout only
+    /// compares it against cluster starts, snapping the caret to the
+    /// cluster CONTAINING it.
     pub cursor: PreeditCursor,
 }
 
 impl Preedit {
     pub fn new(text: String, cursor: PreeditCursor) -> Self {
         let cursor = match cursor {
-            PreeditCursor::Byte(offset) if !text.is_char_boundary(offset) => {
-                PreeditCursor::Byte(text.len())
-            }
-            other => other,
+            PreeditCursor::Byte(offset) => PreeditCursor::Byte(offset.min(text.len())),
+            PreeditCursor::Hidden => PreeditCursor::Hidden,
         };
         Self { text, cursor }
     }
@@ -72,14 +73,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preedit_new_rejects_invalid_byte_offset() {
-        // Byte 1 is inside 啊's UTF-8 encoding: not a char boundary.
+    fn preedit_new_clamps_byte_offset() {
+        // Intra-char offsets pass through verbatim: the layout snaps
+        // them to the containing cluster and never slices on them.
         let preedit = Preedit::new("啊a".to_string(), PreeditCursor::Byte(1));
-        assert_eq!(preedit.cursor, PreeditCursor::Byte(4));
-        // Boundary offsets survive, including one-past-the-end.
+        assert_eq!(preedit.cursor, PreeditCursor::Byte(1));
         let preedit = Preedit::new("啊a".to_string(), PreeditCursor::Byte(3));
         assert_eq!(preedit.cursor, PreeditCursor::Byte(3));
-        let preedit = Preedit::new("啊a".to_string(), PreeditCursor::Byte(4));
+        // Past-the-end offsets clamp to the length.
+        let preedit = Preedit::new("啊a".to_string(), PreeditCursor::Byte(9));
         assert_eq!(preedit.cursor, PreeditCursor::Byte(4));
         // A hidden caret stays hidden.
         let preedit = Preedit::new("啊a".to_string(), PreeditCursor::Hidden);
