@@ -578,6 +578,7 @@ mod tests {
         assert_eq!(parse(&[b"9", b"9", b"\"\""]), None);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn current_directory_accepts_kitty_shell_cwd() {
         assert_eq!(
@@ -595,6 +596,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn kitty_shell_cwd_is_verbatim() {
         // Raw spaces pass through, and percent sequences are path
@@ -603,6 +605,22 @@ mod tests {
         assert_eq!(
             cwd("kitty-shell-cwd:///tmp/50%25 off?really"),
             Some("/tmp/50%25 off?really".into())
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn kitty_shell_cwd_strips_windows_leading_slash() {
+        // The PowerShell integration emits `/C:\...`; the drive letter
+        // must come back without the URL-shaped leading slash, and the
+        // path stays verbatim (spaces, `#`, `%` untouched).
+        assert_eq!(
+            cwd("kitty-shell-cwd:///C:\\Users\\a b"),
+            Some("C:\\Users\\a b".into())
+        );
+        assert_eq!(
+            cwd("kitty-shell-cwd://localhost/C:\\projects\\c#"),
+            Some("C:\\projects\\c#".into())
         );
     }
 
