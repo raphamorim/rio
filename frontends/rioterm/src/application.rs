@@ -1369,6 +1369,36 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 );
 
                             if handled_by_island {
+                                use crate::renderer::island::WindowButton;
+                                match route.window.screen.take_window_button_action() {
+                                    Some(WindowButton::Minimize) => {
+                                        route.window.winit_window.set_minimized(true);
+                                    }
+                                    Some(WindowButton::Maximize) => {
+                                        let maximized =
+                                            route.window.winit_window.is_maximized();
+                                        route
+                                            .window
+                                            .winit_window
+                                            .set_maximized(!maximized);
+                                    }
+                                    Some(WindowButton::Close) => {
+                                        // Same contract as `CloseRequested` from
+                                        // the window system: confirm when the
+                                        // config asks for it, else drop the
+                                        // window and exit once none remain.
+                                        if self.config.confirm_before_quit {
+                                            route.confirm_quit();
+                                            return;
+                                        }
+                                        self.router.routes.remove(&window_id);
+                                        if self.router.routes.is_empty() {
+                                            event_loop.exit();
+                                        }
+                                        return;
+                                    }
+                                    None => {}
+                                }
                                 route.request_redraw();
                                 return;
                             }
@@ -1930,6 +1960,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if self.config.hide_cursor_when_typing {
                     route.window.winit_window.set_cursor_visible(true);
+                }
+
+                // `navigation.scroll-tabs`: a wheel over the strip flips
+                // tabs instead of scrolling the terminal underneath.
+                {
+                    use crate::renderer::island::WHEEL_PX_PER_TAB;
+                    let delta_lines = match delta {
+                        MouseScrollDelta::LineDelta(_, lines) => lines,
+                        MouseScrollDelta::PixelDelta(p) => {
+                            let scale = route.window.screen.sugarloaf.scale_factor();
+                            p.y as f32 / scale / WHEEL_PX_PER_TAB
+                        }
+                    };
+                    if route.window.screen.scroll_tabs_over_strip(delta_lines) {
+                        route.request_redraw();
+                        return;
+                    }
                 }
 
                 match delta {

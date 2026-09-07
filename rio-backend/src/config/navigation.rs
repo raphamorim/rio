@@ -178,6 +178,20 @@ pub struct Navigation {
     /// when few are open. Clamped to `[80.0, 280.0]` at load time.
     #[serde(default = "default_max_tab_width", rename = "max-tab-width")]
     pub max_tab_width: f32,
+    /// Draw minimize / maximize / close buttons at the right end of the
+    /// tab strip. Intended for `window.decorations = "Disabled"` on Linux
+    /// and Windows, where the strip then acts as the window's title bar.
+    /// Ignored on macOS, which keeps the native traffic lights.
+    #[serde(default = "bool::default", rename = "window-buttons")]
+    pub window_buttons: bool,
+    /// Left-drag on an empty part of the tab strip moves the window
+    /// (Linux and Windows). macOS always allows this, so the option is
+    /// ignored there.
+    #[serde(default = "bool::default", rename = "drag-window")]
+    pub drag_window: bool,
+    /// Mouse wheel over the tab strip switches to the previous / next tab.
+    #[serde(default = "bool::default", rename = "scroll-tabs")]
+    pub scroll_tabs: bool,
 }
 
 impl Default for Navigation {
@@ -194,6 +208,9 @@ impl Default for Navigation {
             unfocused_split_fill: None,
             open_config_with_split: true,
             max_tab_width: default_max_tab_width(),
+            window_buttons: false,
+            drag_window: false,
+            scroll_tabs: false,
         }
     }
 }
@@ -245,6 +262,20 @@ impl Navigation {
         } else {
             self.island_visible(num_tabs)
         }
+    }
+
+    /// Whether the tab strip draws its own window buttons. Never on
+    /// macOS: the native traffic lights already occupy the strip.
+    #[inline]
+    pub fn draws_window_buttons(&self) -> bool {
+        !cfg!(target_os = "macos") && self.is_enabled() && self.window_buttons
+    }
+
+    /// Whether a left-drag on empty strip area may move the window.
+    /// Always on macOS (full-size content view); opt-in elsewhere.
+    #[inline]
+    pub fn allows_window_drag(&self) -> bool {
+        self.is_enabled() && (cfg!(target_os = "macos") || self.drag_window)
     }
 }
 
