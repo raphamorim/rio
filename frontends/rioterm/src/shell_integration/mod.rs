@@ -359,6 +359,40 @@ mod test {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    /// Same, for fish, via its `vendor_conf.d` loading from
+    /// `XDG_DATA_DIRS`. Skips silently where fish is not installed
+    /// (no CI runner ships it today, so this mainly guards local
+    /// changes to the fish script).
+    #[cfg(unix)]
+    #[test]
+    fn fish_integration_emits_a_cwd_report() {
+        let base =
+            std::env::temp_dir().join(format!("rio-si-fish-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        materialize(&base).unwrap();
+        // An empty config home keeps the developer's own fish config
+        // out of the test.
+        let config_home = base.join("empty-config-home");
+        std::fs::create_dir_all(&config_home).unwrap();
+
+        let Ok(output) = std::process::Command::new("fish")
+            .args(["-ic", ":"])
+            .env("XDG_DATA_DIRS", base.join("data"))
+            .env("XDG_CONFIG_HOME", &config_home)
+            .output()
+        else {
+            return;
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("\x1b]7;kitty-shell-cwd://"),
+            "no OSC 7 in fish output; stdout: {stdout:?}, stderr: {:?}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn prune_removes_only_stale_siblings() {
         let parent = std::env::temp_dir()
