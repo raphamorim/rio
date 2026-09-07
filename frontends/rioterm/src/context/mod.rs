@@ -891,6 +891,18 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// `only_current` restricts the walk to the displayed tab: with
     /// the tab strip absent (navigation disabled) background tabs'
     /// titles render nowhere, so refreshing them buys nothing.
+    /// Mark every pane's title stale. For changes that affect panes no
+    /// walk re-renders (a resize changing `{{columns}}`, a config
+    /// reload changing the template), hidden splits and unwalked tabs
+    /// re-render lazily when they surface via `sync_current_route`.
+    pub fn mark_all_titles_dirty(&mut self) {
+        for grid in self.contexts.iter_mut() {
+            for item in grid.contexts_mut().values_mut() {
+                item.context_mut().title_dirty = true;
+            }
+        }
+    }
+
     pub fn update_titles(&mut self, only_current: bool) -> bool {
         let template = self.config.title.content.clone();
         let mut repaint = false;

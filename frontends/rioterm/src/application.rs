@@ -581,7 +581,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 self.config = config;
                 self.title_tracks_size = title_tracks_size(&self.config);
-                self.router.update_titles();
 
                 // Dropping the old manager unregisters its hotkeys, so
                 // ToggleQuake binding edits apply without restarting.
@@ -630,6 +629,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                     route.request_redraw();
                 }
+
+                self.router.update_titles();
             }
             RioEventType::Rio(RioEvent::Exit | RioEvent::Quit) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
@@ -2205,6 +2206,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.resize(new_size);
                 if self.title_tracks_size {
                     let only_current = route.window.screen.renderer.island.is_none();
+                    route.window.screen.context_manager.mark_all_titles_dirty();
                     route
                         .window
                         .screen
