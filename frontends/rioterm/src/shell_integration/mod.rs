@@ -332,8 +332,8 @@ mod test {
     #[cfg(unix)]
     #[test]
     fn zsh_integration_emits_a_cwd_report() {
-        let base = std::env::temp_dir()
-            .join(format!("rio-si-zsh-test-{}", std::process::id()));
+        let base =
+            std::env::temp_dir().join(format!("rio-si-zsh-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         materialize(&base).unwrap();
         // An empty restored ZDOTDIR keeps the developer's own zsh
