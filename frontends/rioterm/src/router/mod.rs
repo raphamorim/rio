@@ -120,9 +120,29 @@ impl Route<'_> {
         self.window.winit_window.set_subtitle(subtitle);
     }
 
+    /// Set the native window title, deduplicating against the last
+    /// value: every upstream producer may poke redundantly (the whole
+    /// design converges instead of change-detecting), so the OS call
+    /// happens only when the text really changed.
     #[inline]
     pub fn set_window_title(&mut self, title: &str) {
+        if self.window.last_window_title == title {
+            return;
+        }
+        self.window.last_window_title = title.to_string();
         self.window.winit_window.set_title(title);
+    }
+
+    /// Refresh the native titlebar from the displayed pane, through the
+    /// same fallback chain the tab strip renders.
+    #[inline]
+    pub fn sync_window_title(&mut self) {
+        let title = self
+            .window
+            .screen
+            .context_manager
+            .displayed_title_for_current_tab();
+        self.set_window_title(&title);
     }
 
     #[inline]
@@ -505,9 +525,7 @@ impl Router<'_> {
     #[inline]
     pub fn update_titles(&mut self) {
         for route in self.routes.values_mut() {
-            if route.window.is_focused
-                && route.window.screen.context_manager.update_titles()
-            {
+            if route.window.screen.context_manager.update_titles() {
                 route.request_overlay_redraw();
             }
         }
@@ -714,6 +732,13 @@ impl Router<'_> {
 
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
+    /// Whether a real Focused event has ever arrived. A window created
+    /// in the background starts `is_focused: false` and may never get
+    /// a correcting event; render gating must not freeze it before its
+    /// first focus.
+    pub focus_seen: bool,
+    /// Last title pushed to the OS, for `set_window_title` dedup.
+    pub last_window_title: String,
     pub is_occluded: bool,
     pub needs_render_after_occlusion: bool,
     #[cfg(target_os = "windows")]
@@ -905,6 +930,8 @@ impl<'a> RouteWindow<'a> {
             vblank_interval: monitor_vblank_interval,
             render_timestamp: Instant::now(),
             is_focused,
+            focus_seen: false,
+            last_window_title: String::new(),
             is_occluded: false,
             needs_render_after_occlusion: false,
             #[cfg(target_os = "windows")]

@@ -1461,32 +1461,14 @@ impl Island {
         self.color_picker_tab.is_some()
     }
 
-    /// Get the title text for a specific tab index
+    /// Get the title text for a specific tab index: the one displayed
+    /// chain, shared with the native titlebar.
     fn get_title_for_tab(
         &self,
         context_manager: &ContextManager<EventProxy>,
         tab_index: usize,
     ) -> String {
-        // Custom user-set title takes priority
-        if let Some(custom) = context_manager.custom_title(tab_index) {
-            return custom.to_string();
-        }
-
-        if let Some(context_title) = context_manager.title(tab_index) {
-            if !context_title.content.is_empty() {
-                return context_title.content.clone();
-            }
-
-            // Fallback to program name if title is empty
-            if let Some(ref extra) = context_title.extra {
-                if !extra.program.is_empty() {
-                    return extra.program.clone();
-                }
-            }
-        }
-
-        // Default fallback - show tab number
-        String::from("~")
+        context_manager.displayed_title_for_tab(tab_index)
     }
 }
 

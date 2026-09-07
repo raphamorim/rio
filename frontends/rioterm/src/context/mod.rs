@@ -482,6 +482,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.contexts[tab_index].remove_by_route(route_id, sugarloaf);
             if tab_index == self.current_index {
                 self.current_route = self.contexts[tab_index].current().route_id;
+                self.sync_window_title();
             }
             return false;
         }
@@ -582,19 +583,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn select_next_split(&mut self) {
         self.contexts[self.current_index].select_next_split();
-        self.current_route = self.current().route_id;
+        self.sync_current_route();
     }
 
     #[inline]
     pub fn select_prev_split(&mut self) {
         self.contexts[self.current_index].select_prev_split();
-        self.current_route = self.current().route_id;
+        self.sync_current_route();
     }
 
     #[inline]
     pub fn switch_to_next_split_or_tab(&mut self) {
         if self.contexts[self.current_index].select_next_split_no_loop() {
-            self.current_route = self.current().route_id;
+            self.sync_current_route();
             return;
         }
         self.switch_to_next();
@@ -603,13 +604,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if let Some(root) = current_tab.root {
             current_tab.current = root;
         }
-        self.current_route = self.current().route_id;
+        self.sync_current_route();
     }
 
     #[inline]
     pub fn switch_to_prev_split_or_tab(&mut self) {
         if self.contexts[self.current_index].select_prev_split_no_loop() {
-            self.current_route = self.current().route_id;
+            self.sync_current_route();
             return;
         }
         self.switch_to_prev();
@@ -619,7 +620,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if let Some(&last_key) = ordered_keys.last() {
             current_tab.current = last_key;
         }
-        self.current_route = self.current().route_id;
+        self.sync_current_route();
     }
 
     #[inline]
@@ -707,7 +708,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn select_route_from_current_grid(&mut self) {
-        self.current_route = self.current().route_id;
+        self.sync_current_route();
     }
 
     #[inline]
@@ -811,24 +812,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
-    /// Re-render one pane's title into its `ContextTitle`. The extra
-    /// (foreground program, for `{{program}}` fallbacks and
-    /// color-automation) refreshes even when the rendered content is
-    /// unchanged: it tracks the running program, which changes without
-    /// any title event. Returns whether anything changed.
     /// Re-render one pane's title. The extra tracks the running
     /// program, which changes without any title event, so it refreshes
     /// even when the rendered content is unchanged; the fetched program
     /// is reused for the template render, so a refresh runs the process
-    /// inspection at most once. Returns
-    /// `(content_changed, displayed_changed)`: the strip shows the
-    /// content, falling back to the program only when the content is
-    /// empty, so extra-only churn repaints nothing.
+    /// inspection at most once. Returns whether the DISPLAYED text
+    /// changed: the strip shows the content, falling back to the
+    /// program only when the content is empty, so extra-only churn
+    /// repaints nothing.
     fn refresh_item_title(
         template: &str,
         should_update_title_extra: bool,
         context: &mut Context<T>,
-    ) -> (bool, bool) {
+    ) -> bool {
         let extra = if should_update_title_extra {
             create_title_extra_from_context(context)
         } else {
@@ -842,23 +838,23 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let content_changed = content != context.title.content;
         let extra_changed = extra != context.title.extra;
         if !content_changed && !extra_changed {
-            return (false, false);
+            return false;
         }
         let displayed_changed = content_changed || content.is_empty();
         context.title = ContextTitle { content, extra };
-        (content_changed, displayed_changed)
+        displayed_changed
     }
 
     /// Recompute the tab title for a single pane, used when its terminal
     /// title changed (OSC 0/2). The poll below only paces the variables
     /// that have no event to hang off (`{{program}}`, paths), so waiting
     /// on it made a title the PTY already told us about show up seconds
-    /// late. Returns `(content_changed, displayed_changed)`.
-    pub fn update_title_for_route(&mut self, route_id: usize) -> (bool, bool) {
+    /// late. Returns whether the displayed text changed.
+    pub fn update_title_for_route(&mut self, route_id: usize) -> bool {
         let template = self.config.title.content.clone();
         let should_update_title_extra = self.config.should_update_title_extra;
         let Some(item) = self.get_by_route_id(route_id) else {
-            return (false, false);
+            return false;
         };
         Self::refresh_item_title(&template, should_update_title_extra, item.context_mut())
     }
@@ -866,40 +862,66 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// Recompute every tab's title on the poll tick. This is what picks up
     /// the variables no PTY event announces (`{{program}}`, paths); OSC
     /// title changes arrive immediately via `update_title_for_route`.
-    /// The titles are committed HERE: the only event is a `WindowTitle`
-    /// carrying the current tab's already-rendered content when it
-    /// changed (the native titlebar is the one consumer outside this
-    /// struct), so nothing round-trips back into a second render. The
-    /// chrome repaint rides the returned flag.
+    /// The titles are committed HERE; the chrome repaint rides the
+    /// returned flag, and one unconditional titlebar poke per tick
+    /// makes the native title CONVERGE on the displayed text (the poke
+    /// is payload-less and deduped at the sink, so a tick that changed
+    /// nothing costs one no-op event).
     pub fn update_titles(&mut self) -> bool {
         let template = self.config.title.content.clone();
         let should_update_title_extra = self.config.should_update_title_extra;
         let mut repaint = false;
         for index in 0..self.contexts.len() {
-            let current_index = self.current_index;
             let context = self.contexts[index].current_mut();
-            let (content_changed, displayed_changed) =
+            repaint |=
                 Self::refresh_item_title(&template, should_update_title_extra, context);
-            repaint |= displayed_changed;
-            if content_changed && index == current_index {
-                let content = context.title.content.clone();
-                self.event_proxy
-                    .send_event(RioEvent::WindowTitle(content), self.window_id);
-            }
         }
+        self.sync_window_title();
         repaint
     }
 
-    /// Push the newly displayed pane's rendered title to the native
-    /// titlebar. Runs on every current-tab change: the titlebar only
-    /// otherwise updates when a title CHANGES, so switching to a tab
-    /// with a stable title would leave the previous tab's name up
-    /// forever.
+    /// The title the strip displays for `index`'s tab: the user rename,
+    /// else the rendered content, else the foreground program, else
+    /// "~". The native titlebar reads the same chain, so the two can
+    /// never disagree.
+    pub fn displayed_title_for_tab(&self, index: usize) -> String {
+        if let Some(custom) = self.custom_title(index) {
+            return custom.to_string();
+        }
+        if let Some(title) = self.title(index) {
+            if !title.content.is_empty() {
+                return title.content.clone();
+            }
+            if let Some(ref extra) = title.extra {
+                if !extra.program.is_empty() {
+                    return extra.program.clone();
+                }
+            }
+        }
+        String::from("~")
+    }
+
+    #[inline]
+    pub fn displayed_title_for_current_tab(&self) -> String {
+        self.displayed_title_for_tab(self.current_index)
+    }
+
+    /// Ask the event loop to refresh the native titlebar. Payload-less
+    /// on purpose: the handler re-reads the displayed title at handling
+    /// time, so a queued poke can never overwrite a newer title with a
+    /// stale snapshot, and redundant pokes dedupe at the sink.
     fn sync_window_title(&mut self) {
-        self.event_proxy.send_event(
-            RioEvent::WindowTitle(self.current().title.content.clone()),
-            self.window_id,
-        );
+        self.event_proxy
+            .send_event(RioEvent::SyncWindowTitle, self.window_id);
+    }
+
+    /// Point `current_route` at the pane the user now sees and poke the
+    /// titlebar. Every displayed-pane change (tab switch, split
+    /// selection, split death, new splits) funnels here so the titlebar
+    /// can never be left showing a pane that is not on screen.
+    fn sync_current_route(&mut self) {
+        self.current_route = self.current().route_id;
+        self.sync_window_title();
     }
 
     #[inline]
@@ -938,6 +960,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn remove_current_grid(&mut self, sugarloaf: &mut Sugarloaf) {
         self.contexts[self.current_index].remove_current(sugarloaf);
         self.current_route = self.contexts[self.current_index].current().route_id;
+        self.sync_window_title();
     }
 
     #[inline]
@@ -969,8 +992,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn set_current(&mut self, context_id: usize) {
         if context_id < self.contexts.len() {
             self.current_index = context_id;
-            self.current_route = self.current().route_id;
-            self.sync_window_title();
+            self.sync_current_route();
         }
     }
 
@@ -1040,8 +1062,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.current_index += 1;
         }
 
-        self.current_route = self.current().route_id;
-        self.sync_window_title();
+        self.sync_current_route();
     }
 
     #[inline]
@@ -1058,8 +1079,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.current_index -= 1;
         }
 
-        self.current_route = self.current().route_id;
-        self.sync_window_title();
+        self.sync_current_route();
     }
 
     #[inline]
@@ -1158,6 +1178,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 }
 
                 self.current_route = new_route_id;
+                self.sync_window_title();
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1221,6 +1242,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 }
 
                 self.current_route = new_route_id;
+                self.sync_window_title();
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1297,8 +1319,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     ));
                     if redirect {
                         self.current_index = last_index;
-                        self.current_route = self.current().route_id;
-                        self.sync_window_title();
+                        self.sync_current_route();
                     }
                 }
                 Err(..) => {

@@ -21,6 +21,20 @@ impl Default for ContextTitle {
     }
 }
 
+/// Whether title data depends on anything no PTY event announces, so
+/// the 2s poll must run: color automation reads the foreground
+/// program, and the program/path/size template variables change with
+/// no escape sequence attached. OSC 0/2 titles arrive as events.
+pub fn needs_title_poll(config: &rio_backend::config::Config) -> bool {
+    if !config.navigation.color_automation.is_empty() {
+        return true;
+    }
+    let template = config.title.content.to_lowercase();
+    ["program", "path", "columns", "lines"]
+        .iter()
+        .any(|variable| template.contains(variable))
+}
+
 pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
     context: &Context<T>,
 ) -> Option<ContextTitleExtra> {

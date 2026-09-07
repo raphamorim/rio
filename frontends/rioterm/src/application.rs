@@ -159,6 +159,30 @@ impl Application<'_> {
 }
 
 impl Application<'_> {
+    /// Schedule or cancel the 2s title poll to match the config. The
+    /// poll exists only for data no PTY event announces (`{{program}}`,
+    /// paths, sizes, color automation); a `{{ title }}`-only template
+    /// with color automation off runs NO title timer at all, matching
+    /// how ghostty and kitty never poll for titles.
+    fn reconcile_title_poll(&mut self) {
+        let timer_id = TimerId::new(Topic::UpdateTitles, 0);
+        if crate::context::title::needs_title_poll(&self.config) {
+            if !self.scheduler.scheduled(timer_id) {
+                self.scheduler.schedule(
+                    EventPayload::new(
+                        RioEventType::Rio(RioEvent::UpdateTitles),
+                        unsafe { rio_window::window::WindowId::dummy().into() },
+                    ),
+                    Duration::from_secs(2),
+                    true,
+                    timer_id,
+                );
+            }
+        } else {
+            self.scheduler.unschedule(timer_id);
+        }
+    }
+
     /// Register a system-wide hotkey for every `ToggleQuake` binding
     /// in the config, so the quake window opens while Rio is
     /// unfocused. No-op when quake is not bound; pure Wayland has no
@@ -336,18 +360,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             self.setup_quake_hotkey();
         }
 
-        // Schedule title updates every 2s
-        let timer_id = TimerId::new(Topic::UpdateTitles, 0);
-        if !self.scheduler.scheduled(timer_id) {
-            self.scheduler.schedule(
-                EventPayload::new(RioEventType::Rio(RioEvent::UpdateTitles), unsafe {
-                    rio_window::window::WindowId::dummy().into()
-                }),
-                Duration::from_secs(2),
-                true,
-                timer_id,
-            );
-        }
+        self.reconcile_title_poll();
 
         tracing::info!("Initialisation complete");
     }
@@ -360,6 +373,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Skip rendering for unfocused windows if configured
                     if self.config.renderer.disable_unfocused_render
                         && !route.window.is_focused
+                        && route.window.focus_seen
                     {
                         return;
                     }
@@ -386,6 +400,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // Skip rendering for unfocused windows if configured
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
+                            && route.window.focus_seen
                         {
                             if route.window.screen.renderer.scrollbar.needs_redraw() {
                                 route.request_redraw();
@@ -444,6 +459,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
+                            && route.window.focus_seen
                         {
                             return;
                         }
@@ -578,6 +594,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 };
 
                 self.config = config;
+                self.reconcile_title_poll();
 
                 // Dropping the old manager unregisters its hotkeys, so
                 // ToggleQuake binding edits apply without restarting.
@@ -827,7 +844,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::Title(route_id, _)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let (content_changed, displayed_changed) = route
+                    let displayed_changed = route
                         .window
                         .screen
                         .context_manager
@@ -841,25 +858,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     {
                         route.request_overlay_redraw();
                     }
-                    if content_changed
-                        && route.window.screen.context_manager.current().route_id
-                            == route_id
-                    {
-                        let rendered = route
-                            .window
-                            .screen
-                            .context_manager
-                            .current()
-                            .title
-                            .content
-                            .clone();
-                        route.set_window_title(&rendered);
-                    }
+                    route.sync_window_title();
                 }
             }
-            RioEventType::Rio(RioEvent::WindowTitle(title)) => {
+            RioEventType::Rio(RioEvent::SyncWindowTitle) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    route.set_window_title(&title);
+                    route.sync_window_title();
                 }
             }
             RioEventType::Rio(RioEvent::TitleWithSubtitle(title, subtitle)) => {
@@ -2137,6 +2141,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 let focus_changed = route.window.is_focused != focused;
                 route.window.is_focused = focused;
+                route.window.focus_seen = true;
 
                 // Focus is a cheap checkpoint to catch backing-scale changes
                 // whose ScaleFactorChanged never arrived (sleep/wake display
