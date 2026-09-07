@@ -557,6 +557,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn kitty_shell_cwd_rejects_remote_hosts() {
         assert_eq!(
