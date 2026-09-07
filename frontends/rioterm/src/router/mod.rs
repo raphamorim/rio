@@ -525,7 +525,13 @@ impl Router<'_> {
     #[inline]
     pub fn update_titles(&mut self) {
         for route in self.routes.values_mut() {
-            if route.window.screen.context_manager.update_titles() {
+            let only_current = route.window.screen.renderer.island.is_none();
+            if route
+                .window
+                .screen
+                .context_manager
+                .update_titles(only_current)
+            {
                 route.request_overlay_redraw();
             }
         }

@@ -56,6 +56,9 @@ pub struct Context<T: EventListener> {
     pub rich_text_id: usize,
     pub dimension: ContextDimension,
     pub title: ContextTitle,
+    /// An OSC title change arrived while this pane was hidden: the
+    /// render was skipped and must run when the pane surfaces.
+    pub title_dirty: bool,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
 
@@ -113,7 +116,6 @@ pub struct ContextManagerConfig {
     pub spawn_performer: bool,
     pub cwd: bool,
     pub is_native: bool,
-    pub should_update_title_extra: bool,
     pub split_color: [f32; 4],
     pub split_active_color: [f32; 4],
     pub panel: rio_backend::config::layout::Panel,
@@ -167,6 +169,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         rich_text_id,
         dimension,
         title: ContextTitle::default(),
+        title_dirty: false,
         _io_thread: None,
     }
 }
@@ -340,6 +343,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             renderable_content: RenderableContent::new(cursor_state.0.clone()),
             dimension,
             title: ContextTitle::default(),
+            title_dirty: false,
             _io_thread: io_thread,
         })
     }
@@ -757,16 +761,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             .position(|grid| grid.get_by_route_id(route_id).is_some())
     }
 
-    /// Whether `route_id` is the pane its tab currently displays: the
-    /// pane whose title the tab strip shows for that tab. Chrome only
-    /// repaints for these; a hidden split's state changes display
-    /// nothing until it surfaces.
-    #[inline]
-    pub fn is_displayed_pane(&mut self, route_id: usize) -> bool {
-        self.tab_index_for_route(route_id)
-            .is_some_and(|index| self.contexts[index].current().route_id == route_id)
-    }
-
     /// A pane rang the bell. Flags its tab so the strip can surface it.
     /// The current tab is skipped only while the window has focus: the
     /// user is already looking at it then, but a ring in the visible
@@ -812,29 +806,23 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
-    /// Re-render one pane's title. The extra tracks the running
-    /// program, which changes without any title event, so it refreshes
-    /// even when the rendered content is unchanged; the fetched program
-    /// is reused for the template render, so a refresh runs the process
-    /// inspection at most once. Returns whether the DISPLAYED text
-    /// changed: the strip shows the content, falling back to the
-    /// program only when the content is empty, so extra-only churn
-    /// repaints nothing.
+    /// Re-render one pane's title. The extra (foreground program) is
+    /// fetched exactly when its one consumer needs it: the strip falls
+    /// back to the program only for an EMPTY rendered content, so a
+    /// pane with any content pays no process inspection at all (the
+    /// old coupling keyed this on `navigation.color_automation`, which
+    /// nothing consumes). Returns whether the displayed text changed.
     fn refresh_item_title(
         template: &str,
-        should_update_title_extra: bool,
         context: &mut Context<T>,
+        prefetched_title: Option<&str>,
     ) -> bool {
-        let extra = if should_update_title_extra {
+        let content = update_title(template, context, prefetched_title);
+        let extra = if content.is_empty() {
             create_title_extra_from_context(context)
         } else {
             None
         };
-        let content = update_title(
-            template,
-            context,
-            extra.as_ref().map(|e| e.program.as_str()),
-        );
         let content_changed = content != context.title.content;
         let extra_changed = extra != context.title.extra;
         if !content_changed && !extra_changed {
@@ -845,36 +833,53 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         displayed_changed
     }
 
-    /// Recompute the tab title for a single pane, used when its terminal
-    /// title changed (OSC 0/2). The poll below only paces the variables
-    /// that have no event to hang off (`{{program}}`, paths), so waiting
-    /// on it made a title the PTY already told us about show up seconds
-    /// late. Returns whether the displayed text changed.
-    pub fn update_title_for_route(&mut self, route_id: usize) -> bool {
-        let template = self.config.title.content.clone();
-        let should_update_title_extra = self.config.should_update_title_extra;
-        let Some(item) = self.get_by_route_id(route_id) else {
+    /// A pane's OSC 0/2 title changed. A DISPLAYED pane (its tab's
+    /// current) re-renders immediately with the event's own title
+    /// string, so the common `{{ title }}` render never locks the
+    /// terminal; a hidden pane is only marked dirty (one flag write,
+    /// no locks, no render) and renders when it surfaces, so a
+    /// background split streaming titles costs nothing visible. One
+    /// route scan serves every decision. Returns whether the strip
+    /// must repaint.
+    pub fn on_title_change(&mut self, route_id: usize, raw_title: &str) -> bool {
+        let Some(tab_index) = self.tab_index_for_route(route_id) else {
             return false;
         };
-        Self::refresh_item_title(&template, should_update_title_extra, item.context_mut())
+        if self.contexts[tab_index].current().route_id != route_id {
+            if let Some(item) = self.contexts[tab_index].get_by_route_id(route_id) {
+                item.context_mut().title_dirty = true;
+            }
+            return false;
+        }
+        let template = self.config.title.content.clone();
+        let context = self.contexts[tab_index].current_mut();
+        context.title_dirty = false;
+        Self::refresh_item_title(&template, context, Some(raw_title))
     }
 
     /// Recompute every tab's title on the poll tick. This is what picks up
     /// the variables no PTY event announces (`{{program}}`, paths); OSC
-    /// title changes arrive immediately via `update_title_for_route`.
+    /// title changes arrive immediately via `on_title_change`.
     /// The titles are committed HERE; the chrome repaint rides the
     /// returned flag, and one unconditional titlebar poke per tick
     /// makes the native title CONVERGE on the displayed text (the poke
     /// is payload-less and deduped at the sink, so a tick that changed
     /// nothing costs one no-op event).
-    pub fn update_titles(&mut self) -> bool {
+    /// `only_current` restricts the walk to the displayed tab: with the
+    /// tab strip absent (navigation disabled) background tabs' titles
+    /// render nowhere, so polling them buys nothing.
+    pub fn update_titles(&mut self, only_current: bool) -> bool {
         let template = self.config.title.content.clone();
-        let should_update_title_extra = self.config.should_update_title_extra;
         let mut repaint = false;
-        for index in 0..self.contexts.len() {
+        let range = if only_current {
+            self.current_index..self.current_index + 1
+        } else {
+            0..self.contexts.len()
+        };
+        for index in range {
             let context = self.contexts[index].current_mut();
-            repaint |=
-                Self::refresh_item_title(&template, should_update_title_extra, context);
+            context.title_dirty = false;
+            repaint |= Self::refresh_item_title(&template, context, None);
         }
         self.sync_window_title();
         repaint
@@ -921,6 +926,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// can never be left showing a pane that is not on screen.
     fn sync_current_route(&mut self) {
         self.current_route = self.current().route_id;
+        if self.current().title_dirty {
+            let template = self.config.title.content.clone();
+            let context = self.contexts[self.current_index].current_mut();
+            context.title_dirty = false;
+            Self::refresh_item_title(&template, context, None);
+        }
         self.sync_window_title();
     }
 
@@ -1212,7 +1223,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             is_native: config.navigation.is_native(),
             // When navigation is collapsed and does not contain any color rule
             // does not make sense fetch for foreground process names
-            should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
             split_active_color: config.colors.split_active,
             panel: config.panel,

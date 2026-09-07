@@ -161,9 +161,8 @@ impl Application<'_> {
 impl Application<'_> {
     /// Schedule or cancel the 2s title poll to match the config. The
     /// poll exists only for data no PTY event announces (`{{program}}`,
-    /// paths, sizes, color automation); a `{{ title }}`-only template
-    /// with color automation off runs NO title timer at all, matching
-    /// how ghostty and kitty never poll for titles.
+    /// paths, sizes); a `{{ title }}`-only template runs NO title
+    /// timer at all, so titles stay purely event-driven by default.
     fn reconcile_title_poll(&mut self) {
         let timer_id = TimerId::new(Topic::UpdateTitles, 0);
         if crate::context::title::needs_title_poll(&self.config) {
@@ -842,19 +841,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     );
                 }
             }
-            RioEventType::Rio(RioEvent::Title(route_id, _)) => {
+            RioEventType::Rio(RioEvent::Title(route_id, title)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    let displayed_changed = route
+                    if route
                         .window
                         .screen
                         .context_manager
-                        .update_title_for_route(route_id);
-                    if displayed_changed
-                        && route
-                            .window
-                            .screen
-                            .context_manager
-                            .is_displayed_pane(route_id)
+                        .on_title_change(route_id, &title)
                     {
                         route.request_overlay_redraw();
                     }

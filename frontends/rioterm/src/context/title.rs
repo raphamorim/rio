@@ -22,13 +22,11 @@ impl Default for ContextTitle {
 }
 
 /// Whether title data depends on anything no PTY event announces, so
-/// the 2s poll must run: color automation reads the foreground
-/// program, and the program/path/size template variables change with
-/// no escape sequence attached. OSC 0/2 titles arrive as events.
+/// the 2s poll must run: the program/path/size template variables
+/// change with no escape sequence attached. OSC 0/2 titles arrive as
+/// events. (`navigation.color_automation` used to force the poll but
+/// nothing outside config parsing consumes it.)
 pub fn needs_title_poll(config: &rio_backend::config::Config) -> bool {
-    if !config.navigation.color_automation.is_empty() {
-        return true;
-    }
     let template = config.title.content.to_lowercase();
     ["program", "path", "columns", "lines"]
         .iter()
@@ -96,19 +94,47 @@ fn shorten_path(absolute: &str) -> String {
 }
 
 #[inline]
-/// Render the title template. `prefetched_program` reuses a foreground
-/// process name the caller already fetched (the extra needs it too),
-/// so one pane refresh never runs the process inspection twice.
+/// Render the title template. `prefetched_title` reuses the OSC title
+/// string the caller already holds (a `Title` event carries it), so a
+/// `{{ title }}` render off an event never locks the terminal. Every
+/// terminal-derived value is fetched at most once per render, however
+/// many variables reference it: one terminal lock for title and cwd
+/// together, one lazy process-path inspection shared by the path
+/// fallbacks, one lazy process-name inspection for `{{ program }}`.
 pub fn update_title<T: rio_backend::event::EventListener>(
     template: &str,
     context: &Context<T>,
-    prefetched_program: Option<&str>,
+    prefetched_title: Option<&str>,
 ) -> String {
     if template.is_empty() {
         return template.to_string();
     }
 
     let mut new_template = template.to_owned();
+    let lowered = template.to_lowercase();
+    let needs_title = lowered.contains("title");
+    let needs_path = lowered.contains("path");
+    let (terminal_title, current_directory) =
+        if (needs_title && prefetched_title.is_none()) || needs_path {
+            let terminal = context.terminal.lock();
+            (
+                match prefetched_title {
+                    Some(title) => title.to_string(),
+                    None => terminal.title.to_string(),
+                },
+                terminal.current_directory.clone(),
+            )
+        } else {
+            (prefetched_title.unwrap_or_default().to_string(), None)
+        };
+    #[cfg(unix)]
+    let mut process_path: Option<String> = None;
+    #[cfg(unix)]
+    let mut fetch_process_path = || {
+        teletypewriter::foreground_process_path(*context.main_fd, context.shell_pid)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default()
+    };
 
     // Compiled once: titles are now rendered per OSC title change, not on
     // a 2s poll, so a per-call `Regex::new` would sit in the hot path.
@@ -140,11 +166,6 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                     matched = true;
                 }
                 "title" => {
-                    let terminal_title = {
-                        let terminal = context.terminal.lock();
-                        terminal.title.to_string()
-                    };
-
                     // In case it has a fallback and title is empty
                     // or
                     // In case is the last then we need to erase variables either way
@@ -165,41 +186,31 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                 "program" => {
                     #[cfg(unix)]
                     {
-                        let program = match prefetched_program {
-                            Some(program) => program.to_string(),
-                            None => teletypewriter::foreground_process_name(
-                                *context.main_fd,
-                                context.shell_pid,
-                            ),
-                        };
+                        let program = teletypewriter::foreground_process_name(
+                            *context.main_fd,
+                            context.shell_pid,
+                        );
 
                         new_template = new_template.replace(to_replace_str, &program);
                         matched = true;
                     }
                 }
                 "absolute_path" => {
-                    {
-                        let terminal = context.terminal.lock();
-                        if let Some(current_directory) = &terminal.current_directory {
-                            if let Ok(dir_str) =
-                                current_directory.clone().into_os_string().into_string()
-                            {
-                                new_template =
-                                    new_template.replace(to_replace_str, &dir_str);
-                                matched = true;
-                                continue;
-                            }
-                        };
+                    if let Some(current_directory) = &current_directory {
+                        if let Ok(dir_str) =
+                            current_directory.clone().into_os_string().into_string()
+                        {
+                            new_template = new_template.replace(to_replace_str, &dir_str);
+                            matched = true;
+                            continue;
+                        }
                     }
 
                     #[cfg(unix)]
                     {
-                        let path = teletypewriter::foreground_process_path(
-                            *context.main_fd,
-                            context.shell_pid,
-                        )
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_default();
+                        let path = process_path
+                            .get_or_insert_with(&mut fetch_process_path)
+                            .clone();
 
                         // In case it has a fallback and path is empty
                         // or
@@ -218,28 +229,24 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                     }
                 }
                 "relative_path" => {
-                    {
-                        let terminal = context.terminal.lock();
-                        if let Some(current_directory) = &terminal.current_directory {
-                            if let Ok(dir_str) =
-                                current_directory.clone().into_os_string().into_string()
-                            {
-                                new_template = new_template
-                                    .replace(to_replace_str, &shorten_path(&dir_str));
-                                matched = true;
-                                continue;
-                            }
-                        };
+                    if let Some(current_directory) = &current_directory {
+                        if let Ok(dir_str) =
+                            current_directory.clone().into_os_string().into_string()
+                        {
+                            new_template = new_template
+                                .replace(to_replace_str, &shorten_path(&dir_str));
+                            matched = true;
+                            continue;
+                        }
                     }
 
                     #[cfg(unix)]
                     {
-                        let path = teletypewriter::foreground_process_path(
-                            *context.main_fd,
-                            context.shell_pid,
-                        )
-                        .map(|p| shorten_path(&p.to_string_lossy()))
-                        .unwrap_or_default();
+                        let path = shorten_path(
+                            &process_path
+                                .get_or_insert_with(&mut fetch_process_path)
+                                .clone(),
+                        );
 
                         let is_only_one = variables.len() == 1;
                         let is_last = i == variables.len() - 1;

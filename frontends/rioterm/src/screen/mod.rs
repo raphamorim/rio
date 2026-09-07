@@ -256,9 +256,6 @@ impl Screen<'_> {
             #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
             is_native,
-            // When navigation does not contain any color rule
-            // does not make sense fetch for foreground process names/path
-            should_update_title_extra: !config.navigation.color_automation.is_empty(),
             split_color: config.colors.split,
             split_active_color: config.colors.split_active,
             panel: config.panel,
