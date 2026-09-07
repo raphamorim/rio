@@ -2,57 +2,24 @@ use crate::context::Context;
 use std::path::Path;
 
 #[derive(PartialEq)]
-pub struct ContextTitleExtra {
-    pub program: String,
-}
-
-#[derive(PartialEq)]
 pub struct ContextTitle {
     pub content: String,
-    pub extra: Option<ContextTitleExtra>,
 }
 
 impl Default for ContextTitle {
     fn default() -> Self {
         Self {
             content: String::from("~"),
-            extra: None,
         }
     }
-}
-
-/// Whether title data can change without an announcing PTY event, so
-/// renders must opportunistically refresh it (rate-limited, never on
-/// a standing timer): `{{program}}` has no event at all, and the path
-/// variables fall back to process inspection for shells without OSC 7
-/// integration. A `{{ title }}`-only template stays purely
-/// event-driven and never runs a render-time refresh.
-pub fn needs_title_refresh(config: &rio_backend::config::Config) -> bool {
-    let template = config.title.content.to_lowercase();
-    ["program", "path", "columns", "lines"]
-        .iter()
-        .any(|variable| template.contains(variable))
-}
-
-pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
-    context: &Context<T>,
-) -> Option<ContextTitleExtra> {
-    #[cfg(unix)]
-    let program =
-        teletypewriter::foreground_process_name(*context.main_fd, context.shell_pid);
-
-    #[cfg(not(unix))]
-    let program = String::default();
-
-    Some(ContextTitleExtra { program })
 }
 
 // Possible options:
 
 // - `TITLE`: terminal title via OSC sequences for setting terminal title
-// - `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
-// - `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
-// - `RELATIVE_PATH`: (e.g `~/Documents/a/rio` or `…/a/psone/starpsx`)
+// - `PROGRAM`: the command the pane spawned (e.g `fish`, `zsh`, `bash`)
+// - `ABSOLUTE_PATH`: working directory via OSC 7 (e.g `/Users/rapha/Documents/a/rio`)
+// - `RELATIVE_PATH`: OSC 7 directory, home-relative (e.g `~/Documents/a/rio` or `…/a/psone/starpsx`)
 // - `COLUMNS`: current columns
 // - `LINES`: current lines
 
@@ -95,13 +62,15 @@ fn shorten_path(absolute: &str) -> String {
 }
 
 #[inline]
-/// Render the title template. `prefetched_title` reuses the OSC title
-/// string the caller already holds (a `Title` event carries it), so a
-/// `{{ title }}` render off an event never locks the terminal. Every
-/// terminal-derived value is fetched at most once per render, however
-/// many variables reference it: one terminal lock for title and cwd
-/// together, one lazy process-path inspection shared by the path
-/// fallbacks, one lazy process-name inspection for `{{ program }}`.
+/// Render the title template. Every variable is event-known, so this
+/// NEVER inspects the foreground process: `{{ title }}` is OSC 0/2,
+/// the path variables are OSC 7 (empty for shells without
+/// integration), `{{ program }}` is the name of the command the pane
+/// spawned, and columns/lines are the pane's own dimensions.
+/// `prefetched_title` reuses the OSC title string the caller already
+/// holds (a `Title` event carries it), so a `{{ title }}` render off
+/// an event never locks the terminal; otherwise one lock fetches
+/// title and cwd together.
 pub fn update_title<T: rio_backend::event::EventListener>(
     template: &str,
     context: &Context<T>,
@@ -128,15 +97,6 @@ pub fn update_title<T: rio_backend::event::EventListener>(
         } else {
             (prefetched_title.unwrap_or_default().to_string(), None)
         };
-    #[cfg(unix)]
-    let mut process_path: Option<String> = None;
-    #[cfg(unix)]
-    let mut fetch_process_path = || {
-        teletypewriter::foreground_process_path(*context.main_fd, context.shell_pid)
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default()
-    };
-
     // Compiled once: titles are now rendered per OSC title change, not on
     // a 2s poll, so a per-call `Regex::new` would sit in the hot path.
     static RE: std::sync::LazyLock<regex::Regex> =
@@ -185,81 +145,45 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                     }
                 }
                 "program" => {
-                    #[cfg(unix)]
-                    {
-                        let program = teletypewriter::foreground_process_name(
-                            *context.main_fd,
-                            context.shell_pid,
-                        );
+                    new_template =
+                        new_template.replace(to_replace_str, &context.spawned_program);
+                    matched = true;
+                }
+                "absolute_path" => {
+                    let path = current_directory
+                        .as_ref()
+                        .and_then(|d| d.clone().into_os_string().into_string().ok())
+                        .unwrap_or_default();
 
-                        new_template = new_template.replace(to_replace_str, &program);
+                    let is_only_one = variables.len() == 1;
+                    let is_last = i == variables.len() - 1;
+                    if is_only_one || is_last {
+                        new_template = new_template.replace(to_replace_str, &path);
+                        continue;
+                    }
+
+                    if !path.is_empty() {
+                        new_template = new_template.replace(to_replace_str, &path);
                         matched = true;
                     }
                 }
-                "absolute_path" => {
-                    if let Some(current_directory) = &current_directory {
-                        if let Ok(dir_str) =
-                            current_directory.clone().into_os_string().into_string()
-                        {
-                            new_template = new_template.replace(to_replace_str, &dir_str);
-                            matched = true;
-                            continue;
-                        }
-                    }
-
-                    #[cfg(unix)]
-                    {
-                        let path = process_path
-                            .get_or_insert_with(&mut fetch_process_path)
-                            .clone();
-
-                        // In case it has a fallback and path is empty
-                        // or
-                        // In case is the last then we need to erase variables either way
-                        let is_only_one = variables.len() == 1;
-                        let is_last = i == variables.len() - 1;
-                        if is_only_one || is_last {
-                            new_template = new_template.replace(to_replace_str, &path);
-                            continue;
-                        }
-
-                        if !path.is_empty() {
-                            new_template = new_template.replace(to_replace_str, &path);
-                            matched = true;
-                        }
-                    }
-                }
                 "relative_path" => {
-                    if let Some(current_directory) = &current_directory {
-                        if let Ok(dir_str) =
-                            current_directory.clone().into_os_string().into_string()
-                        {
-                            new_template = new_template
-                                .replace(to_replace_str, &shorten_path(&dir_str));
-                            matched = true;
-                            continue;
-                        }
+                    let path = current_directory
+                        .as_ref()
+                        .and_then(|d| d.clone().into_os_string().into_string().ok())
+                        .map(|d| shorten_path(&d))
+                        .unwrap_or_default();
+
+                    let is_only_one = variables.len() == 1;
+                    let is_last = i == variables.len() - 1;
+                    if is_only_one || is_last {
+                        new_template = new_template.replace(to_replace_str, &path);
+                        continue;
                     }
 
-                    #[cfg(unix)]
-                    {
-                        let path = shorten_path(
-                            &process_path
-                                .get_or_insert_with(&mut fetch_process_path)
-                                .clone(),
-                        );
-
-                        let is_only_one = variables.len() == 1;
-                        let is_last = i == variables.len() - 1;
-                        if is_only_one || is_last {
-                            new_template = new_template.replace(to_replace_str, &path);
-                            continue;
-                        }
-
-                        if !path.is_empty() {
-                            new_template = new_template.replace(to_replace_str, &path);
-                            matched = true;
-                        }
+                    if !path.is_empty() {
+                        new_template = new_template.replace(to_replace_str, &path);
+                        matched = true;
                     }
                 }
                 _ => {}

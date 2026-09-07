@@ -2,9 +2,7 @@ pub mod renderable;
 pub mod title;
 
 use crate::ansi::CursorShape;
-use crate::context::title::{
-    create_title_extra_from_context, update_title, ContextTitle,
-};
+use crate::context::title::{update_title, ContextTitle};
 use crate::event::sync::FairMutex;
 use crate::event::{Msg, RioEvent};
 pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
@@ -26,7 +24,7 @@ use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 // Global atomic counter for generating unique route IDs
 static ROUTE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
@@ -59,6 +57,11 @@ pub struct Context<T: EventListener> {
     /// An OSC title change arrived while this pane was hidden: the
     /// render was skipped and must run when the pane surfaces.
     pub title_dirty: bool,
+    /// Display name of the command this pane spawned (the configured
+    /// shell or program), fixed for the pane's lifetime. Fills
+    /// `{{ program }}` and the empty-title strip fallback without ever
+    /// inspecting the foreground process.
+    pub spawned_program: String,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
 
@@ -127,11 +130,6 @@ pub struct ContextManagerConfig {
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 
-/// Floor between two render-time title refreshes: process inspection
-/// stays rate-limited (the point of the old 2s poll) without any
-/// standing timer waking an idle terminal.
-pub const TITLE_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
-
 pub struct ContextManager<T: EventListener> {
     contexts: SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]>,
     current_index: usize,
@@ -140,8 +138,30 @@ pub struct ContextManager<T: EventListener> {
     capacity: usize,
     event_proxy: T,
     window_id: WindowId,
-    last_title_refresh: Instant,
     pub config: ContextManagerConfig,
+}
+
+/// Display name for the command a pane spawns: the configured program,
+/// else the user's shell (what the PTY spawn itself falls back to),
+/// reduced to its basename.
+fn spawned_program_name(config: &ContextManagerConfig) -> String {
+    let program = match config.shell.program.as_deref() {
+        Some(program) if !program.is_empty() => program.to_string(),
+        _ => {
+            #[cfg(unix)]
+            {
+                std::env::var("SHELL").unwrap_or_default()
+            }
+            #[cfg(not(unix))]
+            {
+                String::from("powershell")
+            }
+        }
+    };
+    std::path::Path::new(&program)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or(program)
 }
 
 pub fn create_dead_context<T: rio_backend::event::EventListener>(
@@ -176,6 +196,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         dimension,
         title: ContextTitle::default(),
         title_dirty: false,
+        spawned_program: String::new(),
         _io_thread: None,
     }
 }
@@ -337,7 +358,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let messenger = Messenger::new(channel);
 
-        Ok(Context {
+        let mut context = Context {
             route_id,
             #[cfg(not(target_os = "windows"))]
             main_fd,
@@ -350,8 +371,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             dimension,
             title: ContextTitle::default(),
             title_dirty: false,
+            spawned_program: spawned_program_name(config),
             _io_thread: io_thread,
-        })
+        };
+        context.title = ContextTitle {
+            content: update_title(&config.title.content, &context, None),
+        };
+        Ok(context)
     }
 
     #[inline]
@@ -427,7 +453,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
             window_id,
-            last_title_refresh: Instant::now(),
             config: ctx_config,
         })
     }
@@ -465,7 +490,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             capacity,
             event_proxy,
             window_id,
-            last_title_refresh: Instant::now(),
             config,
         })
     }
@@ -728,7 +752,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.contexts.len()
     }
 
-    #[inline]
+    #[cfg(test)]
     pub fn title(&self, index: usize) -> Option<&ContextTitle> {
         self.contexts.get(index).map(|grid| &grid.current().title)
     }
@@ -814,31 +838,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
-    /// Re-render one pane's title. The extra (foreground program) is
-    /// fetched exactly when its one consumer needs it: the strip falls
-    /// back to the program only for an EMPTY rendered content, so a
-    /// pane with any content pays no process inspection at all (the
-    /// old coupling keyed this on `navigation.color_automation`, which
-    /// nothing consumes). Returns whether the displayed text changed.
+    /// Re-render one pane's title. Returns whether the displayed text
+    /// changed (the empty-content fallback is the pane's static
+    /// spawned program, so displayed text changes exactly when the
+    /// content does).
     fn refresh_item_title(
         template: &str,
         context: &mut Context<T>,
         prefetched_title: Option<&str>,
     ) -> bool {
         let content = update_title(template, context, prefetched_title);
-        let extra = if content.is_empty() {
-            create_title_extra_from_context(context)
-        } else {
-            None
-        };
-        let content_changed = content != context.title.content;
-        let extra_changed = extra != context.title.extra;
-        if !content_changed && !extra_changed {
+        if content == context.title.content {
             return false;
         }
-        let displayed_changed = content_changed || content.is_empty();
-        context.title = ContextTitle { content, extra };
-        displayed_changed
+        context.title = ContextTitle { content };
+        true
     }
 
     /// A pane's title data changed: an OSC 0/2 title (carried in
@@ -866,28 +880,18 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         Self::refresh_item_title(&template, context, raw_title)
     }
 
-    /// Time left before the render-time refresh may run again: `None`
-    /// means due now. The caller schedules a single trailing shot for
-    /// the `Some` case so the last change before an idle period still
-    /// lands (a pure floor would hold it stale until the next render).
-    pub fn title_refresh_due(&self) -> Option<Duration> {
-        TITLE_REFRESH_INTERVAL.checked_sub(self.last_title_refresh.elapsed())
-    }
-
-    /// Recompute tab titles for the variables no PTY event announces
-    /// (`{{program}}`, path fallbacks); OSC title and OSC 7 changes
-    /// arrive immediately via `on_title_change`. Runs opportunistically
-    /// at render time behind `title_refresh_due` (plus one trailing
-    /// shot), never on a standing timer, so an idle terminal does zero
-    /// title work. The chrome repaint rides the returned flag, and one
-    /// unconditional titlebar poke per run makes the native title
-    /// CONVERGE on the displayed text (the poke is payload-less and
-    /// deduped at the sink, so a run that changed nothing costs one
-    /// no-op event). `only_current` restricts the walk to the displayed
-    /// tab: with the tab strip absent (navigation disabled) background
-    /// tabs' titles render nowhere, so refreshing them buys nothing.
+    /// Re-render tab titles from local state: a config reload can
+    /// change the template, and a resize changes `{{columns}}`/
+    /// `{{lines}}`. OSC title and OSC 7 changes arrive via
+    /// `on_title_change` instead; nothing calls this on a timer. The
+    /// chrome repaint rides the returned flag, and one unconditional
+    /// titlebar poke per run makes the native title CONVERGE on the
+    /// displayed text (the poke is payload-less and deduped at the
+    /// sink, so a run that changed nothing costs one no-op event).
+    /// `only_current` restricts the walk to the displayed tab: with
+    /// the tab strip absent (navigation disabled) background tabs'
+    /// titles render nowhere, so refreshing them buys nothing.
     pub fn update_titles(&mut self, only_current: bool) -> bool {
-        self.last_title_refresh = Instant::now();
         let template = self.config.title.content.clone();
         let mut repaint = false;
         let range = if only_current {
@@ -912,14 +916,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if let Some(custom) = self.custom_title(index) {
             return custom.to_string();
         }
-        if let Some(title) = self.title(index) {
-            if !title.content.is_empty() {
-                return title.content.clone();
+        if let Some(grid) = self.contexts.get(index) {
+            let context = grid.current();
+            if !context.title.content.is_empty() {
+                return context.title.content.clone();
             }
-            if let Some(ref extra) = title.extra {
-                if !extra.program.is_empty() {
-                    return extra.program.clone();
-                }
+            if !context.spawned_program.is_empty() {
+                return context.spawned_program.clone();
             }
         }
         String::from("~")

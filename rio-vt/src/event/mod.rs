@@ -287,9 +287,6 @@ pub enum RioEvent {
     /// Selection scroll tick — auto-scroll while dragging outside viewport.
     SelectionScrollTick,
 
-    /// Update window titles.
-    UpdateTitles,
-
     /// Update terminal screen colors.
     ///
     /// The first usize is the route_id, the second is the color index to change.
@@ -389,7 +386,6 @@ impl Debug for RioEvent {
                 write!(f, "BlinkCursor {timeout} {route_id}")
             }
             RioEvent::SelectionScrollTick => write!(f, "SelectionScrollTick"),
-            RioEvent::UpdateTitles => write!(f, "UpdateTitles"),
             RioEvent::Noop => write!(f, "Noop"),
             RioEvent::Copy(_) => write!(f, "Copy"),
             RioEvent::Paste => write!(f, "Paste"),

@@ -32,10 +32,10 @@ use std::time::{Duration, Instant};
 
 pub struct Application<'a> {
     config: rio_backend::config::Config,
-    /// The title template references data no PTY event announces, so
-    /// renders opportunistically refresh titles (see
-    /// `context::title::needs_title_refresh`).
-    title_on_demand: bool,
+    /// The title template shows `{{columns}}`/`{{lines}}`, so a resize
+    /// must re-render titles (the only title data with no PTY event;
+    /// everything else arrives via OSC 0/2 and OSC 7).
+    title_tracks_size: bool,
     event_proxy: EventProxy,
     router: Router<'a>,
     scheduler: Scheduler,
@@ -79,7 +79,7 @@ impl Application<'_> {
         rio_notifier::request_authorization();
 
         Application {
-            title_on_demand: crate::context::title::needs_title_refresh(&config),
+            title_tracks_size: title_tracks_size(&config),
             config,
             event_proxy,
             router,
@@ -163,55 +163,14 @@ impl Application<'_> {
     }
 }
 
+/// Whether the title template renders the pane size, the one title
+/// input with no PTY event attached (resizes are locally known).
+fn title_tracks_size(config: &rio_backend::config::Config) -> bool {
+    let template = config.title.content.to_lowercase();
+    template.contains("columns") || template.contains("lines")
+}
+
 impl Application<'_> {
-    /// Recompute whether renders must refresh title data and drop any
-    /// pending trailing shot when they must not. There is NO standing
-    /// title timer: refreshes ride renders behind a rate limit, plus
-    /// one trailing shot, so an idle terminal never wakes for titles.
-    fn reconcile_title_refresh(&mut self) {
-        self.title_on_demand = crate::context::title::needs_title_refresh(&self.config);
-        if !self.title_on_demand {
-            self.scheduler
-                .unschedule(TimerId::new(Topic::UpdateTitles, 0));
-        }
-    }
-
-    /// Render-time title refresh: run it when the rate limit allows,
-    /// otherwise arm ONE trailing shot at the limit's expiry so the
-    /// change that triggered this render still lands once the pane
-    /// goes idle. While output streams this settles into one refresh
-    /// per interval (what the old repeating poll did); with no
-    /// activity there are no renders, so no title work at all.
-    fn refresh_titles_for_render(&mut self, window_id: rio_backend::event::WindowId) {
-        let Some(route) = self.router.routes.get_mut(&window_id) else {
-            return;
-        };
-        let only_current = route.window.screen.renderer.island.is_none();
-        match route.window.screen.context_manager.title_refresh_due() {
-            None => {
-                route
-                    .window
-                    .screen
-                    .context_manager
-                    .update_titles(only_current);
-            }
-            Some(remaining) => {
-                let timer_id = TimerId::new(Topic::UpdateTitles, 0);
-                if !self.scheduler.scheduled(timer_id) {
-                    self.scheduler.schedule(
-                        EventPayload::new(
-                            RioEventType::Rio(RioEvent::UpdateTitles),
-                            unsafe { rio_window::window::WindowId::dummy().into() },
-                        ),
-                        remaining,
-                        false,
-                        timer_id,
-                    );
-                }
-            }
-        }
-    }
-
     /// Register a system-wide hotkey for every `ToggleQuake` binding
     /// in the config, so the quake window opens while Rio is
     /// unfocused. No-op when quake is not bound; pure Wayland has no
@@ -388,8 +347,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         if cause == StartCause::Init {
             self.setup_quake_hotkey();
         }
-
-        self.reconcile_title_refresh();
 
         tracing::info!("Initialisation complete");
     }
@@ -623,7 +580,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 };
 
                 self.config = config;
-                self.reconcile_title_refresh();
+                self.title_tracks_size = title_tracks_size(&self.config);
+                self.router.update_titles();
 
                 // Dropping the old manager unregisters its hotkeys, so
                 // ToggleQuake binding edits apply without restarting.
@@ -907,9 +865,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.set_window_title(&title);
                     route.set_window_subtitle(&subtitle);
                 }
-            }
-            RioEventType::Rio(RioEvent::UpdateTitles) => {
-                self.router.update_titles();
             }
             RioEventType::Rio(RioEvent::MouseCursorDirty) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
@@ -2248,6 +2203,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
 
                 route.window.screen.resize(new_size);
+                if self.title_tracks_size {
+                    let only_current = route.window.screen.renderer.island.is_none();
+                    route
+                        .window
+                        .screen
+                        .context_manager
+                        .update_titles(only_current);
+                }
                 route.request_redraw();
             }
 
@@ -2265,12 +2228,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::RedrawRequested => {
-                if self.title_on_demand && matches!(route.path, RoutePath::Terminal) {
-                    self.refresh_titles_for_render(window_id);
-                }
-                let Some(route) = self.router.routes.get_mut(&window_id) else {
-                    return;
-                };
                 route.begin_render();
 
                 match route.path {

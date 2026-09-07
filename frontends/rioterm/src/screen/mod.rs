@@ -3017,23 +3017,7 @@ impl Screen<'_> {
         // Right-click or Control + left-click → toggle color picker for that tab
         if is_right_click || self.modifiers.state().control_key() {
             // Get current displayed title for the rename input
-            let current_title = self
-                .context_manager
-                .title(clicked_tab)
-                .and_then(|t| {
-                    if !t.content.is_empty() {
-                        Some(t.content.clone())
-                    } else {
-                        t.extra.as_ref().and_then(|e| {
-                            if !e.program.is_empty() {
-                                Some(e.program.clone())
-                            } else {
-                                None
-                            }
-                        })
-                    }
-                })
-                .unwrap_or_else(|| String::from("~"));
+            let current_title = self.context_manager.displayed_title_for_tab(clicked_tab);
             if let Some(ref mut island) = self.renderer.island {
                 island.toggle_color_picker(
                     clicked_tab,
