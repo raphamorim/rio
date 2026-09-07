@@ -1,8 +1,5 @@
 xterm-rio,
     use=rio+base,
-
-rio,
-    use=xterm-rio,
     rs1=\Ec\E]104\007,
     ccc,
     colors#0x100, pairs#0x7FFF,
@@ -14,6 +11,9 @@ rio,
     setaf=\E[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5
           ;%p1%d%;m,
     setb@, setf@,
+
+rio,
+    use=xterm-rio,
 
 rio+base,
     OTbs, am, bce, km, mir, msgr, xenl, AX, XT,
