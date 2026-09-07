@@ -21,12 +21,13 @@ impl Default for ContextTitle {
     }
 }
 
-/// Whether title data depends on anything no PTY event announces, so
-/// the 2s poll must run: the program/path/size template variables
-/// change with no escape sequence attached. OSC 0/2 titles arrive as
-/// events. (`navigation.color_automation` used to force the poll but
-/// nothing outside config parsing consumes it.)
-pub fn needs_title_poll(config: &rio_backend::config::Config) -> bool {
+/// Whether title data can change without an announcing PTY event, so
+/// renders must opportunistically refresh it (rate-limited, never on
+/// a standing timer): `{{program}}` has no event at all, and the path
+/// variables fall back to process inspection for shells without OSC 7
+/// integration. A `{{ title }}`-only template stays purely
+/// event-driven and never runs a render-time refresh.
+pub fn needs_title_refresh(config: &rio_backend::config::Config) -> bool {
     let template = config.title.content.to_lowercase();
     ["program", "path", "columns", "lines"]
         .iter()

@@ -26,7 +26,7 @@ use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 // Global atomic counter for generating unique route IDs
 static ROUTE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
@@ -127,6 +127,11 @@ pub struct ContextManagerConfig {
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 
+/// Floor between two render-time title refreshes: process inspection
+/// stays rate-limited (the point of the old 2s poll) without any
+/// standing timer waking an idle terminal.
+pub const TITLE_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+
 pub struct ContextManager<T: EventListener> {
     contexts: SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]>,
     current_index: usize,
@@ -135,6 +140,7 @@ pub struct ContextManager<T: EventListener> {
     capacity: usize,
     event_proxy: T,
     window_id: WindowId,
+    last_title_refresh: Instant,
     pub config: ContextManagerConfig,
 }
 
@@ -421,6 +427,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             capacity: DEFAULT_CONTEXT_CAPACITY,
             event_proxy,
             window_id,
+            last_title_refresh: Instant::now(),
             config: ctx_config,
         })
     }
@@ -458,6 +465,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             capacity,
             event_proxy,
             window_id,
+            last_title_refresh: Instant::now(),
             config,
         })
     }
@@ -833,15 +841,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         displayed_changed
     }
 
-    /// A pane's OSC 0/2 title changed. A DISPLAYED pane (its tab's
-    /// current) re-renders immediately with the event's own title
-    /// string, so the common `{{ title }}` render never locks the
-    /// terminal; a hidden pane is only marked dirty (one flag write,
-    /// no locks, no render) and renders when it surfaces, so a
-    /// background split streaming titles costs nothing visible. One
-    /// route scan serves every decision. Returns whether the strip
-    /// must repaint.
-    pub fn on_title_change(&mut self, route_id: usize, raw_title: &str) -> bool {
+    /// A pane's title data changed: an OSC 0/2 title (carried in
+    /// `raw_title`, so the common `{{ title }}` render never locks the
+    /// terminal) or an OSC 7 working directory (`raw_title` None: the
+    /// render re-reads the stored directory). A DISPLAYED pane (its
+    /// tab's current) re-renders immediately; a hidden pane is only
+    /// marked dirty (one flag write, no locks, no render) and renders
+    /// when it surfaces, so a background split streaming titles costs
+    /// nothing visible. One route scan serves every decision. Returns
+    /// whether the strip must repaint.
+    pub fn on_title_change(&mut self, route_id: usize, raw_title: Option<&str>) -> bool {
         let Some(tab_index) = self.tab_index_for_route(route_id) else {
             return false;
         };
@@ -854,21 +863,31 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let template = self.config.title.content.clone();
         let context = self.contexts[tab_index].current_mut();
         context.title_dirty = false;
-        Self::refresh_item_title(&template, context, Some(raw_title))
+        Self::refresh_item_title(&template, context, raw_title)
     }
 
-    /// Recompute every tab's title on the poll tick. This is what picks up
-    /// the variables no PTY event announces (`{{program}}`, paths); OSC
-    /// title changes arrive immediately via `on_title_change`.
-    /// The titles are committed HERE; the chrome repaint rides the
-    /// returned flag, and one unconditional titlebar poke per tick
-    /// makes the native title CONVERGE on the displayed text (the poke
-    /// is payload-less and deduped at the sink, so a tick that changed
-    /// nothing costs one no-op event).
-    /// `only_current` restricts the walk to the displayed tab: with the
-    /// tab strip absent (navigation disabled) background tabs' titles
-    /// render nowhere, so polling them buys nothing.
+    /// Time left before the render-time refresh may run again: `None`
+    /// means due now. The caller schedules a single trailing shot for
+    /// the `Some` case so the last change before an idle period still
+    /// lands (a pure floor would hold it stale until the next render).
+    pub fn title_refresh_due(&self) -> Option<Duration> {
+        TITLE_REFRESH_INTERVAL.checked_sub(self.last_title_refresh.elapsed())
+    }
+
+    /// Recompute tab titles for the variables no PTY event announces
+    /// (`{{program}}`, path fallbacks); OSC title and OSC 7 changes
+    /// arrive immediately via `on_title_change`. Runs opportunistically
+    /// at render time behind `title_refresh_due` (plus one trailing
+    /// shot), never on a standing timer, so an idle terminal does zero
+    /// title work. The chrome repaint rides the returned flag, and one
+    /// unconditional titlebar poke per run makes the native title
+    /// CONVERGE on the displayed text (the poke is payload-less and
+    /// deduped at the sink, so a run that changed nothing costs one
+    /// no-op event). `only_current` restricts the walk to the displayed
+    /// tab: with the tab strip absent (navigation disabled) background
+    /// tabs' titles render nowhere, so refreshing them buys nothing.
     pub fn update_titles(&mut self, only_current: bool) -> bool {
+        self.last_title_refresh = Instant::now();
         let template = self.config.title.content.clone();
         let mut repaint = false;
         let range = if only_current {

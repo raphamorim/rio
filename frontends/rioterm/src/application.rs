@@ -32,6 +32,10 @@ use std::time::{Duration, Instant};
 
 pub struct Application<'a> {
     config: rio_backend::config::Config,
+    /// The title template references data no PTY event announces, so
+    /// renders opportunistically refresh titles (see
+    /// `context::title::needs_title_refresh`).
+    title_on_demand: bool,
     event_proxy: EventProxy,
     router: Router<'a>,
     scheduler: Scheduler,
@@ -75,6 +79,7 @@ impl Application<'_> {
         rio_notifier::request_authorization();
 
         Application {
+            title_on_demand: crate::context::title::needs_title_refresh(&config),
             config,
             event_proxy,
             router,
@@ -159,26 +164,51 @@ impl Application<'_> {
 }
 
 impl Application<'_> {
-    /// Schedule or cancel the 2s title poll to match the config. The
-    /// poll exists only for data no PTY event announces (`{{program}}`,
-    /// paths, sizes); a `{{ title }}`-only template runs NO title
-    /// timer at all, so titles stay purely event-driven by default.
-    fn reconcile_title_poll(&mut self) {
-        let timer_id = TimerId::new(Topic::UpdateTitles, 0);
-        if crate::context::title::needs_title_poll(&self.config) {
-            if !self.scheduler.scheduled(timer_id) {
-                self.scheduler.schedule(
-                    EventPayload::new(
-                        RioEventType::Rio(RioEvent::UpdateTitles),
-                        unsafe { rio_window::window::WindowId::dummy().into() },
-                    ),
-                    Duration::from_secs(2),
-                    true,
-                    timer_id,
-                );
+    /// Recompute whether renders must refresh title data and drop any
+    /// pending trailing shot when they must not. There is NO standing
+    /// title timer: refreshes ride renders behind a rate limit, plus
+    /// one trailing shot, so an idle terminal never wakes for titles.
+    fn reconcile_title_refresh(&mut self) {
+        self.title_on_demand = crate::context::title::needs_title_refresh(&self.config);
+        if !self.title_on_demand {
+            self.scheduler
+                .unschedule(TimerId::new(Topic::UpdateTitles, 0));
+        }
+    }
+
+    /// Render-time title refresh: run it when the rate limit allows,
+    /// otherwise arm ONE trailing shot at the limit's expiry so the
+    /// change that triggered this render still lands once the pane
+    /// goes idle. While output streams this settles into one refresh
+    /// per interval (what the old repeating poll did); with no
+    /// activity there are no renders, so no title work at all.
+    fn refresh_titles_for_render(&mut self, window_id: rio_backend::event::WindowId) {
+        let Some(route) = self.router.routes.get_mut(&window_id) else {
+            return;
+        };
+        let only_current = route.window.screen.renderer.island.is_none();
+        match route.window.screen.context_manager.title_refresh_due() {
+            None => {
+                route
+                    .window
+                    .screen
+                    .context_manager
+                    .update_titles(only_current);
             }
-        } else {
-            self.scheduler.unschedule(timer_id);
+            Some(remaining) => {
+                let timer_id = TimerId::new(Topic::UpdateTitles, 0);
+                if !self.scheduler.scheduled(timer_id) {
+                    self.scheduler.schedule(
+                        EventPayload::new(
+                            RioEventType::Rio(RioEvent::UpdateTitles),
+                            unsafe { rio_window::window::WindowId::dummy().into() },
+                        ),
+                        remaining,
+                        false,
+                        timer_id,
+                    );
+                }
+            }
         }
     }
 
@@ -359,7 +389,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             self.setup_quake_hotkey();
         }
 
-        self.reconcile_title_poll();
+        self.reconcile_title_refresh();
 
         tracing::info!("Initialisation complete");
     }
@@ -593,7 +623,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 };
 
                 self.config = config;
-                self.reconcile_title_poll();
+                self.reconcile_title_refresh();
 
                 // Dropping the old manager unregisters its hotkeys, so
                 // ToggleQuake binding edits apply without restarting.
@@ -847,7 +877,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .window
                         .screen
                         .context_manager
-                        .on_title_change(route_id, &title)
+                        .on_title_change(route_id, Some(&title))
+                    {
+                        route.request_overlay_redraw();
+                    }
+                    route.sync_window_title();
+                }
+            }
+            RioEventType::Rio(RioEvent::CurrentDirectoryChanged(route_id)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    if route
+                        .window
+                        .screen
+                        .context_manager
+                        .on_title_change(route_id, None)
                     {
                         route.request_overlay_redraw();
                     }
@@ -2222,6 +2265,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
 
             WindowEvent::RedrawRequested => {
+                if self.title_on_demand && matches!(route.path, RoutePath::Terminal) {
+                    self.refresh_titles_for_render(window_id);
+                }
+                let Some(route) = self.router.routes.get_mut(&window_id) else {
+                    return;
+                };
                 route.begin_render();
 
                 match route.path {

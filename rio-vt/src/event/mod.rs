@@ -193,6 +193,11 @@ pub enum RioEvent {
     /// Terminal title change from the PTY identified by `route_id`.
     Title(usize, String),
 
+    /// Working directory change (OSC 7) from the PTY identified by
+    /// `route_id`. Payload-less: the handler re-reads the terminal's
+    /// stored directory, which the emitter already committed.
+    CurrentDirectoryChanged(usize),
+
     /// Ask the event loop to refresh the native titlebar from the
     /// currently displayed pane. Payload-less on purpose: the handler
     /// re-reads the displayed title at handling time, so a queued poke
@@ -315,6 +320,9 @@ impl Debug for RioEvent {
             }
             RioEvent::Title(route_id, title) => {
                 write!(f, "Title route {route_id} ({title})")
+            }
+            RioEvent::CurrentDirectoryChanged(route_id) => {
+                write!(f, "CurrentDirectoryChanged route {route_id}")
             }
             RioEvent::SyncWindowTitle => write!(f, "SyncWindowTitle"),
             RioEvent::TitleWithSubtitle(title, subtitle) => {

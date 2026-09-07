@@ -3474,7 +3474,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     fn set_current_directory(&mut self, path: std::path::PathBuf) {
         trace!("Setting working directory {:?}", path);
+        if self.current_directory.as_deref() == Some(path.as_path()) {
+            return;
+        }
         self.current_directory = Some(path);
+        self.event_proxy.send_event(
+            RioEvent::CurrentDirectoryChanged(self.route_id),
+            self.window_id,
+        );
     }
 
     fn set_semantic_prompt(
@@ -7889,6 +7896,43 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, RioEvent::Title(route, t) if *route == 7 && t == "my title")),
             "set_title should emit RioEvent::Title carrying its route id"
+        );
+    }
+
+    #[test]
+    fn set_current_directory_emits_event_once_per_change() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            7,
+            10,
+        );
+
+        Handler::set_current_directory(&mut term, "/tmp/a".into());
+        Handler::set_current_directory(&mut term, "/tmp/a".into());
+
+        let count = events
+            .borrow()
+            .iter()
+            .filter(
+                |e| matches!(e, RioEvent::CurrentDirectoryChanged(route) if *route == 7),
+            )
+            .count();
+        assert_eq!(
+            count, 1,
+            "a repeated OSC 7 for the same directory must not re-emit"
+        );
+        assert_eq!(
+            term.current_directory.as_deref(),
+            Some(std::path::Path::new("/tmp/a"))
         );
     }
 
