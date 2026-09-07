@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct Bell {
     #[serde(default = "default_audio_bell")]
     pub audio: bool,
-    /// Mark background tabs that rang the bell with a 🔔 in the tab strip.
+    /// Mark background tabs that rang the bell with a dot in the tab strip.
     #[serde(default = "default_bool_true", rename = "tab-indicator")]
     pub tab_indicator: bool,
 }
