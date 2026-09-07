@@ -183,15 +183,13 @@ mod test {
     #[test]
     fn env_pairs_per_shell() {
         let dir = Path::new("/cache/rio/shell-integration-1.0.0");
+        // The join separator differs per platform; compare against the
+        // same join the implementation performs.
+        let zsh_dir = dir.join("zsh").to_string_lossy().to_string();
+        let data_dir = dir.join("data").to_string_lossy().to_string();
 
         let zsh = env_pairs("zsh", dir, None, None);
-        assert_eq!(
-            zsh,
-            vec![(
-                "ZDOTDIR".to_string(),
-                "/cache/rio/shell-integration-1.0.0/zsh".to_string()
-            )]
-        );
+        assert_eq!(zsh, vec![("ZDOTDIR".to_string(), zsh_dir.clone())]);
 
         // A user ZDOTDIR is preserved for the .zshenv chain to restore.
         let zsh = env_pairs("zsh", dir, Some("/home/u/.config/zsh".into()), None);
@@ -202,14 +200,14 @@ mod test {
                 "/home/u/.config/zsh".to_string()
             )
         );
-        assert_eq!(zsh[1].0, "ZDOTDIR");
+        assert_eq!(zsh[1], ("ZDOTDIR".to_string(), zsh_dir));
 
         let fish = env_pairs("fish", dir, None, Some("/usr/share".into()));
         assert_eq!(
             fish,
             vec![(
                 "XDG_DATA_DIRS".to_string(),
-                "/cache/rio/shell-integration-1.0.0/data:/usr/share".to_string()
+                format!("{data_dir}:/usr/share")
             )]
         );
 
