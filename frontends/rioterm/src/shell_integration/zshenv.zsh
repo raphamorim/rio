@@ -15,5 +15,9 @@ fi
 builtin unset _rio_user_zshenv
 
 if [[ -o interactive ]]; then
-    builtin source -- "${${(%):-%x}:A:h}/rio-integration.zsh"
+    builtin typeset _rio_integration="${${(%):-%x}:A:h}/rio-integration.zsh"
+    if [[ -r "$_rio_integration" ]]; then
+        builtin source -- "$_rio_integration"
+    fi
+    builtin unset _rio_integration
 fi

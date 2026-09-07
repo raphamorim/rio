@@ -10,10 +10,14 @@
 //! runs) and an `XDG_DATA_DIRS` prepend for fish, whose
 //! `vendor_conf.d` loads from there. PowerShell has no environment
 //! hook, so a bare spawn (no configured args) is rewritten to
-//! `-NoExit -Command . '<script>'`, which runs after the user's
-//! profile. Shells with neither hook (bash needs `--posix` argv
-//! surgery, cmd.exe only has a machine-wide registry key) are left
-//! untouched.
+//! `-NoExit -EncodedCommand <script>` carrying the script inline,
+//! which runs after the user's profile and is exempt from execution
+//! policy (the default Windows client policy blocks script FILES, so
+//! a dot-sourced file would error in every pane). Shells with neither
+//! hook (bash needs `--posix` argv surgery, cmd.exe only has a
+//! machine-wide registry key) are left untouched, and every
+//! integrated pane exports `RIO_SHELL_INTEGRATION` pointing at the
+//! script directory so any shell can source the integration manually.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -45,30 +49,42 @@ fn shell_display_name(program: &str) -> String {
     name.strip_suffix(".exe").unwrap_or(&name).to_string()
 }
 
-/// Extra environment for the pane about to spawn `shell_program`.
-/// Empty when the shell has no environment-only integration hook or
-/// the scripts could not be written.
+/// Extra environment for the pane about to spawn `shell_program`:
+/// the per-shell loading hook plus `RIO_SHELL_INTEGRATION`, which
+/// points every pane (any shell) at the script directory as the
+/// documented manual-sourcing hook. Empty when the scripts could not
+/// be written.
 pub fn spawn_env(shell_program: Option<&str>) -> Vec<(String, String)> {
     let shell_name = shell_display_name(&resolved_shell(shell_program));
     let Some(dir) = integration_dir() else {
         return Vec::new();
     };
-    env_pairs(
+    let mut envs = env_pairs(
         &shell_name,
         dir,
         std::env::var("ZDOTDIR").ok(),
         std::env::var("XDG_DATA_DIRS").ok(),
-    )
+    );
+    envs.push((
+        "RIO_SHELL_INTEGRATION".to_string(),
+        dir.to_string_lossy().to_string(),
+    ));
+    envs
 }
 
 /// Rewrites a PowerShell spawn (powershell.exe or pwsh, any platform)
 /// so the shell loads rio's integration script AFTER the user's
 /// profile ran. Only a bare spawn is rewritten: configured args change
-/// what `-Command` would mean, so they win over integration.
+/// what the command line means, so they win over integration. The
+/// returned program keeps an unconfigured shell unconfigured on unix,
+/// so the platform's default-shell handling (macOS `login(1)`) still
+/// wraps the spawn and only the args ride through it; Windows names
+/// the platform default explicitly because its PTY drops args when no
+/// program is given.
 pub fn powershell_command(
     shell_program: Option<&str>,
     args: &[String],
-) -> Option<(String, Vec<String>)> {
+) -> Option<(Option<String>, Vec<String>)> {
     if !args.is_empty() {
         return None;
     }
@@ -77,18 +93,32 @@ pub fn powershell_command(
     if name != "powershell" && name != "pwsh" {
         return None;
     }
-    let script = integration_dir()?.join("powershell").join("rio.ps1");
-    Some((program, powershell_args(&script)))
+    #[cfg(target_os = "windows")]
+    let program = Some(program);
+    #[cfg(not(target_os = "windows"))]
+    let program = shell_program.map(str::to_string);
+    Some((program, powershell_args()))
 }
 
-/// `-NoExit -Command . '<script>'`, with the path single-quoted so
-/// spaces survive and embedded quotes doubled per PowerShell quoting.
-fn powershell_args(script: &Path) -> Vec<String> {
-    let script = script.to_string_lossy().replace('\'', "''");
+/// `-NoExit -EncodedCommand <base64 of the UTF-16LE script>`: the
+/// script travels inline, so no file is dot-sourced (script FILES are
+/// what the default Windows execution policy blocks) and no quoting
+/// can break.
+fn powershell_args() -> Vec<String> {
+    use base64::engine::general_purpose::STANDARD as B64;
+    use base64::Engine as _;
+    static ENCODED: OnceLock<String> = OnceLock::new();
+    let encoded = ENCODED.get_or_init(|| {
+        let utf16le: Vec<u8> = POWERSHELL_INTEGRATION
+            .encode_utf16()
+            .flat_map(|unit| unit.to_le_bytes())
+            .collect();
+        B64.encode(utf16le)
+    });
     vec![
         "-NoExit".to_string(),
-        "-Command".to_string(),
-        format!(". '{script}'"),
+        "-EncodedCommand".to_string(),
+        encoded.clone(),
     ]
 }
 
@@ -142,6 +172,7 @@ fn integration_dir() -> Option<&'static Path> {
             tracing::warn!("shell integration scripts not written: {err}");
             return None;
         }
+        prune_stale(&base);
         Some(base)
     })
     .as_deref()
@@ -164,6 +195,31 @@ fn materialize(base: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(&powershell)?;
     write_if_changed(&powershell.join("rio.ps1"), POWERSHELL_INTEGRATION)?;
     Ok(())
+}
+
+/// Best-effort removal of other rio versions' script directories, so
+/// the cache holds one copy the way a packaged resources dir would.
+/// The `.zshenv` guards its source with `-r`, so a pane spawned by a
+/// concurrently running older rio degrades to no integration rather
+/// than an error banner.
+fn prune_stale(base: &Path) {
+    let Some(parent) = base.parent() else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path != base
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("shell-integration-"))
+        {
+            let _ = std::fs::remove_dir_all(&path);
+        }
+    }
 }
 
 fn write_if_changed(path: &Path, content: &str) -> std::io::Result<()> {
@@ -240,11 +296,53 @@ mod test {
     }
 
     #[test]
-    fn powershell_invocation_quotes_the_script_path() {
-        let args = powershell_args(Path::new("/tmp/o'brien/rio.ps1"));
+    fn powershell_invocation_carries_the_script_inline() {
+        use base64::engine::general_purpose::STANDARD as B64;
+        use base64::Engine as _;
+
+        let args = powershell_args();
         assert_eq!(args[0], "-NoExit");
-        assert_eq!(args[1], "-Command");
-        assert_eq!(args[2], ". '/tmp/o''brien/rio.ps1'");
+        assert_eq!(args[1], "-EncodedCommand");
+
+        // The payload decodes back to the exact script, UTF-16LE.
+        let bytes = B64.decode(&args[2]).unwrap();
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        assert_eq!(String::from_utf16(&units).unwrap(), POWERSHELL_INTEGRATION);
+    }
+
+    #[test]
+    fn powershell_command_scope() {
+        // Configured args always win over integration.
+        assert!(powershell_command(Some("pwsh"), &["-NoLogo".into()]).is_none());
+        // Non-PowerShell shells are untouched.
+        assert!(powershell_command(Some("zsh"), &[]).is_none());
+
+        let (program, args) = powershell_command(Some("pwsh"), &[]).unwrap();
+        assert_eq!(program.as_deref(), Some("pwsh"));
+        assert_eq!(args[1], "-EncodedCommand");
+    }
+
+    #[test]
+    fn prune_removes_only_stale_siblings() {
+        let parent = std::env::temp_dir()
+            .join(format!("rio-si-prune-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&parent);
+        let current = parent.join("shell-integration-9.9.9");
+        let stale = parent.join("shell-integration-0.0.1");
+        let unrelated = parent.join("something-else");
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::create_dir_all(&stale).unwrap();
+        std::fs::create_dir_all(&unrelated).unwrap();
+
+        prune_stale(&current);
+        assert!(current.exists());
+        assert!(!stale.exists());
+        assert!(unrelated.exists());
+
+        let _ = std::fs::remove_dir_all(&parent);
     }
 
     #[test]

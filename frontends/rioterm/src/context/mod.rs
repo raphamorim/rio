@@ -265,7 +265,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             None
         };
         let (shell_program, shell_args) = match &rewritten_command {
-            Some((program, args)) => (Some(program.as_str()), args.clone()),
+            Some((program, args)) => (program.as_deref(), args.clone()),
             None => (config.shell.program.as_deref(), config.shell.args.clone()),
         };
 

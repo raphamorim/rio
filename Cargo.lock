@@ -4042,6 +4042,7 @@ name = "rioterm"
 version = "0.5.27"
 dependencies = [
  "ahash",
+ "base64",
  "bitflags 2.13.1",
  "cfg_aliases",
  "clap",

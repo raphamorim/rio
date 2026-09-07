@@ -237,6 +237,11 @@ pub(super) fn parse_current_directory(param: &[u8]) -> Option<String> {
         return None;
     }
 
+    // Windows paths arrive as `/C:/...` in both flavors; drop the
+    // leading slash.
+    #[cfg(windows)]
+    let path = path.strip_prefix('/').unwrap_or(path);
+
     if !percent_encoded {
         // The kitty flavor is the path verbatim: `?`, `#` and `%` are
         // path bytes, not URL syntax.
@@ -245,10 +250,6 @@ pub(super) fn parse_current_directory(param: &[u8]) -> Option<String> {
 
     // A query or fragment is not part of the path.
     let path = &path[..path.find(['?', '#']).unwrap_or(path.len())];
-
-    // Windows paths arrive as `/C:/...`; drop the leading slash.
-    #[cfg(windows)]
-    let path = path.strip_prefix('/').unwrap_or(path);
 
     percent_decode(path)
 }
