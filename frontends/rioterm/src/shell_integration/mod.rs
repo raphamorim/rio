@@ -325,6 +325,40 @@ mod test {
         assert_eq!(args[1], "-EncodedCommand");
     }
 
+    /// Runs a real zsh against the materialized scripts: the pane
+    /// setup (ZDOTDIR redirect plus preserved user ZDOTDIR) must end
+    /// with the integration loaded and one cwd report emitted. Skips
+    /// silently where zsh is not installed.
+    #[cfg(unix)]
+    #[test]
+    fn zsh_integration_emits_a_cwd_report() {
+        let base = std::env::temp_dir()
+            .join(format!("rio-si-zsh-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        materialize(&base).unwrap();
+        // An empty restored ZDOTDIR keeps the developer's own zsh
+        // config out of the test.
+        let user_zdotdir = base.join("empty-user-config");
+        std::fs::create_dir_all(&user_zdotdir).unwrap();
+
+        let Ok(output) = std::process::Command::new("zsh")
+            .args(["-ic", ":"])
+            .env("ZDOTDIR", base.join("zsh"))
+            .env("RIO_ZSH_ZDOTDIR", &user_zdotdir)
+            .output()
+        else {
+            return;
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("\x1b]7;kitty-shell-cwd://"),
+            "no OSC 7 in zsh output; stdout: {stdout:?}, stderr: {:?}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn prune_removes_only_stale_siblings() {
         let parent = std::env::temp_dir()
