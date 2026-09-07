@@ -1572,6 +1572,54 @@ pub mod test {
         assert!(!cm.bell(2));
     }
 
+    #[test]
+    fn update_titles_only_current_leaves_other_tabs_dirty() {
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
+                .unwrap();
+        cm.add_context(false, 0);
+        cm.config.title.content = "{{ columns }}".to_string();
+
+        cm.mark_all_titles_dirty();
+        assert!(cm.contexts[0].current().title_dirty);
+        assert!(cm.contexts[1].current().title_dirty);
+
+        // A current-only walk (tab strip absent) must not silently
+        // clear panes it never re-rendered.
+        assert!(cm.update_titles(true));
+        assert!(!cm.contexts[0].current().title_dirty);
+        assert!(cm.contexts[1].current().title_dirty);
+        let columns = cm.contexts[0].current().dimension.columns.to_string();
+        assert_eq!(cm.contexts[0].current().title.content, columns);
+
+        // Surfacing the stale tab re-renders it via sync_current_route.
+        cm.set_current(1);
+        assert!(!cm.contexts[1].current().title_dirty);
+        let columns = cm.contexts[1].current().dimension.columns.to_string();
+        assert_eq!(cm.contexts[1].current().title.content, columns);
+    }
+
+    #[test]
+    fn on_title_change_renders_displayed_pane_from_event_string() {
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
+                .unwrap();
+        cm.add_context(false, 0);
+        cm.config.title.content = "{{ title }}".to_string();
+
+        let background_route = cm.contexts[1].current().route_id;
+        cm.contexts[1].current_mut().title_dirty = true;
+        assert!(cm.on_title_change(background_route, Some("hello")));
+        assert_eq!(cm.contexts[1].current().title.content, "hello");
+        assert!(!cm.contexts[1].current().title_dirty);
+
+        // The same title again changes nothing: no repaint requested.
+        assert!(!cm.on_title_change(background_route, Some("hello")));
+
+        // Unknown routes (already-closed panes) are a no-op.
+        assert!(!cm.on_title_change(usize::MAX, Some("x")));
+    }
+
     fn set_tab_title(cm: &mut ContextManager<VoidListener>, index: usize, content: &str) {
         cm.contexts[index].current_mut().title.content = content.to_string();
     }

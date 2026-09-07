@@ -363,6 +363,48 @@ pub mod test {
     }
 
     #[test]
+    fn test_update_title_program_is_spawned_command() {
+        let context_dimension = ContextDimension::build(
+            1200.0,
+            800.0,
+            TextDimensions {
+                scale: 2.,
+                width: 18.,
+                height: 9.,
+            },
+            rio_backend::sugarloaf::layout::CellMetrics {
+                cell_width: 18,
+                cell_height: 9,
+                cell_baseline: 0,
+                face_width: 18.0,
+                face_height: 9.0,
+                face_y: 0.0,
+            },
+            1.0,
+            14.0,
+            Margin::default(),
+        );
+
+        let mut context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension);
+        context.spawned_program = "fish".to_string();
+
+        assert_eq!(update_title("{{ program }}", &context, None), "fish");
+        assert_eq!(
+            update_title("{{ title || program }}", &context, None),
+            "fish"
+        );
+
+        // Path variables come from OSC 7 alone: without integration
+        // they render empty instead of inspecting the process.
+        assert_eq!(update_title("{{ relative_path }}", &context, None), "");
+        assert_eq!(update_title("{{ absolute_path }}", &context, None), "");
+
+        // A prefetched OSC title renders without touching the terminal.
+        assert_eq!(update_title("{{ title }}", &context, Some("t")), "t");
+    }
+
+    #[test]
     fn test_shorten_path() {
         // Use a path prefix that can't plausibly be $HOME to keep the test
         // deterministic in build sandboxes that set HOME=/tmp or similar.
