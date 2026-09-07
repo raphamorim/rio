@@ -61,6 +61,22 @@ extern "C" {
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
+/// Export `envs` in the forked child before exec. Runs post-fork, so
+/// keep it to setenv: the allocations match what `default_shell_command`
+/// already does on this path.
+fn set_child_envs(envs: &[(String, String)]) {
+    for (key, value) in envs {
+        let (Ok(key), Ok(value)) =
+            (CString::new(key.as_str()), CString::new(value.as_str()))
+        else {
+            continue;
+        };
+        unsafe {
+            libc::setenv(key.as_ptr(), value.as_ptr(), 1);
+        }
+    }
+}
+
 fn default_shell_command(shell: &str, args: &[String]) {
     // Ignored signal dispositions survive exec (unlike caught
     // handlers), so the shell inherits whatever the launcher left
@@ -733,6 +749,7 @@ pub fn create_pty_with_spawn(
 pub fn create_pty_with_fork(
     shell: Option<&str>,
     args: &[String],
+    envs: &[(String, String)],
     columns: u16,
     rows: u16,
     width: u16,
@@ -771,6 +788,7 @@ pub fn create_pty_with_fork(
         )
     } {
         0 => {
+            set_child_envs(envs);
             default_shell_command(shell_program, args);
             Err(Error::other(format!(
                 "forkpty has reach unreachable with {shell_program}"

@@ -195,15 +195,25 @@ pub(super) fn parse_palette_entries(params: &[&[u8]]) -> Option<Vec<PaletteEntry
     Some(out)
 }
 
-/// The only URL scheme rio-vt ever parses.
+/// The URL schemes rio-vt ever parses, both OSC 7 working-directory
+/// carriers: RFC 8089 file URLs and the `kitty-shell-cwd` scheme
+/// (a raw, unencoded path) that kitty defined and several shell
+/// integrations emit.
 const FILE_SCHEME: &str = "file://";
+const KITTY_SHELL_CWD_SCHEME: &str = "kitty-shell-cwd://";
 
-/// OSC 7: working directory as a `file://` URL.
-///
-/// The payload is `file://<host>/<path>`, with a percent-encoded path. Parsed
-/// by hand rather than with a URL crate: this is the only URL the terminal core
-/// looks at, and a general parser costs an IDNA/Unicode stack just to reach
-/// `.path()`.
+/// Strip `scheme` from the front of `s`, case-insensitively.
+fn strip_scheme<'a>(s: &'a str, scheme: &str) -> Option<&'a str> {
+    s.get(..scheme.len())
+        .filter(|prefix| prefix.eq_ignore_ascii_case(scheme))
+        .map(|_| &s[scheme.len()..])
+}
+
+/// OSC 7: working directory as a `file://` URL (percent-encoded path)
+/// or a `kitty-shell-cwd://` payload (raw path, no encoding). Parsed
+/// by hand rather than with a URL crate: these are the only URLs the
+/// terminal core looks at, and a general parser costs an IDNA/Unicode
+/// stack just to reach `.path()`.
 ///
 /// Anything on the other end of the PTY can send this, including a shell on the
 /// far side of an ssh session, so a directory that belongs to another machine is
@@ -211,11 +221,10 @@ const FILE_SCHEME: &str = "file://";
 pub(super) fn parse_current_directory(param: &[u8]) -> Option<String> {
     let s = simd_utf8::from_utf8_fast(param).ok()?;
 
-    // Schemes are case-insensitive.
-    let after_scheme = s
-        .get(..FILE_SCHEME.len())
-        .filter(|scheme| scheme.eq_ignore_ascii_case(FILE_SCHEME))
-        .map(|_| &s[FILE_SCHEME.len()..])?;
+    let (after_scheme, percent_encoded) = match strip_scheme(s, FILE_SCHEME) {
+        Some(rest) => (rest, true),
+        None => (strip_scheme(s, KITTY_SHELL_CWD_SCHEME)?, false),
+    };
 
     // The path begins at the host's trailing slash. A payload with no path at
     // all leaves nothing to report.
@@ -226,6 +235,12 @@ pub(super) fn parse_current_directory(param: &[u8]) -> Option<String> {
     if !host_is_local(host) {
         tracing::warn!("ignoring OSC 7 for non-local host {host:?}");
         return None;
+    }
+
+    if !percent_encoded {
+        // The kitty flavor is the path verbatim: `?`, `#` and `%` are
+        // path bytes, not URL syntax.
+        return Some(path.to_string());
     }
 
     // A query or fragment is not part of the path.
@@ -511,6 +526,43 @@ mod tests {
 
         // No path component at all.
         assert_eq!(cwd("file://localhost"), None);
+        assert_eq!(cwd("kitty-shell-cwd://localhost"), None);
+    }
+
+    #[test]
+    fn current_directory_accepts_kitty_shell_cwd() {
+        assert_eq!(
+            cwd("kitty-shell-cwd:///home/user"),
+            Some("/home/user".into())
+        );
+        assert_eq!(
+            cwd("kitty-shell-cwd://localhost/home/user"),
+            Some("/home/user".into())
+        );
+        // Scheme is case-insensitive, like file://.
+        assert_eq!(
+            cwd("KITTY-SHELL-CWD:///home/user"),
+            Some("/home/user".into())
+        );
+    }
+
+    #[test]
+    fn kitty_shell_cwd_is_verbatim() {
+        // Raw spaces pass through, and percent sequences are path
+        // bytes rather than encodings.
+        assert_eq!(cwd("kitty-shell-cwd:///tmp/a b"), Some("/tmp/a b".into()));
+        assert_eq!(
+            cwd("kitty-shell-cwd:///tmp/50%25 off?really"),
+            Some("/tmp/50%25 off?really".into())
+        );
+    }
+
+    #[test]
+    fn kitty_shell_cwd_rejects_remote_hosts() {
+        assert_eq!(
+            cwd("kitty-shell-cwd://other-machine.example/home/user"),
+            None
+        );
     }
 
     #[cfg(not(windows))]

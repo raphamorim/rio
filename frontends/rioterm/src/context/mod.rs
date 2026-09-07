@@ -109,6 +109,8 @@ pub struct ContextManagerConfig {
     pub shell: Shell,
     #[cfg(not(target_os = "windows"))]
     pub use_fork: bool,
+    #[cfg(not(target_os = "windows"))]
+    pub shell_integration: bool,
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
     pub cwd: bool,
@@ -253,11 +255,17 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let pty;
         #[cfg(not(target_os = "windows"))]
         {
+            let integration_env: Vec<(String, String)> = if config.shell_integration {
+                crate::shell_integration::spawn_env(config.shell.program.as_deref())
+            } else {
+                Vec::new()
+            };
             if config.use_fork {
                 tracing::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
                     config.shell.program.as_deref(),
                     &config.shell.args,
+                    &integration_env,
                     cols,
                     rows,
                     initial_winsize.width,
@@ -275,7 +283,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     config.shell.program.as_deref(),
                     config.shell.args.clone(),
                     &config.working_dir,
-                    None,
+                    (!integration_env.is_empty()).then_some(integration_env),
                     cols,
                     rows,
                     initial_winsize.width,
@@ -1073,6 +1081,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             spawn_performer: true,
             #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
+            #[cfg(not(target_os = "windows"))]
+            shell_integration: config.shell_integration,
             is_native: config.navigation.is_native(),
             // When navigation is collapsed and does not contain any color rule
             // does not make sense fetch for foreground process names
