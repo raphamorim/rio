@@ -71,6 +71,7 @@ impl PrivateMode {
             2004 => Self::Named(NamedPrivateMode::BracketedPaste),
             2026 => Self::Named(NamedPrivateMode::SyncUpdate),
             2027 => Self::Named(NamedPrivateMode::GraphemeCluster),
+            2031 => Self::Named(NamedPrivateMode::ColorSchemeUpdates),
             _ => Self::Unknown(mode),
         }
     }
@@ -136,6 +137,9 @@ pub enum NamedPrivateMode {
     /// width-bearing codepoint. Queryable via DECRQM, which is how
     /// applications detect support. Default: reset.
     GraphemeCluster = 2027,
+    /// App opts in to unsolicited DSR `CSI ? 997 n` light/dark
+    /// color-scheme notifications (DECSET 2031).
+    ColorSchemeUpdates = 2031,
 }
 
 /// Mode for clearing line.
