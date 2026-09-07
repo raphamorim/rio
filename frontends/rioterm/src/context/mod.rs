@@ -880,17 +880,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         Self::refresh_item_title(&template, context, raw_title)
     }
 
-    /// Re-render tab titles from local state: a config reload can
-    /// change the template, and a resize changes `{{columns}}`/
-    /// `{{lines}}`. OSC title and OSC 7 changes arrive via
-    /// `on_title_change` instead; nothing calls this on a timer. The
-    /// chrome repaint rides the returned flag, and one unconditional
-    /// titlebar poke per run makes the native title CONVERGE on the
-    /// displayed text (the poke is payload-less and deduped at the
-    /// sink, so a run that changed nothing costs one no-op event).
-    /// `only_current` restricts the walk to the displayed tab: with
-    /// the tab strip absent (navigation disabled) background tabs'
-    /// titles render nowhere, so refreshing them buys nothing.
     /// Mark every pane's title stale. For changes that affect panes no
     /// walk re-renders (a resize changing `{{columns}}`, a config
     /// reload changing the template), hidden splits and unwalked tabs
@@ -903,6 +892,17 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
     }
 
+    /// Re-render tab titles from local state: a config reload can
+    /// change the template, and a resize changes `{{columns}}`/
+    /// `{{lines}}`. OSC title and OSC 7 changes arrive via
+    /// `on_title_change` instead; nothing calls this on a timer. The
+    /// chrome repaint rides the returned flag, and one unconditional
+    /// titlebar poke per run makes the native title CONVERGE on the
+    /// displayed text (the poke is payload-less and deduped at the
+    /// sink, so a run that changed nothing costs one no-op event).
+    /// `only_current` restricts the walk to the displayed tab: with
+    /// the tab strip absent (navigation disabled) background tabs'
+    /// titles render nowhere, so refreshing them buys nothing.
     pub fn update_titles(&mut self, only_current: bool) -> bool {
         let template = self.config.title.content.clone();
         let mut repaint = false;
