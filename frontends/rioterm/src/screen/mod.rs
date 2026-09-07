@@ -255,7 +255,6 @@ impl Screen<'_> {
             spawn_performer: true,
             #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
-            #[cfg(not(target_os = "windows"))]
             shell_integration: config.shell_integration,
             is_native,
             // When navigation does not contain any color rule

@@ -109,7 +109,6 @@ pub struct ContextManagerConfig {
     pub shell: Shell,
     #[cfg(not(target_os = "windows"))]
     pub use_fork: bool,
-    #[cfg(not(target_os = "windows"))]
     pub shell_integration: bool,
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
@@ -252,19 +251,32 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
+        let integration_env: Vec<(String, String)> = if config.shell_integration {
+            crate::shell_integration::spawn_env(config.shell.program.as_deref())
+        } else {
+            Vec::new()
+        };
+        let rewritten_command = if config.shell_integration {
+            crate::shell_integration::powershell_command(
+                config.shell.program.as_deref(),
+                &config.shell.args,
+            )
+        } else {
+            None
+        };
+        let (shell_program, shell_args) = match &rewritten_command {
+            Some((program, args)) => (Some(program.as_str()), args.clone()),
+            None => (config.shell.program.as_deref(), config.shell.args.clone()),
+        };
+
         let pty;
         #[cfg(not(target_os = "windows"))]
         {
-            let integration_env: Vec<(String, String)> = if config.shell_integration {
-                crate::shell_integration::spawn_env(config.shell.program.as_deref())
-            } else {
-                Vec::new()
-            };
             if config.use_fork {
                 tracing::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
-                    config.shell.program.as_deref(),
-                    &config.shell.args,
+                    shell_program,
+                    &shell_args,
                     &integration_env,
                     cols,
                     rows,
@@ -280,8 +292,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             } else {
                 tracing::info!("rio -> teletypewriter: create_pty_with_spawn");
                 pty = match create_pty_with_spawn(
-                    config.shell.program.as_deref(),
-                    config.shell.args.clone(),
+                    shell_program,
+                    shell_args.clone(),
                     &config.working_dir,
                     (!integration_env.is_empty()).then_some(integration_env),
                     cols,
@@ -306,10 +318,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         #[cfg(target_os = "windows")]
         {
             pty = match create_pty(
-                config.shell.program.as_deref(),
-                config.shell.args.clone(),
+                shell_program,
+                shell_args,
                 &config.working_dir,
-                None,
+                (!integration_env.is_empty()).then_some(integration_env),
                 cols,
                 rows,
             ) {
@@ -1081,7 +1093,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             spawn_performer: true,
             #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
-            #[cfg(not(target_os = "windows"))]
             shell_integration: config.shell_integration,
             is_native: config.navigation.is_native(),
             // When navigation is collapsed and does not contain any color rule

@@ -4,12 +4,16 @@
 //! directory to the terminal (OSC 7, `kitty-shell-cwd://` flavor) on
 //! every prompt and directory change. At spawn time the scripts are
 //! written under the user's cache directory (once per rio version)
-//! and the child's environment is pointed at them: `ZDOTDIR` for zsh
-//! (the user's value is preserved in `RIO_ZSH_ZDOTDIR` and restored
-//! before any of their configuration runs) and an `XDG_DATA_DIRS`
-//! prepend for fish, whose `vendor_conf.d` loads from there. Shells
-//! without an environment-only hook (bash needs its argv rewritten)
-//! are left untouched.
+//! and the child is pointed at them. zsh and fish load through the
+//! environment alone: `ZDOTDIR` for zsh (the user's value is preserved
+//! in `RIO_ZSH_ZDOTDIR` and restored before any of their configuration
+//! runs) and an `XDG_DATA_DIRS` prepend for fish, whose
+//! `vendor_conf.d` loads from there. PowerShell has no environment
+//! hook, so a bare spawn (no configured args) is rewritten to
+//! `-NoExit -Command . '<script>'`, which runs after the user's
+//! profile. Shells with neither hook (bash needs `--posix` argv
+//! surgery, cmd.exe only has a machine-wide registry key) are left
+//! untouched.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -17,20 +21,35 @@ use std::sync::OnceLock;
 const ZSH_ZSHENV: &str = include_str!("zshenv.zsh");
 const ZSH_INTEGRATION: &str = include_str!("rio-integration.zsh");
 const FISH_INTEGRATION: &str = include_str!("rio.fish");
+const POWERSHELL_INTEGRATION: &str = include_str!("rio.ps1");
 
-/// Extra environment for the pane about to spawn `shell_program`
-/// (falling back to `$SHELL`, mirroring the PTY spawn itself). Empty
-/// when the shell has no environment-only integration hook or the
-/// scripts could not be written.
-pub fn spawn_env(shell_program: Option<&str>) -> Vec<(String, String)> {
-    let program = match shell_program {
+/// The program the PTY will spawn: the configured one, else the same
+/// platform default the spawn itself falls back to.
+fn resolved_shell(shell_program: Option<&str>) -> String {
+    match shell_program {
         Some(program) if !program.is_empty() => program.to_string(),
+        #[cfg(not(target_os = "windows"))]
         _ => std::env::var("SHELL").unwrap_or_default(),
-    };
-    let shell_name = Path::new(&program)
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_default();
+        #[cfg(target_os = "windows")]
+        _ => String::from("powershell"),
+    }
+}
+
+/// The shell's identity from its program path: basename with both
+/// separator flavors (a Windows path can carry `\`), lowercased,
+/// `.exe` dropped, so `C:\W\pwsh.exe` and `/usr/bin/pwsh` compare
+/// equal.
+fn shell_display_name(program: &str) -> String {
+    let name = program.rsplit(['/', '\\']).next().unwrap_or(program);
+    let name = name.to_ascii_lowercase();
+    name.strip_suffix(".exe").unwrap_or(&name).to_string()
+}
+
+/// Extra environment for the pane about to spawn `shell_program`.
+/// Empty when the shell has no environment-only integration hook or
+/// the scripts could not be written.
+pub fn spawn_env(shell_program: Option<&str>) -> Vec<(String, String)> {
+    let shell_name = shell_display_name(&resolved_shell(shell_program));
     let Some(dir) = integration_dir() else {
         return Vec::new();
     };
@@ -40,6 +59,37 @@ pub fn spawn_env(shell_program: Option<&str>) -> Vec<(String, String)> {
         std::env::var("ZDOTDIR").ok(),
         std::env::var("XDG_DATA_DIRS").ok(),
     )
+}
+
+/// Rewrites a PowerShell spawn (powershell.exe or pwsh, any platform)
+/// so the shell loads rio's integration script AFTER the user's
+/// profile ran. Only a bare spawn is rewritten: configured args change
+/// what `-Command` would mean, so they win over integration.
+pub fn powershell_command(
+    shell_program: Option<&str>,
+    args: &[String],
+) -> Option<(String, Vec<String>)> {
+    if !args.is_empty() {
+        return None;
+    }
+    let program = resolved_shell(shell_program);
+    let name = shell_display_name(&program);
+    if name != "powershell" && name != "pwsh" {
+        return None;
+    }
+    let script = integration_dir()?.join("powershell").join("rio.ps1");
+    Some((program, powershell_args(&script)))
+}
+
+/// `-NoExit -Command . '<script>'`, with the path single-quoted so
+/// spaces survive and embedded quotes doubled per PowerShell quoting.
+fn powershell_args(script: &Path) -> Vec<String> {
+    let script = script.to_string_lossy().replace('\'', "''");
+    vec![
+        "-NoExit".to_string(),
+        "-Command".to_string(),
+        format!(". '{script}'"),
+    ]
 }
 
 /// The environment that makes `shell_name` load the scripts under
@@ -109,6 +159,10 @@ fn materialize(base: &Path) -> std::io::Result<()> {
     let fish = base.join("data").join("fish").join("vendor_conf.d");
     std::fs::create_dir_all(&fish)?;
     write_if_changed(&fish.join("rio.fish"), FISH_INTEGRATION)?;
+
+    let powershell = base.join("powershell");
+    std::fs::create_dir_all(&powershell)?;
+    write_if_changed(&powershell.join("rio.ps1"), POWERSHELL_INTEGRATION)?;
     Ok(())
 }
 
@@ -165,8 +219,34 @@ mod test {
 
         // Shells without an environment-only hook are untouched.
         assert!(env_pairs("bash", dir, None, None).is_empty());
+        assert!(env_pairs("powershell", dir, None, None).is_empty());
         assert!(env_pairs("nu", dir, None, None).is_empty());
         assert!(env_pairs("", dir, None, None).is_empty());
+    }
+
+    #[test]
+    fn shell_names_normalize_across_platforms() {
+        assert_eq!(shell_display_name("/usr/local/bin/fish"), "fish");
+        assert_eq!(shell_display_name("zsh"), "zsh");
+        assert_eq!(
+            shell_display_name("C:\\Program Files\\PowerShell\\7\\pwsh.exe"),
+            "pwsh"
+        );
+        assert_eq!(
+            shell_display_name(
+                "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+            ),
+            "powershell"
+        );
+        assert_eq!(shell_display_name("PWSH.EXE"), "pwsh");
+    }
+
+    #[test]
+    fn powershell_invocation_quotes_the_script_path() {
+        let args = powershell_args(Path::new("/tmp/o'brien/rio.ps1"));
+        assert_eq!(args[0], "-NoExit");
+        assert_eq!(args[1], "-Command");
+        assert_eq!(args[2], ". '/tmp/o''brien/rio.ps1'");
     }
 
     #[test]

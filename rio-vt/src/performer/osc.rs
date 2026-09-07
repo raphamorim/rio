@@ -383,6 +383,32 @@ pub(super) fn parse_progress_report(params: &[&[u8]]) -> Option<ProgressReport> 
     Some(ProgressReport { state, progress })
 }
 
+/// OSC 9;9: ConEmu/Windows-Terminal working directory report, the
+/// Windows counterpart of OSC 7. Format: `9;9;<path>`, with the path
+/// optionally wrapped in double quotes. The path is verbatim (no URL
+/// encoding), and a `;` inside it comes through as extra params, so
+/// everything after `9;9;` is rejoined.
+pub(super) fn parse_conemu_working_directory(params: &[&[u8]]) -> Option<String> {
+    if params.len() < 3 || params[1] != b"9" {
+        return None;
+    }
+    let mut path = String::new();
+    for (i, param) in params[2..].iter().enumerate() {
+        if i > 0 {
+            path.push(';');
+        }
+        path.push_str(simd_utf8::from_utf8_fast(param).ok()?);
+    }
+    let path = path
+        .strip_prefix('"')
+        .and_then(|p| p.strip_suffix('"'))
+        .unwrap_or(&path);
+    if path.is_empty() {
+        return None;
+    }
+    Some(path.to_string())
+}
+
 /// OSC 10/11/12: dynamic color set/query, applied to consecutive named
 /// colors starting at `dynamic_code - 10`.
 pub(super) fn parse_dynamic_colors(params: &[&[u8]]) -> Option<Vec<DynamicColorEntry>> {
@@ -527,6 +553,28 @@ mod tests {
         // No path component at all.
         assert_eq!(cwd("file://localhost"), None);
         assert_eq!(cwd("kitty-shell-cwd://localhost"), None);
+    }
+
+    #[test]
+    fn conemu_working_directory() {
+        let parse = parse_conemu_working_directory;
+        assert_eq!(
+            parse(&[b"9", b"9", b"C:\\Users\\rapha"]),
+            Some("C:\\Users\\rapha".into())
+        );
+        // Windows Terminal profiles commonly quote the path.
+        assert_eq!(
+            parse(&[b"9", b"9", b"\"C:\\Program Files\""]),
+            Some("C:\\Program Files".into())
+        );
+        // A `;` in the path arrives as extra params and is rejoined.
+        assert_eq!(parse(&[b"9", b"9", b"C:\\a", b"b"]), Some("C:\\a;b".into()));
+
+        // Progress reports and notifications are not directories.
+        assert_eq!(parse(&[b"9", b"4", b"1", b"50"]), None);
+        assert_eq!(parse(&[b"9", b"hello"]), None);
+        assert_eq!(parse(&[b"9", b"9", b""]), None);
+        assert_eq!(parse(&[b"9", b"9", b"\"\""]), None);
     }
 
     #[test]

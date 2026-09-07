@@ -22,7 +22,6 @@ mod renderer;
 mod router;
 mod scheduler;
 mod screen;
-#[cfg(not(target_os = "windows"))]
 mod shell_integration;
 mod watcher;
 

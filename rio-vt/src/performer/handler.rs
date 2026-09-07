@@ -1154,10 +1154,13 @@ impl<U: Handler> Perform for Performer<'_, U> {
                     .set_hyperlink(osc::parse_hyperlink(params[1], params[2]));
             }
 
-            // OSC 9;4 progress; OSC 9 desktop notification fallback.
+            // OSC 9;4 progress; OSC 9;9 working directory;
+            // OSC 9 desktop notification fallback.
             b"9" => {
                 if let Some(report) = osc::parse_progress_report(params) {
                     self.handler.set_progress_report(report);
+                } else if let Some(path) = osc::parse_conemu_working_directory(params) {
+                    self.handler.set_current_directory(path.into());
                 } else if params.len() >= 2 {
                     let body = std::str::from_utf8(params[1])
                         .unwrap_or_default()
