@@ -906,7 +906,12 @@ impl Island {
                 };
                 let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
                 if bell {
-                    let dot_y = (ISLAND_HEIGHT - BELL_DOT_SIZE) / 2.0;
+                    // Centered on the title's lowercase body, not the strip:
+                    // the em box hangs from `text_y` with its optical middle
+                    // about two thirds down, so a strip-centered dot rides
+                    // visibly high next to lowercase titles.
+                    let dot_y =
+                        text_y + TITLE_FONT_SIZE * (2.0 / 3.0) - BELL_DOT_SIZE / 2.0;
                     sugarloaf.rounded_rect(
                         None,
                         text_x,
