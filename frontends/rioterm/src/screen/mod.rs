@@ -872,13 +872,11 @@ impl Screen<'_> {
             let text = key.text_with_all_modifiers().unwrap_or_default();
             for character in text.chars() {
                 let terminal = self.context_manager.current().terminal.lock();
-                if let Some(hint_match) =
+                if let Some((hint_match, paste)) =
                     self.hint_state.keyboard_input(&*terminal, character)
                 {
                     drop(terminal);
-                    self.execute_hint_action(&hint_match, clipboard);
-                    // Stop hint mode and update state with proper damage tracking
-                    self.hint_state.stop();
+                    self.execute_hint_action(&hint_match, clipboard, paste);
                     self.update_hint_state();
                     self.mark_dirty();
                     return;
@@ -2402,7 +2400,7 @@ impl Screen<'_> {
         // (Copy) would otherwise leave the underline painted until
         // unrelated output touches those rows.
         self.clear_highlighted_hint();
-        self.execute_hint_action(&latched, clipboard);
+        self.execute_hint_action(&latched, clipboard, false);
     }
 
     /// Hand `target` to the platform's default handler.
@@ -4822,11 +4820,9 @@ impl Screen<'_> {
     #[allow(dead_code)]
     pub fn hint_input(&mut self, c: char, clipboard: &mut Clipboard) {
         let terminal = self.context_manager.current().terminal.lock();
-        if let Some(hint_match) = self.hint_state.keyboard_input(&*terminal, c) {
+        if let Some((hint_match, paste)) = self.hint_state.keyboard_input(&*terminal, c) {
             drop(terminal);
-            self.execute_hint_action(&hint_match, clipboard);
-            // Stop hint mode and update state with proper damage tracking
-            self.hint_state.stop();
+            self.execute_hint_action(&hint_match, clipboard, paste);
             self.update_hint_state();
         } else {
             drop(terminal);
@@ -4875,6 +4871,7 @@ impl Screen<'_> {
         &mut self,
         hint_match: &crate::hints::HintMatch,
         clipboard: &mut Clipboard,
+        paste: bool,
     ) {
         use rio_backend::config::hints::{HintAction, HintCommand, HintInternalAction};
 
@@ -4882,6 +4879,9 @@ impl Screen<'_> {
             HintAction::Action { action } => match action {
                 HintInternalAction::Copy => {
                     clipboard.set(ClipboardType::Clipboard, hint_match.text.clone());
+                    if paste {
+                        self.paste(&hint_match.text, true);
+                    }
                 }
                 HintInternalAction::Paste => {
                     self.paste(&hint_match.text, true);
