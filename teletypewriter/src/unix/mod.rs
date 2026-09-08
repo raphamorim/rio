@@ -1,8 +1,10 @@
 #![cfg(unix)]
 
+mod child;
 #[cfg(target_os = "macos")]
 mod macos;
 mod signals;
+pub use child::Child;
 
 extern crate libc;
 
@@ -24,8 +26,6 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::ptr;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
@@ -51,12 +51,6 @@ extern "C" {
         name: *mut libc::c_char,
         termp: *const libc::termios,
         winsize: *const Winsize,
-    ) -> libc::pid_t;
-
-    fn waitpid(
-        pid: libc::pid_t,
-        status: *mut libc::c_int,
-        options: libc::c_int,
     ) -> libc::pid_t;
 
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
@@ -694,15 +688,12 @@ pub fn create_pty_with_spawn(
     match builder.spawn() {
         Ok(child_process) => {
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-            let child_unix = Child {
-                id: Arc::new(main),
+            let child_unix = Child::new(
+                main,
+                child_process.id() as libc::pid_t,
                 ptsname,
-                pid: Arc::new(child_process.id().try_into().unwrap()),
-                lifecycle: Mutex::new(ChildLifecycle::new(
-                    child_process.id() as libc::pid_t
-                )),
-                process: Some(child_process),
-            };
+                Some(child_process),
+            );
 
             unsafe {
                 set_nonblocking(main);
@@ -791,13 +782,7 @@ pub fn create_pty_with_fork(
             // Whenever it happens it will just simply shut down the teletyperwriter
             // In the future add an option to check before release the method
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-            let child = Child {
-                id: Arc::new(main),
-                ptsname,
-                pid: Arc::new(id),
-                process: None,
-                lifecycle: Mutex::new(ChildLifecycle::new(id)),
-            };
+            let child = Child::new(main, id, ptsname, None);
 
             unsafe {
                 set_nonblocking(main);
@@ -844,162 +829,9 @@ unsafe fn set_nonblocking(fd: libc::c_int) {
     assert_eq!(res, 0);
 }
 
-#[derive(Debug)]
-pub struct Child {
-    pub id: Arc<libc::c_int>,
-    pub pid: Arc<libc::pid_t>,
-    #[allow(dead_code)]
-    ptsname: String,
-    #[allow(dead_code)]
-    process: Option<std::process::Child>,
-    lifecycle: Mutex<ChildLifecycle>,
-}
-
-#[derive(Debug)]
-struct ChildLifecycle {
-    // Never trust the public, mutable PID field for process ownership.
-    pid: libc::pid_t,
-    reaped: bool,
-    status: Option<i32>,
-}
-
-impl ChildLifecycle {
-    fn new(pid: libc::pid_t) -> Self {
-        assert!(pid > 0);
-        Self {
-            pid,
-            reaped: false,
-            status: None,
-        }
-    }
-
-    fn wait(&mut self, options: libc::c_int) -> io::Result<Option<i32>> {
-        if self.reaped {
-            return Ok(self.status);
-        }
-        loop {
-            let mut status = 0;
-            let result = unsafe { waitpid(self.pid, &mut status, options) };
-            if result == self.pid {
-                self.reaped = true;
-                self.status = Some(status);
-                return Ok(self.status);
-            }
-            if result == 0 {
-                return Ok(None);
-            }
-            let error = Error::last_os_error();
-            match error.raw_os_error() {
-                Some(libc::EINTR) => continue,
-                Some(libc::ECHILD) => {
-                    // Another reaper may have consumed the child. Its PID is
-                    // no longer ours to signal, even though its status is lost.
-                    self.reaped = true;
-                }
-                _ => (),
-            }
-            return Err(error);
-        }
-    }
-
-    fn terminate(&mut self) -> io::Result<()> {
-        let result = self.wait(libc::WNOHANG);
-        if self.reaped {
-            return Ok(());
-        }
-        result?;
-        if unsafe { libc::kill(self.pid, libc::SIGHUP) } == -1 {
-            let error = Error::last_os_error();
-            if error.raw_os_error() != Some(libc::ESRCH) {
-                return Err(error);
-            }
-        }
-        let deadline = Instant::now() + Duration::from_millis(100);
-        while Instant::now() < deadline {
-            let result = self.wait(libc::WNOHANG);
-            if self.reaped {
-                return Ok(());
-            }
-            result?;
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        if unsafe { libc::kill(self.pid, libc::SIGKILL) } == -1 {
-            let error = Error::last_os_error();
-            if error.raw_os_error() != Some(libc::ESRCH) {
-                return Err(error);
-            }
-        }
-        match self.wait(0) {
-            Err(_) if self.reaped => Ok(()),
-            result => result.map(|_| ()),
-        }
-    }
-}
-
-impl Child {
-    /// The tcgetwinsize function fills in the winsize structure pointed to by
-    ///  gws with values that represent the size of the terminal window for which
-    ///  fd provides an open file descriptor.  If no error occurs tcgetwinsize()
-    ///  returns zero (0).
-    ///  The tcsetwinsize function sets the terminal window size, for the terminal
-    ///  referenced by fd, to the sizes from the winsize structure pointed to by
-    ///  sws.  If no error occurs tcsetwinsize() returns zero (0).
-    ///  The winsize structure, defined in <termios.h>, contains (at least) the
-    ///  following four fields
-    ///  unsigned short ws_row;      /* Number of rows, in characters */
-    ///  unsigned short ws_col;      /* Number of columns, in characters */
-    ///  unsigned short ws_xpixel;   /* Width, in pixels */
-    ///  unsigned short ws_ypixel;   /* Height, in pixels */
-    /// If the actual window size of the controlling terminal of a process
-    /// changes, the process is sent a SIGWINCH signal.  See signal(7).  Note
-    /// simply changing the sizes using tcsetwinsize() does not necessarily
-    /// change the actual window size, and if not, will not generate a SIGWINCH.
-    pub fn set_winsize(&self, winsize_builder: WinsizeBuilder) -> io::Result<()> {
-        let winsize: Winsize = winsize_builder.build();
-        match unsafe { libc::ioctl(**self, TIOCSWINSZ, &winsize as *const _) } {
-            -1 => Err(io::Error::last_os_error()),
-            _ => Ok(()),
-        }
-    }
-
-    /// Return the child’s exit status if it has already exited. If the child is still running, return Ok(None).
-    /// https://linux.die.net/man/2/waitpid
-    pub fn waitpid(&self) -> Result<Option<i32>, String> {
-        self.lifecycle
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .wait(libc::WNOHANG)
-            .map_err(|error| error.to_string())
-    }
-
-    /// Hang up the child, then force termination after a short grace period,
-    /// and reap it. Repeated calls preserve the original exit status.
-    pub fn terminate(&self) -> io::Result<()> {
-        self.lifecycle
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .terminate()
-    }
-}
-
 pub fn kill_pid(pid: i32) {
     unsafe {
         libc::kill(pid, libc::SIGHUP);
-    }
-}
-
-impl Deref for Child {
-    type Target = libc::c_int;
-    fn deref(&self) -> &libc::c_int {
-        &self.id
-    }
-}
-
-impl Drop for Child {
-    fn drop(&mut self) {
-        if let Err(error) = self.terminate() {
-            tracing::warn!(%error, "failed to terminate PTY child");
-        }
     }
 }
 
@@ -1033,17 +865,9 @@ impl EventedPty for Pty {
                 return None;
             }
 
-            match self.child.waitpid() {
-                Err(_e) => {
-                    // std::process::exit(1);
-                    None
-                }
-                Ok(None) => None,
-                Ok(Some(status)) => {
-                    self.child_event_emitted = true;
-                    Some(ChildEvent::Exited(Some(status)))
-                }
-            }
+            let event = self.child.poll_exit().ok().flatten()?;
+            self.child_event_emitted = true;
+            Some(event)
         })
     }
 
@@ -1275,198 +1099,5 @@ mod termp_tests {
         let term = create_termp(true);
         assert_eq!(term.c_ospeed, libc::B230400);
         assert_eq!(term.c_ispeed, libc::B230400);
-    }
-}
-
-#[cfg(test)]
-mod child_lifecycle_tests {
-    use super::*;
-    use std::io::Read;
-
-    fn child(script: &str) -> Child {
-        let mut process = Command::new("/bin/sh")
-            .args(["-c", script])
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap();
-        // The script announces that its signal disposition is installed.
-        let mut ready = [0];
-        process
-            .stdout
-            .take()
-            .unwrap()
-            .read_exact(&mut ready)
-            .unwrap();
-        let pid = process.id() as libc::pid_t;
-        Child {
-            id: Arc::new(-1),
-            pid: Arc::new(pid),
-            ptsname: String::new(),
-            process: Some(process),
-            lifecycle: Mutex::new(ChildLifecycle::new(pid)),
-        }
-    }
-
-    fn assert_reaped(pid: libc::pid_t) {
-        let mut status = 0;
-        assert_eq!(unsafe { waitpid(pid, &mut status, libc::WNOHANG) }, -1);
-        assert_eq!(Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
-    }
-
-    #[test]
-    fn natural_exit_status_survives_repeated_wait_and_termination() {
-        let child = child("printf r; exit 23");
-        let pid = *child.pid;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let status = loop {
-            if let Some(status) = child.waitpid().unwrap() {
-                break status;
-            }
-            assert!(Instant::now() < deadline);
-            std::thread::sleep(Duration::from_millis(5));
-        };
-        assert_eq!(libc::WEXITSTATUS(status), 23);
-        child.terminate().unwrap();
-        assert_eq!(child.waitpid().unwrap(), Some(status));
-        drop(child);
-        assert_reaped(pid);
-    }
-
-    #[test]
-    fn ignored_hangup_is_escalated_and_reaped_even_if_public_pid_changes() {
-        let mut child = child("trap '' HUP; printf r; while :; do :; done");
-        let pid = *child.pid;
-        child.pid = Arc::new(0);
-        child.terminate().unwrap();
-        let status = child.waitpid().unwrap().unwrap();
-        assert!(libc::WIFSIGNALED(status));
-        assert_eq!(libc::WTERMSIG(status), libc::SIGKILL);
-        child.terminate().unwrap();
-        drop(child);
-        assert_reaped(pid);
-    }
-
-    #[test]
-    fn pty_natural_exit_emits_status_once() {
-        let mut pty = create_pty_with_spawn(
-            Some("/bin/sh"),
-            vec!["-c".into(), "exit 29".into()],
-            &None,
-            None,
-            80,
-            24,
-            0,
-            0,
-        )
-        .unwrap();
-        let pid = *pty.child.pid;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let status = loop {
-            if let Some(ChildEvent::Exited(Some(status))) = pty.next_child_event() {
-                break status;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "PTY exit event was not delivered"
-            );
-            std::thread::sleep(Duration::from_millis(5));
-        };
-        assert!(libc::WIFEXITED(status));
-        assert_eq!(libc::WEXITSTATUS(status), 29);
-        // A subsequent SIGCHLD must not emit the cached status a second time.
-        unsafe {
-            libc::raise(libc::SIGCHLD);
-        }
-        assert!(pty.next_child_event().is_none());
-        pty.shutdown().unwrap();
-        assert_eq!(pty.child.waitpid().unwrap(), Some(status));
-        drop(pty);
-        assert_reaped(pid);
-    }
-
-    #[test]
-    fn failed_spawn_closes_pty_descriptors() {
-        const ISOLATED: &str = "RIO_TEST_FAILED_PTY_SPAWN";
-        if std::env::var_os(ISOLATED).is_none() {
-            // Descriptor counts are process-wide, so run outside parallel tests.
-            let status = Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    "unix::child_lifecycle_tests::failed_spawn_closes_pty_descriptors",
-                ])
-                .env(ISOLATED, "1")
-                .status()
-                .unwrap();
-            assert!(status.success());
-            return;
-        }
-        let failed_spawn = || {
-            create_pty_with_spawn(
-                Some("/definitely-missing-rio-test-shell"),
-                vec![],
-                &None,
-                None,
-                80,
-                24,
-                0,
-                0,
-            )
-        };
-        // Warm up any process-global signal machinery before taking a baseline.
-        assert!(failed_spawn().is_err());
-        let descriptors = || {
-            (0..1024)
-                .filter(|fd| unsafe { libc::fcntl(*fd, libc::F_GETFD) != -1 })
-                .collect::<Vec<_>>()
-        };
-        let before = descriptors();
-        for _ in 0..8 {
-            assert!(failed_spawn().is_err());
-        }
-        assert_eq!(descriptors(), before);
-    }
-
-    #[test]
-    fn reaped_child_never_signals_a_reused_pid() {
-        let original = child("printf r; exit 0");
-        {
-            let mut lifecycle = original.lifecycle.lock().unwrap();
-            lifecycle.wait(0).unwrap();
-        }
-        let sentinel = child("trap - HUP; printf r; while :; do :; done");
-        // Simulate PID reuse deterministically after reaping the original.
-        original.lifecycle.lock().unwrap().pid = *sentinel.pid;
-        original.terminate().unwrap();
-        drop(original);
-        // A signal delivery may be asynchronous; allow it to become observable.
-        std::thread::sleep(Duration::from_millis(50));
-        assert_eq!(sentinel.waitpid().unwrap(), None);
-        sentinel.terminate().unwrap();
-    }
-
-    #[test]
-    fn graceful_hangup_preserves_exit_status() {
-        let child = child("trap 'exit 17' HUP; printf r; while :; do :; done");
-        child.terminate().unwrap();
-        let status = child.waitpid().unwrap().unwrap();
-        assert!(libc::WIFEXITED(status));
-        assert_eq!(libc::WEXITSTATUS(status), 17);
-    }
-
-    #[test]
-    fn drop_reaps_running_child() {
-        let child = child("trap 'exit 17' HUP; printf r; while :; do :; done");
-        let pid = *child.pid;
-        drop(child);
-        assert_reaped(pid);
-    }
-
-    #[test]
-    fn externally_reaped_child_is_retired() {
-        let mut child = child("printf r; exit 0");
-        child.process.as_mut().unwrap().wait().unwrap();
-        assert!(child.waitpid().is_err());
-        assert!(child.lifecycle.lock().unwrap().reaped);
-        child.terminate().unwrap();
     }
 }

@@ -54,7 +54,11 @@ pub enum ChildEvent {
 }
 
 pub trait EventedPty: ProcessReadWrite {
-    /// Shut down and reap the PTY child before retaining the stopped I/O loop.
+    /// Optional hook for releasing child-process resources when the I/O loop stops.
+    ///
+    /// The default does nothing; success does not guarantee child termination.
+    /// Unix terminates and reaps its child here. Windows keeps its existing
+    /// cleanup on drop, when the ConPTY backend closes the pseudoconsole.
     fn shutdown(&mut self) -> std::io::Result<()> {
         Ok(())
     }

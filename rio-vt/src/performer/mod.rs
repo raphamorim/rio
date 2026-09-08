@@ -74,6 +74,12 @@ enum ReadOutcome {
     Budget,
 }
 
+#[cfg(feature = "pty")]
+enum ExitReason {
+    Shutdown,
+    ChildExited(Option<i32>),
+}
+
 // Guards the pairing that once regressed: a MAX_LOCKED_READ below
 // READ_CHUNK ends the burst loop after a single partial chunk.
 #[cfg(feature = "pty")]
@@ -367,206 +373,183 @@ where
         spawn_named("PTY reader", move || {
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
-
-            let mut tokens = (0..).map(Into::into);
-
-            // The channel is drained to empty on every wakeup, which clears
-            // its readiness and re-arms the next edge transition, so plain
-            // edge (no oneshot, no re-registration) is enough. Level would go
-            // through the readiness queue's re-enqueue path, which is much
-            // more expensive per wakeup.
-            let channel_token = tokens.next().unwrap();
-            if let Err(err) = self.poll.register(
-                &self.receiver.rx,
-                channel_token,
-                Ready::readable(),
-                PollOpt::edge(),
-            ) {
-                error!("PTY channel registration failed: {err}");
-                let _ = self.pty.shutdown();
-                return (self, state);
-            }
-
-            // The PTY is level-triggered: pty_read may stop before draining
-            // the fd (MAX_LOCKED_READ), which would lose an edge, and level
-            // registrations stay armed so no re-registration is needed after
-            // each event. The write interest must be dropped as soon as the
-            // write queue drains or the poll would keep waking up for the
-            // writable PTY.
-            let poll_opts = PollOpt::level();
-
-            // Register TTY through EventedRW interface.
-            if let Err(err) =
-                self.pty
-                    .register(&self.poll, &mut tokens, Ready::readable(), poll_opts)
-            {
-                error!("PTY registration failed: {err}");
-                let _ = self.poll.deregister(&self.receiver.rx);
-                let _ = self.pty.deregister(&self.poll);
-                let _ = self.pty.shutdown();
-                return (self, state);
-            }
-
-            let mut events = Events::with_capacity(1024);
-            let mut last_interest = Ready::readable();
-
-            'event_loop: loop {
-                // Wakeup the event loop when a synchronized update timeout was reached.
-                let handler = state.parser.sync_timeout();
-                let timeout = handler
-                    .sync_timeout()
-                    .map(|st| st.saturating_duration_since(Instant::now()));
-
-                events.clear();
-                if let Err(err) = self.poll.poll(&mut events, timeout) {
-                    match err.kind() {
-                        ErrorKind::Interrupted => continue,
-                        _ => {
-                            error!("Event loop polling error: {err}");
-                            break 'event_loop;
-                        }
-                    }
-                }
-
-                // Handle synchronized update timeout.
-                if events.is_empty() && self.receiver.peek().is_none() {
-                    let mut terminal = self.terminal.lock();
-                    state.parser.stop_sync(&mut *terminal);
-
-                    // Notify renderer if damage available and no event in flight
-                    if !terminal.damage_event_in_flight
-                        && terminal.peek_damage_event().is_some()
-                    {
-                        terminal.damage_event_in_flight = true;
-                        self.event_proxy.send_event(
-                            RioEvent::TerminalDamaged(self.route_id),
-                            self.window_id,
-                        );
-                    }
-
-                    continue;
-                }
-
-                // Handle channel events, if there are any.
-                if !self.drain_recv_channel(&mut state) {
-                    break;
-                }
-
-                for event in events.iter() {
-                    match event.token() {
-                        // Channel messages were already drained above.
-                        token if token == channel_token => (),
-                        token if token == self.pty.child_event_token() => {
-                            if let Some(teletypewriter::ChildEvent::Exited(status)) =
-                                self.pty.next_child_event()
-                            {
-                                // Drain across parsing budgets, but do not wait for
-                                // descendants to close their inherited slave. Bound
-                                // a descendant that keeps writing continuously.
-                                let deadline = Instant::now()
-                                    + std::time::Duration::from_millis(100);
-                                loop {
-                                    match self.pty_read(&mut state, &mut buf) {
-                                        Ok(ReadOutcome::Budget)
-                                            if Instant::now() < deadline =>
-                                        {
-                                            continue
-                                        }
-                                        Err(err) => {
-                                            tracing::debug!("PTY final drain: {err}")
-                                        }
-                                        _ => (),
-                                    }
-                                    break;
-                                }
-                                {
-                                    let mut terminal = self.terminal.lock();
-                                    state.parser.stop_sync(&mut *terminal);
-                                }
-
-                                self.event_proxy.send_event(
-                                    RioEvent::ChildExited(self.route_id, status),
-                                    self.window_id,
-                                );
-
-                                self.terminal.lock().exit();
-
-                                self.event_proxy
-                                    .send_event(RioEvent::Render, self.window_id);
-
-                                break 'event_loop;
-                            }
-                        }
-
-                        token
-                            if token == self.pty.read_token()
-                                || token == self.pty.write_token() =>
-                        {
-                            #[cfg(unix)]
-                            let hung_up = UnixReady::from(event.readiness()).is_hup();
-                            #[cfg(not(unix))]
-                            let hung_up = false;
-                            // HUP can accompany unread final output.
-                            if event.readiness().is_readable() || hung_up {
-                                if let Err(err) = self.pty_read(&mut state, &mut buf) {
-                                    // On Linux, a `read` on the master side of a PTY can fail
-                                    // with `EIO` if the client side hangs up.  In that case,
-                                    // just loop back round for the inevitable `Exited` event.
-                                    #[cfg(target_os = "linux")]
-                                    if err.raw_os_error() == Some(libc::EIO) {
-                                        continue;
-                                    }
-
-                                    error!(
-                                        "Error reading from PTY in event loop: {}",
-                                        err
-                                    );
-                                    break 'event_loop;
-                                }
-                            }
-
-                            if !hung_up && event.readiness().is_writable() {
-                                if let Err(err) = self.pty_write(&mut state) {
-                                    error!("Error writing to PTY in event loop: {}", err);
-                                    break 'event_loop;
-                                }
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-
-                // Update the PTY registration when write interest changed.
-                let mut interest = Ready::readable();
-                if state.needs_write() {
-                    interest.insert(Ready::writable());
-                }
-                if interest != last_interest {
-                    if let Err(err) = self.pty.reregister(&self.poll, interest, poll_opts)
-                    {
-                        error!("PTY re-registration failed: {err}");
-                        break;
-                    }
-                    last_interest = interest;
-                }
-            }
-
-            // Flush synchronized bytes even on shutdown or I/O failure.
-            let pending_sync = state.parser.sync_bytes_count() > 0;
-            state.parser.stop_sync(&mut *self.terminal.lock());
-            if pending_sync {
-                self.event_proxy
-                    .send_event(RioEvent::Render, self.window_id);
-            }
-            if let Err(err) = self.pty.shutdown() {
-                error!("PTY shutdown failed: {err}");
-            }
-
-            // The evented instances are not dropped here so deregister them explicitly.
-            let _ = self.poll.deregister(&self.receiver.rx);
-            let _ = self.pty.deregister(&self.poll);
-
+            let reason = self.run(&mut state, &mut buf);
+            self.finish(&mut state, &mut buf, reason);
             (self, state)
         })
+    }
+
+    fn run(&mut self, state: &mut State, buf: &mut [u8]) -> io::Result<ExitReason> {
+        let mut tokens = (0..).map(Into::into);
+
+        // The channel is drained to empty on every wakeup, which clears
+        // its readiness and re-arms the next edge transition, so plain
+        // edge (no oneshot, no re-registration) is enough. Level would go
+        // through the readiness queue's re-enqueue path, which is much
+        // more expensive per wakeup.
+        let channel_token = tokens.next().unwrap();
+        self.poll.register(
+            &self.receiver.rx,
+            channel_token,
+            Ready::readable(),
+            PollOpt::edge(),
+        )?;
+
+        // The PTY is level-triggered: pty_read may stop before draining
+        // the fd (MAX_LOCKED_READ), which would lose an edge, and level
+        // registrations stay armed so no re-registration is needed after
+        // each event. The write interest must be dropped as soon as the
+        // write queue drains or the poll would keep waking up for the
+        // writable PTY.
+        let poll_opts = PollOpt::level();
+
+        // Register TTY through EventedRW interface.
+        self.pty
+            .register(&self.poll, &mut tokens, Ready::readable(), poll_opts)?;
+
+        let mut events = Events::with_capacity(1024);
+        let mut last_interest = Ready::readable();
+
+        loop {
+            // Wakeup the event loop when a synchronized update timeout was reached.
+            let handler = state.parser.sync_timeout();
+            let timeout = handler
+                .sync_timeout()
+                .map(|st| st.saturating_duration_since(Instant::now()));
+
+            events.clear();
+            if let Err(err) = self.poll.poll(&mut events, timeout) {
+                match err.kind() {
+                    ErrorKind::Interrupted => continue,
+                    _ => return Err(err),
+                }
+            }
+
+            // Handle synchronized update timeout.
+            if events.is_empty() && self.receiver.peek().is_none() {
+                let mut terminal = self.terminal.lock();
+                state.parser.stop_sync(&mut *terminal);
+
+                // Notify renderer if damage available and no event in flight
+                if !terminal.damage_event_in_flight
+                    && terminal.peek_damage_event().is_some()
+                {
+                    terminal.damage_event_in_flight = true;
+                    self.event_proxy.send_event(
+                        RioEvent::TerminalDamaged(self.route_id),
+                        self.window_id,
+                    );
+                }
+
+                continue;
+            }
+
+            // Handle channel events, if there are any.
+            if !self.drain_recv_channel(state) {
+                return Ok(ExitReason::Shutdown);
+            }
+
+            for event in events.iter() {
+                match event.token() {
+                    // Channel messages were already drained above.
+                    token if token == channel_token => (),
+                    token if token == self.pty.child_event_token() => {
+                        if let Some(teletypewriter::ChildEvent::Exited(status)) =
+                            self.pty.next_child_event()
+                        {
+                            return Ok(ExitReason::ChildExited(status));
+                        }
+                    }
+
+                    token
+                        if token == self.pty.read_token()
+                            || token == self.pty.write_token() =>
+                    {
+                        #[cfg(unix)]
+                        let hung_up = UnixReady::from(event.readiness()).is_hup();
+                        #[cfg(not(unix))]
+                        let hung_up = false;
+                        // HUP can accompany unread final output.
+                        if event.readiness().is_readable() || hung_up {
+                            if let Err(err) = self.pty_read(state, buf) {
+                                // On Linux, a `read` on the master side of a PTY can fail
+                                // with `EIO` if the client side hangs up.  In that case,
+                                // just loop back round for the inevitable `Exited` event.
+                                #[cfg(target_os = "linux")]
+                                if err.raw_os_error() == Some(libc::EIO) {
+                                    continue;
+                                }
+
+                                return Err(err);
+                            }
+                        }
+
+                        if !hung_up && event.readiness().is_writable() {
+                            self.pty_write(state)?;
+                        }
+                    }
+                    _ => (),
+                }
+            }
+
+            // Update the PTY registration when write interest changed.
+            let mut interest = Ready::readable();
+            if state.needs_write() {
+                interest.insert(Ready::writable());
+            }
+            if interest != last_interest {
+                self.pty.reregister(&self.poll, interest, poll_opts)?;
+                last_interest = interest;
+            }
+        }
+    }
+
+    /// All reader exits, including partial registration failures, finalize here.
+    fn finish(
+        &mut self,
+        state: &mut State,
+        buf: &mut [u8],
+        reason: io::Result<ExitReason>,
+    ) {
+        if matches!(reason, Ok(ExitReason::ChildExited(_))) {
+            // Do not wait for descendants to close the slave. Drain across
+            // parsing budgets, limiting continuously available output to 100 ms
+            // between batches (terminal lock waits can extend this interval).
+            let deadline = Instant::now() + std::time::Duration::from_millis(100);
+            loop {
+                match self.pty_read(state, buf) {
+                    Ok(ReadOutcome::Budget) if Instant::now() < deadline => continue,
+                    Err(err) => tracing::debug!("PTY final drain: {err}"),
+                    _ => (),
+                }
+                break;
+            }
+        }
+
+        // Flush exactly once before publishing any exit notification.
+        let pending_sync = state.parser.sync_bytes_count() > 0;
+        state.parser.stop_sync(&mut *self.terminal.lock());
+        match &reason {
+            Ok(ExitReason::ChildExited(status)) => {
+                self.event_proxy.send_event(
+                    RioEvent::ChildExited(self.route_id, *status),
+                    self.window_id,
+                );
+                self.terminal.lock().exit();
+            }
+            Err(err) => error!("PTY reader failed: {err}"),
+            Ok(ExitReason::Shutdown) => (),
+        }
+        if pending_sync || matches!(reason, Ok(ExitReason::ChildExited(_))) {
+            self.event_proxy
+                .send_event(RioEvent::Render, self.window_id);
+        }
+        if let Err(err) = self.pty.shutdown() {
+            error!("PTY shutdown failed: {err}");
+        }
+        // These objects are retained in the returned Machine. Deregistration is
+        // best effort because setup may have failed before registering them.
+        let _ = self.poll.deregister(&self.receiver.rx);
+        let _ = self.pty.deregister(&self.poll);
     }
 }

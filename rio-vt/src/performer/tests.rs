@@ -15,7 +15,8 @@ struct TestPty {
     child: Option<corcovado::Registration>,
     registration_error: bool,
     read_event: bool,
-    shutdown: bool,
+    shutdown_calls: usize,
+    deregister_calls: usize,
     raw_error: Option<i32>,
 }
 
@@ -93,13 +94,14 @@ impl ProcessReadWrite for TestPty {
         Ok(())
     }
     fn deregister(&mut self, _: &corcovado::Poll) -> io::Result<()> {
+        self.deregister_calls += 1;
         Ok(())
     }
 }
 
 impl EventedPty for TestPty {
     fn shutdown(&mut self) -> io::Result<()> {
-        self.shutdown = true;
+        self.shutdown_calls += 1;
         Ok(())
     }
     fn child_event_token(&self) -> corcovado::Token {
@@ -129,7 +131,8 @@ fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidLi
             child: None,
             registration_error: false,
             read_event: false,
-            shutdown: false,
+            shutdown_calls: 0,
+            deregister_calls: 0,
             raw_error: None,
         },
         VoidListener,
@@ -220,6 +223,8 @@ fn child_exit_drains_multiple_budgets_and_finishes_pending_sync() {
     let (machine, state) = machine.spawn().join().unwrap();
     assert_eq!(first_line(&machine, 12), "final output");
     assert_eq!(state.parser.sync_bytes_count(), 0);
+    assert_eq!(machine.pty.shutdown_calls, 1);
+    assert_eq!(machine.pty.deregister_calls, 1);
 }
 
 #[cfg(unix)]
@@ -233,7 +238,8 @@ fn registration_failure_shuts_down_pty() {
     let mut machine = machine(Vec::new(), None);
     machine.pty.registration_error = true;
     let (machine, _) = machine.spawn().join().unwrap();
-    assert!(machine.pty.shutdown);
+    assert_eq!(machine.pty.shutdown_calls, 1);
+    assert_eq!(machine.pty.deregister_calls, 1);
 }
 
 #[test]
@@ -245,7 +251,8 @@ fn read_failure_shuts_down_pty_and_finishes_pending_sync() {
     machine.pty.read_event = true;
     readiness.set_readiness(Ready::readable()).unwrap();
     let (machine, state) = machine.spawn().join().unwrap();
-    assert!(machine.pty.shutdown);
+    assert_eq!(machine.pty.shutdown_calls, 1);
+    assert_eq!(machine.pty.deregister_calls, 1);
     assert_eq!(first_line(&machine, 12), "final output");
     assert_eq!(state.parser.sync_bytes_count(), 0);
 }
@@ -321,5 +328,15 @@ fn hangup_without_readable_readiness_drains_residual_output() {
     }
     let (machine, _) = result.expect("HUP must be handled without readable readiness");
     assert_eq!(first_line(&machine, 12), "final output");
-    assert!(machine.pty.shutdown);
+    assert_eq!(machine.pty.shutdown_calls, 1);
+    assert_eq!(machine.pty.deregister_calls, 1);
+}
+
+#[test]
+fn explicit_shutdown_finalizes_once() {
+    let machine = machine(Vec::new(), None);
+    machine.channel().send(Msg::Shutdown).unwrap();
+    let (machine, _) = machine.spawn().join().unwrap();
+    assert_eq!(machine.pty.shutdown_calls, 1);
+    assert_eq!(machine.pty.deregister_calls, 1);
 }
