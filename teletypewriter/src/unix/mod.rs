@@ -24,7 +24,8 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::ptr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
@@ -125,6 +126,7 @@ pub struct Pty {
     token: corcovado::Token,
     signals_token: corcovado::Token,
     signals: Signals,
+    child_event_emitted: bool,
 }
 
 impl Deref for Pty {
@@ -551,6 +553,11 @@ pub fn create_pty_with_spawn(
         )));
     }
 
+    // Own both descriptors before any fallible setup so every error path
+    // closes them, including command and signal registration failures.
+    let file = unsafe { File::from_raw_fd(main) };
+    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+
     let user = match ShellUser::from_env() {
         Ok(data) => data,
         Err(..) => ShellUser {
@@ -630,10 +637,7 @@ pub fn create_pty_with_spawn(
     }
 
     // Setup child stdin/stdout/stderr as child fd of PTY.
-    // Ownership of fd is transferred to the Stdio structs and will be closed by them at the end of
-    // this scope. (It is not an issue that the fd is closed three times since File::drop ignores
-    // error on libc::close.).
-    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+    // Each Stdio owns a distinct descriptor and closes it when dropped.
 
     builder.stdin(owned_child.try_clone()?);
     builder.stderr(owned_child.try_clone()?);
@@ -685,26 +689,29 @@ pub fn create_pty_with_spawn(
     }
 
     // Prepare signal handling before spawning child.
-    let signals =
-        Signals::new([sigconsts::SIGCHLD]).expect("error preparing signal handling");
+    let signals = Signals::new([sigconsts::SIGCHLD])?;
 
     match builder.spawn() {
         Ok(child_process) => {
-            unsafe {
-                set_nonblocking(main);
-            }
-
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             let child_unix = Child {
                 id: Arc::new(main),
                 ptsname,
                 pid: Arc::new(child_process.id().try_into().unwrap()),
+                lifecycle: Mutex::new(ChildLifecycle::new(
+                    child_process.id() as libc::pid_t
+                )),
                 process: Some(child_process),
             };
 
+            unsafe {
+                set_nonblocking(main);
+            }
+
             Ok(Pty {
                 child: child_unix,
-                file: unsafe { File::from_raw_fd(main) },
+                child_event_emitted: false,
+                file,
                 token: corcovado::Token::from(0),
                 signals,
                 signals_token: corcovado::Token::from(0),
@@ -762,6 +769,8 @@ pub fn create_pty_with_fork(
 
     tracing::info!("fork {:?}", shell_program);
 
+    let signals = Signals::new([sigconsts::SIGCHLD])?;
+
     match unsafe {
         forkpty(
             &mut main as *mut _,
@@ -772,11 +781,12 @@ pub fn create_pty_with_fork(
     } {
         0 => {
             default_shell_command(shell_program, args);
-            Err(Error::other(format!(
-                "forkpty has reach unreachable with {shell_program}"
-            )))
+            // Never return into the terminal application in the forked child
+            // when exec fails, or run the parent's destructors there.
+            unsafe { libc::_exit(127) }
         }
         id if id > 0 => {
+            let file = unsafe { File::from_raw_fd(main) };
             // TODO: Currently we fork the process and don't wait to know if led to failure
             // Whenever it happens it will just simply shut down the teletyperwriter
             // In the future add an option to check before release the method
@@ -786,18 +796,18 @@ pub fn create_pty_with_fork(
                 ptsname,
                 pid: Arc::new(id),
                 process: None,
+                lifecycle: Mutex::new(ChildLifecycle::new(id)),
             };
 
             unsafe {
                 set_nonblocking(main);
             }
 
-            let signals = Signals::new([sigconsts::SIGCHLD])
-                .expect("error preparing signal handling");
             Ok(Pty {
                 child,
+                child_event_emitted: false,
                 signals,
-                file: unsafe { File::from_raw_fd(main) },
+                file,
                 token: corcovado::Token(0),
                 signals_token: corcovado::Token(0),
             })
@@ -842,6 +852,88 @@ pub struct Child {
     ptsname: String,
     #[allow(dead_code)]
     process: Option<std::process::Child>,
+    lifecycle: Mutex<ChildLifecycle>,
+}
+
+#[derive(Debug)]
+struct ChildLifecycle {
+    // Never trust the public, mutable PID field for process ownership.
+    pid: libc::pid_t,
+    reaped: bool,
+    status: Option<i32>,
+}
+
+impl ChildLifecycle {
+    fn new(pid: libc::pid_t) -> Self {
+        assert!(pid > 0);
+        Self {
+            pid,
+            reaped: false,
+            status: None,
+        }
+    }
+
+    fn wait(&mut self, options: libc::c_int) -> io::Result<Option<i32>> {
+        if self.reaped {
+            return Ok(self.status);
+        }
+        loop {
+            let mut status = 0;
+            let result = unsafe { waitpid(self.pid, &mut status, options) };
+            if result == self.pid {
+                self.reaped = true;
+                self.status = Some(status);
+                return Ok(self.status);
+            }
+            if result == 0 {
+                return Ok(None);
+            }
+            let error = Error::last_os_error();
+            match error.raw_os_error() {
+                Some(libc::EINTR) => continue,
+                Some(libc::ECHILD) => {
+                    // Another reaper may have consumed the child. Its PID is
+                    // no longer ours to signal, even though its status is lost.
+                    self.reaped = true;
+                }
+                _ => (),
+            }
+            return Err(error);
+        }
+    }
+
+    fn terminate(&mut self) -> io::Result<()> {
+        let result = self.wait(libc::WNOHANG);
+        if self.reaped {
+            return Ok(());
+        }
+        result?;
+        if unsafe { libc::kill(self.pid, libc::SIGHUP) } == -1 {
+            let error = Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                return Err(error);
+            }
+        }
+        let deadline = Instant::now() + Duration::from_millis(100);
+        while Instant::now() < deadline {
+            let result = self.wait(libc::WNOHANG);
+            if self.reaped {
+                return Ok(());
+            }
+            result?;
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if unsafe { libc::kill(self.pid, libc::SIGKILL) } == -1 {
+            let error = Error::last_os_error();
+            if error.raw_os_error() != Some(libc::ESRCH) {
+                return Err(error);
+            }
+        }
+        match self.wait(0) {
+            Err(_) if self.reaped => Ok(()),
+            result => result.map(|_| ()),
+        }
+    }
 }
 
 impl Child {
@@ -873,19 +965,20 @@ impl Child {
     /// Return the child’s exit status if it has already exited. If the child is still running, return Ok(None).
     /// https://linux.die.net/man/2/waitpid
     pub fn waitpid(&self) -> Result<Option<i32>, String> {
-        let mut status = 0 as libc::c_int;
-        // If WNOHANG was specified in options and there were no children in a waitable state, then waitid() returns 0 immediately and the state of the siginfo_t structure pointed to by infop is unspecified. To distinguish this case from that where a child was in a waitable state, zero out the si_pid field before the call and check for a nonzero value in this field after the call returns.
-        let res =
-            unsafe { waitpid(*self.pid, &mut status as *mut libc::c_int, libc::WNOHANG) };
-        if res <= -1 {
-            return Err(String::from("error"));
-        }
+        self.lifecycle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .wait(libc::WNOHANG)
+            .map_err(|error| error.to_string())
+    }
 
-        if res == 0 && status == 0 {
-            return Ok(None);
-        }
-
-        Ok(Some(status))
+    /// Hang up the child, then force termination after a short grace period,
+    /// and reap it. Repeated calls preserve the original exit status.
+    pub fn terminate(&self) -> io::Result<()> {
+        self.lifecycle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .terminate()
     }
 }
 
@@ -904,8 +997,8 @@ impl Deref for Child {
 
 impl Drop for Child {
     fn drop(&mut self) {
-        unsafe {
-            libc::kill(*self.pid, libc::SIGHUP);
+        if let Err(error) = self.terminate() {
+            tracing::warn!(%error, "failed to terminate PTY child");
         }
     }
 }
@@ -926,8 +1019,15 @@ pub fn command_per_pid(pid: libc::pid_t) -> String {
 }
 
 impl EventedPty for Pty {
+    fn shutdown(&mut self) -> io::Result<()> {
+        self.child.terminate()
+    }
+
     #[inline]
     fn next_child_event(&mut self) -> Option<ChildEvent> {
+        if self.child_event_emitted {
+            return None;
+        }
         self.signals.pending().next().and_then(|signal| {
             if signal != sigconsts::SIGCHLD {
                 return None;
@@ -939,7 +1039,10 @@ impl EventedPty for Pty {
                     None
                 }
                 Ok(None) => None,
-                Ok(Some(status)) => Some(ChildEvent::Exited(Some(status))),
+                Ok(Some(status)) => {
+                    self.child_event_emitted = true;
+                    Some(ChildEvent::Exited(Some(status)))
+                }
             }
         })
     }
@@ -1172,5 +1275,198 @@ mod termp_tests {
         let term = create_termp(true);
         assert_eq!(term.c_ospeed, libc::B230400);
         assert_eq!(term.c_ispeed, libc::B230400);
+    }
+}
+
+#[cfg(test)]
+mod child_lifecycle_tests {
+    use super::*;
+    use std::io::Read;
+
+    fn child(script: &str) -> Child {
+        let mut process = Command::new("/bin/sh")
+            .args(["-c", script])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        // The script announces that its signal disposition is installed.
+        let mut ready = [0];
+        process
+            .stdout
+            .take()
+            .unwrap()
+            .read_exact(&mut ready)
+            .unwrap();
+        let pid = process.id() as libc::pid_t;
+        Child {
+            id: Arc::new(-1),
+            pid: Arc::new(pid),
+            ptsname: String::new(),
+            process: Some(process),
+            lifecycle: Mutex::new(ChildLifecycle::new(pid)),
+        }
+    }
+
+    fn assert_reaped(pid: libc::pid_t) {
+        let mut status = 0;
+        assert_eq!(unsafe { waitpid(pid, &mut status, libc::WNOHANG) }, -1);
+        assert_eq!(Error::last_os_error().raw_os_error(), Some(libc::ECHILD));
+    }
+
+    #[test]
+    fn natural_exit_status_survives_repeated_wait_and_termination() {
+        let child = child("printf r; exit 23");
+        let pid = *child.pid;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let status = loop {
+            if let Some(status) = child.waitpid().unwrap() {
+                break status;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert_eq!(libc::WEXITSTATUS(status), 23);
+        child.terminate().unwrap();
+        assert_eq!(child.waitpid().unwrap(), Some(status));
+        drop(child);
+        assert_reaped(pid);
+    }
+
+    #[test]
+    fn ignored_hangup_is_escalated_and_reaped_even_if_public_pid_changes() {
+        let mut child = child("trap '' HUP; printf r; while :; do :; done");
+        let pid = *child.pid;
+        child.pid = Arc::new(0);
+        child.terminate().unwrap();
+        let status = child.waitpid().unwrap().unwrap();
+        assert!(libc::WIFSIGNALED(status));
+        assert_eq!(libc::WTERMSIG(status), libc::SIGKILL);
+        child.terminate().unwrap();
+        drop(child);
+        assert_reaped(pid);
+    }
+
+    #[test]
+    fn pty_natural_exit_emits_status_once() {
+        let mut pty = create_pty_with_spawn(
+            Some("/bin/sh"),
+            vec!["-c".into(), "exit 29".into()],
+            &None,
+            None,
+            80,
+            24,
+            0,
+            0,
+        )
+        .unwrap();
+        let pid = *pty.child.pid;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let status = loop {
+            if let Some(ChildEvent::Exited(Some(status))) = pty.next_child_event() {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "PTY exit event was not delivered"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert!(libc::WIFEXITED(status));
+        assert_eq!(libc::WEXITSTATUS(status), 29);
+        // A subsequent SIGCHLD must not emit the cached status a second time.
+        unsafe {
+            libc::raise(libc::SIGCHLD);
+        }
+        assert!(pty.next_child_event().is_none());
+        pty.shutdown().unwrap();
+        assert_eq!(pty.child.waitpid().unwrap(), Some(status));
+        drop(pty);
+        assert_reaped(pid);
+    }
+
+    #[test]
+    fn failed_spawn_closes_pty_descriptors() {
+        const ISOLATED: &str = "RIO_TEST_FAILED_PTY_SPAWN";
+        if std::env::var_os(ISOLATED).is_none() {
+            // Descriptor counts are process-wide, so run outside parallel tests.
+            let status = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "unix::child_lifecycle_tests::failed_spawn_closes_pty_descriptors",
+                ])
+                .env(ISOLATED, "1")
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
+        let failed_spawn = || {
+            create_pty_with_spawn(
+                Some("/definitely-missing-rio-test-shell"),
+                vec![],
+                &None,
+                None,
+                80,
+                24,
+                0,
+                0,
+            )
+        };
+        // Warm up any process-global signal machinery before taking a baseline.
+        assert!(failed_spawn().is_err());
+        let descriptors = || {
+            (0..1024)
+                .filter(|fd| unsafe { libc::fcntl(*fd, libc::F_GETFD) != -1 })
+                .collect::<Vec<_>>()
+        };
+        let before = descriptors();
+        for _ in 0..8 {
+            assert!(failed_spawn().is_err());
+        }
+        assert_eq!(descriptors(), before);
+    }
+
+    #[test]
+    fn reaped_child_never_signals_a_reused_pid() {
+        let original = child("printf r; exit 0");
+        {
+            let mut lifecycle = original.lifecycle.lock().unwrap();
+            lifecycle.wait(0).unwrap();
+        }
+        let sentinel = child("trap - HUP; printf r; while :; do :; done");
+        // Simulate PID reuse deterministically after reaping the original.
+        original.lifecycle.lock().unwrap().pid = *sentinel.pid;
+        original.terminate().unwrap();
+        drop(original);
+        // A signal delivery may be asynchronous; allow it to become observable.
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(sentinel.waitpid().unwrap(), None);
+        sentinel.terminate().unwrap();
+    }
+
+    #[test]
+    fn graceful_hangup_preserves_exit_status() {
+        let child = child("trap 'exit 17' HUP; printf r; while :; do :; done");
+        child.terminate().unwrap();
+        let status = child.waitpid().unwrap().unwrap();
+        assert!(libc::WIFEXITED(status));
+        assert_eq!(libc::WEXITSTATUS(status), 17);
+    }
+
+    #[test]
+    fn drop_reaps_running_child() {
+        let child = child("trap 'exit 17' HUP; printf r; while :; do :; done");
+        let pid = *child.pid;
+        drop(child);
+        assert_reaped(pid);
+    }
+
+    #[test]
+    fn externally_reaped_child_is_retired() {
+        let mut child = child("printf r; exit 0");
+        child.process.as_mut().unwrap().wait().unwrap();
+        assert!(child.waitpid().is_err());
+        assert!(child.lifecycle.lock().unwrap().reaped);
+        child.terminate().unwrap();
     }
 }

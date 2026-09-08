@@ -54,6 +54,11 @@ pub enum ChildEvent {
 }
 
 pub trait EventedPty: ProcessReadWrite {
+    /// Shut down and reap the PTY child before retaining the stopped I/O loop.
+    fn shutdown(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+
     fn child_event_token(&self) -> corcovado::Token;
 
     /// Tries to retrieve an event.

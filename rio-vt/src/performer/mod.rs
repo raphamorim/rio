@@ -2,6 +2,9 @@ pub mod handler;
 mod osc;
 pub mod parser;
 
+#[cfg(all(test, feature = "pty"))]
+mod tests;
+
 #[cfg(feature = "pty")]
 use crate::crosswords::Crosswords;
 #[cfg(feature = "pty")]
@@ -62,6 +65,14 @@ const READ_CHUNK: usize = 65536;
 /// yielding per chunk.
 #[cfg(feature = "pty")]
 const MAX_LOCKED_READ: usize = READ_CHUNK * 4;
+
+#[cfg(feature = "pty")]
+#[derive(Debug, PartialEq, Eq)]
+enum ReadOutcome {
+    Idle,
+    Closed,
+    Budget,
+}
 
 // Guards the pairing that once regressed: a MAX_LOCKED_READ below
 // READ_CHUNK ends the burst loop after a single partial chunk.
@@ -220,9 +231,10 @@ where
     /// throughput; the confirming read that ends a burst costs a
     /// single `EAGAIN`.
     #[inline]
-    fn pty_read(&mut self, state: &mut State, buf: &mut [u8]) -> io::Result<()> {
+    fn pty_read(&mut self, state: &mut State, buf: &mut [u8]) -> io::Result<ReadOutcome> {
         let mut unprocessed = 0;
         let mut processed = 0;
+        let mut result = Ok(ReadOutcome::Budget);
 
         // Reserve the next terminal lock for PTY reading.
         let _terminal_lease = Some(self.terminal.lease());
@@ -231,19 +243,27 @@ where
         loop {
             // Read from the PTY.
             let cap = (unprocessed + READ_CHUNK).min(buf.len());
-            match self.pty.reader().read(&mut buf[unprocessed..cap]) {
-                // This is received on Windows/macOS when no more data is readable from the PTY.
-                Ok(0) if unprocessed == 0 => break,
-                Ok(got) => unprocessed += got,
-                Err(err) => match err.kind() {
-                    ErrorKind::Interrupted | ErrorKind::WouldBlock => {
-                        // Go back to mio if we're caught up on parsing and the PTY would block.
-                        if unprocessed == 0 {
-                            break;
-                        }
-                    }
-                    _ => return Err(err),
-                },
+            let stopped = match self.pty.reader().read(&mut buf[unprocessed..cap]) {
+                Ok(0) => {
+                    result = Ok(ReadOutcome::Closed);
+                    true
+                }
+                Ok(got) => {
+                    unprocessed += got;
+                    false
+                }
+                Err(err) if err.kind() == ErrorKind::Interrupted => continue,
+                Err(err) if err.kind() == ErrorKind::WouldBlock => {
+                    result = Ok(ReadOutcome::Idle);
+                    true
+                }
+                Err(err) => {
+                    result = Err(err);
+                    true
+                }
+            };
+            if stopped && unprocessed == 0 {
+                break;
             }
 
             // Attempt to lock the terminal.
@@ -251,7 +271,7 @@ where
                 Some(terminal) => terminal,
                 None => terminal.insert(match self.terminal.try_lock_unfair() {
                     // Force block if we are at the buffer size limit.
-                    None if unprocessed >= READ_BUFFER_SIZE => {
+                    None if stopped || unprocessed == buf.len() => {
                         self.terminal.lock_unfair()
                     }
                     None => continue,
@@ -266,7 +286,7 @@ where
             unprocessed = 0;
 
             // Assure we're not blocking the terminal too long unnecessarily.
-            if processed >= MAX_LOCKED_READ {
+            if stopped || processed >= MAX_LOCKED_READ {
                 break;
             }
         }
@@ -286,7 +306,7 @@ where
             }
         }
 
-        Ok(())
+        result
     }
 
     /// Drain the channel.
@@ -356,14 +376,16 @@ where
             // through the readiness queue's re-enqueue path, which is much
             // more expensive per wakeup.
             let channel_token = tokens.next().unwrap();
-            self.poll
-                .register(
-                    &self.receiver.rx,
-                    channel_token,
-                    Ready::readable(),
-                    PollOpt::edge(),
-                )
-                .unwrap();
+            if let Err(err) = self.poll.register(
+                &self.receiver.rx,
+                channel_token,
+                Ready::readable(),
+                PollOpt::edge(),
+            ) {
+                error!("PTY channel registration failed: {err}");
+                let _ = self.pty.shutdown();
+                return (self, state);
+            }
 
             // The PTY is level-triggered: pty_read may stop before draining
             // the fd (MAX_LOCKED_READ), which would lose an edge, and level
@@ -374,9 +396,16 @@ where
             let poll_opts = PollOpt::level();
 
             // Register TTY through EventedRW interface.
-            self.pty
-                .register(&self.poll, &mut tokens, Ready::readable(), poll_opts)
-                .unwrap();
+            if let Err(err) =
+                self.pty
+                    .register(&self.poll, &mut tokens, Ready::readable(), poll_opts)
+            {
+                error!("PTY registration failed: {err}");
+                let _ = self.poll.deregister(&self.receiver.rx);
+                let _ = self.pty.deregister(&self.poll);
+                let _ = self.pty.shutdown();
+                return (self, state);
+            }
 
             let mut events = Events::with_capacity(1024);
             let mut last_interest = Ready::readable();
@@ -431,22 +460,28 @@ where
                             if let Some(teletypewriter::ChildEvent::Exited(status)) =
                                 self.pty.next_child_event()
                             {
-                                // In the future allow configure exit
-                                // if self.hold {
-                                //     With hold enabled, make sure the PTY is drained.
-                                //     let _ = self.pty_read(&mut state, &mut buf);
-                                // } else {
-                                //     // Without hold, shutdown the terminal.
-                                //     self.terminal.lock().exit();
-                                // }
-
-                                // Drain whatever the child wrote before it
-                                // exited so short-lived commands don't lose
-                                // their final output.
-                                if let Err(err) = self.pty_read(&mut state, &mut buf) {
-                                    tracing::debug!(
-                                        "PTY drain after child exit failed: {err}"
-                                    );
+                                // Drain across parsing budgets, but do not wait for
+                                // descendants to close their inherited slave. Bound
+                                // a descendant that keeps writing continuously.
+                                let deadline = Instant::now()
+                                    + std::time::Duration::from_millis(100);
+                                loop {
+                                    match self.pty_read(&mut state, &mut buf) {
+                                        Ok(ReadOutcome::Budget)
+                                            if Instant::now() < deadline =>
+                                        {
+                                            continue
+                                        }
+                                        Err(err) => {
+                                            tracing::debug!("PTY final drain: {err}")
+                                        }
+                                        _ => (),
+                                    }
+                                    break;
+                                }
+                                {
+                                    let mut terminal = self.terminal.lock();
+                                    state.parser.stop_sync(&mut *terminal);
                                 }
 
                                 self.event_proxy.send_event(
@@ -468,11 +503,11 @@ where
                                 || token == self.pty.write_token() =>
                         {
                             #[cfg(unix)]
-                            if UnixReady::from(event.readiness()).is_hup() {
-                                // Don't try to do I/O on a dead PTY.
-                                continue;
-                            }
-                            if event.readiness().is_readable() {
+                            let hung_up = UnixReady::from(event.readiness()).is_hup();
+                            #[cfg(not(unix))]
+                            let hung_up = false;
+                            // HUP can accompany unread final output.
+                            if event.readiness().is_readable() || hung_up {
                                 if let Err(err) = self.pty_read(&mut state, &mut buf) {
                                     // On Linux, a `read` on the master side of a PTY can fail
                                     // with `EIO` if the client side hangs up.  In that case,
@@ -490,7 +525,7 @@ where
                                 }
                             }
 
-                            if event.readiness().is_writable() {
+                            if !hung_up && event.readiness().is_writable() {
                                 if let Err(err) = self.pty_write(&mut state) {
                                     error!("Error writing to PTY in event loop: {}", err);
                                     break 'event_loop;
@@ -507,11 +542,24 @@ where
                     interest.insert(Ready::writable());
                 }
                 if interest != last_interest {
-                    self.pty
-                        .reregister(&self.poll, interest, poll_opts)
-                        .unwrap();
+                    if let Err(err) = self.pty.reregister(&self.poll, interest, poll_opts)
+                    {
+                        error!("PTY re-registration failed: {err}");
+                        break;
+                    }
                     last_interest = interest;
                 }
+            }
+
+            // Flush synchronized bytes even on shutdown or I/O failure.
+            let pending_sync = state.parser.sync_bytes_count() > 0;
+            state.parser.stop_sync(&mut *self.terminal.lock());
+            if pending_sync {
+                self.event_proxy
+                    .send_event(RioEvent::Render, self.window_id);
+            }
+            if let Err(err) = self.pty.shutdown() {
+                error!("PTY shutdown failed: {err}");
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
