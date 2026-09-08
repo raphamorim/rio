@@ -1,8 +1,10 @@
 #![cfg(unix)]
 
+mod child;
 #[cfg(target_os = "macos")]
 mod macos;
 mod signals;
+pub use child::Child;
 
 extern crate libc;
 
@@ -24,7 +26,6 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::ptr;
-use std::sync::Arc;
 
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
@@ -50,12 +51,6 @@ extern "C" {
         name: *mut libc::c_char,
         termp: *const libc::termios,
         winsize: *const Winsize,
-    ) -> libc::pid_t;
-
-    fn waitpid(
-        pid: libc::pid_t,
-        status: *mut libc::c_int,
-        options: libc::c_int,
     ) -> libc::pid_t;
 
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
@@ -125,6 +120,7 @@ pub struct Pty {
     token: corcovado::Token,
     signals_token: corcovado::Token,
     signals: Signals,
+    child_event_emitted: bool,
 }
 
 impl Deref for Pty {
@@ -551,6 +547,11 @@ pub fn create_pty_with_spawn(
         )));
     }
 
+    // Own both descriptors before any fallible setup so every error path
+    // closes them, including command and signal registration failures.
+    let file = unsafe { File::from_raw_fd(main) };
+    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+
     let user = match ShellUser::from_env() {
         Ok(data) => data,
         Err(..) => ShellUser {
@@ -630,10 +631,7 @@ pub fn create_pty_with_spawn(
     }
 
     // Setup child stdin/stdout/stderr as child fd of PTY.
-    // Ownership of fd is transferred to the Stdio structs and will be closed by them at the end of
-    // this scope. (It is not an issue that the fd is closed three times since File::drop ignores
-    // error on libc::close.).
-    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+    // Each Stdio owns a distinct descriptor and closes it when dropped.
 
     builder.stdin(owned_child.try_clone()?);
     builder.stderr(owned_child.try_clone()?);
@@ -685,26 +683,26 @@ pub fn create_pty_with_spawn(
     }
 
     // Prepare signal handling before spawning child.
-    let signals =
-        Signals::new([sigconsts::SIGCHLD]).expect("error preparing signal handling");
+    let signals = Signals::new([sigconsts::SIGCHLD])?;
 
     match builder.spawn() {
         Ok(child_process) => {
+            let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
+            let child_unix = Child::new(
+                main,
+                child_process.id() as libc::pid_t,
+                ptsname,
+                Some(child_process),
+            );
+
             unsafe {
                 set_nonblocking(main);
             }
 
-            let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-            let child_unix = Child {
-                id: Arc::new(main),
-                ptsname,
-                pid: Arc::new(child_process.id().try_into().unwrap()),
-                process: Some(child_process),
-            };
-
             Ok(Pty {
                 child: child_unix,
-                file: unsafe { File::from_raw_fd(main) },
+                child_event_emitted: false,
+                file,
                 token: corcovado::Token::from(0),
                 signals,
                 signals_token: corcovado::Token::from(0),
@@ -762,6 +760,8 @@ pub fn create_pty_with_fork(
 
     tracing::info!("fork {:?}", shell_program);
 
+    let signals = Signals::new([sigconsts::SIGCHLD])?;
+
     match unsafe {
         forkpty(
             &mut main as *mut _,
@@ -772,32 +772,27 @@ pub fn create_pty_with_fork(
     } {
         0 => {
             default_shell_command(shell_program, args);
-            Err(Error::other(format!(
-                "forkpty has reach unreachable with {shell_program}"
-            )))
+            // Never return into the terminal application in the forked child
+            // when exec fails, or run the parent's destructors there.
+            unsafe { libc::_exit(127) }
         }
         id if id > 0 => {
+            let file = unsafe { File::from_raw_fd(main) };
             // TODO: Currently we fork the process and don't wait to know if led to failure
             // Whenever it happens it will just simply shut down the teletyperwriter
             // In the future add an option to check before release the method
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-            let child = Child {
-                id: Arc::new(main),
-                ptsname,
-                pid: Arc::new(id),
-                process: None,
-            };
+            let child = Child::new(main, id, ptsname, None);
 
             unsafe {
                 set_nonblocking(main);
             }
 
-            let signals = Signals::new([sigconsts::SIGCHLD])
-                .expect("error preparing signal handling");
             Ok(Pty {
                 child,
+                child_event_emitted: false,
                 signals,
-                file: unsafe { File::from_raw_fd(main) },
+                file,
                 token: corcovado::Token(0),
                 signals_token: corcovado::Token(0),
             })
@@ -834,79 +829,9 @@ unsafe fn set_nonblocking(fd: libc::c_int) {
     assert_eq!(res, 0);
 }
 
-#[derive(Debug)]
-pub struct Child {
-    pub id: Arc<libc::c_int>,
-    pub pid: Arc<libc::pid_t>,
-    #[allow(dead_code)]
-    ptsname: String,
-    #[allow(dead_code)]
-    process: Option<std::process::Child>,
-}
-
-impl Child {
-    /// The tcgetwinsize function fills in the winsize structure pointed to by
-    ///  gws with values that represent the size of the terminal window for which
-    ///  fd provides an open file descriptor.  If no error occurs tcgetwinsize()
-    ///  returns zero (0).
-    ///  The tcsetwinsize function sets the terminal window size, for the terminal
-    ///  referenced by fd, to the sizes from the winsize structure pointed to by
-    ///  sws.  If no error occurs tcsetwinsize() returns zero (0).
-    ///  The winsize structure, defined in <termios.h>, contains (at least) the
-    ///  following four fields
-    ///  unsigned short ws_row;      /* Number of rows, in characters */
-    ///  unsigned short ws_col;      /* Number of columns, in characters */
-    ///  unsigned short ws_xpixel;   /* Width, in pixels */
-    ///  unsigned short ws_ypixel;   /* Height, in pixels */
-    /// If the actual window size of the controlling terminal of a process
-    /// changes, the process is sent a SIGWINCH signal.  See signal(7).  Note
-    /// simply changing the sizes using tcsetwinsize() does not necessarily
-    /// change the actual window size, and if not, will not generate a SIGWINCH.
-    pub fn set_winsize(&self, winsize_builder: WinsizeBuilder) -> io::Result<()> {
-        let winsize: Winsize = winsize_builder.build();
-        match unsafe { libc::ioctl(**self, TIOCSWINSZ, &winsize as *const _) } {
-            -1 => Err(io::Error::last_os_error()),
-            _ => Ok(()),
-        }
-    }
-
-    /// Return the child’s exit status if it has already exited. If the child is still running, return Ok(None).
-    /// https://linux.die.net/man/2/waitpid
-    pub fn waitpid(&self) -> Result<Option<i32>, String> {
-        let mut status = 0 as libc::c_int;
-        // If WNOHANG was specified in options and there were no children in a waitable state, then waitid() returns 0 immediately and the state of the siginfo_t structure pointed to by infop is unspecified. To distinguish this case from that where a child was in a waitable state, zero out the si_pid field before the call and check for a nonzero value in this field after the call returns.
-        let res =
-            unsafe { waitpid(*self.pid, &mut status as *mut libc::c_int, libc::WNOHANG) };
-        if res <= -1 {
-            return Err(String::from("error"));
-        }
-
-        if res == 0 && status == 0 {
-            return Ok(None);
-        }
-
-        Ok(Some(status))
-    }
-}
-
 pub fn kill_pid(pid: i32) {
     unsafe {
         libc::kill(pid, libc::SIGHUP);
-    }
-}
-
-impl Deref for Child {
-    type Target = libc::c_int;
-    fn deref(&self) -> &libc::c_int {
-        &self.id
-    }
-}
-
-impl Drop for Child {
-    fn drop(&mut self) {
-        unsafe {
-            libc::kill(*self.pid, libc::SIGHUP);
-        }
     }
 }
 
@@ -926,21 +851,23 @@ pub fn command_per_pid(pid: libc::pid_t) -> String {
 }
 
 impl EventedPty for Pty {
+    fn shutdown(&mut self) -> io::Result<()> {
+        self.child.terminate()
+    }
+
     #[inline]
     fn next_child_event(&mut self) -> Option<ChildEvent> {
+        if self.child_event_emitted {
+            return None;
+        }
         self.signals.pending().next().and_then(|signal| {
             if signal != sigconsts::SIGCHLD {
                 return None;
             }
 
-            match self.child.waitpid() {
-                Err(_e) => {
-                    // std::process::exit(1);
-                    None
-                }
-                Ok(None) => None,
-                Ok(Some(status)) => Some(ChildEvent::Exited(Some(status))),
-            }
+            let event = self.child.poll_exit().ok().flatten()?;
+            self.child_event_emitted = true;
+            Some(event)
         })
     }
 
