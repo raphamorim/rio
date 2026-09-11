@@ -150,7 +150,7 @@ fn spawned_program_name(config: &ContextManagerConfig) -> String {
         _ => {
             #[cfg(unix)]
             {
-                std::env::var("SHELL").unwrap_or_default()
+                teletypewriter::default_shell_program()
             }
             #[cfg(not(unix))]
             {
@@ -440,7 +440,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         }
 
-        Ok(ContextManager {
+        let mut manager = ContextManager {
             current_index: 0,
             current_route: 0,
             contexts: smallvec![ContextGrid::new(
@@ -454,7 +454,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config: ctx_config,
-        })
+        };
+        // The native titlebar starts as the placeholder; one poke makes
+        // it converge on the displayed title even for shells that never
+        // emit an OSC title or OSC 7.
+        manager.sync_window_title();
+        Ok(manager)
     }
 
     #[cfg(test)]
@@ -517,8 +522,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if self.contexts[tab_index].len() > 1 {
             self.contexts[tab_index].remove_by_route(route_id, sugarloaf);
             if tab_index == self.current_index {
-                self.current_route = self.contexts[tab_index].current().route_id;
-                self.sync_window_title();
+                self.sync_current_route();
             }
             return false;
         }
@@ -765,9 +769,22 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
+    /// A rename changes what `displayed_title_for_tab` returns, so the
+    /// native titlebar gets the same convergence poke every other
+    /// displayed-title mutation sends.
     pub fn set_custom_title(&mut self, index: usize, title: Option<String>) {
         if let Some(grid) = self.contexts.get_mut(index) {
             grid.custom_title = title;
+        }
+        self.sync_window_title();
+    }
+
+    /// Drop every tab's bell mark, used when the indicator is disabled
+    /// by a live config reload: the ring-time gate stops new marks but
+    /// cannot retract ones already set.
+    pub fn clear_all_bells(&mut self) {
+        for grid in self.contexts.iter_mut() {
+            grid.bell = false;
         }
     }
 
@@ -1004,8 +1021,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn remove_current_grid(&mut self, sugarloaf: &mut Sugarloaf) {
         self.contexts[self.current_index].remove_current(sugarloaf);
-        self.current_route = self.contexts[self.current_index].current().route_id;
-        self.sync_window_title();
+        self.sync_current_route();
     }
 
     #[inline]

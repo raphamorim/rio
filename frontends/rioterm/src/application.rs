@@ -163,6 +163,30 @@ impl Application<'_> {
     }
 }
 
+impl Application<'_> {
+    /// One pane's title data changed (OSC 0/2 title carried in
+    /// `raw_title`, OSC 7 directory as `None`): re-render, repaint the
+    /// strip when the displayed text changed, and poke the titlebar.
+    fn handle_title_change(
+        &mut self,
+        window_id: rio_backend::event::WindowId,
+        route_id: usize,
+        raw_title: Option<&str>,
+    ) {
+        if let Some(route) = self.router.routes.get_mut(&window_id) {
+            if route
+                .window
+                .screen
+                .context_manager
+                .on_title_change(route_id, raw_title)
+            {
+                route.request_overlay_redraw();
+            }
+            route.sync_window_title();
+        }
+    }
+}
+
 /// Whether the title template renders the pane size, the one title
 /// input with no PTY event attached (resizes are locally known).
 fn title_tracks_size(config: &rio_backend::config::Config) -> bool {
@@ -619,6 +643,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         &self.router.font_library,
                         has_font_updates,
                     );
+                    if !self.config.bell.tab_indicator {
+                        route.window.screen.context_manager.clear_all_bells();
+                    }
                     route.window.configure_window(&self.config);
 
                     if let Some(error) = &config_error {
@@ -709,6 +736,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             event_loop.exit();
                         }
                     } else {
+                        route.window.screen.refresh_titles();
                         let size = route.window.screen.context_manager.len();
                         route.window.screen.resize_top_or_bottom_line(size);
                     }
@@ -831,30 +859,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::Title(route_id, title)) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if route
-                        .window
-                        .screen
-                        .context_manager
-                        .on_title_change(route_id, Some(&title))
-                    {
-                        route.request_overlay_redraw();
-                    }
-                    route.sync_window_title();
-                }
+                self.handle_title_change(window_id, route_id, Some(&title));
             }
             RioEventType::Rio(RioEvent::CurrentDirectoryChanged(route_id)) => {
-                if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    if route
-                        .window
-                        .screen
-                        .context_manager
-                        .on_title_change(route_id, None)
-                    {
-                        route.request_overlay_redraw();
-                    }
-                    route.sync_window_title();
-                }
+                self.handle_title_change(window_id, route_id, None);
             }
             RioEventType::Rio(RioEvent::SyncWindowTitle) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
@@ -894,7 +902,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     routes, clipboard, ..
                 } = &mut self.router;
                 if let Some(route) = routes.get_mut(&window_id) {
-                    if route.window.is_focused {
+                    // `!focus_seen` mirrors the render gates: a window
+                    // that never received a focus event yet (created in
+                    // the background) must not have OSC 52 silently
+                    // dropped by an is_focused that never initialized.
+                    if route.window.is_focused || !route.window.focus_seen {
                         let text = format(clipboard.get(clipboard_type).as_str());
                         // Route the paste back to the panel that asked for it
                         // (OSC 52 reply), not whichever panel happens to be
@@ -915,7 +927,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     routes, clipboard, ..
                 } = &mut self.router;
                 if let Some(route) = routes.get_mut(&window_id) {
-                    if route.window.is_focused {
+                    if route.window.is_focused || !route.window.focus_seen {
                         clipboard.set(clipboard_type, content);
                     }
                 }
@@ -2205,13 +2217,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 route.window.screen.resize(new_size);
                 if self.title_tracks_size {
-                    let only_current = route.window.screen.renderer.island.is_none();
-                    route.window.screen.context_manager.mark_all_titles_dirty();
-                    route
-                        .window
-                        .screen
-                        .context_manager
-                        .update_titles(only_current);
+                    route.window.screen.refresh_titles();
                 }
                 route.request_redraw();
             }
