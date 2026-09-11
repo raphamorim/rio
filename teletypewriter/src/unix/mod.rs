@@ -4,7 +4,7 @@ mod child;
 #[cfg(target_os = "macos")]
 mod macos;
 mod signals;
-pub use child::Child;
+pub use child::{Child, ChildTerminator};
 
 extern crate libc;
 
@@ -827,12 +827,6 @@ unsafe fn set_nonblocking(fd: libc::c_int) {
 
     let res = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
     assert_eq!(res, 0);
-}
-
-pub fn kill_pid(pid: i32) {
-    unsafe {
-        libc::kill(pid, libc::SIGHUP);
-    }
 }
 
 pub fn command_per_pid(pid: libc::pid_t) -> String {

@@ -5,6 +5,16 @@ use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+/// Grace between SIGHUP and SIGKILL. Shell HUP traps and history
+/// flushes routinely exceed 100ms; kitty and ghostty never escalate
+/// at all, so err on the long side.
+const HANGUP_GRACE: Duration = Duration::from_secs(1);
+/// Bound on reaping after SIGKILL. A child in uninterruptible sleep
+/// survives SIGKILL; an unbounded wait would hold the lifecycle mutex
+/// (and any Drop running it) forever. The child stays `Running` on
+/// timeout so a later poll or terminate can finish the reap.
+const KILL_REAP_TIMEOUT: Duration = Duration::from_secs(1);
+
 #[derive(Debug)]
 pub struct Child {
     pub id: Arc<libc::c_int>,
@@ -13,7 +23,7 @@ pub struct Child {
     ptsname: String,
     #[allow(dead_code)]
     process: Option<std::process::Child>,
-    lifecycle: Mutex<ChildLifecycle>,
+    lifecycle: Arc<Mutex<ChildLifecycle>>,
 }
 
 /// A retired child has no PID that can accidentally be signaled after reuse.
@@ -50,31 +60,81 @@ impl ChildLifecycle {
         }
     }
 
+    fn reap_within(&mut self, timeout: Duration) -> io::Result<bool> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if let Self::Exited(_) = self.wait(libc::WNOHANG)? {
+                return Ok(true);
+            }
+            if Instant::now() >= deadline {
+                return Ok(false);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     fn terminate(&mut self) -> io::Result<()> {
         let Self::Running(pid) = self.wait(libc::WNOHANG)? else {
             return Ok(());
         };
         signal(pid, libc::SIGHUP)?;
-        let deadline = Instant::now() + Duration::from_millis(100);
-        while Instant::now() < deadline {
-            if let Self::Exited(_) = self.wait(libc::WNOHANG)? {
-                return Ok(());
-            }
-            std::thread::sleep(Duration::from_millis(5));
+        if self.reap_within(HANGUP_GRACE)? {
+            return Ok(());
         }
         signal(pid, libc::SIGKILL)?;
-        self.wait(0).map(|_| ())
+        if self.reap_within(KILL_REAP_TIMEOUT)? {
+            return Ok(());
+        }
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "child not reaped after SIGKILL",
+        ))
     }
 }
 
+/// Signal the child's process group so descendants sharing it are
+/// reached (forkpty makes the child a session leader). Fall back to
+/// the pid when the child still shares our own group: pre-setsid, or
+/// a directly spawned process, where killpg would signal us too.
 fn signal(pid: libc::pid_t, signal: libc::c_int) -> io::Result<()> {
-    if unsafe { libc::kill(pid, signal) } == -1 {
+    let pgid = unsafe { libc::getpgid(pid) };
+    let result = if pgid > 0 && pgid != unsafe { libc::getpgrp() } {
+        unsafe { libc::killpg(pgid, signal) }
+    } else {
+        unsafe { libc::kill(pid, signal) }
+    };
+    if result == -1 {
         let error = io::Error::last_os_error();
         if error.raw_os_error() != Some(libc::ESRCH) {
             return Err(error);
         }
     }
     Ok(())
+}
+
+/// A cloneable handle sharing the child's lifecycle state, for owners
+/// that outlive the `Pty` (which moves into the reader thread). Going
+/// through the lifecycle keeps the reaped-PID guarantee: a retired
+/// child is never signaled.
+#[derive(Debug, Clone)]
+pub struct ChildTerminator(Arc<Mutex<ChildLifecycle>>);
+
+impl ChildTerminator {
+    /// A handle with no child; every operation is a no-op.
+    pub fn retired() -> Self {
+        Self(Arc::new(Mutex::new(ChildLifecycle::Exited(None))))
+    }
+
+    /// Send SIGHUP without waiting or escalating. For Drop on threads
+    /// that cannot block (the reader thread's shutdown escalation may
+    /// never run when the process exits right after).
+    pub fn hangup(&self) -> io::Result<()> {
+        let mut lifecycle = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let ChildLifecycle::Running(pid) = lifecycle.wait(libc::WNOHANG)? else {
+            return Ok(());
+        };
+        signal(pid, libc::SIGHUP)
+    }
 }
 
 impl Child {
@@ -90,8 +150,12 @@ impl Child {
             pid: Arc::new(pid),
             ptsname,
             process,
-            lifecycle: Mutex::new(ChildLifecycle::Running(pid)),
+            lifecycle: Arc::new(Mutex::new(ChildLifecycle::Running(pid))),
         }
+    }
+
+    pub fn terminator(&self) -> ChildTerminator {
+        ChildTerminator(self.lifecycle.clone())
     }
 
     pub(super) fn poll_exit(&self) -> io::Result<Option<ChildEvent>> {
@@ -373,6 +437,31 @@ mod tests {
         std::thread::sleep(Duration::from_millis(50));
         assert_eq!(sentinel.waitpid().unwrap(), None);
         sentinel.terminate().unwrap();
+    }
+
+    #[test]
+    fn terminator_hangup_after_reap_is_noop() {
+        let child = child("printf r; exit 0");
+        let handle = child.terminator();
+        child.lifecycle.lock().unwrap().wait(0).unwrap();
+        handle.hangup().unwrap();
+        assert!(child.waitpid().is_ok());
+    }
+
+    #[test]
+    fn terminator_hangup_delivers_sighup_without_reaping() {
+        let child = child("trap 'exit 17' HUP; printf r; while :; do :; done");
+        child.terminator().hangup().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let status = loop {
+            if let Some(status) = child.waitpid().unwrap() {
+                break status;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert!(libc::WIFEXITED(status));
+        assert_eq!(libc::WEXITSTATUS(status), 17);
     }
 
     #[test]
