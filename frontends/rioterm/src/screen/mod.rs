@@ -628,6 +628,16 @@ impl Screen<'_> {
     }
 
     #[inline]
+    /// Re-render titles after a grid reflow (window resize, font-size
+    /// or scale change, split open/close): `{{columns}}`/`{{lines}}`
+    /// have no PTY event, so the reflow itself is their trigger. Panes
+    /// the walk skips are marked dirty and re-render on surfacing.
+    pub fn refresh_titles(&mut self) -> bool {
+        let only_current = self.renderer.island.is_none();
+        self.context_manager.mark_all_titles_dirty();
+        self.context_manager.update_titles(only_current)
+    }
+
     pub fn change_font_size(&mut self, action: FontSizeAction) {
         let dim = &mut self.context_manager.current_mut().dimension;
         let changed = match action {
@@ -645,6 +655,7 @@ impl Screen<'_> {
 
         self.mark_dirty();
         self.resize_all_contexts();
+        self.refresh_titles();
         // Reflowed cursor displacement is layout, not travel.
         self.renderer.trail_cursor.snap();
     }
@@ -739,6 +750,7 @@ impl Screen<'_> {
 
         self.context_manager
             .resize_all_grids(width, height, &mut self.sugarloaf);
+        self.refresh_titles();
         self.mark_dirty();
         // Rescaled cursor displacement is layout, not travel.
         self.renderer.trail_cursor.snap();
@@ -1618,6 +1630,7 @@ impl Screen<'_> {
             &mut self.sugarloaf,
         );
 
+        self.refresh_titles();
         self.mark_dirty();
     }
 
@@ -1626,6 +1639,7 @@ impl Screen<'_> {
         self.context_manager
             .split(rich_text_id, false, &mut self.sugarloaf);
 
+        self.refresh_titles();
         self.mark_dirty();
     }
 
@@ -1634,6 +1648,7 @@ impl Screen<'_> {
         self.context_manager
             .split(rich_text_id, true, &mut self.sugarloaf);
 
+        self.refresh_titles();
         self.mark_dirty();
     }
 
@@ -1723,6 +1738,7 @@ impl Screen<'_> {
             self.clear_selection();
             self.context_manager
                 .remove_current_grid(&mut self.sugarloaf);
+            self.refresh_titles();
             self.mark_dirty();
         } else {
             self.close_tab(clipboard);

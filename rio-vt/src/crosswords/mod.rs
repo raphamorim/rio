@@ -3350,7 +3350,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.inactive_keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
         self.keyboard_mode_idx = 0;
         self.inactive_keyboard_mode_idx = 0;
-        self.title = String::from("");
+        if !self.title.is_empty() {
+            self.title = String::from("");
+            self.event_proxy.send_event(
+                RioEvent::Title(self.route_id, String::new()),
+                self.window_id,
+            );
+        }
         self.selection = None;
         self.vi_mode_cursor = Default::default();
         self.keyboard_mode_stack = Default::default();
@@ -7897,6 +7903,47 @@ mod tests {
                 .any(|e| matches!(e, RioEvent::Title(route, t) if *route == 7 && t == "my title")),
             "set_title should emit RioEvent::Title carrying its route id"
         );
+    }
+
+    #[test]
+    fn reset_emits_empty_title_event_once() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            7,
+            10,
+        );
+
+        Handler::set_title(&mut term, Some("vim - foo.rs".to_string()));
+        events.borrow_mut().clear();
+
+        // RIS must announce the cleared title like any other change,
+        // or the strip and titlebar keep the pre-reset text forever.
+        Handler::reset_state(&mut term);
+        let count = events
+            .borrow()
+            .iter()
+            .filter(
+                |e| matches!(e, RioEvent::Title(route, t) if *route == 7 && t.is_empty()),
+            )
+            .count();
+        assert_eq!(count, 1);
+
+        // A reset with no title set stays silent.
+        events.borrow_mut().clear();
+        Handler::reset_state(&mut term);
+        assert!(events
+            .borrow()
+            .iter()
+            .all(|e| !matches!(e, RioEvent::Title(..))));
     }
 
     #[test]

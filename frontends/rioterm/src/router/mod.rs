@@ -528,14 +528,7 @@ impl Router<'_> {
     /// dirty and re-render when they surface.
     pub fn update_titles(&mut self) {
         for route in self.routes.values_mut() {
-            let only_current = route.window.screen.renderer.island.is_none();
-            route.window.screen.context_manager.mark_all_titles_dirty();
-            if route
-                .window
-                .screen
-                .context_manager
-                .update_titles(only_current)
-            {
+            if route.window.screen.refresh_titles() {
                 route.request_overlay_redraw();
             }
         }
