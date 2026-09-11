@@ -619,6 +619,14 @@ pub fn create_pty_with_spawn(
                 "--env=TERM=rio".to_string(),
             ];
 
+            // Only `--env=` crosses the sandbox boundary: variables set
+            // on flatpak-spawn itself never reach the host process.
+            if let Some(env) = &env {
+                for (key, value) in env {
+                    with_args.push(format!("--env={key}={value}"));
+                }
+            }
+
             if let Some(directory) = working_directory {
                 with_args.push(format!(
                     "--directory={}",

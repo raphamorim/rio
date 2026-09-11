@@ -267,17 +267,18 @@ fn host_is_local(host: &str) -> bool {
     }
 
     match local_hostname() {
-        Some(local) => host.eq_ignore_ascii_case(local),
+        Some(local) => host.eq_ignore_ascii_case(&local),
         // With no hostname to compare against, take the shell at its word
         // rather than dropping the directory outright.
         None => true,
     }
 }
 
-/// This machine's hostname, looked up once.
-fn local_hostname() -> Option<&'static str> {
-    static HOSTNAME: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    HOSTNAME.get_or_init(read_hostname).as_deref()
+/// This machine's hostname, read per check: one syscall, where a
+/// process-lifetime cache would keep rejecting a shell's cwd reports
+/// after the hostname changes mid-session (macOS mDNS renames).
+fn local_hostname() -> Option<String> {
+    read_hostname()
 }
 
 #[cfg(unix)]
