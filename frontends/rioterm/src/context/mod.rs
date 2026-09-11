@@ -251,22 +251,20 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
-        let integration_env: Vec<(String, String)> = if config.shell_integration {
-            crate::shell_integration::spawn_env(config.shell.program.as_deref())
-        } else {
-            Vec::new()
-        };
-        let rewritten_command = if config.shell_integration {
-            crate::shell_integration::powershell_command(
+        let integration = if config.shell_integration {
+            crate::shell_integration::prepare(
                 config.shell.program.as_deref(),
                 &config.shell.args,
             )
         } else {
-            None
+            crate::shell_integration::SpawnIntegration::default()
         };
-        let (shell_program, shell_args) = match &rewritten_command {
-            Some((program, args)) => (program.as_deref(), args.clone()),
-            None => (config.shell.program.as_deref(), config.shell.args.clone()),
+        let (shell_program, shell_args) = match &integration.command {
+            Some((program, args)) => (program.as_deref(), args.as_slice()),
+            None => (
+                config.shell.program.as_deref(),
+                config.shell.args.as_slice(),
+            ),
         };
 
         let pty;
@@ -276,8 +274,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 tracing::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
                     shell_program,
-                    &shell_args,
-                    &integration_env,
+                    shell_args,
+                    &integration.env,
                     cols,
                     rows,
                     initial_winsize.width,
@@ -293,9 +291,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 tracing::info!("rio -> teletypewriter: create_pty_with_spawn");
                 pty = match create_pty_with_spawn(
                     shell_program,
-                    shell_args.clone(),
+                    shell_args.to_vec(),
                     &config.working_dir,
-                    (!integration_env.is_empty()).then_some(integration_env),
+                    (!integration.env.is_empty()).then(|| integration.env.clone()),
                     cols,
                     rows,
                     initial_winsize.width,
@@ -319,9 +317,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         {
             pty = match create_pty(
                 shell_program,
-                shell_args,
+                shell_args.to_vec(),
                 &config.working_dir,
-                (!integration_env.is_empty()).then_some(integration_env),
+                (!integration.env.is_empty()).then(|| integration.env.clone()),
                 cols,
                 rows,
             ) {

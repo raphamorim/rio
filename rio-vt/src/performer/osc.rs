@@ -384,30 +384,56 @@ pub(super) fn parse_progress_report(params: &[&[u8]]) -> Option<ProgressReport> 
     Some(ProgressReport { state, progress })
 }
 
+/// Rejoin `params[from..]` with the `;` the OSC parser split on, so a
+/// payload defined as verbatim text survives a `;` inside it.
+pub(super) fn join_params(params: &[&[u8]], from: usize) -> Option<String> {
+    Some(
+        params
+            .get(from..)?
+            .iter()
+            .map(|param| simd_utf8::from_utf8_fast(param).ok())
+            .collect::<Option<Vec<_>>>()?
+            .join(";"),
+    )
+}
+
 /// OSC 9;9: ConEmu/Windows-Terminal working directory report, the
 /// Windows counterpart of OSC 7. Format: `9;9;<path>`, with the path
-/// optionally wrapped in double quotes. The path is verbatim (no URL
-/// encoding), and a `;` inside it comes through as extra params, so
-/// everything after `9;9;` is rejoined.
+/// optionally wrapped in double quotes and travelling verbatim (no URL
+/// encoding), so everything after `9;9;` is rejoined.
+///
+/// The sequence carries no host field, so unlike OSC 7 a remote shell
+/// cannot be told apart from a local one (ConEmu and Windows Terminal
+/// accept the same). Requiring an absolute path at least drops
+/// free-text payloads and relative garbage.
 pub(super) fn parse_conemu_working_directory(params: &[&[u8]]) -> Option<String> {
     if params.len() < 3 || params[1] != b"9" {
         return None;
     }
-    let mut path = String::new();
-    for (i, param) in params[2..].iter().enumerate() {
-        if i > 0 {
-            path.push(';');
-        }
-        path.push_str(simd_utf8::from_utf8_fast(param).ok()?);
-    }
+    let path = join_params(params, 2)?;
     let path = path
         .strip_prefix('"')
         .and_then(|p| p.strip_suffix('"'))
         .unwrap_or(&path);
-    if path.is_empty() {
+    if !is_absolute_path(path) {
         return None;
     }
     Some(path.to_string())
+}
+
+/// Whether `path` is absolute in either flavor a cwd report can carry:
+/// a POSIX `/` root or a Windows drive-letter root. UNC (`\\server`)
+/// is refused: it names another machine, which the host-checked OSC 7
+/// flavors refuse too.
+fn is_absolute_path(path: &str) -> bool {
+    if path.starts_with('/') {
+        return true;
+    }
+    let bytes = path.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
 }
 
 /// OSC 10/11/12: dynamic color set/query, applied to consecutive named
@@ -576,6 +602,26 @@ mod tests {
         assert_eq!(parse(&[b"9", b"hello"]), None);
         assert_eq!(parse(&[b"9", b"9", b""]), None);
         assert_eq!(parse(&[b"9", b"9", b"\"\""]), None);
+
+        // Only absolute paths: free text and relative paths are not a
+        // cwd, and UNC names another machine like a remote OSC 7 host.
+        assert_eq!(parse(&[b"9", b"9", b"Meeting at 5"]), None);
+        assert_eq!(parse(&[b"9", b"9", b"..\\up"]), None);
+        assert_eq!(parse(&[b"9", b"9", b"\\\\server\\share"]), None);
+        assert_eq!(
+            parse(&[b"9", b"9", b"/home/user"]),
+            Some("/home/user".into())
+        );
+    }
+
+    #[test]
+    fn join_params_restores_split_semicolons() {
+        assert_eq!(
+            join_params(&[b"7", b"kitty-shell-cwd://h/tmp/a", b"b"], 1),
+            Some("kitty-shell-cwd://h/tmp/a;b".into())
+        );
+        assert_eq!(join_params(&[b"7", b"x"], 1), Some("x".into()));
+        assert_eq!(join_params(&[b"7"], 1), Some(String::new()));
     }
 
     #[cfg(not(windows))]
@@ -594,6 +640,14 @@ mod tests {
             cwd("KITTY-SHELL-CWD:///home/user"),
             Some("/home/user".into())
         );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn kitty_shell_cwd_keeps_semicolons_after_rejoin() {
+        // The handler rejoins split params before calling the parser.
+        let payload = join_params(&[b"7", b"kitty-shell-cwd:///tmp/a", b"b"], 1).unwrap();
+        assert_eq!(cwd(&payload), Some("/tmp/a;b".into()));
     }
 
     #[cfg(not(windows))]

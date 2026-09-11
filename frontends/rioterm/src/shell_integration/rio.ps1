@@ -10,6 +10,11 @@ $Global:__RioShellIntegration = $true
 $Global:__RioOriginalPrompt = $Function:Prompt
 
 function Global:Prompt {
+    # Preserve the state the user's prompt inspects: $LASTEXITCODE is
+    # restored directly, and since $? is not assignable, a deliberately
+    # failing statement re-arms it when the last command failed.
+    $Global:__RioLastSuccess = $?
+    $Global:__RioLastExitCode = $Global:LASTEXITCODE
     $location = $ExecutionContext.SessionState.Path.CurrentLocation
     if ($location.Provider.Name -eq 'FileSystem') {
         $path = $location.ProviderPath
@@ -18,5 +23,11 @@ function Global:Prompt {
             [Console]::Write("$([char]27)]7;kitty-shell-cwd://$path$([char]7)")
         }
     }
-    & $Global:__RioOriginalPrompt
+    $Global:LASTEXITCODE = $Global:__RioLastExitCode
+    if ($Global:__RioLastSuccess) {
+        & $Global:__RioOriginalPrompt
+    } else {
+        Microsoft.PowerShell.Utility\Write-Error '' -ErrorAction SilentlyContinue
+        & $Global:__RioOriginalPrompt
+    }
 }

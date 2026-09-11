@@ -1141,8 +1141,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
 
             // Inform current directory.
             b"7" => {
-                if params.len() >= 2 {
-                    if let Some(path) = osc::parse_current_directory(params[1]) {
+                // Rejoined: the kitty-shell-cwd flavor is verbatim, so a
+                // `;` in the directory arrives as extra params.
+                if let Some(payload) = osc::join_params(params, 1) {
+                    if let Some(path) = osc::parse_current_directory(payload.as_bytes()) {
                         self.handler.set_current_directory(path.into());
                     }
                 }
@@ -1154,22 +1156,27 @@ impl<U: Handler> Perform for Performer<'_, U> {
                     .set_hyperlink(osc::parse_hyperlink(params[1], params[2]));
             }
 
-            // OSC 9;4 progress; OSC 9;9 working directory;
-            // OSC 9 desktop notification fallback.
-            b"9" => {
-                if let Some(report) = osc::parse_progress_report(params) {
-                    self.handler.set_progress_report(report);
-                } else if let Some(path) = osc::parse_conemu_working_directory(params) {
-                    self.handler.set_current_directory(path.into());
-                } else if params.len() >= 2 {
-                    let body = std::str::from_utf8(params[1])
-                        .unwrap_or_default()
-                        .to_string();
-                    self.handler.desktop_notification(String::new(), body);
-                } else {
-                    unhandled(params);
+            // OSC 9 dispatches on its sub-command: 9;4 progress and 9;9
+            // working directory are consumed even when their payload is
+            // invalid (a malformed known sub-command must not pop a
+            // bogus notification); anything else is a notification.
+            b"9" => match params.get(1).copied() {
+                Some(b"4") => {
+                    if let Some(report) = osc::parse_progress_report(params) {
+                        self.handler.set_progress_report(report);
+                    }
                 }
-            }
+                Some(b"9") => {
+                    if let Some(path) = osc::parse_conemu_working_directory(params) {
+                        self.handler.set_current_directory(path.into());
+                    }
+                }
+                Some(body) => {
+                    let body = std::str::from_utf8(body).unwrap_or_default().to_string();
+                    self.handler.desktop_notification(String::new(), body);
+                }
+                None => unhandled(params),
+            },
 
             // OSC 133 - semantic prompt zones (shell integration).
             b"133" => {
