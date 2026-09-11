@@ -105,7 +105,16 @@ fn signal(pid: libc::pid_t, signal: libc::c_int) -> io::Result<()> {
     };
     if result == -1 {
         let error = io::Error::last_os_error();
-        if error.raw_os_error() != Some(libc::ESRCH) {
+        let tolerated = match error.raw_os_error() {
+            Some(libc::ESRCH) => true,
+            // macOS wraps the shell in setuid login(1); killpg reports
+            // EPERM for the root-owned member even though the signal
+            // reached the rest of the group (see ghostty#2273). Failing
+            // here would skip escalation and reaping, leaking a zombie.
+            Some(libc::EPERM) => cfg!(target_os = "macos"),
+            _ => false,
+        };
+        if !tolerated {
             return Err(error);
         }
     }
