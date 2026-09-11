@@ -268,8 +268,19 @@ impl Events {
     }
 
     pub fn push_event(&mut self, event: Event) {
+        // Unlike registration interests, injected events must retain HUP and
+        // error readiness. The kernel reports these flags automatically for
+        // file descriptors, but user-space registrations have no kernel event.
+        let readiness = UnixReady::from(event.readiness());
+        let mut events = ioevent_to_epoll(event.readiness(), PollOpt::empty());
+        if readiness.is_hup() {
+            events |= EPOLLHUP as u32;
+        }
+        if readiness.is_error() {
+            events |= EPOLLERR as u32;
+        }
         self.events.push(libc::epoll_event {
-            events: ioevent_to_epoll(event.readiness(), PollOpt::empty()),
+            events,
             u64: usize::from(event.token()) as u64,
         });
     }
@@ -296,4 +307,24 @@ pub fn millis(duration: Duration) -> u64 {
         .as_secs()
         .saturating_mul(MILLIS_PER_SEC)
         .saturating_add(millis as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn injected_events_preserve_hangup_and_error_readiness() {
+        for readiness in [
+            Ready::from(UnixReady::hup()),
+            Ready::from(UnixReady::error()),
+            Ready::readable() | UnixReady::hup() | UnixReady::error(),
+        ] {
+            let mut events = Events::with_capacity(1);
+            events.push_event(Event::new(readiness, Token(42)));
+            let event = events.get(0).unwrap();
+            assert_eq!(event.readiness(), readiness);
+            assert_eq!(event.token(), Token(42));
+        }
+    }
 }

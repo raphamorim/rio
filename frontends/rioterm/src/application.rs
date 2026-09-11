@@ -632,7 +632,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     if self.config.confirm_before_quit {
                         route.confirm_quit();
                     } else {
-                        route.quit();
+                        event_loop.exit();
                     }
                 }
             }
@@ -1982,6 +1982,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 ..
             } => {
                 if route.has_key_wait(&key_event, &mut self.router.clipboard) {
+                    if route.quit_requested {
+                        event_loop.exit();
+                        return;
+                    }
                     if route.path != RoutePath::Terminal
                         && key_event.state == ElementState::Released
                     {
