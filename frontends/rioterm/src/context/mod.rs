@@ -53,6 +53,8 @@ pub struct Context<T: EventListener> {
     pub main_fd: Arc<i32>,
     #[cfg(not(target_os = "windows"))]
     pub shell_pid: u32,
+    #[cfg(not(target_os = "windows"))]
+    child_terminator: teletypewriter::ChildTerminator,
     pub rich_text_id: usize,
     pub dimension: ContextDimension,
     pub title: ContextTitle,
@@ -63,6 +65,12 @@ impl<T: rio_backend::event::EventListener> Drop for Context<T> {
     fn drop(&mut self) {
         // Shutdown the terminal's PTY.
         let _ = self.messenger.channel.send(Msg::Shutdown);
+        // Also hang up synchronously: quit paths call process::exit
+        // right after dropping routes, before the reader thread can run
+        // its shutdown escalation. The handle is a no-op once the child
+        // was reaped, so no stale PID is ever signaled.
+        #[cfg(not(target_os = "windows"))]
+        let _ = self.child_terminator.hangup();
     }
 }
 
@@ -155,6 +163,8 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         main_fd: Arc::new(-1),
         #[cfg(not(target_os = "windows"))]
         shell_pid: 1,
+        #[cfg(not(target_os = "windows"))]
+        child_terminator: teletypewriter::ChildTerminator::retired(),
         messenger: Messenger::new(sender),
         renderable_content: RenderableContent::new(Cursor::default()),
         terminal,
@@ -287,6 +297,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let main_fd = pty.child.id.clone();
         #[cfg(not(target_os = "windows"))]
         let shell_pid = *pty.child.pid.clone() as u32;
+        #[cfg(not(target_os = "windows"))]
+        let child_terminator = pty.child.terminator();
 
         #[cfg(target_os = "windows")]
         {
@@ -328,6 +340,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             main_fd,
             #[cfg(not(target_os = "windows"))]
             shell_pid,
+            #[cfg(not(target_os = "windows"))]
+            child_terminator,
             messenger,
             terminal,
             rich_text_id,

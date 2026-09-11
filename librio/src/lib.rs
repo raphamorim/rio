@@ -356,6 +356,8 @@ pub struct Surface {
     shell_pid: u32,
     #[cfg(all(feature = "pty", not(target_os = "windows")))]
     main_fd: std::os::fd::RawFd,
+    #[cfg(all(feature = "pty", not(target_os = "windows")))]
+    child_terminator: teletypewriter::ChildTerminator,
     #[cfg(feature = "pty")]
     _io_thread: std::thread::JoinHandle<(
         Machine<teletypewriter::Pty, Listener>,
@@ -511,6 +513,8 @@ impl Surface {
             let shell_pid = pty.child_watcher().pid().map(|pid| pid.get()).unwrap_or(0);
             #[cfg(not(target_os = "windows"))]
             let main_fd = *pty.child.id;
+            #[cfg(not(target_os = "windows"))]
+            let child_terminator = pty.child.terminator();
 
             let machine = Machine::new(
                 Arc::clone(&terminal),
@@ -535,6 +539,8 @@ impl Surface {
                 shell_pid,
                 #[cfg(not(target_os = "windows"))]
                 main_fd,
+                #[cfg(not(target_os = "windows"))]
+                child_terminator,
                 _io_thread: io_thread,
             })
         }
@@ -1186,6 +1192,12 @@ impl Surface {
 impl Drop for Surface {
     fn drop(&mut self) {
         let _ = self.channel.send(Msg::Shutdown);
+        // Also hang up synchronously: an embedder may exit the process
+        // right after dropping the surface, before the reader thread can
+        // run its shutdown escalation. The handle is a no-op once the
+        // child was reaped, so no stale PID is ever signaled.
+        #[cfg(not(target_os = "windows"))]
+        let _ = self.child_terminator.hangup();
     }
 }
 
