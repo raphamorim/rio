@@ -251,7 +251,14 @@ where
             let cap = (unprocessed + READ_CHUNK).min(buf.len());
             let stopped = match self.pty.reader().read(&mut buf[unprocessed..cap]) {
                 Ok(0) => {
-                    result = Ok(ReadOutcome::Closed);
+                    // Unix: EOF, every slave fd is closed. Windows: the
+                    // ConPTY ring is momentarily empty (its reader never
+                    // returns WouldBlock), so nothing is closed yet.
+                    result = Ok(if cfg!(unix) {
+                        ReadOutcome::Closed
+                    } else {
+                        ReadOutcome::Idle
+                    });
                     true
                 }
                 Ok(got) => {
@@ -519,6 +526,15 @@ where
             loop {
                 match self.pty_read(state, buf) {
                     Ok(ReadOutcome::Budget) if Instant::now() < deadline => continue,
+                    // The ConPTY pump thread delivers final output after
+                    // the exit event, so an empty ring is retried until
+                    // the deadline instead of ending the drain.
+                    Ok(ReadOutcome::Idle)
+                        if cfg!(windows) && Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                        continue;
+                    }
                     Err(err) => tracing::debug!("PTY final drain: {err}"),
                     _ => (),
                 }
@@ -537,10 +553,20 @@ where
                 );
                 self.terminal.lock().exit();
             }
-            Err(err) => error!("PTY reader failed: {err}"),
+            // A reader failure also closes the terminal: shutdown() below
+            // kills the child, so without a notification the frontend
+            // would keep a dead pane open with no way to learn about it.
+            Err(err) => {
+                error!("PTY reader failed: {err}");
+                self.event_proxy.send_event(
+                    RioEvent::ChildExited(self.route_id, None),
+                    self.window_id,
+                );
+                self.terminal.lock().exit();
+            }
             Ok(ExitReason::Shutdown) => (),
         }
-        if pending_sync || matches!(reason, Ok(ExitReason::ChildExited(_))) {
+        if pending_sync || !matches!(reason, Ok(ExitReason::Shutdown)) {
             self.event_proxy
                 .send_event(RioEvent::Render, self.window_id);
         }
