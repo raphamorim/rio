@@ -1,43 +1,25 @@
 use crate::context::Context;
 use std::path::Path;
 
-pub struct ContextTitleExtra {
-    pub program: String,
-}
-
+#[derive(PartialEq)]
 pub struct ContextTitle {
     pub content: String,
-    pub extra: Option<ContextTitleExtra>,
 }
 
 impl Default for ContextTitle {
     fn default() -> Self {
         Self {
             content: String::from("~"),
-            extra: None,
         }
     }
-}
-
-pub fn create_title_extra_from_context<T: rio_backend::event::EventListener>(
-    context: &Context<T>,
-) -> Option<ContextTitleExtra> {
-    #[cfg(unix)]
-    let program =
-        teletypewriter::foreground_process_name(*context.main_fd, context.shell_pid);
-
-    #[cfg(not(unix))]
-    let program = String::default();
-
-    Some(ContextTitleExtra { program })
 }
 
 // Possible options:
 
 // - `TITLE`: terminal title via OSC sequences for setting terminal title
-// - `PROGRAM`: (e.g `fish`, `zsh`, `bash`, `vim`, etc...)
-// - `ABSOLUTE_PATH`: (e.g `/Users/rapha/Documents/a/rio`)
-// - `RELATIVE_PATH`: (e.g `~/Documents/a/rio` or `…/a/psone/starpsx`)
+// - `PROGRAM`: the command the pane spawned (e.g `fish`, `zsh`, `bash`)
+// - `ABSOLUTE_PATH`: working directory via OSC 7 (e.g `/Users/rapha/Documents/a/rio`)
+// - `RELATIVE_PATH`: OSC 7 directory, home-relative (e.g `~/Documents/a/rio` or `…/a/psone/starpsx`)
 // - `COLUMNS`: current columns
 // - `LINES`: current lines
 
@@ -80,18 +62,46 @@ fn shorten_path(absolute: &str) -> String {
 }
 
 #[inline]
+/// Render the title template. Every variable is event-known, so this
+/// NEVER inspects the foreground process: `{{ title }}` is OSC 0/2,
+/// the path variables are OSC 7 (empty for shells without
+/// integration), `{{ program }}` is the name of the command the pane
+/// spawned, and columns/lines are the pane's own dimensions.
+/// `prefetched_title` reuses the OSC title string the caller already
+/// holds (a `Title` event carries it), so a `{{ title }}` render off
+/// an event never locks the terminal; otherwise one lock fetches
+/// title and cwd together.
 pub fn update_title<T: rio_backend::event::EventListener>(
     template: &str,
     context: &Context<T>,
+    prefetched_title: Option<&str>,
 ) -> String {
     if template.is_empty() {
         return template.to_string();
     }
 
     let mut new_template = template.to_owned();
-
-    let re = regex::Regex::new(r"\{\{(.*?)\}\}").unwrap();
-    for (to_replace_str, [variable]) in re.captures_iter(template).map(|c| c.extract()) {
+    let lowered = template.to_lowercase();
+    let needs_title = lowered.contains("title");
+    let needs_path = lowered.contains("path");
+    let (terminal_title, current_directory) =
+        if (needs_title && prefetched_title.is_none()) || needs_path {
+            let terminal = context.terminal.lock();
+            (
+                match prefetched_title {
+                    Some(title) => title.to_string(),
+                    None => terminal.title.to_string(),
+                },
+                terminal.current_directory.clone(),
+            )
+        } else {
+            (prefetched_title.unwrap_or_default().to_string(), None)
+        };
+    // Compiled once: titles are now rendered per OSC title change, not on
+    // a 2s poll, so a per-call `Regex::new` would sit in the hot path.
+    static RE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\{\{(.*?)\}\}").unwrap());
+    for (to_replace_str, [variable]) in RE.captures_iter(template).map(|c| c.extract()) {
         let variables = if to_replace_str.contains("||") {
             variable.split("||").collect()
         } else {
@@ -117,11 +127,6 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                     matched = true;
                 }
                 "title" => {
-                    let terminal_title = {
-                        let terminal = context.terminal.lock();
-                        terminal.title.to_string()
-                    };
-
                     // In case it has a fallback and title is empty
                     // or
                     // In case is the last then we need to erase variables either way
@@ -140,92 +145,45 @@ pub fn update_title<T: rio_backend::event::EventListener>(
                     }
                 }
                 "program" => {
-                    #[cfg(unix)]
-                    {
-                        let program = teletypewriter::foreground_process_name(
-                            *context.main_fd,
-                            context.shell_pid,
-                        );
+                    new_template =
+                        new_template.replace(to_replace_str, &context.spawned_program);
+                    matched = true;
+                }
+                "absolute_path" => {
+                    let path = current_directory
+                        .as_ref()
+                        .and_then(|d| d.clone().into_os_string().into_string().ok())
+                        .unwrap_or_default();
 
-                        new_template = new_template.replace(to_replace_str, &program);
+                    let is_only_one = variables.len() == 1;
+                    let is_last = i == variables.len() - 1;
+                    if is_only_one || is_last {
+                        new_template = new_template.replace(to_replace_str, &path);
+                        continue;
+                    }
+
+                    if !path.is_empty() {
+                        new_template = new_template.replace(to_replace_str, &path);
                         matched = true;
                     }
                 }
-                "absolute_path" => {
-                    {
-                        let terminal = context.terminal.lock();
-                        if let Some(current_directory) = &terminal.current_directory {
-                            if let Ok(dir_str) =
-                                current_directory.clone().into_os_string().into_string()
-                            {
-                                new_template =
-                                    new_template.replace(to_replace_str, &dir_str);
-                                matched = true;
-                                continue;
-                            }
-                        };
-                    }
-
-                    #[cfg(unix)]
-                    {
-                        let path = teletypewriter::foreground_process_path(
-                            *context.main_fd,
-                            context.shell_pid,
-                        )
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_default();
-
-                        // In case it has a fallback and path is empty
-                        // or
-                        // In case is the last then we need to erase variables either way
-                        let is_only_one = variables.len() == 1;
-                        let is_last = i == variables.len() - 1;
-                        if is_only_one || is_last {
-                            new_template = new_template.replace(to_replace_str, &path);
-                            continue;
-                        }
-
-                        if !path.is_empty() {
-                            new_template = new_template.replace(to_replace_str, &path);
-                            matched = true;
-                        }
-                    }
-                }
                 "relative_path" => {
-                    {
-                        let terminal = context.terminal.lock();
-                        if let Some(current_directory) = &terminal.current_directory {
-                            if let Ok(dir_str) =
-                                current_directory.clone().into_os_string().into_string()
-                            {
-                                new_template = new_template
-                                    .replace(to_replace_str, &shorten_path(&dir_str));
-                                matched = true;
-                                continue;
-                            }
-                        };
-                    }
-
-                    #[cfg(unix)]
-                    {
-                        let path = teletypewriter::foreground_process_path(
-                            *context.main_fd,
-                            context.shell_pid,
-                        )
-                        .map(|p| shorten_path(&p.to_string_lossy()))
+                    let path = current_directory
+                        .as_ref()
+                        .and_then(|d| d.clone().into_os_string().into_string().ok())
+                        .map(|d| shorten_path(&d))
                         .unwrap_or_default();
 
-                        let is_only_one = variables.len() == 1;
-                        let is_last = i == variables.len() - 1;
-                        if is_only_one || is_last {
-                            new_template = new_template.replace(to_replace_str, &path);
-                            continue;
-                        }
+                    let is_only_one = variables.len() == 1;
+                    let is_last = i == variables.len() - 1;
+                    if is_only_one || is_last {
+                        new_template = new_template.replace(to_replace_str, &path);
+                        continue;
+                    }
 
-                        if !path.is_empty() {
-                            new_template = new_template.replace(to_replace_str, &path);
-                            matched = true;
-                        }
+                    if !path.is_empty() {
+                        new_template = new_template.replace(to_replace_str, &path);
+                        matched = true;
                     }
                 }
                 _ => {}
@@ -279,25 +237,40 @@ pub mod test {
             rich_text_id,
             context_dimension,
         );
-        assert_eq!(update_title("", &context), String::from(""));
-        assert_eq!(update_title("{{columns}}", &context), String::from("64"));
-        assert_eq!(update_title("{{COLUMNS}}", &context), String::from("64"));
-        assert_eq!(update_title("{{ COLUMNS }}", &context), String::from("64"));
-        assert_eq!(update_title("{{ columns }}", &context), String::from("64"));
+        assert_eq!(update_title("", &context, None), String::from(""));
         assert_eq!(
-            update_title("hello {{ COLUMNS }} AbC", &context),
+            update_title("{{columns}}", &context, None),
+            String::from("64")
+        );
+        assert_eq!(
+            update_title("{{COLUMNS}}", &context, None),
+            String::from("64")
+        );
+        assert_eq!(
+            update_title("{{ COLUMNS }}", &context, None),
+            String::from("64")
+        );
+        assert_eq!(
+            update_title("{{ columns }}", &context, None),
+            String::from("64")
+        );
+        assert_eq!(
+            update_title("hello {{ COLUMNS }} AbC", &context, None),
             String::from("hello 64 AbC")
         );
         assert_eq!(
-            update_title("hello {{ Lines }} AbC", &context),
+            update_title("hello {{ Lines }} AbC", &context, None),
             String::from("hello 84 AbC")
         );
         assert_eq!(
-            update_title("{{ columns }}x{{lines}}", &context),
+            update_title("{{ columns }}x{{lines}}", &context, None),
             String::from("64x84")
         );
 
-        assert_eq!(update_title("{{ title }}", &context), String::from(""));
+        assert_eq!(
+            update_title("{{ title }}", &context, None),
+            String::from("")
+        );
 
         // #[cfg(unix)]
         // assert_eq!(
@@ -339,17 +312,17 @@ pub mod test {
             rich_text_id,
             context_dimension,
         );
-        assert_eq!(update_title("", &context), String::from(""));
+        assert_eq!(update_title("", &context, None), String::from(""));
         // Title always starts empty
-        assert_eq!(update_title("{{title}}", &context), String::from(""));
+        assert_eq!(update_title("{{title}}", &context, None), String::from(""));
 
         assert_eq!(
-            update_title("{{ title || columns }}", &context),
+            update_title("{{ title || columns }}", &context, None),
             String::from("64")
         );
 
         assert_eq!(
-            update_title("{{ title || title }}", &context),
+            update_title("{{ title || title }}", &context, None),
             String::from("")
         );
 
@@ -360,12 +333,12 @@ pub mod test {
         };
 
         assert_eq!(
-            update_title("{{ title || columns }}", &context),
+            update_title("{{ title || columns }}", &context, None),
             String::from("Something")
         );
 
         assert_eq!(
-            update_title("{{ columns || title }}", &context),
+            update_title("{{ columns || title }}", &context, None),
             String::from("64")
         );
 
@@ -379,14 +352,56 @@ pub mod test {
         };
 
         assert_eq!(
-            update_title("{{ absolute_path || title }}", &context),
+            update_title("{{ absolute_path || title }}", &context, None),
             String::from("/rio-sandbox-test-dir"),
         );
 
         assert_eq!(
-            update_title("{{ relative_path || title }}", &context),
+            update_title("{{ relative_path || title }}", &context, None),
             String::from("/rio-sandbox-test-dir"),
         );
+    }
+
+    #[test]
+    fn test_update_title_program_is_spawned_command() {
+        let context_dimension = ContextDimension::build(
+            1200.0,
+            800.0,
+            TextDimensions {
+                scale: 2.,
+                width: 18.,
+                height: 9.,
+            },
+            rio_backend::sugarloaf::layout::CellMetrics {
+                cell_width: 18,
+                cell_height: 9,
+                cell_baseline: 0,
+                face_width: 18.0,
+                face_height: 9.0,
+                face_y: 0.0,
+            },
+            1.0,
+            14.0,
+            Margin::default(),
+        );
+
+        let mut context =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, context_dimension);
+        context.spawned_program = "fish".to_string();
+
+        assert_eq!(update_title("{{ program }}", &context, None), "fish");
+        assert_eq!(
+            update_title("{{ title || program }}", &context, None),
+            "fish"
+        );
+
+        // Path variables come from OSC 7 alone: without integration
+        // they render empty instead of inspecting the process.
+        assert_eq!(update_title("{{ relative_path }}", &context, None), "");
+        assert_eq!(update_title("{{ absolute_path }}", &context, None), "");
+
+        // A prefetched OSC title renders without touching the terminal.
+        assert_eq!(update_title("{{ title }}", &context, Some("t")), "t");
     }
 
     #[test]
