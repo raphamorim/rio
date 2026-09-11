@@ -109,6 +109,7 @@ pub struct ContextManagerConfig {
     pub shell: Shell,
     #[cfg(not(target_os = "windows"))]
     pub use_fork: bool,
+    pub shell_integration: bool,
     pub working_dir: Option<String>,
     pub spawn_performer: bool,
     pub cwd: bool,
@@ -250,14 +251,31 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
+        let integration = if config.shell_integration {
+            crate::shell_integration::prepare(
+                config.shell.program.as_deref(),
+                &config.shell.args,
+            )
+        } else {
+            crate::shell_integration::SpawnIntegration::default()
+        };
+        let (shell_program, shell_args) = match &integration.command {
+            Some((program, args)) => (program.as_deref(), args.as_slice()),
+            None => (
+                config.shell.program.as_deref(),
+                config.shell.args.as_slice(),
+            ),
+        };
+
         let pty;
         #[cfg(not(target_os = "windows"))]
         {
             if config.use_fork {
                 tracing::info!("rio -> teletypewriter: create_pty_with_fork");
                 pty = match create_pty_with_fork(
-                    config.shell.program.as_deref(),
-                    &config.shell.args,
+                    shell_program,
+                    shell_args,
+                    &integration.env,
                     cols,
                     rows,
                     initial_winsize.width,
@@ -272,10 +290,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             } else {
                 tracing::info!("rio -> teletypewriter: create_pty_with_spawn");
                 pty = match create_pty_with_spawn(
-                    config.shell.program.as_deref(),
-                    config.shell.args.clone(),
+                    shell_program,
+                    shell_args.to_vec(),
                     &config.working_dir,
-                    None,
+                    (!integration.env.is_empty()).then(|| integration.env.clone()),
                     cols,
                     rows,
                     initial_winsize.width,
@@ -298,10 +316,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         #[cfg(target_os = "windows")]
         {
             pty = match create_pty(
-                config.shell.program.as_deref(),
-                config.shell.args.clone(),
+                shell_program,
+                shell_args.to_vec(),
                 &config.working_dir,
-                None,
+                (!integration.env.is_empty()).then(|| integration.env.clone()),
                 cols,
                 rows,
             ) {
@@ -1073,6 +1091,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             spawn_performer: true,
             #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
+            shell_integration: config.shell_integration,
             is_native: config.navigation.is_native(),
             // When navigation is collapsed and does not contain any color rule
             // does not make sense fetch for foreground process names

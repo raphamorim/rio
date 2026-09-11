@@ -107,7 +107,9 @@ unsafe impl Send for Conpty {}
 
 /// Builds a `CREATE_UNICODE_ENVIRONMENT` block from the current process
 /// environment plus `extra_env` (which overrides inherited variables of the
-/// same name): NUL-terminated `KEY=VALUE` UTF-16 entries, with a trailing NUL.
+/// same name): NUL-terminated `KEY=VALUE` UTF-16 entries, with a trailing
+/// NUL. Sorted case-insensitively by name, which the CreateProcess
+/// documentation requires of Unicode environment blocks.
 fn environment_block(extra_env: Vec<(String, String)>) -> Vec<u16> {
     let mut vars: Vec<(std::ffi::OsString, std::ffi::OsString)> =
         std::env::vars_os().collect();
@@ -116,6 +118,11 @@ fn environment_block(extra_env: Vec<(String, String)>) -> Vec<u16> {
         vars.retain(|(existing, _)| !existing.eq_ignore_ascii_case(&key));
         vars.push((key, value.into()));
     }
+    vars.sort_by(|(a, _), (b, _)| {
+        a.to_string_lossy()
+            .to_uppercase()
+            .cmp(&b.to_string_lossy().to_uppercase())
+    });
 
     let mut block = Vec::new();
     for (key, value) in vars {

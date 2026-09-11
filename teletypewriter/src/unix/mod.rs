@@ -61,6 +61,22 @@ extern "C" {
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
+/// Export `envs` in the forked child before exec. Runs post-fork, so
+/// keep it to setenv: the allocations match what `default_shell_command`
+/// already does on this path.
+fn set_child_envs(envs: &[(String, String)]) {
+    for (key, value) in envs {
+        let (Ok(key), Ok(value)) =
+            (CString::new(key.as_str()), CString::new(value.as_str()))
+        else {
+            continue;
+        };
+        unsafe {
+            libc::setenv(key.as_ptr(), value.as_ptr(), 1);
+        }
+    }
+}
+
 fn default_shell_command(shell: &str, args: &[String]) {
     // Ignored signal dispositions survive exec (unlike caught
     // handlers), so the shell inherits whatever the launcher left
@@ -437,14 +453,13 @@ impl ShellUser {
 ///
 /// Build the argv passed to login(1) on macOS.
 ///
-/// A custom command (non empty args) goes straight into login's argv:
-/// login execvp's it, so args pass through as single words with no
-/// intermediate shell that could word split them.
-///
-/// A bare shell becomes a login shell through a bash intermediate that
-/// execs it with `-l`, which prepends the dash to argv[0]. bash runs
-/// with `--noprofile --norc` so user startup files cannot interfere
-/// with the exec.
+/// The shell always becomes a login shell through a bash intermediate
+/// that execs it with `-l`, which prepends the dash to argv[0]. The
+/// shell program rides as `$0` and any args as `"$@"`, so no quoting
+/// or word splitting can touch them (this also keeps login semantics
+/// when integration or the user adds args to the default shell). bash
+/// runs with `--noprofile --norc` so user startup files cannot
+/// interfere with the exec.
 #[cfg(any(target_os = "macos", test))]
 fn login_argv(
     hushlogin: bool,
@@ -464,17 +479,13 @@ fn login_argv(
     argv.push("-flp".to_string());
     argv.push(username.to_string());
 
-    if args.is_empty() {
-        let quoted = shell_program.replace('\'', "'\\''");
-        argv.push("/bin/bash".to_string());
-        argv.push("--noprofile".to_string());
-        argv.push("--norc".to_string());
-        argv.push("-c".to_string());
-        argv.push(format!("exec -l '{quoted}'"));
-    } else {
-        argv.push(shell_program.to_string());
-        argv.extend(args.iter().cloned());
-    }
+    argv.push("/bin/bash".to_string());
+    argv.push("--noprofile".to_string());
+    argv.push("--norc".to_string());
+    argv.push("-c".to_string());
+    argv.push(r#"exec -l "$0" "$@""#.to_string());
+    argv.push(shell_program.to_string());
+    argv.extend(args.iter().cloned());
 
     argv
 }
@@ -608,6 +619,14 @@ pub fn create_pty_with_spawn(
                 "--env=TERM=rio".to_string(),
             ];
 
+            // Only `--env=` crosses the sandbox boundary: variables set
+            // on flatpak-spawn itself never reach the host process.
+            if let Some(env) = &env {
+                for (key, value) in env {
+                    with_args.push(format!("--env={key}={value}"));
+                }
+            }
+
             if let Some(directory) = working_directory {
                 with_args.push(format!(
                     "--directory={}",
@@ -730,9 +749,20 @@ pub fn create_pty_with_spawn(
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
+/// The shell a spawn falls back to when none is configured: `$SHELL`,
+/// else the passwd entry. Public so per-shell decisions made before
+/// spawning (title program name, shell integration) match what
+/// actually spawns.
+pub fn default_shell_program() -> String {
+    ShellUser::from_env()
+        .map(|user| user.shell)
+        .unwrap_or_default()
+}
+
 pub fn create_pty_with_fork(
     shell: Option<&str>,
     args: &[String],
+    envs: &[(String, String)],
     columns: u16,
     rows: u16,
     width: u16,
@@ -771,6 +801,7 @@ pub fn create_pty_with_fork(
         )
     } {
         0 => {
+            set_child_envs(envs);
             default_shell_command(shell_program, args);
             Err(Error::other(format!(
                 "forkpty has reach unreachable with {shell_program}"
@@ -1124,7 +1155,8 @@ mod login_argv_tests {
                 "--noprofile",
                 "--norc",
                 "-c",
-                "exec -l '/bin/zsh'",
+                r#"exec -l "$0" "$@""#,
+                "/bin/zsh",
             ]
         );
     }
@@ -1137,7 +1169,7 @@ mod login_argv_tests {
     }
 
     #[test]
-    fn custom_command_goes_directly_to_login() {
+    fn args_ride_as_positional_words_and_keep_login() {
         let args = vec!["-c".to_string(), "echo hello world; sleep 1".to_string()];
         let argv = login_argv(false, "rapha", "/bin/bash", &args);
         assert_eq!(
@@ -1146,6 +1178,11 @@ mod login_argv_tests {
                 "-flp",
                 "rapha",
                 "/bin/bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                r#"exec -l "$0" "$@""#,
+                "/bin/bash",
                 "-c",
                 "echo hello world; sleep 1",
             ]
@@ -1153,9 +1190,11 @@ mod login_argv_tests {
     }
 
     #[test]
-    fn quotes_in_shell_path_are_escaped() {
+    fn shell_path_needs_no_quoting() {
+        // The program travels as `$0`, never inside the -c string, so
+        // quotes and spaces in the path cannot break the exec.
         let argv = login_argv(false, "rapha", "/tmp/it's a shell", &[]);
-        assert_eq!(argv.last().unwrap(), "exec -l '/tmp/it'\\''s a shell'");
+        assert_eq!(argv.last().unwrap(), "/tmp/it's a shell");
     }
 }
 

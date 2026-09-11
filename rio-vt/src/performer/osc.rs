@@ -195,15 +195,25 @@ pub(super) fn parse_palette_entries(params: &[&[u8]]) -> Option<Vec<PaletteEntry
     Some(out)
 }
 
-/// The only URL scheme rio-vt ever parses.
+/// The URL schemes rio-vt ever parses, both OSC 7 working-directory
+/// carriers: RFC 8089 file URLs and the `kitty-shell-cwd` scheme
+/// (a raw, unencoded path) that kitty defined and several shell
+/// integrations emit.
 const FILE_SCHEME: &str = "file://";
+const KITTY_SHELL_CWD_SCHEME: &str = "kitty-shell-cwd://";
 
-/// OSC 7: working directory as a `file://` URL.
-///
-/// The payload is `file://<host>/<path>`, with a percent-encoded path. Parsed
-/// by hand rather than with a URL crate: this is the only URL the terminal core
-/// looks at, and a general parser costs an IDNA/Unicode stack just to reach
-/// `.path()`.
+/// Strip `scheme` from the front of `s`, case-insensitively.
+fn strip_scheme<'a>(s: &'a str, scheme: &str) -> Option<&'a str> {
+    s.get(..scheme.len())
+        .filter(|prefix| prefix.eq_ignore_ascii_case(scheme))
+        .map(|_| &s[scheme.len()..])
+}
+
+/// OSC 7: working directory as a `file://` URL (percent-encoded path)
+/// or a `kitty-shell-cwd://` payload (raw path, no encoding). Parsed
+/// by hand rather than with a URL crate: these are the only URLs the
+/// terminal core looks at, and a general parser costs an IDNA/Unicode
+/// stack just to reach `.path()`.
 ///
 /// Anything on the other end of the PTY can send this, including a shell on the
 /// far side of an ssh session, so a directory that belongs to another machine is
@@ -211,11 +221,10 @@ const FILE_SCHEME: &str = "file://";
 pub(super) fn parse_current_directory(param: &[u8]) -> Option<String> {
     let s = simd_utf8::from_utf8_fast(param).ok()?;
 
-    // Schemes are case-insensitive.
-    let after_scheme = s
-        .get(..FILE_SCHEME.len())
-        .filter(|scheme| scheme.eq_ignore_ascii_case(FILE_SCHEME))
-        .map(|_| &s[FILE_SCHEME.len()..])?;
+    let (after_scheme, percent_encoded) = match strip_scheme(s, FILE_SCHEME) {
+        Some(rest) => (rest, true),
+        None => (strip_scheme(s, KITTY_SHELL_CWD_SCHEME)?, false),
+    };
 
     // The path begins at the host's trailing slash. A payload with no path at
     // all leaves nothing to report.
@@ -228,12 +237,19 @@ pub(super) fn parse_current_directory(param: &[u8]) -> Option<String> {
         return None;
     }
 
-    // A query or fragment is not part of the path.
-    let path = &path[..path.find(['?', '#']).unwrap_or(path.len())];
-
-    // Windows paths arrive as `/C:/...`; drop the leading slash.
+    // Windows paths arrive as `/C:/...` in both flavors; drop the
+    // leading slash.
     #[cfg(windows)]
     let path = path.strip_prefix('/').unwrap_or(path);
+
+    if !percent_encoded {
+        // The kitty flavor is the path verbatim: `?`, `#` and `%` are
+        // path bytes, not URL syntax.
+        return Some(path.to_string());
+    }
+
+    // A query or fragment is not part of the path.
+    let path = &path[..path.find(['?', '#']).unwrap_or(path.len())];
 
     percent_decode(path)
 }
@@ -251,17 +267,18 @@ fn host_is_local(host: &str) -> bool {
     }
 
     match local_hostname() {
-        Some(local) => host.eq_ignore_ascii_case(local),
+        Some(local) => host.eq_ignore_ascii_case(&local),
         // With no hostname to compare against, take the shell at its word
         // rather than dropping the directory outright.
         None => true,
     }
 }
 
-/// This machine's hostname, looked up once.
-fn local_hostname() -> Option<&'static str> {
-    static HOSTNAME: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    HOSTNAME.get_or_init(read_hostname).as_deref()
+/// This machine's hostname, read per check: one syscall, where a
+/// process-lifetime cache would keep rejecting a shell's cwd reports
+/// after the hostname changes mid-session (macOS mDNS renames).
+fn local_hostname() -> Option<String> {
+    read_hostname()
 }
 
 #[cfg(unix)]
@@ -366,6 +383,58 @@ pub(super) fn parse_progress_report(params: &[&[u8]]) -> Option<ProgressReport> 
         None
     };
     Some(ProgressReport { state, progress })
+}
+
+/// Rejoin `params[from..]` with the `;` the OSC parser split on, so a
+/// payload defined as verbatim text survives a `;` inside it.
+pub(super) fn join_params(params: &[&[u8]], from: usize) -> Option<String> {
+    Some(
+        params
+            .get(from..)?
+            .iter()
+            .map(|param| simd_utf8::from_utf8_fast(param).ok())
+            .collect::<Option<Vec<_>>>()?
+            .join(";"),
+    )
+}
+
+/// OSC 9;9: ConEmu/Windows-Terminal working directory report, the
+/// Windows counterpart of OSC 7. Format: `9;9;<path>`, with the path
+/// optionally wrapped in double quotes and travelling verbatim (no URL
+/// encoding), so everything after `9;9;` is rejoined.
+///
+/// The sequence carries no host field, so unlike OSC 7 a remote shell
+/// cannot be told apart from a local one (ConEmu and Windows Terminal
+/// accept the same). Requiring an absolute path at least drops
+/// free-text payloads and relative garbage.
+pub(super) fn parse_conemu_working_directory(params: &[&[u8]]) -> Option<String> {
+    if params.len() < 3 || params[1] != b"9" {
+        return None;
+    }
+    let path = join_params(params, 2)?;
+    let path = path
+        .strip_prefix('"')
+        .and_then(|p| p.strip_suffix('"'))
+        .unwrap_or(&path);
+    if !is_absolute_path(path) {
+        return None;
+    }
+    Some(path.to_string())
+}
+
+/// Whether `path` is absolute in either flavor a cwd report can carry:
+/// a POSIX `/` root or a Windows drive-letter root. UNC (`\\server`)
+/// is refused: it names another machine, which the host-checked OSC 7
+/// flavors refuse too.
+fn is_absolute_path(path: &str) -> bool {
+    if path.starts_with('/') {
+        return true;
+    }
+    let bytes = path.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'\\' || bytes[2] == b'/')
 }
 
 /// OSC 10/11/12: dynamic color set/query, applied to consecutive named
@@ -511,6 +580,112 @@ mod tests {
 
         // No path component at all.
         assert_eq!(cwd("file://localhost"), None);
+        assert_eq!(cwd("kitty-shell-cwd://localhost"), None);
+    }
+
+    #[test]
+    fn conemu_working_directory() {
+        let parse = parse_conemu_working_directory;
+        assert_eq!(
+            parse(&[b"9", b"9", b"C:\\Users\\rapha"]),
+            Some("C:\\Users\\rapha".into())
+        );
+        // Windows Terminal profiles commonly quote the path.
+        assert_eq!(
+            parse(&[b"9", b"9", b"\"C:\\Program Files\""]),
+            Some("C:\\Program Files".into())
+        );
+        // A `;` in the path arrives as extra params and is rejoined.
+        assert_eq!(parse(&[b"9", b"9", b"C:\\a", b"b"]), Some("C:\\a;b".into()));
+
+        // Progress reports and notifications are not directories.
+        assert_eq!(parse(&[b"9", b"4", b"1", b"50"]), None);
+        assert_eq!(parse(&[b"9", b"hello"]), None);
+        assert_eq!(parse(&[b"9", b"9", b""]), None);
+        assert_eq!(parse(&[b"9", b"9", b"\"\""]), None);
+
+        // Only absolute paths: free text and relative paths are not a
+        // cwd, and UNC names another machine like a remote OSC 7 host.
+        assert_eq!(parse(&[b"9", b"9", b"Meeting at 5"]), None);
+        assert_eq!(parse(&[b"9", b"9", b"..\\up"]), None);
+        assert_eq!(parse(&[b"9", b"9", b"\\\\server\\share"]), None);
+        assert_eq!(
+            parse(&[b"9", b"9", b"/home/user"]),
+            Some("/home/user".into())
+        );
+    }
+
+    #[test]
+    fn join_params_restores_split_semicolons() {
+        assert_eq!(
+            join_params(&[b"7", b"kitty-shell-cwd://h/tmp/a", b"b"], 1),
+            Some("kitty-shell-cwd://h/tmp/a;b".into())
+        );
+        assert_eq!(join_params(&[b"7", b"x"], 1), Some("x".into()));
+        assert_eq!(join_params(&[b"7"], 1), Some(String::new()));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn current_directory_accepts_kitty_shell_cwd() {
+        assert_eq!(
+            cwd("kitty-shell-cwd:///home/user"),
+            Some("/home/user".into())
+        );
+        assert_eq!(
+            cwd("kitty-shell-cwd://localhost/home/user"),
+            Some("/home/user".into())
+        );
+        // Scheme is case-insensitive, like file://.
+        assert_eq!(
+            cwd("KITTY-SHELL-CWD:///home/user"),
+            Some("/home/user".into())
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn kitty_shell_cwd_keeps_semicolons_after_rejoin() {
+        // The handler rejoins split params before calling the parser.
+        let payload = join_params(&[b"7", b"kitty-shell-cwd:///tmp/a", b"b"], 1).unwrap();
+        assert_eq!(cwd(&payload), Some("/tmp/a;b".into()));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn kitty_shell_cwd_is_verbatim() {
+        // Raw spaces pass through, and percent sequences are path
+        // bytes rather than encodings.
+        assert_eq!(cwd("kitty-shell-cwd:///tmp/a b"), Some("/tmp/a b".into()));
+        assert_eq!(
+            cwd("kitty-shell-cwd:///tmp/50%25 off?really"),
+            Some("/tmp/50%25 off?really".into())
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn kitty_shell_cwd_strips_windows_leading_slash() {
+        // The PowerShell integration emits `/C:\...`; the drive letter
+        // must come back without the URL-shaped leading slash, and the
+        // path stays verbatim (spaces, `#`, `%` untouched).
+        assert_eq!(
+            cwd("kitty-shell-cwd:///C:\\Users\\a b"),
+            Some("C:\\Users\\a b".into())
+        );
+        assert_eq!(
+            cwd("kitty-shell-cwd://localhost/C:\\projects\\c#"),
+            Some("C:\\projects\\c#".into())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn kitty_shell_cwd_rejects_remote_hosts() {
+        assert_eq!(
+            cwd("kitty-shell-cwd://other-machine.example/home/user"),
+            None
+        );
     }
 
     #[cfg(not(windows))]

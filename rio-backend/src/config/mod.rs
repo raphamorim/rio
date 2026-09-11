@@ -110,6 +110,11 @@ pub struct Config {
     pub platform: Platform,
     #[serde(default = "default_use_fork", rename = "use-fork")]
     pub use_fork: bool,
+    /// Inject rio's shell integration into spawned zsh and fish
+    /// shells, so the working directory reaches the terminal (OSC 7)
+    /// with no user setup.
+    #[serde(default = "default_bool_true", rename = "shell-integration")]
+    pub shell_integration: bool,
     #[serde(default = "Keyboard::default")]
     pub keyboard: Keyboard,
     #[serde(default = "Title::default")]
@@ -678,6 +683,7 @@ impl Default for Config {
             platform: Platform::default(),
             theme: String::default(),
             use_fork: default_use_fork(),
+            shell_integration: true,
             window: Window::default(),
             working_dir: default_working_dir(),
             ignore_selection_fg_color: false,
