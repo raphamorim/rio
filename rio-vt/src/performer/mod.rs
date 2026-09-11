@@ -251,14 +251,7 @@ where
             let cap = (unprocessed + READ_CHUNK).min(buf.len());
             let stopped = match self.pty.reader().read(&mut buf[unprocessed..cap]) {
                 Ok(0) => {
-                    // Unix: EOF, every slave fd is closed. Windows: the
-                    // ConPTY ring is momentarily empty (its reader never
-                    // returns WouldBlock), so nothing is closed yet.
-                    result = Ok(if cfg!(unix) {
-                        ReadOutcome::Closed
-                    } else {
-                        ReadOutcome::Idle
-                    });
+                    result = Ok(ReadOutcome::Closed);
                     true
                 }
                 Ok(got) => {
@@ -526,10 +519,12 @@ where
             loop {
                 match self.pty_read(state, buf) {
                     Ok(ReadOutcome::Budget) if Instant::now() < deadline => continue,
-                    // The ConPTY pump thread delivers final output after
-                    // the exit event, so an empty ring is retried until
-                    // the deadline instead of ending the drain.
-                    Ok(ReadOutcome::Idle)
+                    // Windows Closed means the ConPTY ring is momentarily
+                    // empty (never WouldBlock), and the pump thread
+                    // delivers final output after the exit event, so it is
+                    // retried until the deadline instead of ending the
+                    // drain. Unix Closed is a real EOF and ends it.
+                    Ok(ReadOutcome::Closed)
                         if cfg!(windows) && Instant::now() < deadline =>
                     {
                         std::thread::sleep(std::time::Duration::from_millis(2));

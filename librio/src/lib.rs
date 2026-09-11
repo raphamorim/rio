@@ -1030,11 +1030,12 @@ impl Surface {
     }
 
     /// The pid of the program this surface spawned (the shell, or the
-    /// configured `shell` program). On unix it is a session leader, so a
-    /// host that must take the whole process tree down on teardown can
-    /// `killpg` it: dropping the surface only hangs up the pty and signals
-    /// this pid. On Windows it is the conpty child's process id (terminate
-    /// it with `TerminateProcess`/taskkill); 0 if the pid was unavailable.
+    /// configured `shell` program), for identity and diagnostics. Do not
+    /// signal it on teardown: dropping the surface already hangs up the
+    /// process group, and the reader thread escalates to SIGKILL and
+    /// reaps, so a host-side killpg would race that escalation. On
+    /// Windows it is the conpty child's process id; 0 if the pid was
+    /// unavailable.
     #[cfg(feature = "pty")]
     pub fn child_pid(&self) -> u32 {
         self.shell_pid

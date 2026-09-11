@@ -30,12 +30,19 @@ pub struct Child {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChildLifecycle {
     Running(libc::pid_t),
+    /// SIGHUP was delivered (a Drop-side hangup or a started terminate),
+    /// so terminate does not signal it again: HUP traps doing
+    /// non-idempotent work must run once per close.
+    HungUp(libc::pid_t),
+    /// SIGKILL was sent but the reap timed out (uninterruptible sleep);
+    /// later attempts only re-poll instead of repeating the escalation.
+    Killed(libc::pid_t),
     Exited(Option<i32>),
 }
 
 impl ChildLifecycle {
     fn wait(&mut self, options: libc::c_int) -> io::Result<Self> {
-        let Self::Running(pid) = *self else {
+        let (Self::Running(pid) | Self::HungUp(pid) | Self::Killed(pid)) = *self else {
             return Ok(*self);
         };
         loop {
@@ -73,23 +80,46 @@ impl ChildLifecycle {
         }
     }
 
-    fn terminate(&mut self) -> io::Result<()> {
+    fn hangup(&mut self) -> io::Result<()> {
         let Self::Running(pid) = self.wait(libc::WNOHANG)? else {
             return Ok(());
         };
         signal(pid, libc::SIGHUP)?;
+        *self = Self::HungUp(pid);
+        Ok(())
+    }
+
+    fn terminate(&mut self) -> io::Result<()> {
+        let pid = match self.wait(libc::WNOHANG)? {
+            Self::Exited(_) => return Ok(()),
+            Self::Killed(_) => {
+                return if self.reap_within(Duration::from_millis(100))? {
+                    Ok(())
+                } else {
+                    Err(timed_out())
+                };
+            }
+            Self::Running(pid) => {
+                signal(pid, libc::SIGHUP)?;
+                *self = Self::HungUp(pid);
+                pid
+            }
+            Self::HungUp(pid) => pid,
+        };
         if self.reap_within(HANGUP_GRACE)? {
             return Ok(());
         }
         signal(pid, libc::SIGKILL)?;
+        *self = Self::Killed(pid);
         if self.reap_within(KILL_REAP_TIMEOUT)? {
             return Ok(());
         }
-        Err(io::Error::new(
-            io::ErrorKind::TimedOut,
-            "child not reaped after SIGKILL",
-        ))
+        Err(timed_out())
     }
+}
+
+fn timed_out() -> io::Error {
+    io::Error::new(io::ErrorKind::TimedOut, "child not reaped after SIGKILL")
 }
 
 /// Signal the child's process group so descendants sharing it are
@@ -107,11 +137,18 @@ fn signal(pid: libc::pid_t, signal: libc::c_int) -> io::Result<()> {
         let error = io::Error::last_os_error();
         let tolerated = match error.raw_os_error() {
             Some(libc::ESRCH) => true,
-            // macOS wraps the shell in setuid login(1); killpg reports
-            // EPERM for the root-owned member even though the signal
-            // reached the rest of the group (see ghostty#2273). Failing
-            // here would skip escalation and reaping, leaking a zombie.
-            Some(libc::EPERM) => cfg!(target_os = "macos"),
+            // BSD killpg reports EPERM when any group member cannot be
+            // signaled (macOS setuid login(1) wrapper, sudo children),
+            // even though the signal reached the others (ghostty#2273).
+            // Failing here would skip escalation and reaping, leaking a
+            // zombie. Linux only errs when nothing was signaled at all.
+            Some(libc::EPERM) => cfg!(any(
+                target_os = "macos",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "dragonfly",
+            )),
             _ => false,
         };
         if !tolerated {
@@ -136,13 +173,17 @@ impl ChildTerminator {
 
     /// Send SIGHUP without waiting or escalating. For Drop on threads
     /// that cannot block (the reader thread's shutdown escalation may
-    /// never run when the process exits right after).
+    /// never run when the process exits right after). Contention means
+    /// terminate() is already escalating, so there is nothing to add;
+    /// blocking here would stall the caller for the whole grace period.
     pub fn hangup(&self) -> io::Result<()> {
-        let mut lifecycle = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        let ChildLifecycle::Running(pid) = lifecycle.wait(libc::WNOHANG)? else {
-            return Ok(());
+        use std::sync::TryLockError;
+        let mut lifecycle = match self.0.try_lock() {
+            Ok(lifecycle) => lifecycle,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => return Ok(()),
         };
-        signal(pid, libc::SIGHUP)
+        lifecycle.hangup()
     }
 }
 
@@ -174,7 +215,9 @@ impl Child {
             .unwrap_or_else(|e| e.into_inner())
             .wait(libc::WNOHANG)?
         {
-            ChildLifecycle::Running(_) => Ok(None),
+            ChildLifecycle::Running(_)
+            | ChildLifecycle::HungUp(_)
+            | ChildLifecycle::Killed(_) => Ok(None),
             ChildLifecycle::Exited(status) => Ok(Some(ChildEvent::Exited(status))),
         }
     }
