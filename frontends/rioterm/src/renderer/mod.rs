@@ -22,6 +22,7 @@ use rio_backend::event::TerminalDamage;
 use crate::context::renderable::{PendingUpdate, RenderableContent};
 use crate::context::ContextManager;
 use crate::crosswords::style::{Style as CellStyle, StyleFlags};
+use crate::crosswords::Mode;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
@@ -405,6 +406,18 @@ impl Renderer {
         }
     }
 
+    /// Cursor color for a panel. In Vi mode the configured `vi-cursor`
+    /// color is used; otherwise OSC 12 wins over the theme `cursor`.
+    /// `List::fill_named` skips the Cursor slot, so the named colors
+    /// are read directly instead of going through `Renderer::color`.
+    #[inline]
+    pub fn cursor_color(&self, term_colors: &TermColors, is_vi_mode: bool) -> ColorArray {
+        if is_vi_mode {
+            return self.named_colors.vi_cursor;
+        }
+        term_colors[NamedColor::Cursor as usize].unwrap_or(self.named_colors.cursor)
+    }
+
     #[inline]
     pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
         self.is_vi_mode_enabled = is_vi_mode_enabled;
@@ -523,6 +536,8 @@ impl Renderer {
                 context.renderable_content.lines_evicted = terminal.lines_evicted();
                 context.renderable_content.blinking_cursor = terminal.blinking_cursor;
                 context.renderable_content.cursor.state = terminal.cursor();
+                context.renderable_content.is_vi_mode =
+                    terminal.mode().contains(Mode::VI);
                 if terminal.graphics.kitty_graphics_dirty {
                     context.renderable_content.kitty_virtual_placements =
                         terminal.graphics.kitty_virtual_placements.clone();
@@ -1462,5 +1477,49 @@ mod grid_cell_bg_tests {
             rio_grid::cell_bg(Square::from_char('x'), style, &renderer, &colors),
             [0, 0, 0, 0]
         );
+    }
+}
+
+#[cfg(test)]
+mod cursor_color_tests {
+    use super::*;
+
+    const CURSOR: ColorArray = [1.0, 0.4, 0.0, 1.0];
+    const VI_CURSOR: ColorArray = [1.0, 1.0, 0.0, 1.0];
+    const OSC_12: ColorArray = [0.0, 0.5, 1.0, 1.0];
+
+    fn renderer() -> Renderer {
+        Renderer::new(&Config {
+            colors: Colors {
+                cursor: CURSOR,
+                vi_cursor: VI_CURSOR,
+                ..Colors::default()
+            },
+            ..Config::default()
+        })
+    }
+
+    #[test]
+    fn uses_cursor_color_outside_vi_mode() {
+        let r = renderer();
+        assert_eq!(r.cursor_color(&TermColors::default(), false), CURSOR);
+    }
+
+    /// The reported bug: `vi-cursor` was parsed but the cursor kept
+    /// the `cursor` color after entering Vi mode.
+    #[test]
+    fn uses_vi_cursor_color_in_vi_mode() {
+        let r = renderer();
+        assert_eq!(r.cursor_color(&TermColors::default(), true), VI_CURSOR);
+    }
+
+    #[test]
+    fn osc_12_overrides_cursor_color_only_outside_vi_mode() {
+        let r = renderer();
+        let mut colors = TermColors::default();
+        colors[NamedColor::Cursor as usize] = Some(OSC_12);
+
+        assert_eq!(r.cursor_color(&colors, false), OSC_12);
+        assert_eq!(r.cursor_color(&colors, true), VI_CURSOR);
     }
 }
