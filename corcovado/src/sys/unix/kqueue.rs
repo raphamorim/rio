@@ -32,7 +32,7 @@ type Count = c_int;
 #[cfg(target_os = "netbsd")]
 type Filter = u32;
 #[cfg(target_os = "netbsd")]
-type UData = ::libc::intptr_t;
+type UData = *mut ::libc::c_void;
 #[cfg(target_os = "netbsd")]
 type Count = usize;
 
