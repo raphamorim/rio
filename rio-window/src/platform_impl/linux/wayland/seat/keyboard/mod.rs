@@ -58,7 +58,7 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                         let context = &mut keyboard_state.xkb_context;
                         context.set_keymap_from_fd(fd, size as usize);
                     }
-                    _ => unreachable!(),
+                    format => warn!("unhandled keymap format {format:?}"),
                 },
                 WEnum::Unknown(value) => {
                     warn!("unknown keymap format 0x{:x}", value)
@@ -251,6 +251,23 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                     }
                 }
             }
+            // Since wl_keyboard v10 the compositor may drive key repeat itself. It only
+            // does so after disabling client side repeat with `repeat_info { rate: 0 }`,
+            // so there's no timer to keep in sync here.
+            WlKeyboardEvent::Key {
+                key,
+                state: WEnum::Value(WlKeyState::Repeated),
+                ..
+            } => {
+                key_input(
+                    keyboard_state,
+                    &mut state.events_sink,
+                    data,
+                    key + 8,
+                    ElementState::Pressed,
+                    true,
+                );
+            }
             WlKeyboardEvent::Modifiers {
                 mods_depressed,
                 mods_latched,
@@ -302,7 +319,7 @@ impl Dispatch<WlKeyboard, KeyboardData, WinitState> for WinitState {
                     RepeatInfo::Repeat { gap, delay }
                 };
             }
-            _ => unreachable!(),
+            event => warn!("Unhandled keyboard event {event:?}"),
         }
     }
 }
