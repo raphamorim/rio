@@ -466,7 +466,13 @@ impl Text {
             };
 
             self.instances.push(TextInstance {
-                pos: [pen_x + glyph.x, py + glyph.y.max(0.0)],
+                // Snap each glyph quad to integer physical pixels. The pen
+                // origin is `logical * scale`, which is almost always
+                // fractional on HiDPI/fractional-scale displays; placing a
+                // rasterized glyph at a sub-pixel position resamples it and
+                // makes UI text (tab titles, pickers) look blurry. Grid text
+                // is crisp because it's cell-aligned — do the same here.
+                pos: [(pen_x + glyph.x).round(), (py + glyph.y.max(0.0)).round()],
                 glyph_pos: [slot.x as u32, slot.y as u32],
                 glyph_size: [slot.w as u32, slot.h as u32],
                 bearings: [slot.bearing_x, slot.bearing_y],
