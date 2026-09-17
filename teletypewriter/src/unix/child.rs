@@ -92,8 +92,14 @@ impl ChildLifecycle {
     fn terminate(&mut self) -> io::Result<()> {
         let pid = match self.wait(libc::WNOHANG)? {
             Self::Exited(_) => return Ok(()),
-            Self::Killed(_) => {
-                return if self.reap_within(Duration::from_millis(100))? {
+            Self::Killed(pid) => {
+                // The earlier SIGKILL may not have landed (single-pid
+                // EPERM is not tolerated, but killpg EPERM is), so
+                // re-send it, then re-poll only briefly: Killed is
+                // reached after a full reap timeout, and this arm can
+                // run from Drop on a UI thread.
+                signal(pid, libc::SIGKILL)?;
+                return if self.reap_within(Duration::from_millis(5))? {
                     Ok(())
                 } else {
                     Err(timed_out())
@@ -128,7 +134,8 @@ fn timed_out() -> io::Error {
 /// a directly spawned process, where killpg would signal us too.
 fn signal(pid: libc::pid_t, signal: libc::c_int) -> io::Result<()> {
     let pgid = unsafe { libc::getpgid(pid) };
-    let result = if pgid > 0 && pgid != unsafe { libc::getpgrp() } {
+    let grouped = pgid > 0 && pgid != unsafe { libc::getpgrp() };
+    let result = if grouped {
         unsafe { libc::killpg(pgid, signal) }
     } else {
         unsafe { libc::kill(pid, signal) }
@@ -141,14 +148,19 @@ fn signal(pid: libc::pid_t, signal: libc::c_int) -> io::Result<()> {
             // signaled (macOS setuid login(1) wrapper, sudo children),
             // even though the signal reached the others (ghostty#2273).
             // Failing here would skip escalation and reaping, leaking a
-            // zombie. Linux only errs when nothing was signaled at all.
-            Some(libc::EPERM) => cfg!(any(
-                target_os = "macos",
-                target_os = "freebsd",
-                target_os = "openbsd",
-                target_os = "netbsd",
-                target_os = "dragonfly",
-            )),
+            // zombie. Group form only: for a single pid EPERM means
+            // nothing was signaled, and Linux killpg likewise only errs
+            // when no member was signaled.
+            Some(libc::EPERM) => {
+                grouped
+                    && cfg!(any(
+                        target_os = "macos",
+                        target_os = "freebsd",
+                        target_os = "openbsd",
+                        target_os = "netbsd",
+                        target_os = "dragonfly",
+                    ))
+            }
             _ => false,
         };
         if !tolerated {
@@ -173,17 +185,27 @@ impl ChildTerminator {
 
     /// Send SIGHUP without waiting or escalating. For Drop on threads
     /// that cannot block (the reader thread's shutdown escalation may
-    /// never run when the process exits right after). Contention means
-    /// terminate() is already escalating, so there is nothing to add;
-    /// blocking here would stall the caller for the whole grace period.
+    /// never run when the process exits right after). Contention is
+    /// retried briefly: a poll_exit holder clears in microseconds, and
+    /// this hangup may be the only signal a quitting process delivers.
+    /// A hold outlasting the retry means terminate() is escalating and
+    /// SIGHUP already went out; blocking on it would stall the caller
+    /// for the whole grace period.
     pub fn hangup(&self) -> io::Result<()> {
         use std::sync::TryLockError;
-        let mut lifecycle = match self.0.try_lock() {
-            Ok(lifecycle) => lifecycle,
-            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-            Err(TryLockError::WouldBlock) => return Ok(()),
-        };
-        lifecycle.hangup()
+        let deadline = Instant::now() + Duration::from_millis(10);
+        loop {
+            match self.0.try_lock() {
+                Ok(mut lifecycle) => return lifecycle.hangup(),
+                Err(TryLockError::Poisoned(poisoned)) => {
+                    return poisoned.into_inner().hangup();
+                }
+                Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                    std::thread::yield_now();
+                }
+                Err(TryLockError::WouldBlock) => return Ok(()),
+            }
+        }
     }
 }
 

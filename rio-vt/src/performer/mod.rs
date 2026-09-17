@@ -516,16 +516,25 @@ where
             // parsing budgets, limiting continuously available output to 100 ms
             // between batches (terminal lock waits can extend this interval).
             let deadline = Instant::now() + std::time::Duration::from_millis(100);
+            // Windows Closed means the ConPTY ring is momentarily empty
+            // (never WouldBlock, and no real EOF exists until the drain's
+            // own shutdown closes the pseudoconsole), while the pump
+            // thread delivers final output after the exit event. Retry it
+            // through a short quiet window, refreshed by each batch of
+            // data, so a close is not taxed the full deadline. Unix
+            // Closed is a real EOF and ends the drain at once.
+            let quiet = std::time::Duration::from_millis(25);
+            let mut quiet_deadline = Instant::now() + quiet;
             loop {
                 match self.pty_read(state, buf) {
-                    Ok(ReadOutcome::Budget) if Instant::now() < deadline => continue,
-                    // Windows Closed means the ConPTY ring is momentarily
-                    // empty (never WouldBlock), and the pump thread
-                    // delivers final output after the exit event, so it is
-                    // retried until the deadline instead of ending the
-                    // drain. Unix Closed is a real EOF and ends it.
+                    Ok(ReadOutcome::Budget) if Instant::now() < deadline => {
+                        quiet_deadline = Instant::now() + quiet;
+                        continue;
+                    }
                     Ok(ReadOutcome::Closed)
-                        if cfg!(windows) && Instant::now() < deadline =>
+                        if cfg!(windows)
+                            && Instant::now() < deadline
+                            && Instant::now() < quiet_deadline =>
                     {
                         std::thread::sleep(std::time::Duration::from_millis(2));
                         continue;
@@ -548,9 +557,11 @@ where
                 );
                 self.terminal.lock().exit();
             }
-            // A reader failure also closes the terminal: shutdown() below
-            // kills the child, so without a notification the frontend
-            // would keep a dead pane open with no way to learn about it.
+            // A reader failure also closes the terminal, since shutdown()
+            // below kills the child. The close is driven by exit() (it
+            // emits CloseTerminal, the event frontends act on); the
+            // ChildExited alongside is informational for embedders.
+            // Removing the exit() would leave a dead pane open forever.
             Err(err) => {
                 error!("PTY reader failed: {err}");
                 self.event_proxy.send_event(
