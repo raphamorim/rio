@@ -255,6 +255,7 @@ impl Screen<'_> {
             spawn_performer: true,
             #[cfg(not(target_os = "windows"))]
             use_fork: config.use_fork,
+            shell_integration: config.shell_integration,
             is_native,
             split_color: config.colors.split,
             split_active_color: config.colors.split_active,
