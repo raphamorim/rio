@@ -1033,12 +1033,23 @@ impl Surface {
     /// configured `shell` program), for identity and diagnostics. Do not
     /// signal it on teardown: dropping the surface already hangs up the
     /// process group, and the reader thread escalates to SIGKILL and
-    /// reaps, so a host-side killpg would race that escalation. On
-    /// Windows it is the conpty child's process id; 0 if the pid was
-    /// unavailable.
+    /// reaps, so a host-side killpg would race that escalation and can
+    /// hit a recycled pid; a host that wants an extra signal must use
+    /// [`Surface::hangup_child`], which goes through the lifecycle
+    /// guard. On Windows it is the conpty child's process id; 0 if the
+    /// pid was unavailable.
     #[cfg(feature = "pty")]
     pub fn child_pid(&self) -> u32 {
         self.shell_pid
+    }
+
+    /// Hang up the child's process group through the lifecycle guard:
+    /// a no-op once the child was reaped, so a host can signal on its
+    /// own teardown without racing the reader thread's escalation or
+    /// hitting a recycled pid. Returns false when delivery failed.
+    #[cfg(all(feature = "pty", not(target_os = "windows")))]
+    pub fn hangup_child(&self) -> bool {
+        self.child_terminator.hangup().is_ok()
     }
 
     /// The foreground process's name (the program the user is running

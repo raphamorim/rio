@@ -53,9 +53,9 @@ pub struct Route<'a> {
     pub assistant: assistant::Assistant,
     pub path: RoutePath,
     pub window: RouteWindow<'a>,
-    /// Set by `quit`; the application answers it with an event loop
-    /// exit so `exiting` drops every route (hanging up each PTY child)
-    /// before the process exits.
+    /// Set by `quit`; the application polls it in `about_to_wait` and
+    /// answers with an event loop exit so `exiting` drops every route
+    /// (hanging up each PTY child) before the process exits.
     pub quit_requested: bool,
 }
 

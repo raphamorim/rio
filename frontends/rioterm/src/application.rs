@@ -2036,10 +2036,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 ..
             } => {
                 if route.has_key_wait(&key_event, &mut self.router.clipboard) {
-                    if route.quit_requested {
-                        event_loop.exit();
-                        return;
-                    }
                     if route.path != RoutePath::Terminal
                         && key_event.state == ElementState::Released
                     {
@@ -2336,6 +2332,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // A confirmed quit can be set from any input path (keys today,
+        // a future mouse or menu handler tomorrow); honoring it here,
+        // once per event batch, keeps the exit independent of which
+        // handler set it. exiting() then drops every route.
+        if self
+            .router
+            .routes
+            .values()
+            .any(|route| route.quit_requested)
+        {
+            event_loop.exit();
+            return;
+        }
         let control_flow = match self.scheduler.update() {
             Some(instant) => ControlFlow::WaitUntil(instant),
             None => ControlFlow::Wait,
