@@ -28,7 +28,6 @@ pub enum Topic {
     ScheduledRenderRoute,
     UpdateConfig,
     CursorBlinking,
-    UpdateTitles,
     SelectionScrolling,
 }
 

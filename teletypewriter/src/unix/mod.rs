@@ -730,6 +730,15 @@ pub fn create_pty_with_spawn(
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
+/// The shell a spawn falls back to when none is configured: `$SHELL`,
+/// else the passwd entry. Public so per-shell decisions made before
+/// spawning (title program name) match what actually spawns.
+pub fn default_shell_program() -> String {
+    ShellUser::from_env()
+        .map(|user| user.shell)
+        .unwrap_or_default()
+}
+
 pub fn create_pty_with_fork(
     shell: Option<&str>,
     args: &[String],
