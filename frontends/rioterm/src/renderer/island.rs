@@ -26,6 +26,16 @@ const TAB_GAP: f32 = 6.0;
 const TAB_INSET_Y: f32 = 7.0;
 const TAB_RADIUS: f32 = 6.0;
 const TITLE_ELLIPSIS: char = '…';
+/// Bell dot for tabs that rang while in the background, and the gap
+/// between it and the tab title. A dot, not a glyph: the UI text layer
+/// resolves one font per run, so a bell glyph exists only where an
+/// emoji font is installed and resolvable, while a dot renders
+/// identically everywhere. Drawn at rect order 1: the tab backgrounds
+/// are submitted at order 0 AFTER the title pass, so a same-order dot
+/// would be painted over and invisible in every multi-tab strip.
+const BELL_DOT_SIZE: f32 = 6.0;
+const BELL_DOT_ORDER: u8 = 1;
+const BELL_GAP: f32 = 4.0;
 const DRAG_THRESHOLD: f32 = 4.0;
 const DRAG_ANIMATION_LENGTH: f32 = 0.15;
 const DRAG_MAX_DT: f32 = 0.05;
@@ -839,13 +849,6 @@ impl Island {
             // fill to carry a custom colour, which moves to the text.
             let single = num_tabs == 1;
 
-            let max_text_width = if single {
-                single_title_budget(window_width, scale_factor, left_margin)
-            } else {
-                (tab_width - TAB_PADDING_X * 2.0).max(0.0)
-            };
-            let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
-
             let text_color = if single {
                 match context_manager.custom_color(tab_index) {
                     Some(mut custom) => {
@@ -866,6 +869,20 @@ impl Island {
                 ..DrawOpts::default()
             };
 
+            // The bell mark is its own text run: the UI text layer resolves
+            // a single font per draw from the run's first char, so gluing it
+            // onto the title would shape the whole title in the emoji font.
+            let bell = context_manager.bell(tab_index);
+            let bell_width = if bell { BELL_DOT_SIZE + BELL_GAP } else { 0.0 };
+
+            let max_text_width = if single {
+                single_title_budget(window_width, scale_factor, left_margin) - bell_width
+            } else {
+                tab_width - TAB_PADDING_X * 2.0 - bell_width
+            }
+            .max(0.0);
+            let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
+
             // UI text always paints in a final pass above every rect,
             // so the floating tab's opaque background can't occlude
             // titles passing underneath it — skip a title once the
@@ -878,16 +895,41 @@ impl Island {
 
             if !hidden_by_drag {
                 // Measure → centre → draw. Immediate mode, no cached
-                // text_id bookkeeping.
-                let ui = sugarloaf.text_mut();
-                let text_width = ui.measure(&title, &title_opts);
+                // text_id bookkeeping. The bell mark and the title are
+                // centred as one group.
+                let text_width =
+                    sugarloaf.text_mut().measure(&title, &title_opts) + bell_width;
                 let text_x = if single {
                     single_title_x(window_width, scale_factor, text_width, left_margin)
                 } else {
                     tab_x + (tab_width - text_width) / 2.0
                 };
                 let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
-                ui.draw(text_x, text_y, &title, &title_opts);
+                if bell {
+                    // Centered on the title's lowercase body, not the strip:
+                    // the em box hangs from `text_y` with its optical middle
+                    // about two thirds down, so a strip-centered dot rides
+                    // visibly high next to lowercase titles.
+                    let dot_y =
+                        text_y + TITLE_FONT_SIZE * (2.0 / 3.0) - BELL_DOT_SIZE / 2.0;
+                    sugarloaf.rounded_rect(
+                        None,
+                        text_x,
+                        dot_y,
+                        BELL_DOT_SIZE,
+                        BELL_DOT_SIZE,
+                        text_color,
+                        0.0,
+                        BELL_DOT_SIZE / 2.0,
+                        BELL_DOT_ORDER,
+                    );
+                }
+                sugarloaf.text_mut().draw(
+                    text_x + bell_width,
+                    text_y,
+                    &title,
+                    &title_opts,
+                );
             }
 
             // Nothing is drawn behind a lone title.
@@ -1424,32 +1466,14 @@ impl Island {
         self.color_picker_tab.is_some()
     }
 
-    /// Get the title text for a specific tab index
+    /// Get the title text for a specific tab index: the one displayed
+    /// chain, shared with the native titlebar.
     fn get_title_for_tab(
         &self,
         context_manager: &ContextManager<EventProxy>,
         tab_index: usize,
     ) -> String {
-        // Custom user-set title takes priority
-        if let Some(custom) = context_manager.custom_title(tab_index) {
-            return custom.to_string();
-        }
-
-        if let Some(context_title) = context_manager.title(tab_index) {
-            if !context_title.content.is_empty() {
-                return context_title.content.clone();
-            }
-
-            // Fallback to program name if title is empty
-            if let Some(ref extra) = context_title.extra {
-                if !extra.program.is_empty() {
-                    return extra.program.clone();
-                }
-            }
-        }
-
-        // Default fallback - show tab number
-        String::from("~")
+        context_manager.displayed_title_for_tab(tab_index)
     }
 }
 

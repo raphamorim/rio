@@ -32,6 +32,10 @@ use std::time::{Duration, Instant};
 
 pub struct Application<'a> {
     config: rio_backend::config::Config,
+    /// The title template shows `{{columns}}`/`{{lines}}`, so a resize
+    /// must re-render titles (the only title data with no PTY event;
+    /// everything else arrives via OSC 0/2 and OSC 7).
+    title_tracks_size: bool,
     event_proxy: EventProxy,
     router: Router<'a>,
     scheduler: Scheduler,
@@ -75,6 +79,7 @@ impl Application<'_> {
         rio_notifier::request_authorization();
 
         Application {
+            title_tracks_size: title_tracks_size(&config),
             config,
             event_proxy,
             router,
@@ -156,6 +161,37 @@ impl Application<'_> {
         let result = event_loop.run_app(self);
         result.map_err(Into::into)
     }
+}
+
+impl Application<'_> {
+    /// One pane's title data changed (OSC 0/2 title carried in
+    /// `raw_title`, OSC 7 directory as `None`): re-render, repaint the
+    /// strip when the displayed text changed, and poke the titlebar.
+    fn handle_title_change(
+        &mut self,
+        window_id: rio_backend::event::WindowId,
+        route_id: usize,
+        raw_title: Option<&str>,
+    ) {
+        if let Some(route) = self.router.routes.get_mut(&window_id) {
+            if route
+                .window
+                .screen
+                .context_manager
+                .on_title_change(route_id, raw_title)
+            {
+                route.request_overlay_redraw();
+            }
+            route.sync_window_title();
+        }
+    }
+}
+
+/// Whether the title template renders the pane size, the one title
+/// input with no PTY event attached (resizes are locally known).
+fn title_tracks_size(config: &rio_backend::config::Config) -> bool {
+    let template = config.title.content.to_lowercase();
+    template.contains("columns") || template.contains("lines")
 }
 
 impl Application<'_> {
@@ -336,19 +372,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             self.setup_quake_hotkey();
         }
 
-        // Schedule title updates every 2s
-        let timer_id = TimerId::new(Topic::UpdateTitles, 0);
-        if !self.scheduler.scheduled(timer_id) {
-            self.scheduler.schedule(
-                EventPayload::new(RioEventType::Rio(RioEvent::UpdateTitles), unsafe {
-                    rio_window::window::WindowId::dummy().into()
-                }),
-                Duration::from_secs(2),
-                true,
-                timer_id,
-            );
-        }
-
         tracing::info!("Initialisation complete");
     }
 
@@ -360,6 +383,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Skip rendering for unfocused windows if configured
                     if self.config.renderer.disable_unfocused_render
                         && !route.window.is_focused
+                        && route.window.focus_seen
                     {
                         return;
                     }
@@ -386,6 +410,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // Skip rendering for unfocused windows if configured
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
+                            && route.window.focus_seen
                         {
                             if route.window.screen.renderer.scrollbar.needs_redraw() {
                                 route.request_redraw();
@@ -444,6 +469,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     if let Some(route) = self.router.routes.get_mut(&window_id) {
                         if self.config.renderer.disable_unfocused_render
                             && !route.window.is_focused
+                            && route.window.focus_seen
                         {
                             return;
                         }
@@ -578,6 +604,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 };
 
                 self.config = config;
+                self.title_tracks_size = title_tracks_size(&self.config);
 
                 // Dropping the old manager unregisters its hotkeys, so
                 // ToggleQuake binding edits apply without restarting.
@@ -616,6 +643,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         &self.router.font_library,
                         has_font_updates,
                     );
+                    if !self.config.bell.tab_indicator {
+                        route.window.screen.context_manager.clear_all_bells();
+                    }
                     route.window.configure_window(&self.config);
 
                     if let Some(error) = &config_error {
@@ -626,6 +656,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                     route.request_redraw();
                 }
+
+                self.router.update_titles();
             }
             RioEventType::Rio(RioEvent::Exit | RioEvent::Quit) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
@@ -704,6 +736,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             event_loop.exit();
                         }
                     } else {
+                        route.window.screen.refresh_titles();
                         let size = route.window.screen.context_manager.len();
                         route.window.screen.resize_top_or_bottom_line(size);
                     }
@@ -741,7 +774,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if let Some(island) = &mut route.window.screen.renderer.island {
                         island.set_progress_report(report);
-                        route.request_redraw();
+                        route.request_overlay_redraw();
                     }
                 }
             }
@@ -751,10 +784,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.request_redraw();
                 }
             }
-            RioEventType::Rio(RioEvent::Bell) => {
+            RioEventType::Rio(RioEvent::Bell(route_id)) => {
                 // Handle audio bell
                 if self.config.bell.audio {
                     self.handle_audio_bell();
+                }
+
+                if self.config.bell.tab_indicator {
+                    if let Some(route) = self.router.routes.get_mut(&window_id) {
+                        let focused = route.window.is_focused;
+                        if route
+                            .window
+                            .screen
+                            .context_manager
+                            .ring_bell(route_id, focused)
+                        {
+                            route.request_overlay_redraw();
+                        }
+                    }
                 }
             }
             RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {
@@ -811,9 +858,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     );
                 }
             }
-            RioEventType::Rio(RioEvent::Title(title)) => {
+            RioEventType::Rio(RioEvent::Title(route_id, title)) => {
+                self.handle_title_change(window_id, route_id, Some(&title));
+            }
+            RioEventType::Rio(RioEvent::CurrentDirectoryChanged(route_id)) => {
+                self.handle_title_change(window_id, route_id, None);
+            }
+            RioEventType::Rio(RioEvent::SyncWindowTitle) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    route.set_window_title(&title);
+                    route.sync_window_title();
                 }
             }
             RioEventType::Rio(RioEvent::TitleWithSubtitle(title, subtitle)) => {
@@ -821,9 +874,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.set_window_title(&title);
                     route.set_window_subtitle(&subtitle);
                 }
-            }
-            RioEventType::Rio(RioEvent::UpdateTitles) => {
-                self.router.update_titles();
             }
             RioEventType::Rio(RioEvent::MouseCursorDirty) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
@@ -852,7 +902,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     routes, clipboard, ..
                 } = &mut self.router;
                 if let Some(route) = routes.get_mut(&window_id) {
-                    if route.window.is_focused {
+                    // `!focus_seen` mirrors the render gates: a window
+                    // that never received a focus event yet (created in
+                    // the background) must not have OSC 52 silently
+                    // dropped by an is_focused that never initialized.
+                    if route.window.is_focused || !route.window.focus_seen {
                         let text = format(clipboard.get(clipboard_type).as_str());
                         // Route the paste back to the panel that asked for it
                         // (OSC 52 reply), not whichever panel happens to be
@@ -873,7 +927,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     routes, clipboard, ..
                 } = &mut self.router;
                 if let Some(route) = routes.get_mut(&window_id) {
-                    if route.window.is_focused {
+                    if route.window.is_focused || !route.window.focus_seen {
                         clipboard.set(clipboard_type, content);
                     }
                 }
@@ -2091,6 +2145,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 let focus_changed = route.window.is_focused != focused;
                 route.window.is_focused = focused;
+                route.window.focus_seen = true;
 
                 // Focus is a cheap checkpoint to catch backing-scale changes
                 // whose ScaleFactorChanged never arrived (sleep/wake display
@@ -2161,6 +2216,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
 
                 route.window.screen.resize(new_size);
+                if self.title_tracks_size {
+                    route.window.screen.refresh_titles();
+                }
                 route.request_redraw();
             }
 
