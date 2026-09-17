@@ -18,6 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 global-hotkey = "0.8.0"
+base64 = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "registry"] }
 wgpu = { workspace = true }

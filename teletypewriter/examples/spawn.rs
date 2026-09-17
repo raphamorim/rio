@@ -8,7 +8,7 @@ fn main() -> std::io::Result<()> {
     use std::io::BufReader;
     use teletypewriter::{create_pty_with_fork, ProcessReadWrite, Pty};
 
-    let mut process: Pty = create_pty_with_fork(Some("bash"), &[], 80, 25, 0, 0)?;
+    let mut process: Pty = create_pty_with_fork(Some("bash"), &[], &[], 80, 25, 0, 0)?;
 
     process.writer().write_all(b"1").unwrap();
     process.writer().write_all(b"2").unwrap();

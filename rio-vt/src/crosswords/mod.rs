@@ -3350,7 +3350,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.inactive_keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
         self.keyboard_mode_idx = 0;
         self.inactive_keyboard_mode_idx = 0;
-        self.title = String::from("");
+        if !self.title.is_empty() {
+            self.title = String::from("");
+            self.event_proxy.send_event(
+                RioEvent::Title(self.route_id, String::new()),
+                self.window_id,
+            );
+        }
         self.selection = None;
         self.vi_mode_cursor = Default::default();
         self.keyboard_mode_stack = Default::default();
@@ -3460,8 +3466,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let title = title.unwrap_or_default();
         if title != self.title {
             self.title = title;
-            self.event_proxy
-                .send_event(RioEvent::Title(self.title.clone()), self.window_id);
+            self.event_proxy.send_event(
+                RioEvent::Title(self.route_id, self.title.clone()),
+                self.window_id,
+            );
         }
     }
 
@@ -3472,7 +3480,14 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     fn set_current_directory(&mut self, path: std::path::PathBuf) {
         trace!("Setting working directory {:?}", path);
+        if self.current_directory.as_deref() == Some(path.as_path()) {
+            return;
+        }
         self.current_directory = Some(path);
+        self.event_proxy.send_event(
+            RioEvent::CurrentDirectoryChanged(self.route_id),
+            self.window_id,
+        );
     }
 
     fn set_semantic_prompt(
@@ -4272,7 +4287,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn bell(&mut self) {
-        self.event_proxy.send_event(RioEvent::Bell, self.window_id);
+        self.event_proxy
+            .send_event(RioEvent::Bell(self.route_id), self.window_id);
     }
 
     #[inline]
@@ -5813,6 +5829,20 @@ mod tests {
     use crate::crosswords::pos::{Column, Line, Pos, Side};
     use crate::crosswords::CrosswordsSize;
     use crate::event::VoidListener;
+
+    /// Event-capturing listener for tests that assert on emitted
+    /// `RioEvent`s. One definition; four tests used to carry
+    /// byte-identical local copies.
+    #[derive(Clone)]
+    struct TestListener {
+        events: std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>,
+    }
+
+    impl EventListener for TestListener {
+        fn send_event(&self, event: RioEvent, _id: WindowId) {
+            self.events.borrow_mut().push(event);
+        }
+    }
 
     fn make_crosswords() -> Crosswords<VoidListener> {
         let size = CrosswordsSize::new(4, 4);
@@ -7807,18 +7837,6 @@ mod tests {
         use std::cell::RefCell;
         use std::rc::Rc;
 
-        // Create a custom event listener that captures PtyWrite events
-        #[derive(Clone)]
-        struct TestListener {
-            events: Rc<RefCell<Vec<RioEvent>>>,
-        }
-
-        impl EventListener for TestListener {
-            fn send_event(&self, event: RioEvent, _id: WindowId) {
-                self.events.borrow_mut().push(event);
-            }
-        }
-
         let size = CrosswordsSize::new(10, 10);
         let window_id = WindowId::from(0);
         let events = Rc::new(RefCell::new(Vec::new()));
@@ -7863,17 +7881,6 @@ mod tests {
         use std::cell::RefCell;
         use std::rc::Rc;
 
-        #[derive(Clone)]
-        struct TestListener {
-            events: Rc<RefCell<Vec<RioEvent>>>,
-        }
-
-        impl EventListener for TestListener {
-            fn send_event(&self, event: RioEvent, _id: WindowId) {
-                self.events.borrow_mut().push(event);
-            }
-        }
-
         let events = Rc::new(RefCell::new(Vec::new()));
         let mut term = Crosswords::new(
             CrosswordsSize::new(10, 10),
@@ -7882,7 +7889,7 @@ mod tests {
                 events: events.clone(),
             },
             WindowId::from(0),
-            0,
+            7,
             10,
         );
 
@@ -7893,8 +7900,117 @@ mod tests {
             events
                 .borrow()
                 .iter()
-                .any(|e| matches!(e, RioEvent::Title(t) if t == "my title")),
-            "set_title should emit RioEvent::Title"
+                .any(|e| matches!(e, RioEvent::Title(route, t) if *route == 7 && t == "my title")),
+            "set_title should emit RioEvent::Title carrying its route id"
+        );
+    }
+
+    #[test]
+    fn reset_emits_empty_title_event_once() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            7,
+            10,
+        );
+
+        Handler::set_title(&mut term, Some("vim - foo.rs".to_string()));
+        events.borrow_mut().clear();
+
+        // RIS must announce the cleared title like any other change,
+        // or the strip and titlebar keep the pre-reset text forever.
+        Handler::reset_state(&mut term);
+        let count = events
+            .borrow()
+            .iter()
+            .filter(
+                |e| matches!(e, RioEvent::Title(route, t) if *route == 7 && t.is_empty()),
+            )
+            .count();
+        assert_eq!(count, 1);
+
+        // A reset with no title set stays silent.
+        events.borrow_mut().clear();
+        Handler::reset_state(&mut term);
+        assert!(events
+            .borrow()
+            .iter()
+            .all(|e| !matches!(e, RioEvent::Title(..))));
+    }
+
+    #[test]
+    fn set_current_directory_emits_event_once_per_change() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            7,
+            10,
+        );
+
+        Handler::set_current_directory(&mut term, "/tmp/a".into());
+        Handler::set_current_directory(&mut term, "/tmp/a".into());
+
+        let count = events
+            .borrow()
+            .iter()
+            .filter(
+                |e| matches!(e, RioEvent::CurrentDirectoryChanged(route) if *route == 7),
+            )
+            .count();
+        assert_eq!(
+            count, 1,
+            "a repeated OSC 7 for the same directory must not re-emit"
+        );
+        assert_eq!(
+            term.current_directory.as_deref(),
+            Some(std::path::Path::new("/tmp/a"))
+        );
+    }
+
+    #[test]
+    fn bell_emits_bell_event_for_its_route() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(10, 10),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            WindowId::from(0),
+            7,
+            10,
+        );
+
+        // Drive a real BEL byte through the parser rather than calling the
+        // handler directly, so the C0 dispatch stays covered too.
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut term, b"\x07");
+
+        assert!(
+            events
+                .borrow()
+                .iter()
+                .any(|e| matches!(e, RioEvent::Bell(route) if *route == 7)),
+            "BEL should emit RioEvent::Bell carrying its route id"
         );
     }
 
@@ -10381,17 +10497,6 @@ mod tests {
         use crate::performer::handler::Processor;
         use std::cell::RefCell;
         use std::rc::Rc;
-
-        #[derive(Clone)]
-        struct TestListener {
-            events: Rc<RefCell<Vec<RioEvent>>>,
-        }
-
-        impl EventListener for TestListener {
-            fn send_event(&self, event: RioEvent, _id: WindowId) {
-                self.events.borrow_mut().push(event);
-            }
-        }
 
         let events = Rc::new(RefCell::new(Vec::new()));
         let mut term = Crosswords::new(
