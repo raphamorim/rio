@@ -53,6 +53,10 @@ pub struct Route<'a> {
     pub assistant: assistant::Assistant,
     pub path: RoutePath,
     pub window: RouteWindow<'a>,
+    /// Set by `quit`; the application answers it with an event loop
+    /// exit so `exiting` drops every route (hanging up each PTY child)
+    /// before the process exits.
+    pub quit_requested: bool,
 }
 
 impl Route<'_> {
@@ -67,6 +71,7 @@ impl Route<'_> {
             assistant,
             path,
             window,
+            quit_requested: false,
         }
     }
 }
@@ -253,7 +258,10 @@ impl Route<'_> {
 
     #[inline]
     pub fn quit(&mut self) {
-        std::process::exit(0);
+        // A direct process::exit here would skip every destructor: no
+        // Msg::Shutdown, no hangup, and PTY children ignoring the
+        // kernel's HUP-on-master-close would be orphaned.
+        self.quit_requested = true;
     }
 
     #[inline]
@@ -659,6 +667,7 @@ impl Router<'_> {
             window,
             path: RoutePath::Terminal,
             assistant: Assistant::new(),
+            quit_requested: false,
         };
 
         if let Some(err) = &self.propagated_report {
@@ -696,6 +705,7 @@ impl Router<'_> {
                 window,
                 path: RoutePath::Terminal,
                 assistant: Assistant::new(),
+                quit_requested: false,
             },
         );
         self.quake_window_id = Some(id);
@@ -728,6 +738,7 @@ impl Router<'_> {
                 window,
                 path: RoutePath::Terminal,
                 assistant: Assistant::new(),
+                quit_requested: false,
             },
         );
     }

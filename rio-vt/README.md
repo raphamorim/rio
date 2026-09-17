@@ -134,6 +134,20 @@ automatically. See [`librio/src/lib.rs`](../librio/src/lib.rs) for a
 complete, working setup (`Crosswords::new` + `Machine::new` +
 `teletypewriter`), which is also the reference consumer of this crate.
 
+On child exit, the reader drains available output across parsing budgets and
+flushes pending synchronized updates before publishing `ChildExited` and
+`CloseTerminal`. It does not wait for descendants holding the slave open:
+a read that would block ends the drain, and continuous descendant output is
+limited to 100 ms between parsing batches. Terminal-lock waits and parsing
+can extend that interval.
+
+Send `Msg::Shutdown` to close a running PTY. On Unix, shutdown sends SIGHUP,
+allows a 100 ms grace period, then uses SIGKILL if necessary and waits to
+reap the child. Repeated shutdown preserves its exit status and does not
+signal a reaped child. The final reap can take longer for a process stuck
+in the kernel; shutdown is not a strict wall-clock deadline. Embedders
+should let the PTY owner manage termination instead of signaling a saved PID.
+
 ## Pull-based rendering
 
 `rio-vt` does not draw anything. A frontend reads terminal state on demand:
