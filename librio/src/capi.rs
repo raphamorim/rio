@@ -611,6 +611,9 @@ pub unsafe extern "C" fn rio_surface_id(surface: *const Surface) -> usize {
 
 /// Pid of the spawned program (a session leader on unix, the conpty
 /// child on Windows), 0 without a PTY or when the pid was unavailable.
+/// For identity and diagnostics only: signaling it on teardown races
+/// the internal HUP/KILL escalation and can hit a recycled pid; use
+/// rio_surface_hangup_child instead.
 #[no_mangle]
 pub unsafe extern "C" fn rio_surface_child_pid(surface: *const Surface) -> u32 {
     catch_unwind(AssertUnwindSafe(|| {
@@ -627,6 +630,28 @@ pub unsafe extern "C" fn rio_surface_child_pid(surface: *const Surface) -> u32 {
         }
     }))
     .unwrap_or(0)
+}
+
+/// Deliver SIGHUP to the surface's child process group through its
+/// lifecycle guard: a no-op after the child was reaped, so it never
+/// signals a recycled pid or races the internal escalation. Returns
+/// true when delivery succeeded (unix with a PTY only).
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_hangup_child(surface: *const Surface) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return false;
+        }
+        #[cfg(all(feature = "pty", not(target_os = "windows")))]
+        {
+            unsafe { &*surface }.hangup_child()
+        }
+        #[cfg(not(all(feature = "pty", not(target_os = "windows"))))]
+        {
+            false
+        }
+    }))
+    .unwrap_or(false)
 }
 
 #[no_mangle]

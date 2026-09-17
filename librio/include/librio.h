@@ -236,12 +236,18 @@ rio_surface_t *rio_surface_new(rio_engine_t *engine,
                                const rio_surface_config_s *config);
 void rio_surface_free(rio_surface_t *surface);
 rio_surface_id_t rio_surface_id(const rio_surface_t *surface);
-/* Pid of the spawned program. On unix it is a session leader, so killpg()
- * on it reaches everything the shell started; rio_surface_free only hangs
- * up the pty and signals this pid. On Windows it is the conpty child's
- * process id (terminate with TerminateProcess/taskkill). 0 when the
- * surface has no PTY or the pid was unavailable. */
+/* Pid of the spawned program, for identity and diagnostics only. Do not
+ * signal it on teardown: rio_surface_free already hangs up the process
+ * group and an internal reader escalates SIGHUP -> SIGKILL and reaps, so
+ * a host-side killpg() races that escalation and can hit a recycled pid.
+ * On Windows it is the conpty child's process id. 0 when the surface has
+ * no PTY or the pid was unavailable. */
 uint32_t rio_surface_child_pid(const rio_surface_t *surface);
+/* Deliver SIGHUP to the child's process group through its lifecycle
+ * guard: a no-op after the child was reaped, so it never signals a
+ * recycled pid or races the internal escalation. Returns true when
+ * delivery succeeded (unix with a PTY only). */
+bool rio_surface_hangup_child(const rio_surface_t *surface);
 
 /* Input entry points are callable from any thread. */
 void rio_surface_text(rio_surface_t *surface, const char *bytes, size_t len);
