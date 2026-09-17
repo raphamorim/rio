@@ -7,8 +7,12 @@ use std::time::{Duration, Instant};
 
 /// Grace between SIGHUP and SIGKILL. Shell HUP traps and history
 /// flushes routinely exceed 100ms; kitty and ghostty never escalate
-/// at all, so err on the long side.
+/// at all, so err on the long side. Tests shrink it to keep the
+/// escalation test fast; the state machine is identical.
+#[cfg(not(test))]
 const HANGUP_GRACE: Duration = Duration::from_secs(1);
+#[cfg(test)]
+const HANGUP_GRACE: Duration = Duration::from_millis(100);
 /// Bound on reaping after SIGKILL. A child in uninterruptible sleep
 /// survives SIGKILL; an unbounded wait would hold the lifecycle mutex
 /// (and any Drop running it) forever. The child stays `Running` on
@@ -67,19 +71,6 @@ impl ChildLifecycle {
         }
     }
 
-    fn reap_within(&mut self, timeout: Duration) -> io::Result<bool> {
-        let deadline = Instant::now() + timeout;
-        loop {
-            if let Self::Exited(_) = self.wait(libc::WNOHANG)? {
-                return Ok(true);
-            }
-            if Instant::now() >= deadline {
-                return Ok(false);
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
-
     fn hangup(&mut self) -> io::Result<()> {
         let Self::Running(pid) = self.wait(libc::WNOHANG)? else {
             return Ok(());
@@ -88,44 +79,75 @@ impl ChildLifecycle {
         *self = Self::HungUp(pid);
         Ok(())
     }
+}
 
-    fn terminate(&mut self) -> io::Result<()> {
-        let pid = match self.wait(libc::WNOHANG)? {
-            Self::Exited(_) => return Ok(()),
-            Self::Killed(pid) => {
+fn timed_out() -> io::Error {
+    io::Error::new(io::ErrorKind::TimedOut, "child not reaped after SIGKILL")
+}
+
+fn lock(lifecycle: &Mutex<ChildLifecycle>) -> std::sync::MutexGuard<'_, ChildLifecycle> {
+    lifecycle.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Reap-poll locking per probe, never across the sleeps, so hangup and
+/// poll_exit stay responsive through the grace period.
+fn reap_within(lifecycle: &Mutex<ChildLifecycle>, timeout: Duration) -> io::Result<bool> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let ChildLifecycle::Exited(_) = lock(lifecycle).wait(libc::WNOHANG)? {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn terminate(lifecycle: &Mutex<ChildLifecycle>) -> io::Result<()> {
+    let (pid, killed) = {
+        let mut state = lock(lifecycle);
+        match state.wait(libc::WNOHANG)? {
+            ChildLifecycle::Exited(_) => return Ok(()),
+            ChildLifecycle::Killed(pid) => {
                 // The earlier SIGKILL may not have landed (single-pid
                 // EPERM is not tolerated, but killpg EPERM is), so
                 // re-send it, then re-poll only briefly: Killed is
                 // reached after a full reap timeout, and this arm can
                 // run from Drop on a UI thread.
                 signal(pid, libc::SIGKILL)?;
-                return if self.reap_within(Duration::from_millis(5))? {
-                    Ok(())
-                } else {
-                    Err(timed_out())
-                };
+                (pid, true)
             }
-            Self::Running(pid) => {
+            ChildLifecycle::Running(pid) => {
                 signal(pid, libc::SIGHUP)?;
-                *self = Self::HungUp(pid);
-                pid
+                *state = ChildLifecycle::HungUp(pid);
+                (pid, false)
             }
-            Self::HungUp(pid) => pid,
+            ChildLifecycle::HungUp(pid) => (pid, false),
+        }
+    };
+    if killed {
+        return if reap_within(lifecycle, Duration::from_millis(5))? {
+            Ok(())
+        } else {
+            Err(timed_out())
         };
-        if self.reap_within(HANGUP_GRACE)? {
+    }
+    if reap_within(lifecycle, HANGUP_GRACE)? {
+        return Ok(());
+    }
+    {
+        let mut state = lock(lifecycle);
+        if let ChildLifecycle::Exited(_) = state.wait(libc::WNOHANG)? {
             return Ok(());
         }
         signal(pid, libc::SIGKILL)?;
-        *self = Self::Killed(pid);
-        if self.reap_within(KILL_REAP_TIMEOUT)? {
-            return Ok(());
-        }
-        Err(timed_out())
+        *state = ChildLifecycle::Killed(pid);
     }
-}
-
-fn timed_out() -> io::Error {
-    io::Error::new(io::ErrorKind::TimedOut, "child not reaped after SIGKILL")
+    if reap_within(lifecycle, KILL_REAP_TIMEOUT)? {
+        return Ok(());
+    }
+    Err(timed_out())
 }
 
 /// Signal the child's process group so descendants sharing it are
@@ -186,11 +208,11 @@ impl ChildTerminator {
     /// Send SIGHUP without waiting or escalating. For Drop on threads
     /// that cannot block (the reader thread's shutdown escalation may
     /// never run when the process exits right after). Contention is
-    /// retried briefly: a poll_exit holder clears in microseconds, and
-    /// this hangup may be the only signal a quitting process delivers.
-    /// A hold outlasting the retry means terminate() is escalating and
-    /// SIGHUP already went out; blocking on it would stall the caller
-    /// for the whole grace period.
+    /// retried briefly because this hangup may be the only signal a
+    /// quitting process delivers; every holder (a poll_exit probe or a
+    /// single terminate step, which locks per step) clears in
+    /// microseconds, so a hold outlasting the retry means terminate
+    /// already sent SIGHUP.
     pub fn hangup(&self) -> io::Result<()> {
         use std::sync::TryLockError;
         let deadline = Instant::now() + Duration::from_millis(10);
@@ -285,10 +307,7 @@ impl Child {
     /// Hang up the child, then force termination after a short grace period,
     /// and reap it. Repeated calls preserve the original exit status.
     pub fn terminate(&self) -> io::Result<()> {
-        self.lifecycle
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .terminate()
+        terminate(&self.lifecycle)
     }
 }
 
