@@ -1,4 +1,4 @@
-use crate::ansi::glyph_protocol;
+use crate::ansi::{border_protocol, glyph_protocol};
 use crate::ansi::iterm2_image_protocol;
 use crate::ansi::kitty_graphics_protocol;
 use crate::ansi::CursorShape;
@@ -446,6 +446,9 @@ pub trait Handler {
     /// Send a kitty graphics protocol response
     fn kitty_graphics_response(&mut self, _response: String) {}
 
+    /// Apply a parsed cell-border command.
+    fn cell_border(&mut self, _command: border_protocol::BorderCommand) {}
+
     /// Send a Glyph Protocol response (query reply, register ack, etc.).
     fn glyph_protocol_response(&mut self, _response: String) {}
 
@@ -788,6 +791,13 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
             data.len(),
             String::from_utf8_lossy(&data[..data.len().min(50)])
         );
+
+        if data.starts_with(border_protocol::PREFIX) {
+            if let Some(command) = border_protocol::parse(data) {
+                self.handler.cell_border(command);
+            }
+            return;
+        }
 
         // Check if this is a Glyph Protocol APC (starts with "25a1").
         // Glyph Protocol is checked before Kitty so its fixed-string

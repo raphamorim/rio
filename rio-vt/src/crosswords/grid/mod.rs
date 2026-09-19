@@ -711,6 +711,57 @@ impl Grid<Square> {
         }
     }
 
+    /// Modify decoration metadata without overwriting text or an inline background.
+    pub fn paint_cell_border(
+        &mut self,
+        pos: Pos,
+        mask: u16,
+        stroke: Option<crate::ansi::border_protocol::BorderStroke>,
+    ) {
+        use std::sync::Arc;
+        let mut cell = self[pos];
+        let mut extras = cell
+            .extras_id_checked()
+            .and_then(|id| self.extras_table.get(id).cloned())
+            .unwrap_or_default();
+        let mut borders = extras.borders.as_deref().copied().unwrap_or([None; 10]);
+        for (part, border) in borders.iter_mut().enumerate() {
+            if mask & (1 << part) != 0 {
+                *border = stroke;
+            }
+        }
+        let borders = borders
+            .iter()
+            .any(Option::is_some)
+            .then(|| Arc::new(borders));
+        if extras.borders == borders {
+            return;
+        }
+        extras.borders = borders;
+        let id = if extras.is_empty() {
+            None
+        } else {
+            let id = self.alloc_extras(extras);
+            if id == 0 {
+                return;
+            }
+            Some(id)
+        };
+        if cell.is_bg_only() {
+            let style = self.style_of(&cell);
+            let wrap =
+                cell.contains_cell_flag(crate::crosswords::square::CellFlags::WRAPLINE);
+            cell = Square::default().with_style_id(self.intern_style(style));
+            if wrap {
+                cell.insert_cell_flag(crate::crosswords::square::CellFlags::WRAPLINE);
+            }
+        }
+        cell.set_extras_id(id);
+        self[pos] = cell;
+        self[pos.row].has_extras |= id.is_some();
+        self[pos.row].has_styles |= cell.carries_style();
+    }
+
     /// The interned styles slice; `StyleId`s index into it.
     #[inline]
     pub fn styles(&self) -> &[Style] {
