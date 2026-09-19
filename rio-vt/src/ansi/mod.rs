@@ -1,3 +1,4 @@
+pub mod border_protocol;
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 

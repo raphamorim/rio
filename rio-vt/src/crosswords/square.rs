@@ -201,6 +201,7 @@ pub type ExtrasId = u16;
 /// Allocated only for cells that need it; pooled in a `Vec` on the grid.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Extras {
+    pub borders: Option<Arc<crate::ansi::border_protocol::CellBorders>>,
     pub zerowidth: Vec<char>,
     pub hyperlink: Option<Hyperlink>,
 }
@@ -208,7 +209,7 @@ pub struct Extras {
 impl Extras {
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.zerowidth.is_empty() && self.hyperlink.is_none()
+        self.zerowidth.is_empty() && self.hyperlink.is_none() && self.borders.is_none()
     }
 }
 

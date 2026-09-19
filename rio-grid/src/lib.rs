@@ -43,6 +43,7 @@ use smallvec::SmallVec;
 /// cells. The renderer reads via `extras.get(&id)`.
 pub type ExtrasMap = FxHashMap<u16, Extras>;
 
+mod cell_borders;
 pub mod preedit;
 use preedit::{PreeditCaret, PreeditCell, PreeditLine};
 
@@ -1899,6 +1900,11 @@ pub fn build_row_fg<P: GridPalette>(
     // glyphs at the same codepoint without interfering.
     let glyph_registry = font_library.glyph_registry_for(route_id);
 
+    cell_borders::emit(
+        row, cols, y, extras_table, grid, cell_w_u32, cell_h_u32, 0, preedit,
+        fg_scratch,
+    );
+
     // Phase 1: underline pass. Emit before glyphs so grayscale quads
     // draw under the characters.
     emit_underlines(
@@ -2444,6 +2450,11 @@ pub fn build_row_fg<P: GridPalette>(
 
         x = end;
     }
+
+    cell_borders::emit(
+        row, cols, y, extras_table, grid, cell_w_u32, cell_h_u32, 1, preedit,
+        fg_scratch,
+    );
 
     // Phase 2.5: composition pass. Every grapheme cluster shapes as
     // its own run — never ligating with the surrounding terminal text
