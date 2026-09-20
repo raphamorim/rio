@@ -684,6 +684,18 @@ pub fn resolve_path_for_opening(text: &str, cwd: Option<&Path>) -> Option<PathBu
         PathBuf::from(text)
     };
 
+    // Windows: try POSIX→Windows conversions with an existence check before
+    // the cwd-join fallback (rio issue #1943): `/x/...` (MSYS single-letter
+    // root), `/cygdrive/x/...`, and `/mnt/x/...` (WSL).
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(converted) = posix_to_windows(text) {
+            if converted.exists() {
+                return Some(converted);
+            }
+        }
+    }
+
     let absolute = if expanded.is_absolute() {
         expanded
     } else {
@@ -695,6 +707,59 @@ pub fn resolve_path_for_opening(text: &str, cwd: Option<&Path>) -> Option<PathBu
     } else {
         None
     }
+}
+
+/// Map a POSIX-rooted path text to a Windows path candidate: `/x/...`,
+/// `/cygdrive/x/...`, and `/mnt/x/...` become `X:\...`, and MSYS
+/// forward-slash UNC `//server/share/...` becomes `\\server\share\...`.
+/// Returns `None` for anything that is not one of those shapes:
+/// multi-letter roots such as `/tmp` are deliberately not guessed (the
+/// terminal cannot know which POSIX root they belong to), and a bare
+/// single-letter `/x` (e.g. the `cd /d` flag) is ambiguous prose.
+#[cfg(target_os = "windows")]
+fn posix_to_windows(text: &str) -> Option<PathBuf> {
+    let slashed = text.ends_with('/');
+    let t = text.trim_end_matches('/');
+    if let Some(rest) = t.strip_prefix("//") {
+        // MSYS forward-slash UNC: //server/share/... -> \\server\share\...
+        let rest = rest.trim_start_matches('/').replace('/', "\\");
+        if rest.is_empty() {
+            return None;
+        }
+        return Some(PathBuf::from(format!("\\\\{rest}")));
+    }
+    // `/cygdrive/x` and `/mnt/x` are explicit mount syntax; a bare `/x/...`
+    // is only an MSYS root when a single letter is followed by content.
+    let explicit_root = t.starts_with("/cygdrive/") || t.starts_with("/mnt/");
+    let rest = t
+        .strip_prefix("/cygdrive/")
+        .or_else(|| t.strip_prefix("/mnt/"))
+        .or_else(|| t.strip_prefix('/'))?;
+    let mut chars = rest.chars();
+    let drive = chars.next()?;
+    if !drive.is_ascii_alphabetic() {
+        return None;
+    }
+    let rest = chars.as_str();
+    // Multi-letter roots (/tmp, /usr) are not drive letters — reject before
+    // any trimming so `/tmp` never becomes `T:\mp`.
+    if !rest.is_empty() && !rest.starts_with('/') {
+        return None;
+    }
+
+    // A bare single-letter `/x` (e.g. the `cd /d` flag) only converts when
+    // spelled with explicit mount syntax or a trailing slash (`ls /d/`).
+    if rest.is_empty() && !explicit_root && !slashed {
+        return None;
+    }
+    let rest = rest.trim_start_matches('/').replace('/', "\\");
+    let mut p = String::new();
+    p.push(drive.to_ascii_uppercase());
+    p.push_str(":\\");
+    if !rest.is_empty() {
+        p.push_str(&rest);
+    }
+    Some(PathBuf::from(&p))
 }
 
 /// Apply post-processing to hyperlink URIs (same as in screen/mod.rs)
@@ -1174,5 +1239,36 @@ mod tests {
         assert_eq!(trim_match_tail("http://a.b/(c)"), "http://a.b/(c)".len());
         // Trailing prose delimiters are dropped.
         assert_eq!(trim_match_tail("http://a.b/c,."), "http://a.b/c".len());
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_posix_to_windows_decision_table() {
+        use super::posix_to_windows as p2w;
+        // A trailing slash marks explicit directory intent (`ls /d/`), while
+        // a bare `/x` (`cd /d` flag) is ambiguous prose and stays unconverted.
+        assert_eq!(p2w("/d/"), Some(PathBuf::from(r"D:\")));
+        assert_eq!(p2w("/d"), None);
+        // Double separators normalize.
+        assert_eq!(p2w("/d//x"), Some(PathBuf::from(r"D:\x")));
+        // Explicit mount syntax converts bare roots too.
+        assert_eq!(p2w("/cygdrive/c"), Some(PathBuf::from(r"C:\")));
+        assert_eq!(p2w("/mnt/c"), Some(PathBuf::from(r"C:\")));
+        assert_eq!(p2w("/mnt/c/x/y.txt"), Some(PathBuf::from(r"C:\x\y.txt")));
+        // Forward-slash UNC.
+        assert_eq!(
+            p2w("//srv/share/d.pdf"),
+            Some(PathBuf::from(r"\\srv\share\d.pdf"))
+        );
+        // Multi-letter roots are not guessed.
+        assert_eq!(p2w("/tmp"), None);
+        assert_eq!(p2w("/usr/bin"), None);
+        assert_eq!(p2w("/cygdrive//x"), None);
+        // Bare single-letter prose (`cd /d` flag) does not open the drive.
+        assert_eq!(p2w("/d"), None);
+        // Non-POSIX-rooted text passes through untouched.
+        assert_eq!(p2w("C:/x"), None);
+        assert_eq!(p2w("relative/x"), None);
+        assert_eq!(p2w(""), None);
     }
 }
