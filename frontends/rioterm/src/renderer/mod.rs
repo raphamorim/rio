@@ -230,7 +230,7 @@ impl Renderer {
         let island = if config.navigation.is_enabled() {
             Some(island::Island::new(
                 named_colors.tabs,
-                named_colors.tabs_active,
+                named_colors.tabs_active_or_foreground(),
                 config.navigation.hide_if_single,
                 config.navigation.max_tab_width,
             ))

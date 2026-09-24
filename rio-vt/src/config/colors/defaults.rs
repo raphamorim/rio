@@ -40,11 +40,6 @@ pub fn tabs() -> ColorArray {
 }
 
 #[inline]
-pub fn tabs_active() -> ColorArray {
-    [1., 1., 1., 1.]
-}
-
-#[inline]
 pub fn foreground() -> ColorArray {
     [1., 1., 1., 1.]
 }

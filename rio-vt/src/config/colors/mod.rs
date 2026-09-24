@@ -116,12 +116,15 @@ pub struct Colors {
     pub red: ColorArray,
     #[serde(deserialize_with = "deserialize_to_arr", default = "defaults::yellow")]
     pub yellow: ColorArray,
+    /// Active tab title color. When unset, the title uses `foreground`,
+    /// which the theme already pairs with its background — a fixed
+    /// default can't suit both the dark and the light island fills.
     #[serde(
-        deserialize_with = "deserialize_to_arr",
-        default = "defaults::tabs_active",
+        default = "Option::default",
+        deserialize_with = "deserialize_to_arr_opt",
         rename = "tabs-active"
     )]
-    pub tabs_active: ColorArray,
+    pub tabs_active: Option<ColorArray>,
     #[serde(default = "defaults::cursor", deserialize_with = "deserialize_to_arr")]
     pub cursor: ColorArray,
     #[serde(
@@ -306,6 +309,14 @@ pub struct Colors {
     pub hint_background: ColorArray,
 }
 
+impl Colors {
+    /// Resolved active tab title color: `tabs-active`, else `foreground`.
+    #[inline]
+    pub fn tabs_active_or_foreground(&self) -> ColorArray {
+        self.tabs_active.unwrap_or(self.foreground)
+    }
+}
+
 impl Default for Colors {
     fn default() -> Colors {
         Colors {
@@ -316,7 +327,7 @@ impl Default for Colors {
             red: defaults::red(),
             yellow: defaults::yellow(),
             tabs: defaults::tabs(),
-            tabs_active: defaults::tabs_active(),
+            tabs_active: None,
             cursor: defaults::cursor(),
             split: defaults::split(),
             split_active: defaults::split_active(),
