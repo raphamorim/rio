@@ -1050,18 +1050,10 @@ impl Screen<'_> {
         // the time. However what we want is to manually lowercase the character to account
         // for both small and capital letters on regular characters at the same time.
         let logical_key = if let Key::Character(ch) = key.logical_key.as_ref() {
-            // Match `Alt` bindings without `Alt` being applied, otherwise they use the
-            // composed chars, which are not intuitive to bind.
-            //
-            // On Windows, the `Ctrl + Alt` mangles `logical_key` to unidentified values, thus
-            // preventing them from being used in bindings
-            //
-            // For more see https://github.com/rust-windowing/winit/issues/2945.
-            // if (cfg!(target_os = "macos") || (cfg!(windows) && mods.control_key()))
-            // && mods.alt_key()
-            if (mods.shift_key() || mods.alt_key())
-                || mods.alt_key() && (cfg!(windows) && mods.control_key())
-            {
+            // Match `Shift`/`Alt` bindings without the modifier applied,
+            // otherwise they use the shifted or composed chars, which are
+            // not intuitive to bind.
+            if mods.shift_key() || mods.alt_key() {
                 key.key_without_modifiers()
             } else {
                 Key::Character(ch.to_lowercase().into())

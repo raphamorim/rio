@@ -150,8 +150,10 @@ impl SequenceBuilder {
             let payload = if self.mode.contains(Mode::REPORT_ALTERNATE_KEYS) {
                 let shifted_key_code = (alternate_key_code != unicode_key_code)
                     .then_some(alternate_key_code);
-                let base_layout_key_code = base_layout_key(key.physical_key)
-                    .filter(|&code| code != unicode_key_code);
+                let base_layout_key_code =
+                    base_layout_key(key.physical_key).filter(|&code| {
+                        code != unicode_key_code && Some(code) != shifted_key_code
+                    });
                 alternate_keys_payload(
                     unicode_key_code,
                     shifted_key_code,
@@ -493,13 +495,31 @@ fn alternate_keys_payload(
 /// while a non-Latin layout is active. Plain and shifted keys are text
 /// input, so they never fall back.
 pub fn base_layout_binding_key(key: &KeyEvent, mods: ModifiersState) -> Option<Key> {
+    base_layout_fallback_key(&key.logical_key, key.physical_key, mods)
+}
+
+fn base_layout_fallback_key(
+    logical_key: &Key,
+    physical_key: PhysicalKey,
+    mods: ModifiersState,
+) -> Option<Key> {
     if !(mods.control_key() || mods.alt_key() || mods.super_key()) {
         return None;
     }
-    if !matches!(key.logical_key, Key::Character(_)) {
-        return None;
+    match logical_key {
+        // AltGr arrives as Ctrl+Alt on Windows; a chord that typed a
+        // character is AltGr text input, not a shortcut.
+        Key::Character(_) => {
+            if cfg!(windows) && mods.control_key() && mods.alt_key() {
+                return None;
+            }
+        }
+        // Windows mangles Ctrl+Alt chords on some layouts to Unidentified
+        // (rust-windowing/winit#2945); the physical key is still valid.
+        Key::Unidentified(_) => {}
+        _ => return None,
     }
-    let base = char::from_u32(base_layout_key(key.physical_key)?)?;
+    let base = char::from_u32(base_layout_key(physical_key)?)?;
     Some(Key::Character(base.to_string().into()))
 }
 
@@ -566,6 +586,52 @@ fn base_layout_key(physical_key: PhysicalKey) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rio_window::keyboard::NativeKey;
+
+    #[test]
+    fn base_layout_fallback_requires_command_modifier() {
+        let cyrillic = Key::Character("с".into());
+        let physical = PhysicalKey::Code(KeyCode::KeyC);
+        let base = Key::Character("c".into());
+        assert_eq!(
+            base_layout_fallback_key(&cyrillic, physical, ModifiersState::CONTROL),
+            Some(base.clone())
+        );
+        assert_eq!(
+            base_layout_fallback_key(&cyrillic, physical, ModifiersState::SUPER),
+            Some(base)
+        );
+        // Plain and shifted typing never falls back.
+        assert_eq!(
+            base_layout_fallback_key(&cyrillic, physical, ModifiersState::empty()),
+            None
+        );
+        assert_eq!(
+            base_layout_fallback_key(&cyrillic, physical, ModifiersState::SHIFT),
+            None
+        );
+    }
+
+    #[test]
+    fn base_layout_fallback_handles_windows_ctrl_alt() {
+        let physical = PhysicalKey::Code(KeyCode::KeyN);
+        let ctrl_alt = ModifiersState::CONTROL | ModifiersState::ALT;
+        let unidentified = Key::Unidentified(NativeKey::Unidentified);
+        assert_eq!(
+            base_layout_fallback_key(&unidentified, physical, ctrl_alt),
+            Some(Key::Character("n".into()))
+        );
+        let typed = Key::Character("ń".into());
+        let expected = if cfg!(windows) {
+            None
+        } else {
+            Some(Key::Character("n".into()))
+        };
+        assert_eq!(
+            base_layout_fallback_key(&typed, physical, ctrl_alt),
+            expected
+        );
+    }
 
     #[test]
     fn base_layout_key_follows_pc101_position() {
