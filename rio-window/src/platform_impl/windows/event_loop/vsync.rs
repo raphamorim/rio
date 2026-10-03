@@ -3,17 +3,9 @@
 //! Mirrors the macOS CVDisplayLink model: `Window::request_redraw`
 //! sets a per-window `Arc<AtomicBool>` dirty flag, and the worker
 //! is the single source of frame timing. Per composition cycle it
-//! iterates the window registry and, for each window where
-//! `dirty || should_present_after_input`, fires
+//! iterates the window registry and, for each dirty window, fires
 //! `RedrawWindow(.., RDW_INVALIDATE)`. The app's `WM_PAINT` /
 //! `RedrawRequested` path is unchanged.
-//!
-//! `should_present_after_input` keeps the loop firing for one
-//! second *after a high-rate input burst* (≥ 60 events/sec over
-//! a 100 ms window) even if the app never sets the dirty flag —
-//! same gate macOS / Wayland / X11 use via `InputRateTracker`.
-//! Single keystrokes / lone mouse events no longer force a
-//! 1-second redraw storm.
 //!
 //! When DWM is disabled, the monitor is unplugged, or under some
 //! RDP modes, `DwmFlush` returns immediately. The 1 ms threshold
@@ -23,11 +15,9 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-
-use crate::platform_impl::input_rate::InputRateTracker;
 
 use windows_sys::Win32::Foundation::{HWND, S_OK};
 use windows_sys::Win32::Graphics::Dwm::{
@@ -42,25 +32,18 @@ const DEFAULT_VSYNC_INTERVAL: Duration = Duration::from_micros(16_666); // ~60Hz
 
 /// State shared between the event loop, window-callback thread,
 /// and the DwmFlush worker thread. Holds the per-window dirty-flag
-/// registry plus the rate-gated post-input sustain tracker.
+/// registry.
 pub(crate) struct VSyncSharedState {
     /// HWND (as `usize` for `Hash`/`Eq`) → per-window dirty flag.
     /// `Window::request_redraw` sets the flag; the worker reads
     /// and clears it on each tick.
     windows: RwLock<HashMap<usize, Arc<AtomicBool>>>,
-    /// Rate-gated post-input sustain. Only sustained high-rate
-    /// input (≥ 60 events/sec over 100 ms) keeps the worker fanning
-    /// out redraws after the app stops marking windows dirty.
-    /// `Mutex` because the worker thread and the window-message
-    /// thread both touch this. See `platform_impl::input_rate`.
-    input_rate_tracker: Mutex<InputRateTracker>,
 }
 
 impl VSyncSharedState {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             windows: RwLock::new(HashMap::new()),
-            input_rate_tracker: Mutex::new(InputRateTracker::new()),
         })
     }
 
@@ -81,18 +64,19 @@ impl VSyncSharedState {
         self.windows.write().unwrap().remove(&(hwnd as usize));
     }
 
+    /// Clear a window's dirty flag without invalidating it. Called by
+    /// the `REDRAW_REQUESTED_MSG` handler so the DwmFlush worker's
+    /// next tick skips the dirty-path `RedrawWindow` — the paint is
+    /// already happening via the custom message, a second `WM_PAINT`
+    /// would just dispatch a no-op `RedrawRequested`.
+    pub(crate) fn clear_dirty(&self, hwnd: HWND) {
+        if let Some(flag) = self.windows.read().unwrap().get(&(hwnd as usize)) {
+            flag.store(false, Ordering::Release);
+        }
+    }
+
     pub(crate) fn window_count(&self) -> usize {
         self.windows.read().unwrap().len()
-    }
-
-    #[inline]
-    pub(crate) fn mark_input_received(&self) {
-        self.input_rate_tracker.lock().unwrap().record_input();
-    }
-
-    #[inline]
-    pub(crate) fn should_present_after_input(&self) -> bool {
-        self.input_rate_tracker.lock().unwrap().is_high_rate()
     }
 }
 
@@ -117,8 +101,6 @@ impl VSyncThread {
                         break;
                     }
 
-                    let present_after_input = state.should_present_after_input();
-
                     // Snapshot HWND + flag pairs so we don't hold
                     // the registry lock across `RedrawWindow`.
                     let snapshot: Vec<(usize, Arc<AtomicBool>)> = state
@@ -130,8 +112,17 @@ impl VSyncThread {
                         .collect();
 
                     for (hwnd_bits, flag) in snapshot {
+                        // Only invalidate when something explicitly asked
+                        // for a redraw. The previous
+                        // `present_after_input` fallback kept painting at
+                        // vblank for a second after every input, which
+                        // doubles every paint when the app (rio) already
+                        // drives redraws via `REDRAW_REQUESTED_MSG` —
+                        // each IME key-repeat tick becomes a paint from
+                        // the custom message *and* a paint from the
+                        // worker, halving throughput.
                         let was_dirty = flag.swap(false, Ordering::AcqRel);
-                        if !(was_dirty || present_after_input) {
+                        if !was_dirty {
                             continue;
                         }
                         let hwnd = hwnd_bits as HWND;
