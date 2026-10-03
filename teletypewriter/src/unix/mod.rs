@@ -952,18 +952,16 @@ fn get_pw_entry(buf: &mut [i8; 1024]) -> Result<Passwd<'_>, Error> {
     })
 }
 
-/// Unsafe
 /// Return tty pts name [`String`]
 ///
-/// # Safety
-///
-/// This function is unsafe because it contains the usage of `libc::ptsname`
-/// from libc that's naturally unsafe.
+/// Returns an error when `fd` is not a pty main, since `libc::ptsname`
+/// returns a null pointer in that case.
 pub fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
-    let c_str: &CStr = unsafe {
-        let name_ptr = ptsname(fd as *mut _);
-        CStr::from_ptr(name_ptr)
-    };
+    let name_ptr = unsafe { ptsname(fd as *mut _) };
+    if name_ptr.is_null() {
+        return Err(Error::last_os_error().to_string());
+    }
+    let c_str: &CStr = unsafe { CStr::from_ptr(name_ptr) };
     let str_slice: &str = c_str.to_str().unwrap();
     let str_buf: String = str_slice.to_owned();
 
@@ -1132,5 +1130,24 @@ mod termp_tests {
         let term = create_termp(true);
         assert_eq!(term.c_ospeed, libc::B230400);
         assert_eq!(term.c_ispeed, libc::B230400);
+    }
+}
+
+#[cfg(test)]
+mod ptsname_tests {
+    use super::tty_ptsname;
+
+    #[test]
+    fn invalid_fd_returns_err() {
+        assert!(tty_ptsname(-1).is_err());
+    }
+
+    #[test]
+    fn pty_main_returns_device_path() {
+        let main = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY) };
+        assert!(main >= 0);
+        let name = tty_ptsname(main);
+        unsafe { libc::close(main) };
+        assert!(name.unwrap().starts_with("/dev/"));
     }
 }
