@@ -86,16 +86,19 @@ impl HintState {
             }
         };
 
-        // Find regex matches if regex is specified
-        if let Some(regex_pattern) = &hint.regex {
-            if let Ok(regex) = onig::Regex::new(regex_pattern) {
-                self.find_regex_matches(term, &regex, hint.clone());
-            }
+        let regex = match hint.regex.as_deref().map(onig::Regex::new) {
+            Some(Ok(regex)) => Some(regex),
+            Some(Err(_)) => return,
+            None => None,
+        };
+
+        if let Some(regex) = &regex {
+            self.find_regex_matches(term, regex, hint.clone());
         }
 
         // Find OSC 8 hyperlinks if enabled
         if hint.hyperlinks {
-            self.find_hyperlink_matches(term, hint.clone());
+            self.find_hyperlink_matches(term, regex.as_ref(), hint.clone());
         }
 
         // Cancel hint mode if no matches found
@@ -252,6 +255,7 @@ impl HintState {
     fn find_hyperlink_matches<T: EventListener>(
         &mut self,
         term: &rio_backend::crosswords::Crosswords<T>,
+        regex: Option<&onig::Regex>,
         hint: Rc<Hint>,
     ) {
         // Walk the visible region looking for OSC 8 hyperlink spans.
@@ -295,6 +299,10 @@ impl HintState {
 
                 // Look up the URI once for the whole span.
                 if let Some(hyperlink) = term.cell_hyperlink(line, Column(start_col)) {
+                    if !hyperlink_matches_rule(regex, hyperlink.uri()) {
+                        col = end_col;
+                        continue;
+                    }
                     let mut uri = hyperlink.uri().to_string();
                     if hint.post_processing {
                         uri = post_process_hyperlink_uri(&uri);
@@ -322,7 +330,7 @@ impl HintState {
 
         for col in 0..grid.columns() {
             let cell = &grid[line][Column(col)];
-            text.push(cell.c());
+            text.push(cell_char_for_regex(cell.c()));
         }
 
         text.trim_end().to_string()
@@ -336,6 +344,18 @@ impl HintState {
             self.labels.push(generator.next());
         }
     }
+}
+
+fn cell_char_for_regex(c: char) -> char {
+    if c == '\0' {
+        ' '
+    } else {
+        c
+    }
+}
+
+pub(crate) fn hyperlink_matches_rule(regex: Option<&onig::Regex>, uri: &str) -> bool {
+    regex.is_none_or(|regex| regex.find(uri).is_some())
 }
 
 /// Generates hint labels using the specified alphabet
@@ -752,6 +772,25 @@ fn post_process_hyperlink_uri(uri: &str) -> String {
 mod tests {
     use super::*;
     use rio_backend::config::hints::{HintAction, HintInternalAction};
+
+    #[test]
+    fn empty_grid_cells_are_regex_whitespace() {
+        let line: String = "https://example.com"
+            .chars()
+            .chain(['\0', '\0'])
+            .map(cell_char_for_regex)
+            .collect();
+        let regex = onig::Regex::new(r"https?://[^\s]+").unwrap();
+
+        assert_eq!(regex.find_iter(&line).next(), Some((0, 19)));
+    }
+
+    #[test]
+    fn hyperlink_rule_filters_osc8_uri() {
+        let file = onig::Regex::new(r"^file://").unwrap();
+        assert!(hyperlink_matches_rule(Some(&file), "file://host/tmp/a.md"));
+        assert!(!hyperlink_matches_rule(Some(&file), "https://example.com"));
+    }
 
     #[test]
     fn test_label_generator() {
