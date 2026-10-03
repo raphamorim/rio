@@ -1472,13 +1472,13 @@ impl FontData {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let handle = crate::font::macos::FontHandle::from_path(&path)
             .ok_or_else(|| format!("CoreText refused {}", path.display()))?;
-        Ok(Self::from_handle_macos(handle, path, slot, font_spec))
+        Ok(Self::from_handle_macos(handle, Some(path), slot, font_spec))
     }
 
     #[cfg(target_os = "macos")]
     fn from_handle_macos(
         handle: crate::font::macos::FontHandle,
-        path: PathBuf,
+        path: Option<PathBuf>,
         slot: Slot,
         font_spec: &SugarloafFont,
     ) -> Self {
@@ -1513,7 +1513,7 @@ impl FontData {
         let postscript_name = Some(handle.postscript_name());
         Self {
             data: None,
-            path: Some(path),
+            path,
             offset: 0,
             key: CacheKey::new(),
             weight,
@@ -2195,7 +2195,10 @@ fn find_font(font_spec: SugarloafFont, slot: Slot, evictable: bool) -> FindResul
     // Retain the matched face; reopening its file loses named variable styles.
     // CoreText owns the font data, so there are no bytes to evict here.
     let _ = evictable;
-    info!("Font '{family}' matched via CoreText at {}", path.display());
+    match &path {
+        Some(p) => info!("Font '{family}' matched via CoreText at {}", p.display()),
+        None => info!("Font '{family}' matched via CoreText (no file path)"),
+    }
     FindResult::Found(FontData::from_handle_macos(handle, path, slot, &font_spec))
 }
 
@@ -2371,20 +2374,18 @@ mod alias_tests {
         );
         let expected = advance_units_for_char(&matched, 'M').expect("matched advance");
 
-        let path = std::env::temp_dir()
-            .join(format!("rio-collection-face-{}.ttc", std::process::id()));
-        std::fs::write(&path, &collection).expect("write collection");
+        // No file path: the handle alone must serve coverage and advances,
+        // like a matched system face without an accessible file URL.
         let mut library = FontLibraryData::default();
         library.insert(FontData::from_handle_macos(
             matched,
-            path.clone(),
+            None,
             Slot::Regular,
             &SugarloafFont::default(),
         ));
         let coverage =
             library.find_best_font_match_strict('M', &SpanStyle::default(), None);
         let advance = compute_advance(&library, FONT_ID_REGULAR, 'M');
-        std::fs::remove_file(path).expect("remove collection");
 
         assert_eq!(coverage, Some((FONT_ID_REGULAR, false)));
         let advance = advance.expect("advance from the matched collection face");
