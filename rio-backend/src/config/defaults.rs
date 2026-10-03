@@ -60,12 +60,12 @@ pub fn default_shell() -> crate::config::Shell {
 
 #[inline]
 pub fn default_use_fork() -> bool {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "netbsd"))]
     {
         false
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "netbsd")))]
     {
         true
     }
