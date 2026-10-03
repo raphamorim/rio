@@ -617,6 +617,16 @@ pub fn find_font_path(
     italic: bool,
     style_name: Option<&str>,
 ) -> Option<PathBuf> {
+    find_font(family, bold, italic, style_name).map(|(path, _)| path)
+}
+
+/// Preserve the matched face, including its variable axes and collection index.
+pub fn find_font(
+    family: &str,
+    bold: bool,
+    italic: bool,
+    style_name: Option<&str>,
+) -> Option<(PathBuf, FontHandle)> {
     use core_foundation::array::CFArray;
 
     let family_cf = CFString::new(family);
@@ -671,10 +681,12 @@ pub fn find_font_path(
 
     let desired_styles = derive_desired_styles(bold, italic, style_name);
 
-    candidates
+    let descriptor = candidates
         .iter()
-        .max_by_key(|d| score_candidate(d, bold, italic, &desired_styles))
-        .and_then(|d| d.font_path())
+        .max_by_key(|d| score_candidate(d, bold, italic, &desired_styles))?;
+    let path = descriptor.font_path()?;
+    let base_font = ct_font::new_from_descriptor(&descriptor, 1.0);
+    Some((path, FontHandle { base_font }))
 }
 
 fn derive_desired_styles(
