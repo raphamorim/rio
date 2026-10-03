@@ -5292,6 +5292,40 @@ impl<U: EventListener> Handler for Crosswords<U> {
             .send_event(RioEvent::PtyWrite(self.route_id, response), self.window_id);
     }
 
+    fn cell_border(&mut self, command: crate::ansi::border_protocol::BorderCommand) {
+        use crate::ansi::border_protocol::{BorderCommand, SUPPORT_REPLY};
+        match command {
+            BorderCommand::Query => {
+                self.event_proxy.send_event(
+                    RioEvent::PtyWrite(self.route_id, SUPPORT_REPLY.to_owned()),
+                    self.window_id,
+                );
+            }
+            BorderCommand::Paint {
+                mask,
+                stroke,
+                rows,
+                cols,
+            } => {
+                let start = self.grid.cursor.pos;
+                let end_row =
+                    (start.row.0 as usize + rows as usize).min(self.grid.screen_lines());
+                let end_col = (start.col.0 + cols as usize).min(self.grid.columns());
+                for row in start.row.0 as usize..end_row {
+                    for col in start.col.0..end_col {
+                        self.grid.paint_cell_border(
+                            Pos::new(Line(row as i32), Column(col)),
+                            mask,
+                            stroke,
+                        );
+                    }
+                }
+                // Centered strokes may affect neighboring rows as well.
+                self.mark_fully_damaged();
+            }
+        }
+    }
+
     #[inline]
     fn glyph_protocol_response(&mut self, response: String) {
         self.event_proxy
@@ -5848,6 +5882,149 @@ mod tests {
         let size = CrosswordsSize::new(4, 4);
         let window_id = crate::event::WindowId::from(0);
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
+    }
+
+    fn borders_at(
+        cw: &Crosswords<VoidListener>,
+        row: i32,
+        col: usize,
+    ) -> crate::ansi::border_protocol::CellBorders {
+        let cell = cw.grid[Line(row)][Column(col)];
+        cell.extras_id_checked()
+            .and_then(|id| cw.grid.extras_table.get(id))
+            .and_then(|extras| extras.borders.as_deref().copied())
+            .unwrap_or([None; 10])
+    }
+
+    #[test]
+    fn cell_border_apc_decorates_text_and_blank_without_moving_cursor() {
+        use crate::performer::handler::Processor;
+        let mut cw = make_crosswords();
+        let mut processor = Processor::default();
+        processor.advance(&mut cw, b"X\x1b[H");
+        let cursor = cw.grid.cursor.pos;
+        // Feed the terminator separately to exercise streaming APC dispatch.
+        processor.advance(&mut cw, b"\x1b_rio-border;1;set;9;16;12abef;0;1;1;2");
+        assert_eq!(borders_at(&cw, 0, 0), [None; 10]);
+        processor.advance(&mut cw, b"\x1b\\");
+        assert_eq!(cw.grid.cursor.pos, cursor);
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), 'X');
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), '\0');
+        let borders = borders_at(&cw, 0, 0);
+        assert_eq!(borders, borders_at(&cw, 0, 1));
+        let stroke = borders[0].unwrap();
+        assert_eq!(stroke.color, [0x12, 0xab, 0xef]);
+        assert_eq!(stroke.width, 16);
+        assert_eq!(stroke.layer, 1);
+        assert_eq!(borders[3], Some(stroke));
+        assert!(borders[1].is_none());
+        assert_eq!(borders_at(&cw, 0, 2), [None; 10]);
+    }
+
+    #[test]
+    fn cell_border_edges_compose_and_clear_preserves_text_extras() {
+        use crate::performer::handler::Processor;
+        let mut cw = make_crosswords();
+        let mut processor = Processor::default();
+        processor.advance(
+            &mut cw,
+            "\x1b]8;;https://example.com\x07e\u{301}\x1b]8;;\x07\x1b[H".as_bytes(),
+        );
+        processor.advance(&mut cw, b"\x1b_rio-border;1;set;1;8;ff0000;0;0;1;1\x1b\\");
+        processor.advance(&mut cw, b"\x1b_rio-border;1;set;34;16;0000ff;1;1;1;1\x1b\\");
+        let borders = borders_at(&cw, 0, 0);
+        assert_eq!(borders[0].unwrap().color, [255, 0, 0]);
+        assert_eq!(borders[1].unwrap().color, [0, 0, 255]);
+        assert_eq!(borders[5], borders[1]);
+        processor.advance(&mut cw, b"\x1b_rio-border;1;clear;1;1;1\x1b\\");
+        assert!(borders_at(&cw, 0, 0)[0].is_none());
+        assert_eq!(borders_at(&cw, 0, 0)[1], borders[1]);
+        processor.advance(&mut cw, b"\x1b_rio-border;1;clear;63;1;1\x1b\\");
+        assert_eq!(borders_at(&cw, 0, 0), [None; 10]);
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), 'e');
+        assert_eq!(extras_of(&cw, 0, 0), ['\u{301}']);
+        assert!(cw.cell_hyperlink(Line(0), Column(0)).is_some());
+    }
+
+    #[test]
+    fn cell_border_quadrant_corner_uses_only_two_half_centerlines() {
+        use crate::performer::handler::Processor;
+        let mut cw = make_crosswords();
+        let mut processor = Processor::default();
+        processor.advance(&mut cw, "▗\x1b[H".as_bytes());
+        processor.advance(&mut cw, b"\x1b_rio-border;1;set;640;16;abcdef;0;1;1;1\x1b\\");
+        let borders = borders_at(&cw, 0, 0);
+        assert!(borders[7].is_some());
+        assert_eq!(borders[7], borders[9]);
+        assert_eq!(borders.iter().filter(|stroke| stroke.is_some()).count(), 2);
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), '▗');
+        processor.advance(&mut cw, b"\x1b_rio-border;1;clear;1023;1;1\x1b\\");
+        assert_eq!(borders_at(&cw, 0, 0), [None; 10]);
+    }
+
+    #[test]
+    fn cell_border_malformed_apc_has_no_partial_effect() {
+        use crate::performer::handler::Processor;
+        let mut cw = make_crosswords();
+        let mut processor = Processor::default();
+        processor.advance(
+            &mut cw,
+            b"\x1b_rio-border;1;set;63;8;123456;0;0;1;1;extra\x1b\\",
+        );
+        assert_eq!(borders_at(&cw, 0, 0), [None; 10]);
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(0)));
+        processor.advance(&mut cw, b"X");
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), 'X');
+    }
+
+    #[test]
+    fn cell_border_preserves_erased_background_and_clips_to_screen() {
+        use crate::performer::handler::Processor;
+        let mut cw = make_crosswords();
+        let mut processor = Processor::default();
+        processor.advance(&mut cw, b"\x1b[48;2;10;20;30m\x1b[2J\x1b[4;4H");
+        let cell = cw.grid[Line(3)][Column(3)];
+        let background = cw.grid.style_of(&cell).bg;
+        processor.advance(
+            &mut cw,
+            b"\x1b_rio-border;1;set;63;8;abcdef;0;0;65535;65535\x1b\\",
+        );
+        let cell = cw.grid[Line(3)][Column(3)];
+        assert_eq!(cw.grid.style_of(&cell).bg, background);
+        assert!(borders_at(&cw, 3, 3)[..6].iter().all(Option::is_some));
+        assert_eq!(borders_at(&cw, 3, 2), [None; 10]);
+        assert_eq!(borders_at(&cw, 2, 3), [None; 10]);
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(3), Column(3)));
+    }
+
+    #[test]
+    fn cell_border_overwrite_and_erase_remove_decoration() {
+        use crate::performer::handler::Processor;
+        let mut cw = make_crosswords();
+        let mut processor = Processor::default();
+        processor.advance(&mut cw, b"\x1b_rio-border;1;set;63;8;abcdef;0;0;1;2\x1b\\");
+        processor.advance(&mut cw, b"X\x1b[K");
+        assert_eq!(borders_at(&cw, 0, 0), [None; 10]);
+        assert_eq!(borders_at(&cw, 0, 1), [None; 10]);
+    }
+
+    #[test]
+    fn cell_border_scrolls_with_cells_and_stays_on_its_screen() {
+        use crate::performer::handler::Processor;
+        let mut cw = make_crosswords();
+        let mut processor = Processor::default();
+        processor.advance(
+            &mut cw,
+            b"\x1b[2;1HX\x1b[2;1H\x1b_rio-border;1;set;1;8;abcdef;0;0;1;1\x1b\\",
+        );
+        let borders = borders_at(&cw, 1, 0);
+        processor.advance(&mut cw, b"\x1b[4;1H\n");
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), 'X');
+        assert_eq!(borders_at(&cw, 0, 0), borders);
+        processor.advance(&mut cw, b"\x1b[?1049h");
+        assert_eq!(borders_at(&cw, 0, 0), [None; 10]);
+        processor.advance(&mut cw, b"\x1b[?1049l");
+        assert_eq!(borders_at(&cw, 0, 0), borders);
     }
 
     #[test]

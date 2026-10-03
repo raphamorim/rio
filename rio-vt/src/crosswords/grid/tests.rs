@@ -436,6 +436,7 @@ fn extras_sweep_resets_reclaim_cadence() {
     for i in 0..EXTRAS_RECLAIM_CADENCE {
         table.alloc(Extras {
             zerowidth: Vec::new(),
+            borders: None,
             hyperlink: Some(Hyperlink::new(Some(i.to_string()), i.to_string())),
         });
     }
@@ -489,12 +490,14 @@ fn extras_reclaim_keeps_ids_of_hidden_cached_rows() {
     let id = grid.alloc_extras(Extras {
         zerowidth: vec!['\u{301}'],
         hyperlink: None,
+        borders: None,
     });
     grid[Line(3)][Column(0)].set_extras_id(Some(id));
     grid[Line(3)].has_extras = true;
     let dead = grid.alloc_extras(Extras {
         zerowidth: vec!['\u{302}'],
         hyperlink: None,
+        borders: None,
     });
 
     // Shrinking with the cursor at the top drops the bottom rows into
