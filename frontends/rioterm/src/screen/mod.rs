@@ -9,7 +9,7 @@
 pub mod hint;
 pub mod touch;
 
-use crate::bindings::kitty_keyboard::build_key_sequence;
+use crate::bindings::kitty_keyboard::{base_layout_binding_key, build_key_sequence};
 use crate::bindings::{
     Action as Act, BindingKey, BindingMode, FontSizeAction, MouseBinding, SearchAction,
     ViAction,
@@ -1046,42 +1046,54 @@ impl Screen<'_> {
         let binding_mode = BindingMode::new(mode, search_active);
         let mut ignore_chars = None;
 
+        // We don't want the key without modifier, because it means something else most of
+        // the time. However what we want is to manually lowercase the character to account
+        // for both small and capital letters on regular characters at the same time.
+        let logical_key = if let Key::Character(ch) = key.logical_key.as_ref() {
+            // Match `Shift`/`Alt` bindings without the modifier applied,
+            // otherwise they use the shifted or composed chars, which are
+            // not intuitive to bind.
+            if mods.shift_key() || mods.alt_key() {
+                key.key_without_modifiers()
+            } else {
+                Key::Character(ch.to_lowercase().into())
+            }
+        } else {
+            key.logical_key.clone()
+        };
+
+        let key_match_for = |trigger: &BindingKey, logical_key: Key| match trigger {
+            BindingKey::Scancode(_) => BindingKey::Scancode(key.physical_key),
+            _ => BindingKey::Keycode {
+                key: logical_key,
+                location: key.location,
+            },
+        };
+
+        // On a non-Latin layout ctrl+shift+м is ctrl+shift+v on the US layout: when
+        // nothing matches the layout's character, match the key at the same position.
+        let logical_key = match base_layout_binding_key(key, mods) {
+            Some(base_key)
+                if base_key != logical_key
+                    && !self.bindings.iter().any(|binding| {
+                        binding.is_triggered_by(
+                            binding_mode.to_owned(),
+                            mods,
+                            &key_match_for(&binding.trigger, logical_key.clone()),
+                        )
+                    }) =>
+            {
+                base_key
+            }
+            _ => logical_key,
+        };
+
         for i in 0..self.bindings.len() {
             let binding = &self.bindings[i];
             let trigger = &binding.trigger;
             let action = binding.action.clone();
 
-            // We don't want the key without modifier, because it means something else most of
-            // the time. However what we want is to manually lowercase the character to account
-            // for both small and capital letters on regular characters at the same time.
-            let logical_key = if let Key::Character(ch) = key.logical_key.as_ref() {
-                // Match `Alt` bindings without `Alt` being applied, otherwise they use the
-                // composed chars, which are not intuitive to bind.
-                //
-                // On Windows, the `Ctrl + Alt` mangles `logical_key` to unidentified values, thus
-                // preventing them from being used in bindings
-                //
-                // For more see https://github.com/rust-windowing/winit/issues/2945.
-                // if (cfg!(target_os = "macos") || (cfg!(windows) && mods.control_key()))
-                // && mods.alt_key()
-                if (mods.shift_key() || mods.alt_key())
-                    || mods.alt_key() && (cfg!(windows) && mods.control_key())
-                {
-                    key.key_without_modifiers()
-                } else {
-                    Key::Character(ch.to_lowercase().into())
-                }
-            } else {
-                key.logical_key.clone()
-            };
-
-            let key_match = match (&trigger, logical_key) {
-                (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
-                (_, code) => BindingKey::Keycode {
-                    key: code,
-                    location: key.location,
-                },
-            };
+            let key_match = key_match_for(trigger, logical_key.clone());
 
             if binding.is_triggered_by(binding_mode.to_owned(), mods, &key_match) {
                 *ignore_chars.get_or_insert(true) &= action != Act::ReceiveChar;
