@@ -43,6 +43,8 @@ use smallvec::SmallVec;
 /// cells. The renderer reads via `extras.get(&id)`.
 pub type ExtrasMap = FxHashMap<u16, Extras>;
 
+#[cfg(test)]
+mod glyph_cell_tests;
 pub mod preedit;
 use preedit::{PreeditCaret, PreeditCell, PreeditLine};
 
@@ -1291,6 +1293,37 @@ struct ShapedGlyph {
     cluster: u32,
 }
 
+/// Map shaping-buffer offsets back to logical terminal cells. The cell
+/// starts use the shaper's encoding (UTF-16 on macOS, UTF-8 elsewhere),
+/// including any combining marks attached to each cell.
+///
+/// Glyphs may arrive in visual order, with descending clusters inside
+/// RTL spans and direction changes in mixed text. Keep the forward walk
+/// for ascending clusters, but seek backwards when needed. This retains
+/// the terminal's logical cell order; it does not implement BiDi layout.
+fn attribute_glyphs_to_cells(
+    glyphs: &[ShapedGlyph],
+    cell_starts: &[u32],
+) -> SmallVec<[(u16, u16); 64]> {
+    let mut cell_idx: u16 = 0;
+    glyphs
+        .iter()
+        .map(|g| {
+            if g.cluster < cell_starts[cell_idx as usize] {
+                cell_idx = cell_starts[..cell_idx as usize]
+                    .partition_point(|&start| start <= g.cluster)
+                    .saturating_sub(1) as u16;
+            }
+            while (cell_idx as usize + 1) < cell_starts.len()
+                && cell_starts[cell_idx as usize + 1] <= g.cluster
+            {
+                cell_idx = cell_idx.saturating_add(1);
+            }
+            (g.id, cell_idx)
+        })
+        .collect()
+}
+
 struct RunCacheEntry {
     /// Summed glyph advance, computed once at insert so per-frame
     /// consumers (the preedit overflow check) never re-walk glyphs.
@@ -2314,8 +2347,8 @@ pub fn build_row_fg<P: GridPalette>(
         let (synthetic_bold, synthetic_italic) =
             rasterizer.get_synthesis(font_id, font_library);
 
-        // Collect (glyph_id, cell_offset) pairs by walking the shape
-        // result alongside a monotonic cluster → cell-offset cursor.
+        // Collect (glyph_id, logical_cell_offset) pairs from the shape
+        // result and the platform's cell-start table.
         // Done up-front so we can release borrows on `rasterizer`
         // before the emit loop (which takes `&mut rasterizer` for the
         // rasterize + atlas-insert step).
@@ -2328,27 +2361,12 @@ pub fn build_row_fg<P: GridPalette>(
         // (ASCII identifiers, short bursts of non-ligature text)
         // entirely on the stack — no heap touch. Ligature-heavy or
         // shaped emoji runs that outgrow 64 slots spill to heap once.
-        let mut glyph_emits: SmallVec<[(u16, u16); 64]> = SmallVec::new();
-        {
+        let glyph_emits = {
             let glyphs = &run_cache_get(&mut rasterizer.run_cache, hash)
                 .expect("just inserted")
                 .glyphs;
-            let mut cell_idx_in_run: u16 = 0;
-            // Both platforms record explicit per-cell starts into the
-            // shaping buffer (UTF-16 units on macOS, UTF-8 bytes on
-            // swash), so one walk serves both. A per-char cursor would
-            // miscount: cells with combining marks contribute several
-            // chars each.
-            let cell_starts = &rasterizer.run_cell_starts;
-            for g in glyphs {
-                while (cell_idx_in_run as usize + 1) < cell_starts.len()
-                    && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
-                {
-                    cell_idx_in_run = cell_idx_in_run.saturating_add(1);
-                }
-                glyph_emits.push((g.id, cell_idx_in_run));
-            }
-        }
+            attribute_glyphs_to_cells(glyphs, &rasterizer.run_cell_starts)
+        };
 
         for &(glyph_id, cell_idx_in_run) in &glyph_emits {
             // Map the appended-cell index back to its actual grid
@@ -3463,18 +3481,16 @@ mod cluster_text_tests {
     #[test]
     fn cell_starts_attribute_marked_cells_correctly() {
         // Buffer layout (UTF-8 bytes): e=0, U+0301=1..3, x=3.
-        let cell_starts: Vec<u32> = vec![0, 3];
-        let clusters = [0u32, 1, 3];
-        let mut cell_idx: u16 = 0;
-        let mut out = Vec::new();
-        for g in clusters {
-            while (cell_idx as usize + 1) < cell_starts.len()
-                && cell_starts[cell_idx as usize + 1] <= g
-            {
-                cell_idx = cell_idx.saturating_add(1);
-            }
-            out.push(cell_idx);
-        }
-        assert_eq!(out, [0, 0, 1]);
+        let glyphs = [0, 1, 3].map(|cluster| ShapedGlyph {
+            id: 1,
+            x: 0.0,
+            y: 0.0,
+            advance: 10.0,
+            cluster,
+        });
+        assert_eq!(
+            attribute_glyphs_to_cells(&glyphs, &[0, 3]).as_slice(),
+            &[(1, 0), (1, 0), (1, 1)]
+        );
     }
 }
