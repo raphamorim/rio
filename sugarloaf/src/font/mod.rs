@@ -1468,6 +1468,16 @@ impl FontData {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let handle = crate::font::macos::FontHandle::from_path(&path)
             .ok_or_else(|| format!("CoreText refused {}", path.display()))?;
+        Ok(Self::from_handle_macos(handle, path, slot, font_spec))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn from_handle_macos(
+        handle: crate::font::macos::FontHandle,
+        path: PathBuf,
+        slot: Slot,
+        font_spec: &SugarloafFont,
+    ) -> Self {
         // Pin the `wght` axis when the user configured a weight so the
         // stored CTFont shapes and rasterizes at that weight.
         let handle = match font_spec.weight {
@@ -1497,7 +1507,7 @@ impl FontData {
         );
 
         let postscript_name = Some(handle.postscript_name());
-        Ok(Self {
+        Self {
             data: None,
             path: Some(path),
             offset: 0,
@@ -1513,7 +1523,7 @@ impl FontData {
             metrics_cache: FxHashMap::default(),
             handle: Some(handle),
             postscript_name,
-        })
+        }
     }
 
     /// Load a bundled font whose bytes live in `.rodata` (anything from
@@ -2171,27 +2181,18 @@ fn find_font(font_spec: SugarloafFont, slot: Slot, evictable: bool) -> FindResul
         style_name
     );
 
-    let Some(path) =
-        crate::font::macos::find_font_path(&family, bold, italic, style_name)
+    let Some((path, handle)) =
+        crate::font::macos::find_font(&family, bold, italic, style_name)
     else {
         warn!("CoreText found no match for family='{family}'");
         return FindResult::NotFound(font_spec);
     };
 
-    // Path-based load: never reads bytes. `evictable` is ignored on the
-    // macOS path since `FontData.data` is always `None` here — there's
-    // nothing to evict.
+    // Retain the matched face; reopening its file loses named variable styles.
+    // CoreText owns the font data, so there are no bytes to evict here.
     let _ = evictable;
-    match FontData::from_path_macos(path.clone(), slot, &font_spec) {
-        Ok(d) => {
-            info!("Font '{family}' matched via CoreText at {}", path.display());
-            FindResult::Found(d)
-        }
-        Err(e) => {
-            warn!("Failed to open font '{family}' via CoreText: {e}");
-            FindResult::NotFound(font_spec)
-        }
-    }
+    info!("Font '{family}' matched via CoreText at {}", path.display());
+    FindResult::Found(FontData::from_handle_macos(handle, path, slot, &font_spec))
 }
 
 #[cfg(all(not(target_os = "macos"), not(target_arch = "wasm32")))]
@@ -2320,6 +2321,51 @@ fn load_fallback_from_memory(slot: Slot) -> FontData {
 #[cfg(test)]
 mod alias_tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn named_variable_font_styles_survive_loading() {
+        use crate::font::macos::{rasterize_glyph, register_fonts_in_dir, shape_text};
+
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/font/resources/CascadiaCode");
+        register_fonts_in_dir(&dir);
+
+        let mut masks = Vec::new();
+        for (slot, name, weight) in [
+            (Slot::Regular, "Regular", None),
+            (Slot::Bold, "Bold", None),
+            (Slot::Italic, "Italic", None),
+            (Slot::BoldItalic, "Bold Italic", None),
+            (Slot::Bold, "Bold", Some(400)),
+        ] {
+            let spec = SugarloafFont {
+                family: "Cascadia Code NF".to_string(),
+                style: FontStyle::Named(name.to_string()),
+                weight,
+            };
+            let FindResult::Found(font) = find_font(spec, slot, false) else {
+                panic!("bundled {name} face must resolve");
+            };
+            assert_eq!(font.is_bold(), slot.is_bold() && weight.is_none());
+            assert_eq!(font.is_italic(), slot.is_italic());
+            assert!(!font.should_embolden);
+            assert!(!font.should_italicize);
+
+            let handle = font.handle.as_ref().expect("CoreText handle");
+            let glyphs = shape_text(handle, "M", 24.0);
+            let mask = rasterize_glyph(handle, glyphs[0].id, 24.0, false, false, false)
+                .expect("rasterized glyph");
+            assert!(mask.bytes.iter().any(|&b| b != 0));
+            masks.push((mask.width, mask.height, mask.bytes));
+        }
+        assert_ne!(masks[0], masks[1], "regular and bold must differ");
+        assert_ne!(masks[2], masks[3], "italic and bold italic must differ");
+        assert_eq!(
+            masks[0], masks[4],
+            "explicit weight must override the style"
+        );
+    }
 
     /// `insert_alias` registers a new id that resolves back to the
     /// target's `FontData` through `get`/`try_get`. Slot 0 is owned;
