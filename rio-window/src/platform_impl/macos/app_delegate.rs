@@ -39,10 +39,7 @@ pub const UTF8_ENCODING: usize = 4;
 #[repr(u64)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum NSApplicationTerminateReply {
-    Cancel = 0,
     Now = 1,
-    #[allow(unused)]
-    Later = 2,
 }
 
 #[derive(Debug)]
@@ -100,51 +97,7 @@ declare_class!(
     unsafe impl NSApplicationDelegate for ApplicationDelegate {
         #[method(applicationShouldTerminate:)]
         fn should_terminate(&self, _sender: Option<&AnyObject>) -> u64 {
-            if !self.ivars().set_confirm_before_quit.get() {
-                return NSApplicationTerminateReply::Now as u64;
-            }
-
-            use objc::runtime::Object;
-            use objc::msg_send;
-            use objc::sel;
-            use objc::class;
-            use objc::sel_impl;
-            unsafe {
-                let panel: *mut Object = msg_send![class!(NSAlert), new];
-
-                let prompt = "All sessions will be closed";
-                let title = "Quit Rio terminal?";
-                let yes = "Yes";
-                let no = "No";
-                let cancel = "Cancel";
-
-                let prompt_string: *mut Object = msg_send![class!(NSString), alloc];
-                let prompt_allocated_string: *mut Object = msg_send![prompt_string, initWithBytes:prompt.as_ptr() length:prompt.len() encoding:UTF8_ENCODING];
-
-                let title_string: *mut Object = msg_send![class!(NSString), alloc];
-                let title_allocated_string: *mut Object = msg_send![title_string, initWithBytes:title.as_ptr() length:title.len() encoding:UTF8_ENCODING];
-
-                let yes_string: *mut Object = msg_send![class!(NSString), alloc];
-                let yes_allocated_string: *mut Object = msg_send![yes_string, initWithBytes:yes.as_ptr() length:yes.len() encoding:UTF8_ENCODING];
-
-                let no_string: *mut Object = msg_send![class!(NSString), alloc];
-                let no_allocated_string: *mut Object = msg_send![no_string, initWithBytes:no.as_ptr() length:no.len() encoding:UTF8_ENCODING];
-
-                let cancel_string: *mut Object = msg_send![class!(NSString), alloc];
-                let cancel_allocated_string: *mut Object = msg_send![cancel_string, initWithBytes:cancel.as_ptr() length:cancel.len() encoding:UTF8_ENCODING];
-
-                let _: () = msg_send![panel, setMessageText: title_allocated_string];
-                let _: () = msg_send![panel, setInformativeText: prompt_allocated_string];
-                let _: () = msg_send![panel, addButtonWithTitle: yes_allocated_string];
-                let _: () = msg_send![panel, addButtonWithTitle: no_allocated_string];
-                let _: () = msg_send![panel, addButtonWithTitle: cancel_allocated_string];
-                let response: std::ffi::c_long = msg_send![panel, runModal];
-                match response {
-                    1000 => NSApplicationTerminateReply::Now as u64,
-                    1001 => NSApplicationTerminateReply::Cancel as u64,
-                    _ => NSApplicationTerminateReply::Cancel as u64,
-                }
-            }
+            NSApplicationTerminateReply::Now as u64
         }
 
         #[method(applicationDockMenu:)]

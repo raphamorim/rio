@@ -145,20 +145,22 @@ pub struct TabStripLayout {
 }
 
 /// Compute the tab strip layout from the physical window width.
-/// `max_tab_width` comes from `navigation.max-tab-width` (logical px).
+/// `max_tab_width` and `content_left` are logical pixels; the latter keeps
+/// tabs and their hit targets out from under persistent left-side chrome.
 pub fn tab_strip_layout(
     window_width: f32,
     scale_factor: f32,
     num_tabs: usize,
     max_tab_width: f32,
+    content_left: f32,
 ) -> TabStripLayout {
     #[cfg(target_os = "macos")]
-    let left_margin = ISLAND_MARGIN_LEFT_MACOS;
+    let left_margin = content_left.max(ISLAND_MARGIN_LEFT_MACOS);
     #[cfg(not(target_os = "macos"))]
-    let left_margin = 0.0;
+    let left_margin = content_left;
 
     let available_width =
-        (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
+        ((window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin).max(0.0);
     let tab_width =
         (available_width / num_tabs.max(1) as f32).clamp(0.0, max_tab_width.max(0.0));
     TabStripLayout {
@@ -276,7 +278,9 @@ fn single_title_x(
     text_width: f32,
     left_margin: f32,
 ) -> f32 {
-    (((window_width / scale_factor) - text_width) / 2.0).max(left_margin + TAB_PADDING_X)
+    let right = (window_width / scale_factor) - ISLAND_MARGIN_RIGHT;
+    let available_width = (right - left_margin).max(0.0);
+    (left_margin + (available_width - text_width) / 2.0).max(left_margin + TAB_PADDING_X)
 }
 
 #[inline]
@@ -563,25 +567,43 @@ impl Island {
         }
     }
 
+    #[inline]
+    fn remap_global_index(i: usize, from: usize, to: usize) -> usize {
+        Self::remap_index(i, from, to)
+    }
+
     /// Re-key all per-tab-index state after the tab at `from` moved to
     /// `to` (rotate semantics, matching
     /// `ContextManager::move_current_tab_to`), then seed slide springs
     /// on the displaced tabs so they animate into their new slot.
-    pub fn remap_tab_move(&mut self, from: usize, to: usize, tab_width: f32) {
+    pub fn remap_tab_move(
+        &mut self,
+        visible_tabs: &[usize],
+        from: usize,
+        to: usize,
+        tab_width: f32,
+    ) {
         if from == to {
             return;
         }
 
+        let Some(from_slot) = visible_tabs.iter().position(|&tab| tab == from) else {
+            return;
+        };
+        let Some(to_slot) = visible_tabs.iter().position(|&tab| tab == to) else {
+            return;
+        };
+
         self.slide_springs = self
             .slide_springs
             .drain()
-            .map(|(i, v)| (Self::remap_index(i, from, to), v))
+            .map(|(i, v)| (Self::remap_global_index(i, from, to), v))
             .collect();
         if let Some(picker) = self.color_picker_tab {
-            self.color_picker_tab = Some(Self::remap_index(picker, from, to));
+            self.color_picker_tab = Some(Self::remap_global_index(picker, from, to));
         }
         if let Some(ref mut drag) = self.drag {
-            drag.tab_index = Self::remap_index(drag.tab_index, from, to);
+            drag.tab_index = Self::remap_global_index(drag.tab_index, from, to);
         }
 
         // Displaced tabs shifted one slot away from `from` toward `to`'s
@@ -590,15 +612,24 @@ impl Island {
         // at `to`, which both ranges exclude — while dragging it floats,
         // and on a keyboard move it jumps (no old position to animate
         // from that wouldn't fight the selection change).
-        let (range, delta) = if from < to {
+        let (range, delta) = if from_slot < to_slot {
             // Tabs at from+1..=to moved left by one: now at from..to.
-            (from..to, tab_width)
+            (from_slot..to_slot, tab_width)
         } else {
             // Tabs at to..from moved right by one: now at to+1..=from.
-            (to + 1..from + 1, -tab_width)
+            (to_slot + 1..from_slot + 1, -tab_width)
         };
-        for i in range {
-            let spring = self.slide_springs.entry(i).or_insert_with(Spring::new);
+        for slot in range {
+            let old_global = if from_slot < to_slot {
+                visible_tabs[slot + 1]
+            } else {
+                visible_tabs[slot - 1]
+            };
+            let new_global = Self::remap_global_index(old_global, from, to);
+            let spring = self
+                .slide_springs
+                .entry(new_global)
+                .or_insert_with(Spring::new);
             spring.position += delta;
         }
     }
@@ -608,10 +639,23 @@ impl Island {
     /// (including the wrap-around end-to-end case) instead of rotating.
     /// Adjacent swaps get slide springs; wrap-around jumps don't (a
     /// full-bar slide reads as glitch, not motion).
-    pub fn remap_tab_swap(&mut self, a: usize, b: usize, tab_width: f32) {
+    pub fn remap_tab_swap(
+        &mut self,
+        visible_tabs: &[usize],
+        a: usize,
+        b: usize,
+        tab_width: f32,
+    ) {
         if a == b {
             return;
         }
+
+        let Some(a_slot) = visible_tabs.iter().position(|&tab| tab == a) else {
+            return;
+        };
+        let Some(b_slot) = visible_tabs.iter().position(|&tab| tab == b) else {
+            return;
+        };
 
         let swap_key = |i: usize| {
             if i == a {
@@ -631,8 +675,8 @@ impl Island {
             self.color_picker_tab = Some(swap_key(picker));
         }
 
-        if a.abs_diff(b) == 1 {
-            let delta = (b as f32 - a as f32) * tab_width;
+        if a_slot.abs_diff(b_slot) == 1 {
+            let delta = (b_slot as f32 - a_slot as f32) * tab_width;
             let spring = self.slide_springs.entry(a).or_insert_with(Spring::new);
             spring.position += delta;
             let spring = self.slide_springs.entry(b).or_insert_with(Spring::new);
@@ -745,10 +789,11 @@ impl Island {
         sugarloaf: &mut Sugarloaf,
         dimensions: (f32, f32, f32),
         context_manager: &ContextManager<EventProxy>,
+        tab_indices: &[usize],
         bg_color: [f32; 4],
     ) {
         let (window_width, _window_height, scale_factor) = dimensions;
-        let num_tabs = context_manager.len();
+        let num_tabs = tab_indices.len();
         let current_tab_index = context_manager.current_index();
 
         // Immediate-mode: no cached ids to hide. If we early-return
@@ -795,8 +840,13 @@ impl Island {
         self.slide_springs
             .retain(|_, s| s.update(dt, DRAG_ANIMATION_LENGTH));
 
-        let layout =
-            tab_strip_layout(window_width, scale_factor, num_tabs, self.max_tab_width);
+        let layout = tab_strip_layout(
+            window_width,
+            scale_factor,
+            num_tabs,
+            self.max_tab_width,
+            context_manager.drawer_width(),
+        );
         let TabStripLayout {
             left_margin,
             tab_width,
@@ -818,7 +868,7 @@ impl Island {
         let fills = island_fills(bg_color);
 
         // Render each tab
-        for tab_index in 0..num_tabs {
+        for &tab_index in tab_indices {
             // The dragged tab floats — drawn after the loop instead.
             if Some(tab_index) == drag_index {
                 x_position += tab_width;
@@ -1067,8 +1117,10 @@ impl Island {
 
         // Render color picker if open
         if let Some(picker_tab) = self.color_picker_tab {
-            if picker_tab < num_tabs {
-                let picker_tab_x = left_margin + picker_tab as f32 * tab_width;
+            if let Some(picker_slot) =
+                tab_indices.iter().position(|&tab| tab == picker_tab)
+            {
+                let picker_tab_x = left_margin + picker_slot as f32 * tab_width;
                 let selected = context_manager.custom_color(picker_tab);
                 self.render_color_picker(sugarloaf, picker_tab_x, tab_width, selected);
             }
@@ -1188,7 +1240,7 @@ impl Island {
         mouse_y: f32,
         scale_factor: f32,
         window_width: f32,
-        num_tabs: usize,
+        tab_indices: &[usize],
         context_manager: &mut ContextManager<EventProxy>,
     ) -> bool {
         let picker_tab = match self.color_picker_tab {
@@ -1204,8 +1256,20 @@ impl Island {
             left_margin,
             tab_width,
             ..
-        } = tab_strip_layout(window_width, scale_factor, num_tabs, self.max_tab_width);
-        let tab_x = left_margin + picker_tab as f32 * tab_width;
+        } = tab_strip_layout(
+            window_width,
+            scale_factor,
+            tab_indices.len(),
+            self.max_tab_width,
+            context_manager.drawer_width(),
+        );
+        let Some(picker_slot) = tab_indices.iter().position(|&tab| tab == picker_tab)
+        else {
+            self.apply_rename(context_manager);
+            self.color_picker_tab = None;
+            return false;
+        };
+        let tab_x = left_margin + picker_slot as f32 * tab_width;
 
         // Picker is rendered just below the island
         let picker_y = ISLAND_HEIGHT;
@@ -1505,15 +1569,19 @@ mod tests {
     /// 2x display and nothing appeared at all.
     #[test]
     fn single_title_is_centred_in_logical_pixels() {
-        // 1600 physical at 2x is an 800pt strip, so a 100pt title starts at
+        // 1600 physical at 2x is an 800pt strip, so a 100pt title starts near
         // 350, not at 750 (which would be centred on the physical width and
-        // sit past the right edge).
+        // sit past the right edge). The 8pt right inset makes it 346 exactly.
         let x = single_title_x(1600.0, 2.0, 100.0, 0.0);
-        assert_eq!(x, 350.0);
+        assert_eq!(x, 346.0);
         assert!(x + 100.0 <= 800.0, "title must stay on screen: {x}");
 
         // At 1x the two agree, which is why this only showed up on retina.
-        assert_eq!(single_title_x(800.0, 1.0, 100.0, 0.0), 350.0);
+        assert_eq!(single_title_x(800.0, 1.0, 100.0, 0.0), 346.0);
+
+        // With a drawer, centre in the remaining content area rather than
+        // behind the drawer or across the whole window.
+        assert_eq!(single_title_x(1600.0, 2.0, 100.0, 220.0), 456.0);
     }
 
     #[test]
@@ -1546,7 +1614,7 @@ mod tests {
     /// is the point of dropping the island.
     #[test]
     fn single_title_budget_beats_a_tab_slot() {
-        let slot = tab_strip_layout(1600.0, 2.0, 1, 240.0).tab_width;
+        let slot = tab_strip_layout(1600.0, 2.0, 1, 240.0, 0.0).tab_width;
         let slot_budget = (slot - TAB_PADDING_X * 2.0).max(0.0);
         assert!(
             single_title_budget(1600.0, 2.0, 0.0) > slot_budget,
@@ -1824,7 +1892,7 @@ mod tests {
         // 1000 physical px @ 2x scale → 500 logical px window. Slots
         // stay below the cap here, so the math matches the old
         // fill-the-strip layout.
-        let layout = tab_strip_layout(1000.0, 2.0, 4, 240.0);
+        let layout = tab_strip_layout(1000.0, 2.0, 4, 240.0, 0.0);
         #[cfg(target_os = "macos")]
         {
             assert_eq!(layout.left_margin, ISLAND_MARGIN_LEFT_MACOS);
@@ -1838,19 +1906,19 @@ mod tests {
             assert_eq!(layout.tabs_width, 492.0);
         }
         // Zero tabs clamps the divisor.
-        assert!(tab_strip_layout(1000.0, 2.0, 0, 240.0)
+        assert!(tab_strip_layout(1000.0, 2.0, 0, 240.0, 0.0)
             .tab_width
             .is_finite());
     }
 
     #[test]
     fn tab_strip_layout_caps_slot_width() {
-        let layout = tab_strip_layout(3000.0, 2.0, 2, 240.0);
+        let layout = tab_strip_layout(3000.0, 2.0, 2, 240.0, 0.0);
         assert_eq!(layout.tab_width, 240.0);
         assert_eq!(layout.tabs_width, 480.0);
 
         // The cap is configurable via navigation.max-tab-width.
-        let layout = tab_strip_layout(3000.0, 2.0, 2, 280.0);
+        let layout = tab_strip_layout(3000.0, 2.0, 2, 280.0, 0.0);
         assert_eq!(layout.tab_width, 280.0);
         assert_eq!(layout.tabs_width, 560.0);
         // The tabs region ends well before the 1500 logical px strip.
@@ -1858,9 +1926,17 @@ mod tests {
 
         // Pathologically narrow window: width clamps at 0 instead of
         // going negative.
-        let layout = tab_strip_layout(10.0, 2.0, 4, 240.0);
+        let layout = tab_strip_layout(10.0, 2.0, 4, 240.0, 0.0);
         assert_eq!(layout.tab_width, 0.0);
         assert_eq!(layout.tabs_width, 0.0);
+    }
+
+    #[test]
+    fn tab_strip_layout_starts_after_the_drawer() {
+        let layout = tab_strip_layout(1600.0, 2.0, 2, 240.0, 220.0);
+        assert_eq!(layout.left_margin, 220.0);
+        assert_eq!(layout.tab_width, 240.0);
+        assert!(layout.left_margin + layout.tabs_width <= 800.0);
     }
 
     #[test]
@@ -1892,7 +1968,7 @@ mod tests {
         // and titles now live on the tab in ContextManager (see
         // context::test::test_custom_color_* / test_custom_title_*), so they
         // no longer need remapping here.
-        island.remap_tab_move(1, 3, 100.0);
+        island.remap_tab_move(&[0, 1, 2, 3], 1, 3, 100.0);
         assert_eq!(island.color_picker_tab, Some(2));
 
         // Displaced tabs (now at 1 and 2) got slide springs of +width.
