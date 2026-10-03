@@ -196,6 +196,8 @@ extern "C" {
 
     pub fn TISCopyCurrentKeyboardLayoutInputSource() -> TISInputSourceRef;
 
+    pub fn TISCopyCurrentASCIICapableKeyboardLayoutInputSource() -> TISInputSourceRef;
+
     pub fn LMGetKbdType() -> u8;
 
     #[allow(non_snake_case)]

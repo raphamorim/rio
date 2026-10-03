@@ -18,21 +18,44 @@ use crate::platform_impl::platform::ffi;
 pub struct KeyEventExtra {
     pub text_with_all_modifiers: Option<SmolStr>,
     pub key_without_modifiers: Key,
+    pub base_layout_key: Option<Key>,
 }
 
 /// Ignores ALL modifiers.
 pub fn get_modifierless_char(scancode: u16) -> Key {
+    let input_source = unsafe { ffi::TISCopyCurrentKeyboardLayoutInputSource() };
+    if input_source.is_null() {
+        tracing::error!("`TISCopyCurrentKeyboardLayoutInputSource` returned null ptr");
+        return Key::Unidentified(NativeKey::MacOS(scancode));
+    }
+    char_for_input_source(scancode, input_source)
+}
+
+/// Like [`get_modifierless_char`] but resolved against the current
+/// ASCII-capable keyboard layout, so a Latin key comes back even while a
+/// non-Latin layout is active. `None` when the resolution fails or yields
+/// no character.
+pub fn get_base_layout_char(scancode: u16) -> Option<Key> {
+    let input_source =
+        unsafe { ffi::TISCopyCurrentASCIICapableKeyboardLayoutInputSource() };
+    if input_source.is_null() {
+        tracing::error!(
+            "`TISCopyCurrentASCIICapableKeyboardLayoutInputSource` returned null ptr"
+        );
+        return None;
+    }
+    match char_for_input_source(scancode, input_source) {
+        key @ Key::Character(_) => Some(key),
+        _ => None,
+    }
+}
+
+/// Translate `scancode` with no modifiers through `input_source`, releasing
+/// the source before returning.
+fn char_for_input_source(scancode: u16, input_source: ffi::TISInputSourceRef) -> Key {
     let mut string = [0; 16];
-    let input_source;
     let layout;
     unsafe {
-        input_source = ffi::TISCopyCurrentKeyboardLayoutInputSource();
-        if input_source.is_null() {
-            tracing::error!(
-                "`TISCopyCurrentKeyboardLayoutInputSource` returned null ptr"
-            );
-            return Key::Unidentified(NativeKey::MacOS(scancode));
-        }
         let layout_data = ffi::TISGetInputSourceProperty(
             input_source,
             ffi::kTISPropertyUnicodeKeyLayoutData,
@@ -174,6 +197,15 @@ pub(crate) fn create_key_event(
             (key_from_code.clone(), key_from_code)
         };
 
+    // Named keys are layout-independent; character keys on an ASCII-capable
+    // layout already carry their Latin key, so the extra translation is only
+    // needed when the active layout produced a non-ASCII character.
+    let base_layout_key = match &key_without_modifiers {
+        Key::Character(ch) if ch.is_ascii() => Some(key_without_modifiers.clone()),
+        Key::Character(_) | Key::Unidentified(_) => get_base_layout_char(scancode),
+        _ => None,
+    };
+
     let text = if is_press {
         logical_key.to_text().map(SmolStr::new)
     } else {
@@ -192,6 +224,7 @@ pub(crate) fn create_key_event(
         platform_specific: KeyEventExtra {
             text_with_all_modifiers,
             key_without_modifiers,
+            base_layout_key,
         },
     }
 }

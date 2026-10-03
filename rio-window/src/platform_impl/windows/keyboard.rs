@@ -689,6 +689,7 @@ impl PartialKeyEventInfo {
             platform_specific: KeyEventExtra {
                 text_with_all_modifiers: char_with_all_modifiers,
                 key_without_modifiers: self.key_without_modifiers,
+                base_layout_key: None,
             },
         }
     }

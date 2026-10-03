@@ -495,12 +495,18 @@ fn alternate_keys_payload(
 /// while a non-Latin layout is active. Plain and shifted keys are text
 /// input, so they never fall back.
 pub fn base_layout_binding_key(key: &KeyEvent, mods: ModifiersState) -> Option<Key> {
-    base_layout_fallback_key(&key.logical_key, key.physical_key, mods)
+    base_layout_fallback_key(
+        &key.logical_key,
+        key.physical_key,
+        key.base_layout_key(),
+        mods,
+    )
 }
 
 fn base_layout_fallback_key(
     logical_key: &Key,
     physical_key: PhysicalKey,
+    layout_resolved: Option<Key>,
     mods: ModifiersState,
 ) -> Option<Key> {
     if !(mods.control_key() || mods.alt_key() || mods.super_key()) {
@@ -518,6 +524,14 @@ fn base_layout_fallback_key(
         // (rust-windowing/winit#2945); the physical key is still valid.
         Key::Unidentified(_) => {}
         _ => return None,
+    }
+    // Prefer the platform's resolution through the user's real layouts
+    // (another xkb group, the macOS ASCII-capable layout); fall back to
+    // the key's position in the standard PC-101 layout.
+    if let Some(Key::Character(ch)) = layout_resolved {
+        if ch.is_ascii() && ch.chars().count() == 1 {
+            return Some(Key::Character(ch.to_lowercase().into()));
+        }
     }
     let base = char::from_u32(base_layout_key(physical_key)?)?;
     Some(Key::Character(base.to_string().into()))
@@ -589,25 +603,52 @@ mod tests {
     use rio_window::keyboard::NativeKey;
 
     #[test]
+    fn base_layout_fallback_prefers_platform_resolution() {
+        let cyrillic = Key::Character("с".into());
+        // Dvorak-style: the layout resolves to a different Latin key than
+        // the PC-101 position.
+        let physical = PhysicalKey::Code(KeyCode::KeyC);
+        assert_eq!(
+            base_layout_fallback_key(
+                &cyrillic,
+                physical,
+                Some(Key::Character("j".into())),
+                ModifiersState::CONTROL
+            ),
+            Some(Key::Character("j".into()))
+        );
+        // A non-ASCII or multi-char resolution falls back to PC-101.
+        assert_eq!(
+            base_layout_fallback_key(
+                &cyrillic,
+                physical,
+                Some(Key::Character("ж".into())),
+                ModifiersState::CONTROL
+            ),
+            Some(Key::Character("c".into()))
+        );
+    }
+
+    #[test]
     fn base_layout_fallback_requires_command_modifier() {
         let cyrillic = Key::Character("с".into());
         let physical = PhysicalKey::Code(KeyCode::KeyC);
         let base = Key::Character("c".into());
         assert_eq!(
-            base_layout_fallback_key(&cyrillic, physical, ModifiersState::CONTROL),
+            base_layout_fallback_key(&cyrillic, physical, None, ModifiersState::CONTROL),
             Some(base.clone())
         );
         assert_eq!(
-            base_layout_fallback_key(&cyrillic, physical, ModifiersState::SUPER),
+            base_layout_fallback_key(&cyrillic, physical, None, ModifiersState::SUPER),
             Some(base)
         );
         // Plain and shifted typing never falls back.
         assert_eq!(
-            base_layout_fallback_key(&cyrillic, physical, ModifiersState::empty()),
+            base_layout_fallback_key(&cyrillic, physical, None, ModifiersState::empty()),
             None
         );
         assert_eq!(
-            base_layout_fallback_key(&cyrillic, physical, ModifiersState::SHIFT),
+            base_layout_fallback_key(&cyrillic, physical, None, ModifiersState::SHIFT),
             None
         );
     }
@@ -618,7 +659,7 @@ mod tests {
         let ctrl_alt = ModifiersState::CONTROL | ModifiersState::ALT;
         let unidentified = Key::Unidentified(NativeKey::Unidentified);
         assert_eq!(
-            base_layout_fallback_key(&unidentified, physical, ctrl_alt),
+            base_layout_fallback_key(&unidentified, physical, None, ctrl_alt),
             Some(Key::Character("n".into()))
         );
         let typed = Key::Character("ń".into());
@@ -628,7 +669,7 @@ mod tests {
             Some(Key::Character("n".into()))
         };
         assert_eq!(
-            base_layout_fallback_key(&typed, physical, ctrl_alt),
+            base_layout_fallback_key(&typed, physical, None, ctrl_alt),
             expected
         );
     }

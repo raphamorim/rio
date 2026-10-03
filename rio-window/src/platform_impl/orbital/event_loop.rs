@@ -440,6 +440,7 @@ impl<T: 'static> EventLoop<T> {
                             platform_specific: KeyEventExtra {
                                 key_without_modifiers,
                                 text_with_all_modifiers,
+                                base_layout_key: None,
                             },
                         },
                         is_synthetic: false,
