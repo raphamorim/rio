@@ -271,4 +271,5 @@ impl VideoModeHandle {
 pub struct KeyEventExtra {
     pub key_without_modifiers: Key,
     pub text_with_all_modifiers: Option<SmolStr>,
+    pub base_layout_key: Option<Key>,
 }

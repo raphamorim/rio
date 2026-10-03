@@ -646,6 +646,7 @@ impl ApplicationDelegate {
             platform_specific: KeyEventExtra {
                 text_with_all_modifiers: character.map(SmolStr::new),
                 key_without_modifiers: logical_key,
+                base_layout_key: None,
             },
         }
     }

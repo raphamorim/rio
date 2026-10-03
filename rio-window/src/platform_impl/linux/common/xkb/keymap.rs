@@ -1031,6 +1031,39 @@ impl XkbKeymap {
     pub fn key_repeats(&mut self, keycode: xkb_keycode_t) -> bool {
         unsafe { (XKBH.xkb_keymap_key_repeats)(self.keymap.as_ptr(), keycode) == 1 }
     }
+
+    /// The key resolved against the first layout group that produces ASCII
+    /// for this key, checking `active_layout` first. This mirrors xkb's
+    /// group fallback for shortcuts: a Cyrillic layout resolves through the
+    /// Latin group configured next to it. `None` when no group produces an
+    /// ASCII character.
+    pub fn base_layout_key(
+        &mut self,
+        keycode: xkb_keycode_t,
+        active_layout: xkb_layout_index_t,
+    ) -> Option<Key> {
+        let num_layouts = unsafe {
+            (XKBH.xkb_keymap_num_layouts_for_key)(self.keymap.as_ptr(), keycode)
+        };
+        let layouts = std::iter::once(active_layout)
+            .chain((0..num_layouts).filter(|&layout| layout != active_layout));
+        for layout in layouts {
+            let keysym = self.first_keysym_by_level(layout, keycode);
+            if keysym == 0 {
+                continue;
+            }
+            let codepoint = unsafe { (XKBH.xkb_keysym_to_utf32)(keysym) };
+            let Some(ch) = char::from_u32(codepoint) else {
+                continue;
+            };
+            if ch.is_ascii_graphic() {
+                return Some(Key::Character(smol_str::SmolStr::new(
+                    ch.to_ascii_lowercase().to_string(),
+                )));
+            }
+        }
+        None
+    }
 }
 
 impl Drop for XkbKeymap {

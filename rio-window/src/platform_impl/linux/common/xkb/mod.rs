@@ -210,6 +210,10 @@ impl<'a> KeyContext<'a> {
         state: ElementState,
         repeat: bool,
     ) -> KeyEvent {
+        let base_layout_key = {
+            let active_layout = self.state.layout(keycode);
+            self.keymap.base_layout_key(keycode, active_layout)
+        };
         let mut event = KeyEventResults::new(
             self,
             keycode,
@@ -224,6 +228,7 @@ impl<'a> KeyContext<'a> {
         let platform_specific = KeyEventExtra {
             text_with_all_modifiers,
             key_without_modifiers,
+            base_layout_key,
         };
 
         KeyEvent {
