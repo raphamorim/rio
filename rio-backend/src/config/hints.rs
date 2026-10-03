@@ -1,7 +1,33 @@
-use serde::{Deserialize, Serialize};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Default alphabet for hint labels
 pub const DEFAULT_HINTS_ALPHABET: &str = "jfkdls;ahgurieowpq";
+
+fn single_character(mut characters: impl Iterator<Item = char>) -> Option<char> {
+    let character = characters.next()?;
+    characters.next().is_none().then_some(character)
+}
+
+/// Match a hint key exactly or through a single-character Unicode case mapping.
+/// Multi-codepoint case mappings are intentionally unsupported.
+pub fn hint_key_matches(label: char, input: char) -> bool {
+    if label == input {
+        return true;
+    }
+
+    input.is_uppercase()
+        && (single_character(label.to_uppercase()) == Some(input)
+            || single_character(input.to_lowercase()) == Some(label))
+}
+
+fn hint_labels_are_ambiguous(left: char, right: char) -> bool {
+    hint_key_matches(left, right)
+        || hint_key_matches(right, left)
+        || single_character(left.to_uppercase()).is_some_and(|uppercase| {
+            single_character(right.to_uppercase()) == Some(uppercase)
+        })
+}
 
 /// Default URL/path regex pattern.
 ///
@@ -59,7 +85,10 @@ pub const DEFAULT_URL_REGEX: &str = concat!(
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Hints {
     /// Characters used for hint labels
-    #[serde(default = "default_hints_alphabet")]
+    #[serde(
+        default = "default_hints_alphabet",
+        deserialize_with = "deserialize_hints_alphabet"
+    )]
     pub alphabet: String,
 
     /// List of hint rules
@@ -260,9 +289,32 @@ pub struct HintBinding {
     pub mode: Vec<String>,
 }
 
-// Default functions
 fn default_hints_alphabet() -> String {
     DEFAULT_HINTS_ALPHABET.to_string()
+}
+
+fn deserialize_hints_alphabet<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let alphabet = String::deserialize(deserializer)?;
+
+    if alphabet.is_empty() {
+        return Err(D::Error::custom("hint alphabet must not be empty"));
+    }
+
+    if alphabet.char_indices().any(|(index, character)| {
+        character.is_uppercase()
+            || alphabet[..index]
+                .chars()
+                .any(|previous| hint_labels_are_ambiguous(previous, character))
+    }) {
+        return Err(D::Error::custom(
+            "hint alphabet characters must be lowercase and unique under hint key matching",
+        ));
+    }
+
+    Ok(alphabet)
 }
 
 fn default_hints_enabled() -> Vec<Hint> {
@@ -306,6 +358,30 @@ mod tests {
         assert!(default_hint.hyperlinks);
         assert!(default_hint.post_processing);
         assert!(!default_hint.persist);
+    }
+
+    #[test]
+    fn hint_alphabet_rejects_invalid_or_ambiguous_characters() {
+        for (alphabet, message) in [
+            ("", "must not be empty"),
+            ("aa", "unique under hint key matching"),
+            ("aA", "unique under hint key matching"),
+            ("A", "must be lowercase"),
+            ("σς", "unique under hint key matching"),
+        ] {
+            let config = format!("alphabet = {alphabet:?}\nrules = []");
+            let error = toml::from_str::<Hints>(&config).unwrap_err();
+
+            assert!(error.to_string().contains(message), "alphabet {alphabet:?}");
+        }
+    }
+
+    #[test]
+    fn hint_key_matching_requires_single_character_case_mappings() {
+        assert!(hint_key_matches('a', 'A'));
+        assert!(hint_key_matches('ß', 'ẞ'));
+        assert!(hint_key_matches('ς', 'Σ'));
+        assert!(!hint_key_matches('i', 'İ'));
     }
 
     /// The default hint must not launch anything through a shell. Hint text
