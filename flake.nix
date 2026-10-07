@@ -21,7 +21,11 @@
     flake-parts.lib.mkFlake {inherit inputs;} {
       imports = [flake-parts.flakeModules.easyOverlay];
 
-      systems = import inputs.systems;
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
 
       perSystem = {
         self',
