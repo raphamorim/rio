@@ -1300,9 +1300,9 @@ pub struct ShapedGlyph {
 /// `CodepointResolver`-style per-char font resolution with lazy
 /// discovery), so shape calls here normally see a single font. When a
 /// shape-time substitution does slip through, every run's glyphs are
-/// rasterized against `handle` — producing .notdef / tofu for the
-/// substituted glyphs, which is the signal that pre-resolution missed
-/// something and needs widening.
+/// still rasterized against `handle`, so the substituted glyph IDs draw
+/// unrelated glyphs from it. That is the signal that pre-resolution
+/// missed something and needs widening.
 pub fn shape_text(handle: &FontHandle, text: &str, size_px: f32) -> Vec<ShapedGlyph> {
     if text.is_empty() {
         return Vec::new();
