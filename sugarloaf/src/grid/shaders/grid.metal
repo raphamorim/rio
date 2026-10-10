@@ -32,7 +32,8 @@ struct Uniforms {
     float2   cell_size;        //       112
     uint2    grid_size;        //       120
     uint2    cursor_pos;       //       128
-    uint2    _pad_cursor;      //       136
+    uint     cursor_wide;      //       136
+    uint     _pad_cursor;      //       140
     float    min_contrast;     //       144
     uint     flags;            //       148
     uint     padding_extend;   //       152
@@ -184,7 +185,9 @@ fragment float4 grid_bg_fragment(
  // leaking into the window margin when it sits on an edge row /
  // column and `padding_extend` clamps inward to the cursor cell.
     if (uniforms.cursor_bg_color.a > 0.0
-        && orig_grid_pos.x == int(uniforms.cursor_pos.x)
+        && (orig_grid_pos.x == int(uniforms.cursor_pos.x)
+            || (uniforms.cursor_wide != 0u
+                && orig_grid_pos.x == int(uniforms.cursor_pos.x) + 1))
         && orig_grid_pos.y == int(uniforms.cursor_pos.y))
     {
         float4 c = uniforms.cursor_bg_color;
@@ -210,7 +213,6 @@ fragment float4 grid_bg_fragment(
 // - No Display P3 / linear-blending conversions; colors land
 // already sRGB-encoded.
 // - No WCAG min_contrast enforcement.
-// - No `cursor_wide` handling (single-cell cursor only for now).
 //-------------------------------------------------------------------
 
 constant uint ATLAS_GRAYSCALE = 0u;
@@ -293,7 +295,9 @@ vertex CellTextVertexOut grid_text_vertex(
  // Cursor-pos fg swap: if this glyph's cell is under the cursor and
  // it is *not* itself the cursor glyph, use `cursor_color` instead.
     bool is_cursor_pos =
-        (uint(in.grid_pos.x) == uniforms.cursor_pos.x) &&
+        (uint(in.grid_pos.x) == uniforms.cursor_pos.x
+         || (uniforms.cursor_wide != 0u
+             && uint(in.grid_pos.x) == uniforms.cursor_pos.x + 1u)) &&
         (uint(in.grid_pos.y) == uniforms.cursor_pos.y);
  // The fg-swap only fires when an explicit cursor_color was
  // supplied. Hollow / unfocused cursors skip this by setting

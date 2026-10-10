@@ -72,6 +72,7 @@ pub struct RenderState {
     columns: usize,
     cursor_line: usize,
     cursor_column: usize,
+    cursor_wide: bool,
     cursor_visible: bool,
     cursor_shape: CursorShape,
     /// Terminal palette (OSC-set / dynamic colors), snapshotted under
@@ -106,6 +107,7 @@ impl RenderState {
             columns,
             cursor_line: 0,
             cursor_column: 0,
+            cursor_wide: false,
             cursor_visible: true,
             cursor_shape: CursorShape::Block,
             term_colors,
@@ -163,6 +165,7 @@ impl RenderState {
         let cursor = term.cursor();
         self.cursor_line = cursor.pos.row.0.max(0) as usize;
         self.cursor_column = cursor.pos.col.0;
+        self.cursor_wide = cursor.wide;
         self.cursor_shape = cursor.content;
         // Hidden covers both DECTCEM (CSI ?25l) and a scrolled viewport;
         // renderers must not paint a cursor in either case.
@@ -313,6 +316,11 @@ impl RenderState {
 
     pub fn cursor(&self) -> (usize, usize) {
         (self.cursor_line, self.cursor_column)
+    }
+
+    /// The cursor sits on a double-width cell and spans two columns.
+    pub fn cursor_wide(&self) -> bool {
+        self.cursor_wide
     }
 
     /// False when the program hid the cursor (DECTCEM, `CSI ?25l`) or the
