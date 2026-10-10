@@ -3964,6 +3964,7 @@ impl Screen<'_> {
                     cell_width,
                     cell_height,
                     cursor.state.content,
+                    cursor.state.wide,
                     cursor.state.is_visible(),
                     current.route_id,
                 );
@@ -4021,6 +4022,8 @@ impl Screen<'_> {
                 term_colors: rio_backend::config::colors::term::TermColors,
                 cursor_col: u16,
                 cursor_row: u16,
+                /// Cursor spans two columns (double-width cell).
+                cursor_wide: bool,
                 cursor_visible: bool,
                 /// Terminal-side cursor shape (block / underline /
                 /// beam / hidden). Driven by DECSCUSR + the
@@ -4216,6 +4219,9 @@ impl Screen<'_> {
                     term_colors,
                     cursor_col: cursor.state.pos.col.0 as u16,
                     cursor_row: cursor.state.pos.row.0 as u16,
+                    // The IME composition replaces the cells under the
+                    // cursor, so the underlying width doesn't apply.
+                    cursor_wide: cursor.state.wide && !cursor_preedit,
                     cursor_visible: cursor.state.is_visible(),
                     cursor_shape,
                     cursor_blinking,
@@ -4541,6 +4547,7 @@ impl Screen<'_> {
                         style,
                         p.cursor_col,
                         p.cursor_row,
+                        p.cursor_wide,
                         cursor_color,
                         cell_w,
                         cell_h,
@@ -4576,10 +4583,11 @@ impl Screen<'_> {
                 // underline / hollow) draw via the sprite emitted
                 // above; their bg/text stays untouched. Same gate as
                 // .
-                let (cursor_pos, cursor_col_u, cursor_bg_u) =
+                let (cursor_pos, cursor_wide, cursor_col_u, cursor_bg_u) =
                     if matches!(render_style, Some(rio_grid::CursorRenderStyle::Block)) {
                         (
                             [p.cursor_col as u32, p.cursor_row as u32],
+                            u32::from(p.cursor_wide),
                             [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
                             [
                                 p.cursor_color[0],
@@ -4589,7 +4597,7 @@ impl Screen<'_> {
                             ],
                         )
                     } else {
-                        ([u32::MAX; 2], [0.0; 4], [0.0; 4])
+                        ([u32::MAX; 2], 0, [0.0; 4], [0.0; 4])
                     };
 
                 let uniforms = rio_backend::sugarloaf::grid::GridUniforms {
@@ -4613,7 +4621,8 @@ impl Screen<'_> {
                     cell_size: [p.cell_w, p.cell_h],
                     grid_size: [p.cols, p.rows],
                     cursor_pos,
-                    _pad_cursor: [0; 2],
+                    cursor_wide,
+                    _pad_cursor: 0,
                     min_contrast: 0.0,
                     flags: 0,
                     padding_extend: 0,

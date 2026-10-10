@@ -812,18 +812,28 @@ fn ensure_drawable_sprite(
     )
 }
 
+/// `wide`: the cursor sits on a double-width cell. Block, hollow and
+/// underline sprites then span two cells; the bar stays a left-edge
+/// stroke.
+#[allow(clippy::too_many_arguments)]
 pub fn cursor_sprite_cell(
     grid: &mut GridRenderer,
     style: CursorRenderStyle,
     col: u16,
     row: u16,
+    wide: bool,
     color: [u8; 4],
     cell_w: u32,
     cell_h: u32,
 ) -> Option<(bool, CellText)> {
     let sprite = style.sprite();
     let thickness = cursor_thickness(cell_h);
-    let slot = ensure_cursor_sprite_slot(grid, sprite, cell_w, cell_h, thickness)?;
+    let sprite_w = if wide && sprite != CursorSpriteStyle::Bar {
+        cell_w * 2
+    } else {
+        cell_w
+    };
+    let slot = ensure_cursor_sprite_slot(grid, sprite, sprite_w, cell_h, thickness)?;
     if slot.w == 0 || slot.h == 0 {
         return None;
     }
@@ -3476,5 +3486,32 @@ mod cluster_text_tests {
             out.push(cell_idx);
         }
         assert_eq!(out, [0, 0, 1]);
+    }
+}
+
+#[cfg(test)]
+mod cursor_sprite_tests {
+    use super::*;
+    use rio_backend::sugarloaf::grid::cpu::CpuGridRenderer;
+
+    /// Sprite width for `style`, on a narrow and on a wide cell.
+    fn widths(style: CursorRenderStyle) -> (u32, u32) {
+        let mut grid = GridRenderer::Cpu(CpuGridRenderer::new(4, 1));
+        let w = |grid: &mut GridRenderer, wide| {
+            cursor_sprite_cell(grid, style, 1, 0, wide, [255; 4], 8, 16)
+                .unwrap()
+                .1
+                .glyph_size[0]
+        };
+        (w(&mut grid, false), w(&mut grid, true))
+    }
+
+    #[test]
+    fn wide_cursor_sprites_span_two_cells_except_bar() {
+        assert_eq!(widths(CursorRenderStyle::Block), (8, 16));
+        assert_eq!(widths(CursorRenderStyle::BlockHollow), (8, 16));
+        assert_eq!(widths(CursorRenderStyle::Underline), (8, 16));
+        let (narrow, wide) = widths(CursorRenderStyle::Bar);
+        assert_eq!(narrow, wide);
     }
 }

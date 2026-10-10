@@ -22,7 +22,8 @@ layout(set = 0, binding = 0, std140) uniform Uniforms {
     vec2 cell_size;         // offset 112
     uvec2 grid_size;        // offset 120
     uvec2 cursor_pos;       // offset 128
-    uvec2 _pad_cursor;      // offset 136
+    uint cursor_wide;       // offset 136
+    uint _pad_cursor;       // offset 140
     float min_contrast;     // offset 144
     uint flags;             // offset 148
     uint padding_extend;    // offset 152
@@ -131,7 +132,9 @@ void main() {
     // (pre-clamp) matches the cursor cell. Bypassing the clamp here
     // keeps the cursor from leaking into the margin on edge rows.
     if (uniforms.cursor_bg_color.a > 0.0
-        && orig_grid_pos.x == int(uniforms.cursor_pos.x)
+        && (orig_grid_pos.x == int(uniforms.cursor_pos.x)
+            || (uniforms.cursor_wide != 0u
+                && orig_grid_pos.x == int(uniforms.cursor_pos.x) + 1))
         && orig_grid_pos.y == int(uniforms.cursor_pos.y))
     {
         vec4 c = uniforms.cursor_bg_color;
