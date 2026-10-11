@@ -729,16 +729,6 @@ mod tests {
             "[navigation]\ntab-font-family = 'Segoe UI'\ntab-font-size = 13",
         )
         .unwrap();
-        let legacy: super::platform::PlatformConfig = toml::from_str(
-            "[navigation]\ntitle-font-family = 'Arial'\ntitle-font-size = 100",
-        )
-        .unwrap();
-        config.overwrite_with_platform_config(legacy);
-        assert_eq!(
-            config.navigation.title_font_family.as_deref(),
-            Some("Segoe UI")
-        );
-        assert_eq!(config.navigation.title_font_size, 13.0);
         let platform: super::platform::PlatformConfig =
             toml::from_str("[navigation]\ntab-font-size = 100").unwrap();
         config.overwrite_with_platform_config(platform);

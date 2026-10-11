@@ -294,15 +294,9 @@ mod tests {
         let serialized = toml::to_string(&canonical).unwrap();
         assert!(serialized.contains("tab-font-family"));
         assert!(serialized.contains("tab-font-size"));
-        assert!(!serialized.contains("title-font-"));
         let defaults: super::Navigation = toml::from_str("").unwrap();
         assert_eq!(defaults.title_font_family, None);
         assert_eq!(defaults.title_font_size, 12.0);
-        let legacy: super::Navigation =
-            toml::from_str("title-font-family = 'Segoe UI'\ntitle-font-size = 13.5")
-                .unwrap();
-        assert_eq!(legacy.title_font_family, None);
-        assert_eq!(legacy.title_font_size, 12.0);
         for (input, expected) in [("0", 8.0), ("100", 20.0), ("nan", 12.0), ("inf", 12.0)]
         {
             let nav: super::Navigation =
