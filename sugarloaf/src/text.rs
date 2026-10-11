@@ -372,17 +372,28 @@ impl Text {
                 };
                 ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
                 let preferred = opts.preferred_font_id.filter(|id| {
-                    let library = self.font_library.inner.read();
-                    library.get_data(id).is_some_and(|(data, offset, key)| {
-                        swash::FontRef {
-                            data: data.as_ref(),
-                            offset,
-                            key,
-                        }
-                        .charmap()
-                        .map(ch)
-                            != 0
-                    })
+                    #[cfg(target_os = "macos")]
+                    {
+                        // CoreText retains the selected TTC face and also supports
+                        // fonts with no backing path or bytes, unlike get_data().
+                        self.font_library.ct_font(*id).is_some_and(|handle| {
+                            crate::font::macos::font_has_char(&handle, ch)
+                        })
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        let library = self.font_library.inner.read();
+                        library.get_data(id).is_some_and(|(data, offset, key)| {
+                            swash::FontRef {
+                                data: data.as_ref(),
+                                offset,
+                                key,
+                            }
+                            .charmap()
+                            .map(ch)
+                                != 0
+                        })
+                    }
                 });
                 *e.insert(preferred.unwrap_or_else(|| {
                     self.font_library.resolve_font_for_char(ch, &ss, None).0
@@ -2156,6 +2167,47 @@ fn blit_text_color(
 #[cfg(test)]
 mod tab_title_tests {
     use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn preferred_coretext_collection_font_is_used() {
+        let fonts = FontLibrary::default();
+        let mut text = Text::new(&fonts);
+        let ui = text.font_family_id("Helvetica").unwrap();
+        {
+            let library = fonts.inner.read();
+            let (data, offset, _) = library.get_data(&ui).unwrap();
+            assert_eq!(&data.as_ref()[..4], b"ttcf");
+            assert_eq!(offset, 0);
+        }
+        let opts = DrawOpts {
+            preferred_font_id: Some(ui),
+            ..Default::default()
+        };
+        assert_eq!(text.resolve_font('A', &opts), ui as u32);
+        assert_ne!(text.resolve_font('\u{10ffff}', &opts), ui as u32);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn preferred_coretext_font_without_backing_data_is_used() {
+        let fonts = FontLibrary::default();
+        let mut text = Text::new(&fonts);
+        let ui = text.font_family_id("Helvetica").unwrap();
+        {
+            let mut library = fonts.inner.write();
+            let font = library.get_mut(&ui).unwrap();
+            *font =
+                crate::font::FontData::from_ctfont_macos(font.handle().unwrap().clone());
+            assert!(library.get_data(&ui).is_none());
+        }
+        let opts = DrawOpts {
+            preferred_font_id: Some(ui),
+            ..Default::default()
+        };
+        assert_eq!(text.resolve_font('A', &opts), ui as u32);
+        assert_ne!(text.resolve_font('\u{10ffff}', &opts), ui as u32);
+    }
 
     #[test]
     fn whole_string_cache_reuses_runs_and_separates_font_options() {
