@@ -60,6 +60,19 @@ impl Default for DrawOpts {
     }
 }
 
+impl DrawOpts {
+    fn anchor_font(&self) -> Self {
+        Self {
+            font_id: Some(
+                self.font_id
+                    .or(self.preferred_font_id)
+                    .unwrap_or(crate::font::FONT_ID_REGULAR),
+            ),
+            ..*self
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 #[allow(unused)]
 struct ShapedGlyph {
@@ -163,7 +176,7 @@ pub struct Text {
     instances: Vec<TextInstance>,
     scale_factor: f32,
     font_library: FontLibrary,
-    font_resolve: FxHashMap<(char, u8, Option<usize>), (u32, bool)>,
+    font_resolve: FxHashMap<(char, u8, Option<usize>), u32>,
     named_font_ids: FxHashMap<String, Option<usize>>,
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
     #[cfg(not(target_os = "macos"))]
@@ -259,15 +272,7 @@ impl Text {
     /// changing the title or its fallback prefix never moves the baseline.
     /// Atlas bounds include the font's real top bearing and pixel rounding.
     pub fn centered_y(&mut self, center_y: f32, opts: &DrawOpts) -> f32 {
-        let anchor_opts = DrawOpts {
-            font_id: Some(
-                opts.font_id
-                    .or(opts.preferred_font_id)
-                    .unwrap_or(crate::font::FONT_ID_REGULAR),
-            ),
-            ..*opts
-        };
-        let runs = self.shape_runs("Hg", &anchor_opts);
+        let runs = self.shape_runs("Hg", &opts.anchor_font());
         let mut top = f32::INFINITY;
         let mut bottom = f32::NEG_INFINITY;
         for run in runs.iter() {
@@ -299,16 +304,8 @@ impl Text {
         let runs = self.shape_runs(text, opts);
         // Anchor to the label's regular face, not the tallest fallback:
         // changing an animated prefix must not shift the label vertically.
-        let baseline_opts = DrawOpts {
-            font_id: Some(
-                opts.font_id
-                    .or(opts.preferred_font_id)
-                    .unwrap_or(crate::font::FONT_ID_REGULAR),
-            ),
-            ..*opts
-        };
         let ascent = self
-            .shape_runs(" ", &baseline_opts)
+            .shape_runs(" ", &opts.anchor_font())
             .first()
             .map(|run| run.ascent_px)
             .unwrap_or(0);
@@ -356,47 +353,42 @@ impl Text {
         use crate::{Attributes, SpanStyle, Stretch, Style as FontStyle, Weight};
         let style_flags =
             (if opts.bold { 1u8 } else { 0 }) | (if opts.italic { 2u8 } else { 0 });
-        let (font_id, _is_emoji) =
-            match self
-                .font_resolve
-                .entry((ch, style_flags, opts.preferred_font_id))
-            {
-                std::collections::hash_map::Entry::Occupied(e) => *e.get(),
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    let mut ss = SpanStyle::default();
-                    let weight = if opts.bold {
-                        Weight::BOLD
-                    } else {
-                        Weight::NORMAL
-                    };
-                    let fstyle = if opts.italic {
-                        FontStyle::Italic
-                    } else {
-                        FontStyle::Normal
-                    };
-                    ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
-                    let preferred = opts.preferred_font_id.filter(|id| {
-                        let library = self.font_library.inner.read();
-                        library.get_data(id).is_some_and(|(data, offset, key)| {
-                            swash::FontRef {
-                                data: data.as_ref(),
-                                offset,
-                                key,
-                            }
-                            .charmap()
-                            .map(ch)
-                                != 0
-                        })
-                    });
-                    let resolved = preferred.map(|id| (id, false)).unwrap_or_else(|| {
-                        self.font_library.resolve_font_for_char(ch, &ss, None)
-                    });
-                    let v = (resolved.0 as u32, resolved.1);
-                    e.insert(v);
-                    v
-                }
-            };
-        font_id
+        match self
+            .font_resolve
+            .entry((ch, style_flags, opts.preferred_font_id))
+        {
+            std::collections::hash_map::Entry::Occupied(e) => *e.get(),
+            std::collections::hash_map::Entry::Vacant(e) => {
+                let mut ss = SpanStyle::default();
+                let weight = if opts.bold {
+                    Weight::BOLD
+                } else {
+                    Weight::NORMAL
+                };
+                let fstyle = if opts.italic {
+                    FontStyle::Italic
+                } else {
+                    FontStyle::Normal
+                };
+                ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
+                let preferred = opts.preferred_font_id.filter(|id| {
+                    let library = self.font_library.inner.read();
+                    library.get_data(id).is_some_and(|(data, offset, key)| {
+                        swash::FontRef {
+                            data: data.as_ref(),
+                            offset,
+                            key,
+                        }
+                        .charmap()
+                        .map(ch)
+                            != 0
+                    })
+                });
+                *e.insert(preferred.unwrap_or_else(|| {
+                    self.font_library.resolve_font_for_char(ch, &ss, None).0
+                }) as u32)
+            }
+        }
     }
 
     fn shape_runs(&mut self, text: &str, opts: &DrawOpts) -> Arc<[ShapedRun]> {
@@ -414,27 +406,22 @@ impl Text {
         if let Some(runs) = self.shape_cache.get(&hash) {
             return Arc::clone(runs);
         }
-        if let Some(font_id) = opts.font_id {
-            let runs: Arc<[ShapedRun]> = self
-                .shape_segment(text, font_id as u32, opts)
-                .into_iter()
-                .collect::<Vec<_>>()
-                .into();
-            self.shape_cache.insert(hash, Arc::clone(&runs));
-            return runs;
-        }
         // A leading symbol may resolve to an emoji font. Keep the rest
         // of the label in its own font instead of shaping it all there.
         // Coalesce adjacent graphemes with the same face so kerning and
         // ligatures survive, and never split an emoji or combining mark.
         let mut ranges: Vec<(usize, usize, u32)> = Vec::new();
-        for (start, grapheme) in rio_unicode::grapheme::GraphemeIndices::new(text) {
-            let font_id = self.resolve_font(grapheme.chars().next().unwrap(), opts);
-            let end = start + grapheme.len();
-            if let Some(last) = ranges.last_mut().filter(|last| last.2 == font_id) {
-                last.1 = end;
-            } else {
-                ranges.push((start, end, font_id));
+        if let Some(font_id) = opts.font_id {
+            ranges.push((0, text.len(), font_id as u32));
+        } else {
+            for (start, grapheme) in rio_unicode::grapheme::GraphemeIndices::new(text) {
+                let font_id = self.resolve_font(grapheme.chars().next().unwrap(), opts);
+                let end = start + grapheme.len();
+                if let Some(last) = ranges.last_mut().filter(|last| last.2 == font_id) {
+                    last.1 = end;
+                } else {
+                    ranges.push((start, end, font_id));
+                }
             }
         }
         let runs: Arc<[ShapedRun]> = ranges
@@ -2231,41 +2218,42 @@ mod tab_title_tests {
     fn pixel_snapping_preserves_width_without_accumulating_rounding_error() {
         let mut text = Text::new(&FontLibrary::default());
         text.init_cpu();
-        let opts = DrawOpts {
-            font_size: 13.0,
-            ..Default::default()
-        };
         for scale in [1.0, 1.25, 1.5, 2.0] {
             text.set_scale_factor(scale);
-            let title = "✳ Пример Sample 0123 e\u{301}";
-            let width = text.measure(title, &opts);
-            text.clear();
-            assert!((text.draw(10.3, 7.7, title, &opts) - width).abs() < 0.01);
-            assert!(text
-                .instances()
-                .iter()
-                .all(|instance| instance.pos.iter().all(|p| p.fract() == 0.0)));
-            let positions: Vec<_> = text.instances().iter().map(|i| i.pos).collect();
-            text.clear();
-            text.draw(10.3 + 1.0 / scale, 7.7, title, &opts);
-            for (before, after) in positions.iter().zip(text.instances()) {
-                assert_eq!(after.pos[0], before[0] + 1.0);
-                assert_eq!(after.pos[1], before[1]);
+            for (font_size, title) in [
+                (13.0, "✳ Пример Sample 0123 e\u{301}"),
+                (12.0, "✳ Демонстрационный заголовок"),
+                (12.0, "✳ Sample text"),
+                (12.0, "e\u{301} 👩\u{200d}💻"),
+            ] {
+                let opts = DrawOpts {
+                    font_size,
+                    ..Default::default()
+                };
+                let width = text.measure(title, &opts);
+                text.clear();
+                assert!((text.draw(10.3, 7.7, title, &opts) - width).abs() < 0.01);
+                assert!(text.instance_count() > 0);
+                assert!(text
+                    .instances()
+                    .iter()
+                    .all(|instance| instance.pos.iter().all(|p| p.fract() == 0.0)));
+                let positions: Vec<_> = text.instances().iter().map(|i| i.pos).collect();
+                text.clear();
+                text.draw(10.3 + 1.0 / scale, 7.7, title, &opts);
+                for (before, after) in positions.iter().zip(text.instances()) {
+                    assert_eq!(after.pos[0], before[0] + 1.0);
+                    assert_eq!(after.pos[1], before[1]);
+                }
             }
         }
     }
 
     #[test]
-    fn missing_title_font_uses_the_configured_terminal_face() {
+    fn missing_title_font_leaves_the_font_preference_unset() {
         let mut text = Text::new(&FontLibrary::default());
         assert_eq!(text.font_family_id(" "), None);
         assert_eq!(text.font_family_id("Rio nonexistent font 72b298cf"), None);
-        let opts = DrawOpts {
-            preferred_font_id: text.font_family_id("Rio nonexistent font 72b298cf"),
-            ..Default::default()
-        };
-        let default_width = text.measure("Пример Sample", &DrawOpts::default());
-        assert_eq!(text.measure("Пример Sample", &opts), default_width);
     }
 
     #[test]
@@ -2290,30 +2278,6 @@ mod tab_title_tests {
             let runs = text.shape_runs(&title, &opts);
             let body_font = text.resolve_font('П', &opts);
             assert_eq!(runs.last().unwrap().font_id, body_font);
-        }
-    }
-
-    #[test]
-    fn measure_and_draw_agree_at_different_scales() {
-        let mut text = Text::new(&FontLibrary::default());
-        text.init_cpu();
-        let opts = DrawOpts {
-            font_size: 12.0,
-            ..Default::default()
-        };
-        for scale in [1.0, 1.5, 2.0] {
-            text.set_scale_factor(scale);
-            for title in [
-                "✳ Демонстрационный заголовок",
-                "✳ Sample text",
-                "e\u{301} 👩\u{200d}💻",
-            ] {
-                text.clear();
-                let expected = text.measure(title, &opts);
-                let actual = text.draw(0.0, 0.0, title, &opts);
-                assert!((actual - expected).abs() < 0.01);
-                assert!(text.instance_count() > 0);
-            }
         }
     }
 

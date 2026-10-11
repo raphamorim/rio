@@ -1420,25 +1420,13 @@ mod grid_cell_bg_tests {
         let mut config = Config::default();
         config.navigation.title_font_family = Some("Segoe UI".into());
         config.navigation.title_font_size = 13.0;
-        let mut first = Renderer::new(&config);
-        assert_eq!(
-            first.island.as_ref().unwrap().title_font_family.as_deref(),
-            Some("Segoe UI")
-        );
+        let mut retained = Renderer::new(&config).island.unwrap();
+        assert_eq!(retained.title_font_family.as_deref(), Some("Segoe UI"));
         config.navigation.title_font_family = Some("Arial".into());
         config.navigation.title_font_size = 16.0;
-        let refreshed = Renderer::new(&config);
-        assert_eq!(
-            refreshed
-                .island
-                .as_ref()
-                .unwrap()
-                .title_font_family
-                .as_deref(),
-            Some("Arial")
-        );
-        assert_eq!(refreshed.island.as_ref().unwrap().title_font_size, 16.0);
-        let mut retained = first.island.take().unwrap();
+        let refreshed = Renderer::new(&config).island.unwrap();
+        assert_eq!(refreshed.title_font_family.as_deref(), Some("Arial"));
+        assert_eq!(refreshed.title_font_size, 16.0);
         retained.update_title_font(&config.navigation);
         assert_eq!(retained.title_font_family.as_deref(), Some("Arial"));
         assert_eq!(retained.title_font_size, 16.0);
