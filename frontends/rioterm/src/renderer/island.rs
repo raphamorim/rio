@@ -10,7 +10,8 @@ use crate::context::ContextManager;
 use crate::renderer::helpers::spring::Spring;
 use rio_backend::event::{EventProxy, ProgressReport, ProgressState};
 use rio_backend::sugarloaf::text::DrawOpts;
-use rio_backend::sugarloaf::{Attributes, Sugarloaf};
+use rio_backend::sugarloaf::Sugarloaf;
+use rio_unicode::grapheme::GraphemeIndices;
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::time::Instant;
@@ -19,7 +20,6 @@ pub const ISLAND_HEIGHT: f32 = 38.0;
 const PROGRESS_BAR_HEIGHT: f32 = 3.0;
 
 const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
-const TITLE_FONT_SIZE: f32 = 12.0;
 
 const TAB_PADDING_X: f32 = 27.0;
 const TAB_GAP: f32 = 6.0;
@@ -102,39 +102,43 @@ fn fit_title_to_width<'a>(
     sugarloaf: &mut Sugarloaf,
     title: &'a str,
     max_width: f32,
+    opts: &DrawOpts,
 ) -> Cow<'a, str> {
-    let attrs = Attributes::default();
-    fit_title_with_widths(title, max_width, |c| {
-        sugarloaf.char_advance(c, attrs, TITLE_FONT_SIZE)
+    fit_title_with_widths(title, max_width, |text| {
+        sugarloaf.text_mut().measure(text, opts)
     })
 }
 
 fn fit_title_with_widths<'a>(
     title: &'a str,
     max_width: f32,
-    mut char_width: impl FnMut(char) -> f32,
+    mut measure: impl FnMut(&str) -> f32,
 ) -> Cow<'a, str> {
-    let suffix_width = char_width(TITLE_ELLIPSIS);
+    if title.is_empty() || measure(title) <= max_width {
+        return Cow::Borrowed(title);
+    }
 
-    // `truncate_ix` tracks the last byte offset at which the prefix so
-    // far still has room for the suffix. Updated before adding the next
-    // char's width so the moment we detect overflow we already know
-    // where to cut.
-    let mut accumulated: f32 = 0.0;
-    let mut truncate_ix: usize = 0;
-    for (ix, c) in title.char_indices() {
-        if accumulated + suffix_width <= max_width {
-            truncate_ix = ix;
-        }
-        accumulated += char_width(c);
-        if accumulated > max_width {
-            let mut out = String::with_capacity(truncate_ix + TITLE_ELLIPSIS.len_utf8());
-            out.push_str(&title[..truncate_ix]);
-            out.push(TITLE_ELLIPSIS);
-            return Cow::Owned(out);
+    // Measure the same shaped runs we draw: isolated character advances
+    // can use different fallback fonts and omit kerning or ligatures.
+    // Only cut at grapheme boundaries, preserving accents and emoji.
+    let boundaries: Vec<usize> = GraphemeIndices::new(title).map(|(ix, _)| ix).collect();
+    let mut out = String::with_capacity(title.len() + TITLE_ELLIPSIS.len_utf8());
+    let (mut lo, mut hi) = (0, boundaries.len().saturating_sub(1));
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        out.clear();
+        out.push_str(&title[..boundaries[mid]]);
+        out.push(TITLE_ELLIPSIS);
+        if measure(&out) <= max_width {
+            lo = mid;
+        } else {
+            hi = mid - 1;
         }
     }
-    Cow::Borrowed(title)
+    out.clear();
+    out.push_str(&title[..boundaries[lo]]);
+    out.push(TITLE_ELLIPSIS);
+    Cow::Owned(out)
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -343,6 +347,8 @@ pub struct Island {
     pub hide_if_single: bool,
     /// Cap on tab width in logical px (`navigation.max-tab-width`).
     pub max_tab_width: f32,
+    pub title_font_family: Option<String>,
+    pub title_font_size: f32,
     pub inactive_text_color: [f32; 4],
     pub active_text_color: [f32; 4],
     /// Current progress bar state
@@ -380,6 +386,16 @@ pub struct Island {
 }
 
 impl Island {
+    pub fn update_title_font(
+        &mut self,
+        navigation: &rio_backend::config::navigation::Navigation,
+    ) {
+        self.title_font_family = navigation.title_font_family.clone();
+        self.title_font_size = rio_backend::config::navigation::clamp_title_font_size(
+            navigation.title_font_size,
+        );
+    }
+
     pub fn new(
         inactive_text_color: [f32; 4],
         active_text_color: [f32; 4],
@@ -389,6 +405,8 @@ impl Island {
         Self {
             hide_if_single,
             max_tab_width,
+            title_font_family: None,
+            title_font_size: rio_backend::config::navigation::default_title_font_size(),
             inactive_text_color,
             active_text_color,
             progress_state: None,
@@ -864,7 +882,11 @@ impl Island {
             };
 
             let title_opts = DrawOpts {
-                font_size: TITLE_FONT_SIZE,
+                font_size: self.title_font_size,
+                preferred_font_id: self
+                    .title_font_family
+                    .as_deref()
+                    .and_then(|family| sugarloaf.text_mut().font_family_id(family)),
                 color: color_u8(text_color),
                 ..DrawOpts::default()
             };
@@ -881,7 +903,8 @@ impl Island {
                 tab_width - TAB_PADDING_X * 2.0 - bell_width
             }
             .max(0.0);
-            let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
+            let title =
+                fit_title_to_width(sugarloaf, &raw_title, max_text_width, &title_opts);
 
             // UI text always paints in a final pass above every rect,
             // so the floating tab's opaque background can't occlude
@@ -904,14 +927,14 @@ impl Island {
                 } else {
                     tab_x + (tab_width - text_width) / 2.0
                 };
-                let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
+                let text_y = (ISLAND_HEIGHT / 2.0) - (self.title_font_size / 2.);
                 if bell {
                     // Centered on the title's lowercase body, not the strip:
                     // the em box hangs from `text_y` with its optical middle
                     // about two thirds down, so a strip-centered dot rides
                     // visibly high next to lowercase titles.
                     let dot_y =
-                        text_y + TITLE_FONT_SIZE * (2.0 / 3.0) - BELL_DOT_SIZE / 2.0;
+                        text_y + self.title_font_size * (2.0 / 3.0) - BELL_DOT_SIZE / 2.0;
                     sugarloaf.rounded_rect(
                         None,
                         text_x,
@@ -1051,16 +1074,25 @@ impl Island {
             let raw_title = self.get_title_for_tab(context_manager, drag_idx);
             if !raw_title.is_empty() {
                 let max_text_width = (tab_width - TAB_PADDING_X * 2.0).max(0.0);
-                let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
                 let title_opts = DrawOpts {
-                    font_size: TITLE_FONT_SIZE,
+                    font_size: self.title_font_size,
+                    preferred_font_id: self
+                        .title_font_family
+                        .as_deref()
+                        .and_then(|family| sugarloaf.text_mut().font_family_id(family)),
                     color: color_u8(self.active_text_color),
                     ..DrawOpts::default()
                 };
+                let title = fit_title_to_width(
+                    sugarloaf,
+                    &raw_title,
+                    max_text_width,
+                    &title_opts,
+                );
                 let ui = sugarloaf.text_mut();
                 let text_width = ui.measure(&title, &title_opts);
                 let text_x = floating_x + (tab_width - text_width) / 2.0;
-                let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
+                let text_y = (ISLAND_HEIGHT / 2.0) - (self.title_font_size / 2.);
                 ui.draw(text_x, text_y, &title, &title_opts);
             }
         }
@@ -1724,12 +1756,12 @@ mod tests {
     }
 
     /// Each char = 1.0 wide, including the ellipsis. Easy arithmetic.
-    fn fixed_unit_width(_c: char) -> f32 {
-        1.0
+    fn fixed_unit_width(text: &str) -> f32 {
+        text.chars().count() as f32
     }
 
-    fn rendered_width(s: &str, char_width: impl FnMut(char) -> f32) -> f32 {
-        s.chars().map(char_width).sum()
+    fn rendered_width(s: &str, mut measure: impl FnMut(&str) -> f32) -> f32 {
+        measure(s)
     }
 
     #[test]
@@ -1782,7 +1814,7 @@ mod tests {
         // ix=1 x: 2+1 ≤ 4 → truncate_ix=1; accum→3
         // ix=2 W: 3+1 ≤ 4 → truncate_ix=2; accum→5; 5>4 → cut.
         // Output: title[..2] + "…" = "Wx…", width 2+1+1 = 4 ≤ 4 ✓
-        let widths = |c: char| if c == 'W' { 2.0 } else { 1.0 };
+        let widths = |s: &str| s.chars().map(|c| if c == 'W' { 2.0 } else { 1.0 }).sum();
         let out = fit_title_with_widths("WxWxW", 4.0, widths);
         assert_eq!(out, "Wx…");
         assert!(rendered_width(&out, widths) <= 4.0);
@@ -1793,7 +1825,7 @@ mod tests {
         // Each emoji/char = 2.0 wide; ellipsis = 2.0.
         // Title "🎟🎟🎟" = 6.0. Budget 4.0 → one emoji + "…" = 4.0 ≤ 4 ✓.
         // Crucial: the byte index we cut at must be on a UTF-8 boundary.
-        let w = |_c: char| 2.0;
+        let w = |s: &str| s.chars().count() as f32 * 2.0;
         let out = fit_title_with_widths("🎟🎟🎟", 4.0, w);
         assert_eq!(out, "🎟…");
         assert!(out.chars().count() == 2, "{out:?} should be 2 graphemes");
@@ -1817,6 +1849,25 @@ mod tests {
     fn title_exact_fit_not_truncated() {
         // Title "abcd" = 4.0, budget 4.0 → fits exactly, no truncation.
         assert_eq!(fit_title_with_widths("abcd", 4.0, fixed_unit_width), "abcd");
+    }
+
+    #[test]
+    fn title_truncation_measures_shaped_prefix_and_ellipsis_together() {
+        // A fallback run / ligature need not equal isolated advances.
+        let measure = |s: &str| s.chars().count() as f32 - 1.0;
+        assert_eq!(fit_title_with_widths("✳ Пример", 4.0, measure), "✳ Пр…");
+    }
+
+    #[test]
+    fn title_truncation_keeps_combining_marks_and_emoji_clusters() {
+        let measure = |s: &str| rio_unicode::grapheme::Graphemes::new(s).count() as f32;
+        for cluster in ["и\u{306}", "👩\u{200d}💻", "🇷🇺"] {
+            let title = format!("{cluster}xyz");
+            assert_eq!(
+                fit_title_with_widths(&title, 2.0, measure),
+                format!("{cluster}…")
+            );
+        }
     }
 
     #[test]

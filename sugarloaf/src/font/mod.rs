@@ -223,6 +223,36 @@ pub struct FontLibrary {
 }
 
 impl FontLibrary {
+    /// Register a regular face without changing
+    /// the terminal's primary font or its metrics.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn register_font_family(&self, family: &str) -> Option<usize> {
+        let spec = SugarloafFont {
+            family: family.to_string(),
+            ..Default::default()
+        };
+        #[cfg(target_os = "macos")]
+        let found = find_font(spec, Slot::Regular, false);
+        #[cfg(not(target_os = "macos"))]
+        let found = find_font(&loader::Database::new(), spec, Slot::Regular, false);
+        let FindResult::Found(data) = found else {
+            return None;
+        };
+        let name = data.postscript_name()?.to_string();
+        let mut library = self.inner.write();
+        if let Some(id) = library.font_id_for_postscript_name(&name) {
+            return Some(id);
+        }
+        let id = library.inner.len();
+        library.insert(data);
+        Some(id)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn register_font_family(&self, _family: &str) -> Option<usize> {
+        None
+    }
+
     pub fn new(spec: SugarloafFonts) -> (Self, Option<SugarloafErrors>) {
         let mut font_library = FontLibraryData::default();
 

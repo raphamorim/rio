@@ -21,6 +21,22 @@
 
 Documentation: [rioterm.com](https://rioterm.com).
 
+### Tab title fonts
+
+Set a separate font for Rio-rendered tab titles in `config.toml`:
+
+```toml
+[navigation]
+title-font-family = "Segoe UI"
+title-font-size = 13
+```
+
+The family must be installed on your system. An omitted, empty, or unavailable
+family uses the terminal font. The size is in logical pixels, defaults to 12,
+and is limited to 8–20 to fit the tab strip. Changes apply when the config is
+reloaded and do not change the terminal font. These fields also support
+platform overrides under `[platform.windows.navigation]` (or `linux`/`macos`).
+
 ## Supporting the Project
 
 If you use and like Rio, please consider sponsoring it: your support helps to cover the fees required to maintain the project and to validate the time spent working on it!

@@ -228,12 +228,14 @@ impl Renderer {
         }
 
         let island = if config.navigation.is_enabled() {
-            Some(island::Island::new(
+            let mut island = island::Island::new(
                 named_colors.tabs,
                 named_colors.tabs_active,
                 config.navigation.hide_if_single,
                 config.navigation.max_tab_width,
-            ))
+            );
+            island.update_title_font(&config.navigation);
+            Some(island)
         } else {
             None
         };
@@ -1412,6 +1414,35 @@ mod grid_cell_bg_tests {
     use super::*;
     use rio_backend::config::colors::ColorRgb;
     use rio_backend::crosswords::square::Square;
+
+    #[test]
+    fn title_font_config_reaches_renderer_after_config_refresh() {
+        let mut config = Config::default();
+        config.navigation.title_font_family = Some("Segoe UI".into());
+        config.navigation.title_font_size = 13.0;
+        let mut first = Renderer::new(&config);
+        assert_eq!(
+            first.island.as_ref().unwrap().title_font_family.as_deref(),
+            Some("Segoe UI")
+        );
+        config.navigation.title_font_family = Some("Arial".into());
+        config.navigation.title_font_size = 16.0;
+        let refreshed = Renderer::new(&config);
+        assert_eq!(
+            refreshed
+                .island
+                .as_ref()
+                .unwrap()
+                .title_font_family
+                .as_deref(),
+            Some("Arial")
+        );
+        assert_eq!(refreshed.island.as_ref().unwrap().title_font_size, 16.0);
+        let mut retained = first.island.take().unwrap();
+        retained.update_title_font(&config.navigation);
+        assert_eq!(retained.title_font_family.as_deref(), Some("Arial"));
+        assert_eq!(retained.title_font_size, 16.0);
+    }
 
     /// End-to-end guard for the tmux faint-text regression: tmux
     /// re-emits the pane's OSC 11 as an explicit SGR 48 on every cell,

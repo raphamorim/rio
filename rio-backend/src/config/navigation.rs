@@ -19,6 +19,24 @@ pub fn default_max_tab_width() -> f32 {
     240.0
 }
 
+pub fn default_title_font_size() -> f32 {
+    12.0
+}
+
+pub fn clamp_title_font_size(size: f32) -> f32 {
+    if size.is_finite() {
+        size.clamp(8.0, 20.0)
+    } else {
+        default_title_font_size()
+    }
+}
+
+fn deserialize_title_font_size<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<f32, D::Error> {
+    Ok(clamp_title_font_size(f32::deserialize(d)?))
+}
+
 /// Clamp `max_tab_width` to `[80.0, 280.0]`.
 ///
 /// Below the lower bound the close button and title no longer fit.
@@ -178,6 +196,21 @@ pub struct Navigation {
     /// when few are open. Clamped to `[80.0, 280.0]` at load time.
     #[serde(default = "default_max_tab_width", rename = "max-tab-width")]
     pub max_tab_width: f32,
+    /// Font family for tab titles. Unset or unavailable uses the terminal font.
+    #[serde(
+        default,
+        rename = "title-font-family",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title_font_family: Option<String>,
+    /// Tab title size in logical pixels, independent of the terminal font.
+    /// Clamped to 8–20 to fit the tab strip; default is 12.
+    #[serde(
+        default = "default_title_font_size",
+        rename = "title-font-size",
+        deserialize_with = "deserialize_title_font_size"
+    )]
+    pub title_font_size: f32,
 }
 
 impl Default for Navigation {
@@ -194,6 +227,8 @@ impl Default for Navigation {
             unfocused_split_fill: None,
             open_config_with_split: true,
             max_tab_width: default_max_tab_width(),
+            title_font_family: None,
+            title_font_size: default_title_font_size(),
         }
     }
 }
@@ -250,6 +285,24 @@ impl Navigation {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn title_font_config_defaults_and_bounds() {
+        let defaults: super::Navigation = toml::from_str("").unwrap();
+        assert_eq!(defaults.title_font_family, None);
+        assert_eq!(defaults.title_font_size, 12.0);
+        let configured: super::Navigation =
+            toml::from_str("title-font-family = 'Segoe UI'\ntitle-font-size = 13.5")
+                .unwrap();
+        assert_eq!(configured.title_font_family.as_deref(), Some("Segoe UI"));
+        assert_eq!(configured.title_font_size, 13.5);
+        for (input, expected) in [("0", 8.0), ("100", 20.0), ("nan", 12.0), ("inf", 12.0)]
+        {
+            let nav: super::Navigation =
+                toml::from_str(&format!("title-font-size = {input}")).unwrap();
+            assert_eq!(nav.title_font_size, expected);
+        }
+    }
+
     #[test]
     fn chrome_band_follows_padding_contract() {
         use crate::config::navigation::{Navigation, NavigationMode};
