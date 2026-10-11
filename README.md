@@ -34,8 +34,7 @@ tab-font-size = 13
 The family must be installed on your system. An omitted, empty, or unavailable
 family uses the terminal font. The size is in logical pixels, defaults to 12,
 and is limited to 8–20 to fit the tab strip. Changes apply when the config is
-reloaded and do not change the terminal font. The earlier `title-font-family`
-and `title-font-size` names are accepted as aliases. These fields support platform
+reloaded and do not change the terminal font. These fields support platform
 overrides under `[platform.windows.navigation]` (or `linux`/`macos`).
 
 ## Supporting the Project

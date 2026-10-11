@@ -200,7 +200,6 @@ pub struct Navigation {
     #[serde(
         default,
         rename = "tab-font-family",
-        alias = "title-font-family",
         skip_serializing_if = "Option::is_none"
     )]
     pub title_font_family: Option<String>,
@@ -209,7 +208,6 @@ pub struct Navigation {
     #[serde(
         default = "default_title_font_size",
         rename = "tab-font-size",
-        alias = "title-font-size",
         deserialize_with = "deserialize_title_font_size"
     )]
     pub title_font_size: f32,
@@ -300,15 +298,15 @@ mod tests {
         let defaults: super::Navigation = toml::from_str("").unwrap();
         assert_eq!(defaults.title_font_family, None);
         assert_eq!(defaults.title_font_size, 12.0);
-        let configured: super::Navigation =
+        let legacy: super::Navigation =
             toml::from_str("title-font-family = 'Segoe UI'\ntitle-font-size = 13.5")
                 .unwrap();
-        assert_eq!(configured.title_font_family.as_deref(), Some("Segoe UI"));
-        assert_eq!(configured.title_font_size, 13.5);
+        assert_eq!(legacy.title_font_family, None);
+        assert_eq!(legacy.title_font_size, 12.0);
         for (input, expected) in [("0", 8.0), ("100", 20.0), ("nan", 12.0), ("inf", 12.0)]
         {
             let nav: super::Navigation =
-                toml::from_str(&format!("title-font-size = {input}")).unwrap();
+                toml::from_str(&format!("tab-font-size = {input}")).unwrap();
             assert_eq!(nav.title_font_size, expected);
         }
     }

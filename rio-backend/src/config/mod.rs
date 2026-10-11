@@ -726,14 +726,22 @@ mod tests {
     #[test]
     fn title_font_platform_override_preserves_unspecified_fields() {
         let mut config: super::Config = toml::from_str(
-            "[navigation]\ntitle-font-family = 'Segoe UI'\ntitle-font-size = 13",
+            "[navigation]\ntab-font-family = 'Segoe UI'\ntab-font-size = 13",
         )
         .unwrap();
-        for key in ["tab-font-size", "title-font-size"] {
-            let platform: super::platform::PlatformConfig =
-                toml::from_str(&format!("[navigation]\n{key} = 100")).unwrap();
-            config.overwrite_with_platform_config(platform);
-        }
+        let legacy: super::platform::PlatformConfig = toml::from_str(
+            "[navigation]\ntitle-font-family = 'Arial'\ntitle-font-size = 100",
+        )
+        .unwrap();
+        config.overwrite_with_platform_config(legacy);
+        assert_eq!(
+            config.navigation.title_font_family.as_deref(),
+            Some("Segoe UI")
+        );
+        assert_eq!(config.navigation.title_font_size, 13.0);
+        let platform: super::platform::PlatformConfig =
+            toml::from_str("[navigation]\ntab-font-size = 100").unwrap();
+        config.overwrite_with_platform_config(platform);
         assert_eq!(
             config.navigation.title_font_family.as_deref(),
             Some("Segoe UI")
