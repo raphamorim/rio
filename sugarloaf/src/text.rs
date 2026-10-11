@@ -254,6 +254,41 @@ impl Text {
         &self.instances
     }
 
+    /// Logical top coordinate that centers a label on `center_y`.
+    /// Use a fixed ascender/descender sample from the anchor face so
+    /// changing the title or its fallback prefix never moves the baseline.
+    /// Atlas bounds include the font's real top bearing and pixel rounding.
+    pub fn centered_y(&mut self, center_y: f32, opts: &DrawOpts) -> f32 {
+        let anchor_opts = DrawOpts {
+            font_id: Some(
+                opts.font_id
+                    .or(opts.preferred_font_id)
+                    .unwrap_or(crate::font::FONT_ID_REGULAR),
+            ),
+            ..*opts
+        };
+        let runs = self.shape_runs("Hg", &anchor_opts);
+        let mut top = f32::INFINITY;
+        let mut bottom = f32::NEG_INFINITY;
+        for run in runs.iter() {
+            for glyph in &run.glyphs {
+                if let Some((slot, _)) = self.rasterize_slot(run, glyph.id) {
+                    if slot.w == 0 || slot.h == 0 {
+                        continue;
+                    }
+                    let glyph_top = slot.bearing_y as f32 - glyph.y;
+                    top = top.min(glyph_top);
+                    bottom = bottom.max(glyph_top + slot.h as f32);
+                }
+            }
+        }
+        if top.is_finite() && bottom.is_finite() {
+            center_y - (top + bottom) / (2.0 * self.scale_factor)
+        } else {
+            center_y - opts.font_size / 2.0
+        }
+    }
+
     /// Draw `text` at logical top-left `(x, y)` with `opts`. Returns
     /// rendered width in **logical** pixels.
     pub fn draw(&mut self, x: f32, y: f32, text: &str, opts: &DrawOpts) -> f32 {
@@ -2376,6 +2411,41 @@ mod tab_title_tests {
     }
 
     #[test]
+    fn label_centering_uses_rendered_font_bounds_at_each_scale() {
+        let mut text = Text::new(&FontLibrary::default());
+        text.init_cpu();
+        let ui = text.font_family_id("Segoe UI");
+        for preferred_font_id in [None, ui] {
+            for font_size in [8.0, 12.0, 13.0, 20.0] {
+                let opts = DrawOpts {
+                    font_size,
+                    preferred_font_id,
+                    ..Default::default()
+                };
+                for scale in [1.0, 1.25, 1.5, 2.0] {
+                    text.set_scale_factor(scale);
+                    text.clear();
+                    let y = text.centered_y(19.0, &opts);
+                    // Measuring the vertical position must not emit text.
+                    assert_eq!(text.instance_count(), 0);
+                    text.draw(10.0, y, "Hg", &opts);
+                    let mut top = f32::INFINITY;
+                    let mut bottom = f32::NEG_INFINITY;
+                    for instance in text.instances() {
+                        let glyph_top = instance.pos[1] + instance.bearings[1] as f32;
+                        top = top.min(glyph_top);
+                        bottom = bottom.max(glyph_top + instance.glyph_size[1] as f32);
+                    }
+                    assert!(
+                        ((top + bottom) / 2.0 - 19.0 * scale).abs() <= 0.5,
+                        "font {preferred_font_id:?}, size {font_size}, scale {scale}: {top}..{bottom}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn animated_prefix_does_not_move_the_title_baseline() {
         let mut text = Text::new(&FontLibrary::default());
         text.init_cpu();
@@ -2387,11 +2457,13 @@ mod tab_title_tests {
         for scale in [1.0, 1.5, 2.0] {
             text.set_scale_factor(scale);
             text.clear();
-            text.draw(0.0, 0.0, "Пример", &opts);
+            let y = text.centered_y(19.0, &opts);
+            text.draw(0.0, y, "Пример", &opts);
             let expected = text.instances.last().unwrap().pos[1];
             for prefix in ["✳ ", "✻ ", "⏺ ", "🦀 ", ""] {
                 text.clear();
-                text.draw(0.0, 0.0, &format!("{prefix}Пример"), &opts);
+                let y = text.centered_y(19.0, &opts);
+                text.draw(0.0, y, &format!("{prefix}Пример"), &opts);
                 assert_eq!(
                     text.instances.last().unwrap().pos[1],
                     expected,

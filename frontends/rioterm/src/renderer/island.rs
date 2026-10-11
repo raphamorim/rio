@@ -927,14 +927,11 @@ impl Island {
                 } else {
                     tab_x + (tab_width - text_width) / 2.0
                 };
-                let text_y = (ISLAND_HEIGHT / 2.0) - (self.title_font_size / 2.);
+                let text_y = sugarloaf
+                    .text_mut()
+                    .centered_y(ISLAND_HEIGHT / 2.0, &title_opts);
                 if bell {
-                    // Centered on the title's lowercase body, not the strip:
-                    // the em box hangs from `text_y` with its optical middle
-                    // about two thirds down, so a strip-centered dot rides
-                    // visibly high next to lowercase titles.
-                    let dot_y =
-                        text_y + self.title_font_size * (2.0 / 3.0) - BELL_DOT_SIZE / 2.0;
+                    let dot_y = (ISLAND_HEIGHT - BELL_DOT_SIZE) / 2.0;
                     sugarloaf.rounded_rect(
                         None,
                         text_x,
@@ -1092,7 +1089,7 @@ impl Island {
                 let ui = sugarloaf.text_mut();
                 let text_width = ui.measure(&title, &title_opts);
                 let text_x = floating_x + (tab_width - text_width) / 2.0;
-                let text_y = (ISLAND_HEIGHT / 2.0) - (self.title_font_size / 2.);
+                let text_y = ui.centered_y(ISLAND_HEIGHT / 2.0, &title_opts);
                 ui.draw(text_x, text_y, &title, &title_opts);
             }
         }
