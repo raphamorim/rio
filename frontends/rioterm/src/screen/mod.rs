@@ -135,6 +135,30 @@ fn window_should_be_opaque(config: &rio_backend::config::Config) -> bool {
     config.window.opacity >= 1.0 && !config.window.blur.is_glass()
 }
 
+// Returns the number of scroll units for an accumulated scroll value and a
+// viewport dimension. A zero or negative dimension yields 0 units instead of
+// dividing by zero, which would otherwise produce inf and a usize::MAX loop.
+#[inline]
+fn scroll_units(accumulated: f64, dimension: f64) -> usize {
+    if dimension > 0.0 {
+        (accumulated / dimension).abs() as usize
+    } else {
+        0
+    }
+}
+
+// Wraps an accumulated scroll value into the viewport dimension. A zero or
+// negative dimension leaves the value unchanged, because a modulo by zero
+// would set it to NaN and NaN never recovers once the window gets a real size.
+#[inline]
+fn wrap_scroll_accumulator(accumulated: f64, dimension: f64) -> f64 {
+    if dimension > 0.0 {
+        accumulated % dimension
+    } else {
+        accumulated
+    }
+}
+
 impl Screen<'_> {
     pub fn new<'screen>(
         window_properties: ScreenWindowProperties,
@@ -3636,7 +3660,7 @@ impl Screen<'_> {
             } else {
                 MOUSE_WHEEL_DOWN
             };
-            let lines = (self.mouse.accumulated_scroll.y / height).abs() as usize;
+            let lines = scroll_units(self.mouse.accumulated_scroll.y, height);
 
             for _ in 0..lines {
                 self.mouse_report(code, ElementState::Pressed);
@@ -3647,7 +3671,7 @@ impl Screen<'_> {
             } else {
                 MOUSE_WHEEL_RIGHT
             };
-            let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
+            let columns = scroll_units(self.mouse.accumulated_scroll.x, width);
 
             for _ in 0..columns {
                 self.mouse_report(code, ElementState::Pressed);
@@ -3664,9 +3688,9 @@ impl Screen<'_> {
             let line_cmd = if new_scroll_y_px > 0. { b'A' } else { b'B' };
             let column_cmd = if new_scroll_x_px > 0. { b'D' } else { b'C' };
 
-            let lines = (self.mouse.accumulated_scroll.y / height).abs() as usize;
+            let lines = scroll_units(self.mouse.accumulated_scroll.y, height);
 
-            let columns = (self.mouse.accumulated_scroll.x / width).abs() as usize;
+            let columns = scroll_units(self.mouse.accumulated_scroll.x, width);
 
             let mut content = Vec::with_capacity(3 * (lines + columns));
 
@@ -3688,7 +3712,11 @@ impl Screen<'_> {
         } else {
             self.mouse.accumulated_scroll.y +=
                 (new_scroll_y_px * self.mouse.multiplier) / self.mouse.divider;
-            let lines = (self.mouse.accumulated_scroll.y / height) as i32;
+            let lines = if height > 0.0 {
+                (self.mouse.accumulated_scroll.y / height) as i32
+            } else {
+                0
+            };
 
             if lines != 0 {
                 let current = self.context_manager.current_mut();
@@ -3700,8 +3728,10 @@ impl Screen<'_> {
             }
         }
 
-        self.mouse.accumulated_scroll.x %= width;
-        self.mouse.accumulated_scroll.y %= height;
+        self.mouse.accumulated_scroll.x =
+            wrap_scroll_accumulator(self.mouse.accumulated_scroll.x, width);
+        self.mouse.accumulated_scroll.y =
+            wrap_scroll_accumulator(self.mouse.accumulated_scroll.y, height);
     }
 
     #[inline]
@@ -5231,5 +5261,34 @@ mod tests {
             post_process_hyperlink_uri("https://example.com/path[with]brackets"),
             "https://example.com/path[with]brackets"
         );
+    }
+
+    #[test]
+    fn scroll_units_guards_zero_and_negative_dimensions() {
+        // A positive dimension divides normally.
+        assert_eq!(scroll_units(10.0, 2.0), 5);
+        assert_eq!(scroll_units(-10.0, 2.0), 5);
+
+        // A zero dimension must not divide by zero (which would produce inf
+        // and a usize::MAX loop), it yields 0 units instead.
+        assert_eq!(scroll_units(10.0, 0.0), 0);
+        assert_eq!(scroll_units(0.0, 0.0), 0);
+
+        // A negative dimension is treated the same as zero.
+        assert_eq!(scroll_units(10.0, -1.0), 0);
+    }
+
+    #[test]
+    fn wrap_scroll_accumulator_keeps_value_on_zero_dimension() {
+        // A positive dimension wraps normally.
+        assert_eq!(wrap_scroll_accumulator(5.0, 2.0), 1.0);
+
+        // A zero dimension must not modulo by zero (which would set the value
+        // to NaN and never recover), it keeps the value unchanged instead.
+        assert_eq!(wrap_scroll_accumulator(5.0, 0.0), 5.0);
+        assert_eq!(wrap_scroll_accumulator(0.0, 0.0), 0.0);
+
+        // A negative dimension is treated the same as zero.
+        assert_eq!(wrap_scroll_accumulator(5.0, -1.0), 5.0);
     }
 }
