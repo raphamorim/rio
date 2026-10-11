@@ -187,9 +187,10 @@ pub fn lookup_for_font_match(
     for font_id in 0..fonts_len {
         // Skip alias slots — their charmap is identical to the
         // owning entry which we already walk under its own id.
+        // UI-only faces must not change terminal fallback selection.
         let font = match library.inner.get(&font_id) {
             Some(FontEntry::Owned(d)) => d,
-            Some(FontEntry::Alias(_)) | None => continue,
+            Some(FontEntry::Ui(_)) | Some(FontEntry::Alias(_)) | None => continue,
         };
         let is_emoji = font.is_emoji;
         let font_synth = font.synth;
@@ -224,7 +225,7 @@ pub struct FontLibrary {
 
 impl FontLibrary {
     /// Register a regular face without changing
-    /// the terminal's primary font or its metrics.
+    /// the terminal's primary font, metrics, or fallback chain.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn register_font_family(&self, family: &str) -> Option<usize> {
         let spec = SugarloafFont {
@@ -238,14 +239,7 @@ impl FontLibrary {
         let FindResult::Found(data) = found else {
             return None;
         };
-        let name = data.postscript_name()?.to_string();
-        let mut library = self.inner.write();
-        if let Some(id) = library.font_id_for_postscript_name(&name) {
-            return Some(id);
-        }
-        let id = library.inner.len();
-        library.insert(data);
-        Some(id)
+        self.inner.write().insert_ui_font(data)
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -582,6 +576,8 @@ pub struct SymbolMap {
 #[derive(Clone)]
 pub enum FontEntry {
     Owned(FontData),
+    /// Available by explicit id for UI text, excluded from terminal fallback.
+    Ui(FontData),
     /// Single-hop indirection. `insert_alias` collapses any
     /// alias-of-alias at insert time so resolution is always one
     /// hop.
@@ -594,7 +590,7 @@ impl FontEntry {
     #[inline]
     pub fn as_owned(&self) -> Option<&FontData> {
         match self {
-            FontEntry::Owned(d) => Some(d),
+            FontEntry::Owned(d) | FontEntry::Ui(d) => Some(d),
             FontEntry::Alias(_) => None,
         }
     }
@@ -617,6 +613,9 @@ pub struct FontLibraryData {
     /// fontconfig-/font-kit-discovered fallback against fonts already
     /// in the registry.
     postscript_to_id: FxHashMap<String, usize>,
+    /// UI faces have a separate index so terminal cascade discovery cannot
+    /// reuse them before independently selecting the same face.
+    ui_postscript_to_id: FxHashMap<String, usize>,
     /// Per-route Glyph Protocol registries, keyed by `route_id` (the
     /// process-wide monotonic counter from `ROUTE_ID_COUNTER`). Each
     /// terminal session installs its registry on context creation
@@ -636,12 +635,28 @@ impl Default for FontLibraryData {
             symbol_maps: None,
             primary_metrics_cache: FxHashMap::default(),
             postscript_to_id: FxHashMap::default(),
+            ui_postscript_to_id: FxHashMap::default(),
             glyph_registries: FxHashMap::default(),
         }
     }
 }
 
 impl FontLibraryData {
+    fn insert_ui_font(&mut self, font_data: FontData) -> Option<usize> {
+        let name = font_data.postscript_name()?.to_string();
+        if let Some(id) = self
+            .postscript_to_id
+            .get(&name)
+            .or_else(|| self.ui_postscript_to_id.get(&name))
+        {
+            return Some(*id);
+        }
+        let id = self.inner.len();
+        self.ui_postscript_to_id.insert(name, id);
+        self.inner.insert(id, FontEntry::Ui(font_data));
+        Some(id)
+    }
+
     #[inline]
     pub fn find_best_font_match(
         &self,
@@ -811,7 +826,7 @@ impl FontLibraryData {
     pub fn get(&self, font_id: &usize) -> &FontData {
         let id = self.resolve_id(*font_id);
         match &self.inner[&id] {
-            FontEntry::Owned(d) => d,
+            FontEntry::Owned(d) | FontEntry::Ui(d) => d,
             FontEntry::Alias(_) => {
                 unreachable!("alias must resolve to Owned in single hop")
             }
@@ -846,7 +861,7 @@ impl FontLibraryData {
     pub fn get_mut(&mut self, font_id: &usize) -> Option<&mut FontData> {
         let id = self.resolve_id(*font_id);
         match self.inner.get_mut(&id)? {
-            FontEntry::Owned(d) => Some(d),
+            FontEntry::Owned(d) | FontEntry::Ui(d) => Some(d),
             FontEntry::Alias(_) => None,
         }
     }
@@ -2353,6 +2368,57 @@ fn load_fallback_from_memory(slot: Slot) -> FontData {
     };
 
     FontData::from_static_slice_with_wght(data, wght).unwrap()
+}
+
+#[cfg(test)]
+mod ui_font_tests {
+    use super::*;
+
+    #[test]
+    fn ui_faces_do_not_enter_terminal_fallback_or_cascade_deduplication() {
+        let mut library = FontLibraryData::default();
+        library.insert(
+            FontData::from_static_slice(include_bytes!(
+                "../../../rio-fonts/resources/SymbolsNerdFontMono/SymbolsNerdFontMono-Regular.ttf"
+            ))
+            .unwrap(),
+        );
+        let style = SpanStyle::default();
+        assert_eq!(library.find_best_font_match_strict('M', &style, None), None);
+
+        let face = || FontData::from_static_slice(FONT_CASCADIA_CODE_NF).unwrap();
+        let name = face().postscript_name().unwrap().to_string();
+        let ui = library.insert_ui_font(face()).unwrap();
+        assert!(library.get_data(&ui).is_some());
+        assert_eq!(library.insert_ui_font(face()), Some(ui));
+        assert_eq!(library.find_best_font_match_strict('M', &style, None), None);
+        assert_eq!(library.font_id_for_postscript_name(&name), None);
+
+        // If the terminal later discovers this face itself, it must get a
+        // terminal entry in discovery order, while the existing UI id survives.
+        let terminal = library.inner.len();
+        library.insert(face());
+        assert_ne!(terminal, ui);
+        assert_eq!(library.font_id_for_postscript_name(&name), Some(terminal));
+        assert_eq!(
+            library.find_best_font_match_strict('M', &style, None),
+            Some((terminal, false))
+        );
+        assert!(matches!(library.inner.get(&ui), Some(FontEntry::Ui(_))));
+    }
+
+    #[test]
+    fn ui_registration_can_reuse_an_existing_terminal_face() {
+        let mut library = FontLibraryData::default();
+        let face = || FontData::from_static_slice(FONT_CASCADIA_CODE_NF).unwrap();
+        library.insert(face());
+        assert_eq!(library.insert_ui_font(face()), Some(FONT_ID_REGULAR));
+        assert_eq!(library.inner.len(), 1);
+        assert_eq!(
+            library.find_best_font_match_strict('M', &SpanStyle::default(), None),
+            Some((FONT_ID_REGULAR, false))
+        );
+    }
 }
 
 #[cfg(test)]

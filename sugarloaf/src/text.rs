@@ -2295,6 +2295,36 @@ mod tab_title_tests {
 
     #[test]
     #[cfg(target_os = "windows")]
+    fn segoe_title_registration_preserves_terminal_fallback() {
+        let clean = FontLibrary::default();
+        let fonts = FontLibrary::default();
+        let mut text = Text::new(&fonts);
+        let ui = text.font_family_id("Segoe UI").unwrap();
+        for ch in ['\u{0180}', '\u{0181}', '\u{0182}'] {
+            let style = crate::SpanStyle::default();
+            let expected = clean.resolve_font_for_char(ch, &style, None).0;
+            let actual = fonts.resolve_font_for_char(ch, &style, None).0;
+            assert_eq!(
+                clean.inner.read().get(&expected).postscript_name(),
+                fonts.inner.read().get(&actual).postscript_name(),
+                "terminal fallback changed for {ch:?}"
+            );
+            assert_ne!(actual, ui);
+        }
+        let runs = text.shape_runs(
+            "\u{0180}\u{0181}\u{0182}",
+            &DrawOpts {
+                preferred_font_id: Some(ui),
+                ..Default::default()
+            },
+        );
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].font_id, ui as u32);
+        assert!(runs[0].glyphs.iter().all(|glyph| glyph.id != 0));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
     fn segoe_title_keeps_latin_and_cyrillic_in_one_face() {
         let fonts = FontLibrary::default();
         let primary = fonts
