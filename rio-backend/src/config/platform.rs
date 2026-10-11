@@ -104,9 +104,9 @@ pub struct PlatformNavigation {
     pub unfocused_split_opacity: Option<f32>,
     #[serde(default = "Option::default", rename = "max-tab-width")]
     pub max_tab_width: Option<f32>,
-    #[serde(default, rename = "title-font-family")]
+    #[serde(default, rename = "tab-font-family", alias = "title-font-family")]
     pub title_font_family: Option<String>,
-    #[serde(default, rename = "title-font-size")]
+    #[serde(default, rename = "tab-font-size", alias = "title-font-size")]
     pub title_font_size: Option<f32>,
     #[serde(
         default = "Option::default",

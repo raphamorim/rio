@@ -199,7 +199,8 @@ pub struct Navigation {
     /// Font family for tab titles. Unset or unavailable uses the terminal font.
     #[serde(
         default,
-        rename = "title-font-family",
+        rename = "tab-font-family",
+        alias = "title-font-family",
         skip_serializing_if = "Option::is_none"
     )]
     pub title_font_family: Option<String>,
@@ -207,7 +208,8 @@ pub struct Navigation {
     /// Clamped to 8–20 to fit the tab strip; default is 12.
     #[serde(
         default = "default_title_font_size",
-        rename = "title-font-size",
+        rename = "tab-font-size",
+        alias = "title-font-size",
         deserialize_with = "deserialize_title_font_size"
     )]
     pub title_font_size: f32,
@@ -287,6 +289,14 @@ impl Navigation {
 mod tests {
     #[test]
     fn title_font_config_defaults_and_bounds() {
+        let canonical: super::Navigation =
+            toml::from_str("tab-font-family = 'Segoe UI'\ntab-font-size = 13.5").unwrap();
+        assert_eq!(canonical.title_font_family.as_deref(), Some("Segoe UI"));
+        assert_eq!(canonical.title_font_size, 13.5);
+        let serialized = toml::to_string(&canonical).unwrap();
+        assert!(serialized.contains("tab-font-family"));
+        assert!(serialized.contains("tab-font-size"));
+        assert!(!serialized.contains("title-font-"));
         let defaults: super::Navigation = toml::from_str("").unwrap();
         assert_eq!(defaults.title_font_family, None);
         assert_eq!(defaults.title_font_size, 12.0);
