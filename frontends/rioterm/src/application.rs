@@ -584,11 +584,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::UpdateConfig) => {
-                let (config, config_error) = match rio_backend::config::Config::try_load()
-                {
-                    Ok(config) => (config, None),
-                    Err(error) => (rio_backend::config::Config::default(), Some(error)),
-                };
+                let (mut config, config_error) =
+                    match rio_backend::config::Config::try_load() {
+                        Ok(config) => (config, None),
+                        Err(error) => {
+                            (rio_backend::config::Config::default(), Some(error))
+                        }
+                    };
+                config.overwrite_based_on_platform();
 
                 let has_font_updates = self.config.fonts != config.fonts;
                 let has_binding_updates = self.config.bindings != config.bindings;
