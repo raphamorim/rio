@@ -557,6 +557,7 @@ impl Screen<'_> {
         if let Some(mut island) = old_island {
             island.update_colors(config.colors.tabs, config.colors.tabs_active);
             island.max_tab_width = config.navigation.max_tab_width;
+            island.update_title_font(&config.navigation);
             self.renderer.island = Some(island);
         }
 

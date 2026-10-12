@@ -5,6 +5,7 @@
 
 use crate::font::FontLibrary;
 use rustc_hash::FxHashMap;
+use std::sync::Arc;
 
 // `pos` is **pixel-space top-left** of the glyph's text bounding box.
 // `bearings.x` shifts it right to the glyph bitmap's left edge;
@@ -42,6 +43,8 @@ pub struct DrawOpts {
     pub italic: bool,
     // if doesn't have, should use primary font.
     pub font_id: Option<usize>,
+    /// Prefer this face where it covers the text, retaining symbol fallback.
+    pub preferred_font_id: Option<usize>,
 }
 
 impl Default for DrawOpts {
@@ -52,6 +55,20 @@ impl Default for DrawOpts {
             bold: false,
             italic: false,
             font_id: None,
+            preferred_font_id: None,
+        }
+    }
+}
+
+impl DrawOpts {
+    fn anchor_font(&self) -> Self {
+        Self {
+            font_id: Some(
+                self.font_id
+                    .or(self.preferred_font_id)
+                    .unwrap_or(crate::font::FONT_ID_REGULAR),
+            ),
+            ..*self
         }
     }
 }
@@ -84,11 +101,18 @@ struct ShapedRun {
 }
 
 #[inline]
-fn shape_hash(font_id: u32, size_bucket: u16, style_flags: u8, text: &str) -> u64 {
+fn shape_hash(
+    font_id: Option<usize>,
+    preferred_font_id: Option<usize>,
+    size_bucket: u16,
+    style_flags: u8,
+    text: &str,
+) -> u64 {
     use core::hash::Hasher;
     use rustc_hash::FxHasher;
     let mut h = FxHasher::default();
-    h.write_u32(font_id);
+    h.write_u64(font_id.map_or(u64::MAX, |id| id as u64));
+    h.write_u64(preferred_font_id.map_or(u64::MAX, |id| id as u64));
     h.write_u16(size_bucket);
     h.write_u8(style_flags);
     h.write(text.as_bytes());
@@ -152,12 +176,13 @@ pub struct Text {
     instances: Vec<TextInstance>,
     scale_factor: f32,
     font_library: FontLibrary,
-    font_resolve: FxHashMap<(char, u8), (u32, bool)>,
+    font_resolve: FxHashMap<(char, u8, Option<usize>), u32>,
+    named_font_ids: FxHashMap<String, Option<usize>>,
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
     #[cfg(not(target_os = "macos"))]
     wght_variation_cache: FxHashMap<u32, Option<f32>>,
     ascent_cache: FxHashMap<(u32, u16), i16>,
-    shape_cache: FxHashMap<u64, ShapedRun>,
+    shape_cache: FxHashMap<u64, Arc<[ShapedRun]>>,
 
     #[cfg(target_os = "macos")]
     handle_cache: FxHashMap<u32, crate::font::macos::FontHandle>,
@@ -184,6 +209,7 @@ impl Text {
             scale_factor: 1.0,
             font_library: font_library.clone(),
             font_resolve: FxHashMap::default(),
+            named_font_ids: FxHashMap::default(),
             synthesis_cache: FxHashMap::default(),
             #[cfg(not(target_os = "macos"))]
             wght_variation_cache: FxHashMap::default(),
@@ -241,18 +267,74 @@ impl Text {
         &self.instances
     }
 
+    /// Logical top coordinate that centers a label on `center_y`.
+    /// Use a fixed ascender/descender sample from the anchor face so
+    /// changing the title or its fallback prefix never moves the baseline.
+    /// Atlas bounds include the font's real top bearing and pixel rounding.
+    pub fn centered_y(&mut self, center_y: f32, opts: &DrawOpts) -> f32 {
+        let runs = self.shape_runs("Hg", &opts.anchor_font());
+        let mut top = f32::INFINITY;
+        let mut bottom = f32::NEG_INFINITY;
+        for run in runs.iter() {
+            for glyph in &run.glyphs {
+                if let Some((slot, _)) = self.rasterize_slot(run, glyph.id) {
+                    if slot.w == 0 || slot.h == 0 {
+                        continue;
+                    }
+                    let glyph_top = slot.bearing_y as f32 - glyph.y;
+                    top = top.min(glyph_top);
+                    bottom = bottom.max(glyph_top + slot.h as f32);
+                }
+            }
+        }
+        if top.is_finite() && bottom.is_finite() {
+            center_y - (top + bottom) / (2.0 * self.scale_factor)
+        } else {
+            center_y - opts.font_size / 2.0
+        }
+    }
+
     /// Draw `text` at logical top-left `(x, y)` with `opts`. Returns
     /// rendered width in **logical** pixels.
     pub fn draw(&mut self, x: f32, y: f32, text: &str, opts: &DrawOpts) -> f32 {
         if text.is_empty() {
             return 0.0;
         }
-        let Some(shaped) = self.shape_for(text, opts) else {
-            return 0.0;
-        };
-        let width_px = shaped_width(&shaped);
-        self.emit_instances(x, y, &shaped, opts);
-        width_px / self.scale_factor
+        let mut width = 0.0;
+        let runs = self.shape_runs(text, opts);
+        // Anchor to the label's regular face, not the tallest fallback:
+        // changing an animated prefix must not shift the label vertically.
+        let ascent = self
+            .shape_runs(" ", &opts.anchor_font())
+            .first()
+            .map(|run| run.ascent_px)
+            .unwrap_or(0);
+        for shaped in runs.iter() {
+            // Atlas bearings are relative to each face's ascent. Offset
+            // the run tops so every face shares one physical baseline.
+            let run_y = y + (ascent as f32 - shaped.ascent_px as f32) / self.scale_factor;
+            self.emit_instances(x + width, run_y, shaped, opts);
+            width += shaped_width(shaped) / self.scale_factor;
+        }
+        width
+    }
+
+    /// Resolve a configured regular face once per font library.
+    /// Missing and empty families retain automatic font fallback.
+    pub fn font_family_id(&mut self, family: &str) -> Option<usize> {
+        let family = family.trim();
+        if family.is_empty() {
+            return None;
+        }
+        if let Some(id) = self.named_font_ids.get(family) {
+            return *id;
+        }
+        let id = self.font_library.register_font_family(family);
+        if id.is_none() {
+            tracing::warn!(family, "tab title font not found; using terminal font");
+        }
+        self.named_font_ids.insert(family.to_string(), id);
+        id
     }
 
     /// Measure `text` under `opts` without recording a draw. Returns
@@ -261,22 +343,19 @@ impl Text {
         if text.is_empty() {
             return 0.0;
         }
-        self.shape_for(text, opts)
-            .map(|r| shaped_width(&r) / self.scale_factor)
-            .unwrap_or(0.0)
+        self.shape_runs(text, opts)
+            .iter()
+            .map(|r| shaped_width(r) / self.scale_factor)
+            .sum()
     }
 
-    fn shape_for(&mut self, text: &str, opts: &DrawOpts) -> Option<ShapedRun> {
+    fn resolve_font(&mut self, ch: char, opts: &DrawOpts) -> u32 {
         use crate::{Attributes, SpanStyle, Stretch, Style as FontStyle, Weight};
-
-        let scaled = opts.font_size * self.scale_factor;
-        let size_bucket = (scaled * 4.0).round().clamp(0.0, u16::MAX as f32) as u16;
-        let size_u16 = scaled.round().clamp(1.0, u16::MAX as f32) as u16;
         let style_flags =
             (if opts.bold { 1u8 } else { 0 }) | (if opts.italic { 2u8 } else { 0 });
-
-        let first_ch = text.chars().next()?;
-        let (font_id, _is_emoji) = match self.font_resolve.entry((first_ch, style_flags))
+        match self
+            .font_resolve
+            .entry((ch, style_flags, opts.preferred_font_id))
         {
             std::collections::hash_map::Entry::Occupied(e) => *e.get(),
             std::collections::hash_map::Entry::Vacant(e) => {
@@ -292,20 +371,93 @@ impl Text {
                     FontStyle::Normal
                 };
                 ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
-                let resolved =
-                    self.font_library.resolve_font_for_char(first_ch, &ss, None);
-                let v = (resolved.0 as u32, resolved.1);
-                e.insert(v);
-                v
+                let preferred = opts.preferred_font_id.filter(|id| {
+                    #[cfg(target_os = "macos")]
+                    {
+                        // CoreText retains the selected TTC face and also supports
+                        // fonts with no backing path or bytes, unlike get_data().
+                        self.font_library.ct_font(*id).is_some_and(|handle| {
+                            crate::font::macos::font_has_char(&handle, ch)
+                        })
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        let library = self.font_library.inner.read();
+                        library.get_data(id).is_some_and(|(data, offset, key)| {
+                            swash::FontRef {
+                                data: data.as_ref(),
+                                offset,
+                                key,
+                            }
+                            .charmap()
+                            .map(ch)
+                                != 0
+                        })
+                    }
+                });
+                *e.insert(preferred.unwrap_or_else(|| {
+                    self.font_library.resolve_font_for_char(ch, &ss, None).0
+                }) as u32)
             }
-        };
-        let font_id = opts.font_id.map(|id| id as u32).unwrap_or(font_id);
-
-        let hash = shape_hash(font_id, size_bucket, style_flags, text);
-        if let Some(entry) = self.shape_cache.get(&hash) {
-            return Some(entry.clone());
         }
+    }
 
+    fn shape_runs(&mut self, text: &str, opts: &DrawOpts) -> Arc<[ShapedRun]> {
+        let scaled = opts.font_size * self.scale_factor;
+        let size_bucket = (scaled * 4.0).round().clamp(0.0, u16::MAX as f32) as u16;
+        let style_flags =
+            (if opts.bold { 1u8 } else { 0 }) | (if opts.italic { 2u8 } else { 0 });
+        let hash = shape_hash(
+            opts.font_id,
+            opts.preferred_font_id,
+            size_bucket,
+            style_flags,
+            text,
+        );
+        if let Some(runs) = self.shape_cache.get(&hash) {
+            return Arc::clone(runs);
+        }
+        // A leading symbol may resolve to an emoji font. Keep the rest
+        // of the label in its own font instead of shaping it all there.
+        // Coalesce adjacent graphemes with the same face so kerning and
+        // ligatures survive, and never split an emoji or combining mark.
+        let mut ranges: Vec<(usize, usize, u32)> = Vec::new();
+        if let Some(font_id) = opts.font_id {
+            ranges.push((0, text.len(), font_id as u32));
+        } else {
+            for (start, grapheme) in rio_unicode::grapheme::GraphemeIndices::new(text) {
+                let font_id = self.resolve_font(grapheme.chars().next().unwrap(), opts);
+                let end = start + grapheme.len();
+                if let Some(last) = ranges.last_mut().filter(|last| last.2 == font_id) {
+                    last.1 = end;
+                } else {
+                    ranges.push((start, end, font_id));
+                }
+            }
+        }
+        let runs: Arc<[ShapedRun]> = ranges
+            .into_iter()
+            .filter_map(|(start, end, font_id)| {
+                self.shape_segment(&text[start..end], font_id, opts)
+            })
+            .collect::<Vec<_>>()
+            .into();
+        self.shape_cache.insert(hash, Arc::clone(&runs));
+        runs
+    }
+
+    fn shape_segment(
+        &mut self,
+        text: &str,
+        font_id: u32,
+        opts: &DrawOpts,
+    ) -> Option<ShapedRun> {
+        if text.is_empty() {
+            return None;
+        }
+        let scaled = opts.font_size * self.scale_factor;
+        let size_bucket = (scaled * 4.0).round().clamp(0.0, u16::MAX as f32) as u16;
+        let size_u16 = scaled.round().clamp(1.0, u16::MAX as f32) as u16;
         let (synthetic_bold, synthetic_italic) = match self.synthesis_cache.entry(font_id)
         {
             std::collections::hash_map::Entry::Occupied(e) => *e.get(),
@@ -437,7 +589,6 @@ impl Text {
             ascent_px,
             glyphs,
         };
-        self.shape_cache.insert(hash, run.clone());
         Some(run)
     }
 
@@ -466,7 +617,9 @@ impl Text {
             };
 
             self.instances.push(TextInstance {
-                pos: [pen_x + glyph.x, py + glyph.y.max(0.0)],
+                // Keep atlas texels aligned with physical pixels at fractional DPI.
+                // Do not round advances: that would accumulate spacing error.
+                pos: [(pen_x + glyph.x).round(), (py - glyph.y).round()],
                 glyph_pos: [slot.x as u32, slot.y as u32],
                 glyph_size: [slot.w as u32, slot.h as u32],
                 bearings: [slot.bearing_x, slot.bearing_y],
@@ -2007,6 +2160,362 @@ fn blit_text_color(
             let src = [r, g, b, a];
             let idx = buf_row + (dst_x as usize);
             buf[idx] = blend_premul_over(src, buf[idx]);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tab_title_tests {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn preferred_coretext_collection_font_is_used() {
+        let fonts = FontLibrary::default();
+        let mut text = Text::new(&fonts);
+        let ui = text.font_family_id("Helvetica").unwrap();
+        {
+            let library = fonts.inner.read();
+            let (data, offset, _) = library.get_data(&ui).unwrap();
+            assert_eq!(&data.as_ref()[..4], b"ttcf");
+            assert_eq!(offset, 0);
+        }
+        let opts = DrawOpts {
+            preferred_font_id: Some(ui),
+            ..Default::default()
+        };
+        assert_eq!(text.resolve_font('A', &opts), ui as u32);
+        assert_ne!(text.resolve_font('\u{10ffff}', &opts), ui as u32);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn preferred_coretext_font_without_backing_data_is_used() {
+        let fonts = FontLibrary::default();
+        let mut text = Text::new(&fonts);
+        let ui = text.font_family_id("Helvetica").unwrap();
+        {
+            let mut library = fonts.inner.write();
+            let font = library.get_mut(&ui).unwrap();
+            *font =
+                crate::font::FontData::from_ctfont_macos(font.handle().unwrap().clone());
+            assert!(library.get_data(&ui).is_none());
+        }
+        let opts = DrawOpts {
+            preferred_font_id: Some(ui),
+            ..Default::default()
+        };
+        assert_eq!(text.resolve_font('A', &opts), ui as u32);
+        assert_ne!(text.resolve_font('\u{10ffff}', &opts), ui as u32);
+    }
+
+    #[test]
+    fn whole_string_cache_reuses_runs_and_separates_font_options() {
+        let mut text = Text::new(&FontLibrary::default());
+        let opts = DrawOpts::default();
+        let first = text.shape_runs("a中 e\u{301}", &opts);
+        let cached = text.shape_runs("a中 e\u{301}", &opts);
+        assert!(Arc::ptr_eq(&first, &cached));
+        for changed in [
+            DrawOpts {
+                font_id: Some(0),
+                ..opts
+            },
+            DrawOpts {
+                preferred_font_id: Some(0),
+                ..opts
+            },
+            DrawOpts { bold: true, ..opts },
+            DrawOpts {
+                font_size: 18.0,
+                ..opts
+            },
+        ] {
+            assert!(!Arc::ptr_eq(
+                &first,
+                &text.shape_runs("a中 e\u{301}", &changed)
+            ));
+        }
+        text.set_scale_factor(1.5);
+        assert!(!Arc::ptr_eq(
+            &first,
+            &text.shape_runs("a中 e\u{301}", &opts)
+        ));
+    }
+
+    #[test]
+    fn mixed_cjk_text_matches_individually_shaped_glyphs() {
+        let mut text = Text::new(&FontLibrary::default());
+        let opts = DrawOpts::default();
+        for title in ["a中", "中a", "◑ 中文标题"] {
+            let glyphs = |runs: Arc<[ShapedRun]>| -> Vec<(u32, u16)> {
+                runs.iter()
+                    .flat_map(|run| run.glyphs.iter().map(|g| (run.font_id, g.id)))
+                    .collect()
+            };
+            let mixed = glyphs(text.shape_runs(title, &opts));
+            let individual: Vec<_> = title
+                .chars()
+                .flat_map(|ch| {
+                    glyphs(text.shape_runs(ch.encode_utf8(&mut [0; 4]), &opts))
+                })
+                .collect();
+            assert_eq!(mixed, individual, "{title}");
+        }
+        let runs = text.shape_runs("e\u{301}", &opts);
+        assert_eq!(runs.len(), 1);
+    }
+
+    #[test]
+    fn pixel_snapping_preserves_width_without_accumulating_rounding_error() {
+        let mut text = Text::new(&FontLibrary::default());
+        text.init_cpu();
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            text.set_scale_factor(scale);
+            for (font_size, title) in [
+                (13.0, "✳ Пример Sample 0123 e\u{301}"),
+                (12.0, "✳ Демонстрационный заголовок"),
+                (12.0, "✳ Sample text"),
+                (12.0, "e\u{301} 👩\u{200d}💻"),
+            ] {
+                let opts = DrawOpts {
+                    font_size,
+                    ..Default::default()
+                };
+                let width = text.measure(title, &opts);
+                text.clear();
+                assert!((text.draw(10.3, 7.7, title, &opts) - width).abs() < 0.01);
+                assert!(text.instance_count() > 0);
+                assert!(text
+                    .instances()
+                    .iter()
+                    .all(|instance| instance.pos.iter().all(|p| p.fract() == 0.0)));
+                let positions: Vec<_> = text.instances().iter().map(|i| i.pos).collect();
+                text.clear();
+                text.draw(10.3 + 1.0 / scale, 7.7, title, &opts);
+                for (before, after) in positions.iter().zip(text.instances()) {
+                    assert_eq!(after.pos[0], before[0] + 1.0);
+                    assert_eq!(after.pos[1], before[1]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn missing_title_font_leaves_the_font_preference_unset() {
+        let mut text = Text::new(&FontLibrary::default());
+        assert_eq!(text.font_family_id(" "), None);
+        assert_eq!(text.font_family_id("Rio nonexistent font 72b298cf"), None);
+    }
+
+    #[test]
+    fn symbol_prefix_keeps_cyrillic_in_its_own_font() {
+        let fonts = FontLibrary::default();
+        let mut text = Text::new(&fonts);
+        let opts = DrawOpts {
+            font_size: 12.0,
+            ..Default::default()
+        };
+        let body = "Демонстрационный заголовок";
+        let expected = text.measure(body, &opts);
+        assert!(expected > 0.0);
+        for prefix in ["✳ ", "✻ ", "⏺ "] {
+            let prefix_width = text.measure(prefix, &opts);
+            let title = format!("{prefix}{body}");
+            let actual = text.measure(&title, &opts);
+            assert!(
+                (actual - prefix_width - expected).abs() < 0.01,
+                "{title:?}: {actual} != {prefix_width} + {expected}"
+            );
+            let runs = text.shape_runs(&title, &opts);
+            let body_font = text.resolve_font('П', &opts);
+            assert_eq!(runs.last().unwrap().font_id, body_font);
+        }
+    }
+
+    #[test]
+    fn explicit_font_is_preserved_for_the_whole_run() {
+        let mut text = Text::new(&FontLibrary::default());
+        let opts = DrawOpts {
+            font_id: Some(0),
+            ..Default::default()
+        };
+        let runs = text.shape_runs("✳ Пример", &opts);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].font_id, 0);
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn segoe_title_registration_preserves_terminal_fallback() {
+        let clean = FontLibrary::default();
+        let fonts = FontLibrary::default();
+        let mut text = Text::new(&fonts);
+        let ui = text.font_family_id("Segoe UI").unwrap();
+        for ch in ['\u{0180}', '\u{0181}', '\u{0182}'] {
+            let style = crate::SpanStyle::default();
+            let expected = clean.resolve_font_for_char(ch, &style, None).0;
+            let actual = fonts.resolve_font_for_char(ch, &style, None).0;
+            assert_eq!(
+                clean.inner.read().get(&expected).postscript_name(),
+                fonts.inner.read().get(&actual).postscript_name(),
+                "terminal fallback changed for {ch:?}"
+            );
+            assert_ne!(actual, ui);
+        }
+        let runs = text.shape_runs(
+            "\u{0180}\u{0181}\u{0182}",
+            &DrawOpts {
+                preferred_font_id: Some(ui),
+                ..Default::default()
+            },
+        );
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].font_id, ui as u32);
+        assert!(runs[0].glyphs.iter().all(|glyph| glyph.id != 0));
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn segoe_title_keeps_latin_and_cyrillic_in_one_face() {
+        let fonts = FontLibrary::default();
+        let primary = fonts
+            .inner
+            .read()
+            .get(&0)
+            .postscript_name()
+            .map(str::to_owned);
+        let mut text = Text::new(&fonts);
+        let ui = text
+            .font_family_id("Segoe UI")
+            .expect("Windows must provide Segoe UI");
+        let opts = DrawOpts {
+            preferred_font_id: Some(ui),
+            ..Default::default()
+        };
+        let runs = text.shape_runs("Пример Sample text 0123", &opts);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].font_id, ui as u32);
+        assert!(runs[0].glyphs.iter().all(|glyph| glyph.id != 0));
+        assert_eq!(
+            fonts
+                .inner
+                .read()
+                .get(&0)
+                .postscript_name()
+                .map(str::to_owned),
+            primary
+        );
+        assert_eq!(text.font_family_id("Segoe UI"), Some(ui));
+        let symbol_runs = text.shape_runs("🦀 Пример", &opts);
+        assert!(symbol_runs.iter().any(|run| run.font_id != ui as u32));
+        assert_eq!(symbol_runs.last().unwrap().font_id, ui as u32);
+    }
+
+    #[test]
+    fn fallback_faces_share_one_baseline() {
+        let mut text = Text::new(&FontLibrary::default());
+        text.init_cpu();
+        let opts = DrawOpts {
+            font_size: 13.0,
+            ..Default::default()
+        };
+        for scale in [1.0, 1.5, 2.0] {
+            text.set_scale_factor(scale);
+            text.clear();
+            let title = "✳ Пример Sample 0123";
+            let runs = text.shape_runs(title, &opts);
+            assert!(runs.len() > 1, "fixture needs different faces");
+            let baseline = text
+                .shape_runs(
+                    " ",
+                    &DrawOpts {
+                        font_id: Some(0),
+                        ..opts
+                    },
+                )
+                .first()
+                .unwrap()
+                .ascent_px as f32;
+            text.draw(0.0, 0.0, title, &opts);
+            let mut index = 0;
+            for run in runs.iter() {
+                for glyph in &run.glyphs {
+                    if let Some((slot, _)) = text.rasterize_slot(run, glyph.id) {
+                        if slot.w == 0 || slot.h == 0 {
+                            continue;
+                        }
+                        let actual =
+                            text.instances[index].pos[1] + glyph.y + run.ascent_px as f32;
+                        assert!((actual - baseline).abs() <= 0.5);
+                        index += 1;
+                    }
+                }
+            }
+            assert_eq!(index, text.instance_count());
+        }
+    }
+
+    #[test]
+    fn label_centering_uses_rendered_font_bounds_at_each_scale() {
+        let mut text = Text::new(&FontLibrary::default());
+        text.init_cpu();
+        let ui = text.font_family_id("Segoe UI");
+        for preferred_font_id in [None, ui] {
+            for font_size in [8.0, 12.0, 13.0, 20.0] {
+                let opts = DrawOpts {
+                    font_size,
+                    preferred_font_id,
+                    ..Default::default()
+                };
+                for scale in [1.0, 1.25, 1.5, 2.0] {
+                    text.set_scale_factor(scale);
+                    text.clear();
+                    let y = text.centered_y(19.0, &opts);
+                    // Measuring the vertical position must not emit text.
+                    assert_eq!(text.instance_count(), 0);
+                    text.draw(10.0, y, "Hg", &opts);
+                    let mut top = f32::INFINITY;
+                    let mut bottom = f32::NEG_INFINITY;
+                    for instance in text.instances() {
+                        let glyph_top = instance.pos[1] + instance.bearings[1] as f32;
+                        top = top.min(glyph_top);
+                        bottom = bottom.max(glyph_top + instance.glyph_size[1] as f32);
+                    }
+                    assert!(
+                        ((top + bottom) / 2.0 - 19.0 * scale).abs() <= 0.5,
+                        "font {preferred_font_id:?}, size {font_size}, scale {scale}: {top}..{bottom}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn animated_prefix_does_not_move_the_title_baseline() {
+        let mut text = Text::new(&FontLibrary::default());
+        text.init_cpu();
+        let opts = DrawOpts {
+            font_size: 13.0,
+            preferred_font_id: text.font_family_id("Segoe UI"),
+            ..Default::default()
+        };
+        for scale in [1.0, 1.5, 2.0] {
+            text.set_scale_factor(scale);
+            text.clear();
+            let y = text.centered_y(19.0, &opts);
+            text.draw(0.0, y, "Пример", &opts);
+            let expected = text.instances.last().unwrap().pos[1];
+            for prefix in ["✳ ", "✻ ", "⏺ ", "🦀 ", ""] {
+                text.clear();
+                let y = text.centered_y(19.0, &opts);
+                text.draw(0.0, y, &format!("{prefix}Пример"), &opts);
+                assert_eq!(
+                    text.instances.last().unwrap().pos[1],
+                    expected,
+                    "prefix {prefix:?} at {scale}"
+                );
+            }
         }
     }
 }
