@@ -639,7 +639,7 @@ pub fn default_key_bindings(config: &rio_backend::config::Config) -> Vec<KeyBind
         Key::Named(Copy),  +BindingMode::VI; Action::ClearSelection;
         Key::Named(Paste), ~BindingMode::VI; Action::Paste;
         Key::Character("l".into()), ModifiersState::CONTROL; Action::ClearLogNotice;
-        "l",  ModifiersState::CONTROL, ~BindingMode::VI; Action::Esc("\x0c".into());
+        "l",  ModifiersState::CONTROL, ~BindingMode::VI; Action::ReceiveChar;
         Key::Named(Home),     ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToTop;
         Key::Named(End),      ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollToBottom;
         Key::Named(PageUp),   ModifiersState::SHIFT, ~BindingMode::ALT_SCREEN; Action::ScrollPageUp;
@@ -1640,6 +1640,46 @@ mod tests {
             .iter()
             .any(|b| matches!(b.action, Action::Scroll(_)));
         assert!(has_scroll_actions);
+    }
+
+    #[test]
+    fn ctrl_l_uses_normal_input_outside_vi_mode() {
+        let bindings = default_key_bindings(&rio_backend::config::Config::default());
+        let key = Key::Character("l".into());
+        let trigger = BindingKey::Keycode {
+            key: key.clone(),
+            location: KeyLocation::Standard,
+        };
+        let ctrl = ModifiersState::CONTROL;
+
+        // ReceiveChar keeps Ctrl+L on the input path which snaps the viewport
+        // to the bottom before sending the clear-screen command to the shell.
+        for mode in [
+            BindingMode::empty(),
+            BindingMode::ALT_SCREEN,
+            BindingMode::DISAMBIGUATE_KEYS,
+            BindingMode::ALL_KEYS_AS_ESC,
+        ] {
+            assert!(
+                bindings.iter().any(|binding| {
+                    binding.is_triggered_by(mode.clone(), ctrl, &trigger)
+                        && binding.action == Action::ReceiveChar
+                }),
+                "Ctrl+L must use normal input in {mode:?}"
+            );
+        }
+
+        assert!(!bindings.iter().any(|binding| {
+            binding.is_triggered_by(BindingMode::VI, ctrl, &trigger)
+                && binding.action == Action::ReceiveChar
+        }));
+
+        // Legacy encoding must still emit form feed when the platform
+        // reports a plain letter or no text. An existing C0 is passed through.
+        for text in ["l", ""] {
+            assert_eq!(ctrl_seq(&key, text, ctrl), Some(0x0c));
+        }
+        assert_eq!(ctrl_seq(&key, "\x0c", ctrl), None);
     }
 
     #[test]
