@@ -328,6 +328,13 @@ impl CpuGridRenderer {
         }
     }
 
+    /// Drop both atlases' cached glyphs. See [`GridRenderer::clear_glyph_cache`].
+    pub fn clear_glyph_cache(&mut self) {
+        self.atlas_grayscale.clear();
+        self.atlas_color.clear();
+        self.needs_full_rebuild = true;
+    }
+
     #[inline]
     pub fn needs_full_rebuild(&self) -> bool {
         self.needs_full_rebuild
