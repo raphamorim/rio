@@ -231,7 +231,10 @@ impl HintState {
 
                 // Apply post-processing if enabled
                 if hint.post_processing {
-                    match_text = post_process_hyperlink_uri(&match_text);
+                    match_text.truncate(trim_match_tail(&match_text));
+                    if match_text.is_empty() {
+                        continue;
+                    }
                 }
 
                 let end_col =
@@ -293,19 +296,12 @@ impl HintState {
                     end_col += 1;
                 }
 
-                // Look up the URI once for the whole span.
-                if let Some(hyperlink) = term.cell_hyperlink(line, Column(start_col)) {
-                    let mut uri = hyperlink.uri().to_string();
-                    if hint.post_processing {
-                        uri = post_process_hyperlink_uri(&uri);
-                    }
-                    self.matches.push(HintMatch {
-                        text: uri,
-                        start: Pos::new(line, Column(start_col)),
-                        end: Pos::new(line, Column(end_col - 1)),
-                        hint: hint.clone(),
-                    });
-                }
+                self.matches.push(HintMatch {
+                    text: link.uri().to_string(),
+                    start: Pos::new(line, Column(start_col)),
+                    end: Pos::new(line, Column(end_col - 1)),
+                    hint: hint.clone(),
+                });
 
                 col = end_col;
             }
@@ -695,57 +691,6 @@ pub fn resolve_path_for_opening(text: &str, cwd: Option<&Path>) -> Option<PathBu
     } else {
         None
     }
-}
-
-/// Apply post-processing to hyperlink URIs (same as in screen/mod.rs)
-fn post_process_hyperlink_uri(uri: &str) -> String {
-    let chars: Vec<char> = uri.chars().collect();
-    if chars.is_empty() {
-        return String::new();
-    }
-
-    let mut end_idx = chars.len() - 1;
-    let mut open_parents = 0;
-    let mut open_brackets = 0;
-
-    // First pass: handle uneven brackets/parentheses
-    for (i, &c) in chars.iter().enumerate() {
-        match c {
-            '(' => open_parents += 1,
-            '[' => open_brackets += 1,
-            ')' => {
-                if open_parents == 0 {
-                    // Unmatched closing parenthesis, truncate here
-                    end_idx = i.saturating_sub(1);
-                    break;
-                } else {
-                    open_parents -= 1;
-                }
-            }
-            ']' => {
-                if open_brackets == 0 {
-                    // Unmatched closing bracket, truncate here
-                    end_idx = i.saturating_sub(1);
-                    break;
-                } else {
-                    open_brackets -= 1;
-                }
-            }
-            _ => (),
-        }
-    }
-
-    // Second pass: remove trailing delimiters
-    while end_idx > 0 {
-        match chars[end_idx] {
-            '.' | ',' | ':' | ';' | '?' | '!' | '(' | '[' | '\'' => {
-                end_idx = end_idx.saturating_sub(1);
-            }
-            _ => break,
-        }
-    }
-
-    chars.into_iter().take(end_idx + 1).collect()
 }
 
 #[cfg(test)]
@@ -1174,5 +1119,52 @@ mod tests {
         assert_eq!(trim_match_tail("http://a.b/(c)"), "http://a.b/(c)".len());
         // Trailing prose delimiters are dropped.
         assert_eq!(trim_match_tail("http://a.b/c,."), "http://a.b/c".len());
+    }
+
+    #[test]
+    fn test_trim_match_tail_urls() {
+        fn trim_tail(s: &str) -> &str {
+            &s[..trim_match_tail(s)]
+        }
+
+        // Test removing trailing parenthesis
+        assert_eq!(trim_tail("https://example.com)"), "https://example.com");
+
+        // Test removing trailing comma
+        assert_eq!(trim_tail("https://example.com,"), "https://example.com");
+
+        // Test removing trailing period
+        assert_eq!(trim_tail("https://example.com."), "https://example.com");
+
+        // Test handling balanced parentheses (should keep them)
+        assert_eq!(
+            trim_tail("https://example.com/path(with)parens"),
+            "https://example.com/path(with)parens"
+        );
+
+        // Test handling unbalanced parentheses
+        assert_eq!(
+            trim_tail("https://example.com/path)"),
+            "https://example.com/path"
+        );
+
+        // Test handling multiple trailing delimiters
+        assert_eq!(trim_tail("https://example.com.'),"), "https://example.com");
+
+        // Test markdown-style URLs
+        assert_eq!(trim_tail("https://example.com)"), "https://example.com");
+
+        // Test handling unbalanced brackets
+        assert_eq!(
+            trim_tail("https://example.com/path]"),
+            "https://example.com/path"
+        );
+
+        // Test balanced brackets (should keep them)
+        assert_eq!(
+            trim_tail("https://example.com/path[with]brackets"),
+            "https://example.com/path[with]brackets"
+        );
+        assert_eq!(trim_tail(")"), "");
     }
 }
