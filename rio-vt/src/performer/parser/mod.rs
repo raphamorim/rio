@@ -777,6 +777,28 @@ impl Parser {
     /// Add OSC param separator.
     #[inline]
     fn action_osc_put_param(&mut self) {
+        if self.osc_payload_is_verbatim() {
+            self.osc_raw.push(b';');
+            return;
+        }
+        self.push_osc_param();
+    }
+
+    #[inline]
+    fn osc_payload_is_verbatim(&self) -> bool {
+        let param = |i: usize| {
+            let (start, end) = self.osc_params[i];
+            self.osc_raw.slice(start, end)
+        };
+        match self.osc_num_params {
+            1 => param(0) == b"7",
+            2 => matches!((param(0), param(1)), (b"8", _) | (b"9", b"9")),
+            _ => false,
+        }
+    }
+
+    #[inline]
+    fn push_osc_param(&mut self) {
         let idx = self.osc_raw.len();
 
         let param_idx = self.osc_num_params;
@@ -804,7 +826,7 @@ impl Parser {
     }
 
     fn osc_end<P: Perform>(&mut self, performer: &mut P, byte: u8) {
-        self.action_osc_put_param();
+        self.push_osc_param();
         self.osc_dispatch(performer, byte);
         self.osc_raw.clear();
         self.osc_num_params = 0;
@@ -1926,6 +1948,59 @@ mod tests {
                 assert_eq!(params.len(), MAX_OSC_PARAMS);
                 assert!(params.iter().all(Vec::is_empty));
             }
+            _ => panic!("expected osc sequence"),
+        }
+    }
+
+    #[test]
+    fn parse_osc8_uri_keeps_semicolons() {
+        let uri = format!("https://x.dev/a{}", ";b".repeat(MAX_OSC_PARAMS + 1));
+        let input = format!("\x1b]8;id=1;{uri}\x1b\\").into_bytes();
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::default();
+
+        parser.advance(&mut dispatcher, &input);
+
+        match &dispatcher.dispatched[0] {
+            Sequence::Osc(params, _) => {
+                assert_eq!(params.len(), 3);
+                assert_eq!(params[0], b"8");
+                assert_eq!(params[1], b"id=1");
+                assert_eq!(params[2], uri.as_bytes());
+            }
+            _ => panic!("expected osc sequence"),
+        }
+    }
+
+    #[test]
+    fn parse_osc_cwd_payloads_keep_semicolons() {
+        let path = format!("/tmp/a{}", ";b".repeat(MAX_OSC_PARAMS + 1));
+        for (prefix, n) in [("7", 2), ("9;9", 3)] {
+            let input = format!("\x1b]{prefix};{path}\x07").into_bytes();
+            let mut dispatcher = Dispatcher::default();
+            let mut parser = Parser::default();
+
+            parser.advance(&mut dispatcher, &input);
+
+            match &dispatcher.dispatched[0] {
+                Sequence::Osc(params, _) => {
+                    assert_eq!(params.len(), n, "{prefix}");
+                    assert_eq!(params[n - 1], path.as_bytes(), "{prefix}");
+                }
+                _ => panic!("expected osc sequence"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_osc9_progress_still_splits() {
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::default();
+
+        parser.advance(&mut dispatcher, b"\x1b]9;4;1;50\x07");
+
+        match &dispatcher.dispatched[0] {
+            Sequence::Osc(params, _) => assert_eq!(params.len(), 4),
             _ => panic!("expected osc sequence"),
         }
     }
