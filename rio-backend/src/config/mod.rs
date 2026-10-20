@@ -30,7 +30,7 @@ use crate::config::window::Window;
 use colors::Colors;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{default::Default, fs::File};
 #[cfg(feature = "renderer")]
 use sugarloaf::font::fonts::SugarloafFonts;
@@ -415,14 +415,23 @@ impl Config {
         }
     }
 
-    pub fn try_load() -> Result<Self, ConfigError> {
-        let path = config_file_path();
+    /// Loads the config file and returns it together with any error that
+    /// should be reported. If the file can't be read or parsed the default
+    /// config is returned. A theme that fails to load is reported, but the
+    /// rest of the config is kept.
+    pub fn try_load() -> (Self, Option<ConfigError>) {
+        Config::try_load_from(&config_dir_path())
+    }
+
+    fn try_load_from(config_dir: &Path) -> (Self, Option<ConfigError>) {
+        let path = config_dir.join("config.toml");
         if path.exists() {
             match std::fs::read_to_string(path) {
                 Ok(content) => match toml::from_str::<Config>(&content) {
                     Ok(mut decoded) => {
+                        let mut theme_error = None;
                         let theme = &decoded.theme;
-                        let theme_path = config_dir_path().join("themes");
+                        let theme_path = config_dir.join("themes");
                         if !theme.is_empty() {
                             let path = theme_path.join(theme).with_extension("toml");
                             match Config::load_theme(&path) {
@@ -430,9 +439,9 @@ impl Config {
                                     decoded.colors = loaded_theme.colors;
                                 }
                                 Err(err_message) => {
-                                    return Err(ConfigError::ErrLoadingTheme(
-                                        err_message,
-                                    ));
+                                    warn!("failed to load theme: {}", theme);
+                                    theme_error =
+                                        Some(ConfigError::ErrLoadingTheme(err_message));
                                 }
                             }
                         }
@@ -453,9 +462,8 @@ impl Config {
                                 }
                                 Err(err_message) => {
                                     warn!("failed to load light theme: {}", light_theme);
-                                    return Err(ConfigError::ErrLoadingTheme(
-                                        err_message,
-                                    ));
+                                    theme_error =
+                                        Some(ConfigError::ErrLoadingTheme(err_message));
                                 }
                             }
 
@@ -467,9 +475,8 @@ impl Config {
                                 }
                                 Err(err_message) => {
                                     warn!("failed to load dark theme: {}", dark_theme);
-                                    return Err(ConfigError::ErrLoadingTheme(
-                                        err_message,
-                                    ));
+                                    theme_error =
+                                        Some(ConfigError::ErrLoadingTheme(err_message));
                                 }
                             }
 
@@ -480,18 +487,20 @@ impl Config {
                             }
                         }
 
-                        Ok(decoded)
+                        (decoded, theme_error)
                     }
-                    Err(err_message) => {
-                        Err(ConfigError::ErrLoadingConfig(err_message.to_string()))
-                    }
+                    Err(err_message) => (
+                        Config::default(),
+                        Some(ConfigError::ErrLoadingConfig(err_message.to_string())),
+                    ),
                 },
-                Err(err_message) => {
-                    Err(ConfigError::ErrLoadingConfig(err_message.to_string()))
-                }
+                Err(err_message) => (
+                    Config::default(),
+                    Some(ConfigError::ErrLoadingConfig(err_message.to_string())),
+                ),
             }
         } else {
-            Err(ConfigError::PathNotFound)
+            (Config::default(), Some(ConfigError::PathNotFound))
         }
     }
 
@@ -737,6 +746,33 @@ mod tests {
         let file_name = tmp_dir().join(theme).with_extension("toml");
         let mut file = std::fs::File::create(file_name).unwrap();
         writeln!(file, "{toml_str}").unwrap();
+    }
+
+    #[test]
+    fn test_try_load_keeps_config_when_theme_is_missing() {
+        let config_dir = tmp_dir().join("test-rio-try-load-missing-theme");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("config.toml"),
+            r#"
+            theme = "not-found"
+
+            [renderer]
+            backend = "Webgpu"
+
+            [adaptive-theme]
+            dark = "not-found-dark"
+            light = "not-found-light"
+        "#,
+        )
+        .unwrap();
+
+        let (config, error) = Config::try_load_from(&config_dir);
+
+        assert_eq!(config.renderer.backend, renderer::Backend::Webgpu);
+        assert_eq!(config.theme, "not-found");
+        assert!(config.adaptive_colors.is_none());
+        assert!(matches!(error, Some(ConfigError::ErrLoadingTheme(_))));
     }
 
     #[test]
