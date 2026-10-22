@@ -158,6 +158,35 @@ impl Parser {
     /// Requires a [`Perform`] implementation to handle the triggered actions.
     #[inline]
     pub fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
+        self.advance_inner(performer, bytes, false);
+    }
+
+    /// Partially advance the parser state.
+    ///
+    /// This is equivalent to [`Self::advance`], but stops when
+    /// [`Perform::terminated`] is true after reading a byte.
+    ///
+    /// Returns the number of bytes read before termination.
+    ///
+    /// See [`Self::advance`] for more details.
+    #[inline]
+    #[must_use = "Returned value should be used to process the remaining bytes"]
+    pub fn advance_until_terminated<P: Perform>(
+        &mut self,
+        performer: &mut P,
+        bytes: &[u8],
+    ) -> usize {
+        self.advance_inner(performer, bytes, true)
+    }
+
+    /// Shared body of [`Self::advance`] and [`Self::advance_until_terminated`].
+    #[inline]
+    fn advance_inner<P: Perform>(
+        &mut self,
+        performer: &mut P,
+        bytes: &[u8],
+        terminable: bool,
+    ) -> usize {
         let mut i = 0;
 
         // Handle partial codepoints from previous calls to `advance`.
@@ -165,7 +194,7 @@ impl Parser {
             i += self.advance_partial_utf8(performer, bytes);
         }
 
-        while i != bytes.len() {
+        while i != bytes.len() && !(terminable && performer.terminated()) {
             match self.state {
                 State::Ground => i += self.advance_ground(performer, &bytes[i..]),
                 State::CsiParam => {
@@ -194,6 +223,8 @@ impl Parser {
                 }
             }
         }
+
+        i
     }
 
     /// Consume a run of bytes while in `CsiParam`, accumulating digit
@@ -1558,6 +1589,19 @@ pub trait Perform {
     /// Invoked when the end of an APC (Application Program Command) sequence is
     /// encountered.
     fn apc_end(&mut self) {}
+
+    /// Whether the parser should terminate prematurely.
+    ///
+    /// This can be used in conjunction with
+    /// [`Parser::advance_until_terminated`] to terminate the parser after
+    /// receiving certain escape sequences like synchronized updates.
+    ///
+    /// This is checked after every parsed byte, so no expensive computation
+    /// should take place in this function.
+    #[inline(always)]
+    fn terminated(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

@@ -601,22 +601,16 @@ impl Processor {
     where
         H: Handler,
     {
-        if self.state.sync_state.timeout.pending_timeout() {
-            // Cap synchronized-update latency for embedders that do not
-            // drive the timeout externally: once the deadline has passed,
-            // flush the buffered update before processing new bytes. Event
-            // loops that poll `sync_timeout()` (like Rio's machine) flush at
-            // the deadline itself and never reach this branch.
-            if self.state.sync_state.timeout.expired() {
-                self.stop_sync(handler);
-                let mut performer = Performer::new(&mut self.state, handler);
-                self.parser.advance(&mut performer, bytes);
+        let mut processed = 0;
+        while processed != bytes.len() {
+            if self.state.sync_state.timeout.pending_timeout() {
+                processed += self.advance_sync(handler, &bytes[processed..]);
             } else {
-                self.advance_sync(handler, bytes);
+                let mut performer = Performer::new(&mut self.state, handler);
+                processed += self
+                    .parser
+                    .advance_until_terminated(&mut performer, &bytes[processed..]);
             }
-        } else {
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, bytes);
         }
     }
 
@@ -637,8 +631,10 @@ impl Processor {
     where
         H: Handler,
     {
-        // Process all synchronized bytes. BSU sequences are processed
-        // automatically during the synchronized update.
+        // Process all synchronized bytes.
+        //
+        // NOTE: We do not use `advance_until_terminated` here since BSU sequences are
+        // processed automatically during the synchronized update.
         let buffer = mem::take(&mut self.state.sync_state.buffer);
         let offset = bsu_offset.unwrap_or(buffer.len());
         let mut performer = Performer::new(&mut self.state, handler);
@@ -678,22 +674,28 @@ impl Processor {
     }
 
     /// Process a new byte during a synchronized update.
+    ///
+    /// Returns the number of bytes processed.
     #[cold]
-    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8])
+    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8]) -> usize
     where
         H: Handler,
     {
-        // Advance sync parser or stop sync if we'd exceed the maximum buffer size.
-        if self.state.sync_state.buffer.len() + bytes.len() >= SYNC_BUFFER_SIZE - 1 {
+        // Advance sync parser or stop sync if we'd exceed the maximum buffer size, or
+        // if the deadline passed under an embedder that does not poll `sync_timeout()`.
+        if self.state.sync_state.timeout.expired()
+            || self.state.sync_state.buffer.len() + bytes.len() >= SYNC_BUFFER_SIZE - 1
+        {
             // Terminate the synchronized update.
             self.stop_sync_internal(handler, None);
 
             // Just parse the bytes normally.
             let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, bytes);
+            self.parser.advance_until_terminated(&mut performer, bytes)
         } else {
             self.state.sync_state.buffer.extend(bytes);
             self.advance_sync_csi(handler, bytes.len());
+            bytes.len()
         }
     }
 
@@ -1634,6 +1636,12 @@ impl<U: Handler> Perform for Performer<'_, U> {
         // Process the accumulated buffer
         self.process_apc_buffer();
     }
+
+    #[inline(always)]
+    fn terminated(&self) -> bool {
+        // Armed by both BSU forms, so the parser stops exactly where `advance` buffers.
+        self.state.sync_state.timeout.pending_timeout()
+    }
 }
 
 #[inline]
@@ -2346,6 +2354,21 @@ mod tests {
         assert_eq!(handler.printed, "hidden");
         assert!(processor.sync_timeout().sync_timeout().is_none());
         assert_eq!(processor.sync_bytes_count(), 0);
+    }
+
+    /// A BSU gates the rest of its own read, not only the reads after it.
+    #[test]
+    fn sync_update_buffers_the_rest_of_the_read() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        // Start synchronized update with immediate text.
+        processor.advance(&mut handler, b"a\x1b[?2026hhidden");
+        assert_eq!(handler.printed, "a");
+
+        // Terminate synchronized update and check for the text.
+        processor.advance(&mut handler, b"\x1b[?2026lc");
+        assert_eq!(handler.printed, "ahiddenc");
     }
 
     /// The legacy iTerm2 DCS form (`DCS = 1 s ST` / `DCS = 2 s ST`) must
