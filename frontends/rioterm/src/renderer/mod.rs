@@ -458,7 +458,7 @@ impl Renderer {
             self.last_active = Some(active_route);
         }
 
-        for (_key, grid_context) in grid.contexts_mut().iter_mut() {
+        for grid_context in grid.contexts_mut().values_mut() {
             let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
 

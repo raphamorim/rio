@@ -471,17 +471,7 @@ where
                         let hung_up = false;
                         // HUP can accompany unread final output.
                         if event.readiness().is_readable() || hung_up {
-                            if let Err(err) = self.pty_read(state, buf) {
-                                // On Linux, a `read` on the master side of a PTY can fail
-                                // with `EIO` if the client side hangs up.  In that case,
-                                // just loop back round for the inevitable `Exited` event.
-                                #[cfg(target_os = "linux")]
-                                if err.raw_os_error() == Some(libc::EIO) {
-                                    continue;
-                                }
-
-                                return Err(err);
-                            }
+                            self.pty_read(state, buf)?;
                         }
 
                         if !hung_up && event.readiness().is_writable() {

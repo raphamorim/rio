@@ -448,9 +448,7 @@ impl ImageCache {
 
         match &self.device_queue {
             #[cfg(feature = "wgpu")]
-            DeviceQueue::Wgpu {
-                device, queue: _, ..
-            } => {
+            DeviceQueue::Wgpu { device, .. } => {
                 let texture = device.create_texture(&wgpu::TextureDescriptor {
                     label: Some(&format!("rich_text color atlas {}", atlas_index)),
                     size: wgpu::Extent3d {
