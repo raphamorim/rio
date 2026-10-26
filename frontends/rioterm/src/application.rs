@@ -613,7 +613,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
 
                 let mut has_checked_adaptive_colors = false;
-                for (_id, route) in self.router.routes.iter_mut() {
+                for route in self.router.routes.values_mut() {
                     // Apply system theme to ensure colors are consistent
                     if !has_checked_adaptive_colors {
                         let system_theme = event_loop.system_theme();
@@ -1177,7 +1177,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         let mut tab_id = None;
 
         // In case only have one window
-        for (_, route) in self.router.routes.iter() {
+        for route in self.router.routes.values() {
             if tab_id.is_none() {
                 tab_id = Some(route.window.winit_window.tabbing_identifier());
             }

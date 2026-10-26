@@ -385,7 +385,7 @@ fn test_panel_resize_preserves_proportions_on_window_resize() {
 
     let mut tree: TaffyTree<()> = TaffyTree::new();
 
-    let initial_width = 1000.0;
+    let initial_width = 1000.0_f32;
 
     // Root container (simulates the grid root after margin subtraction)
     let root = tree
@@ -394,7 +394,7 @@ fn test_panel_resize_preserves_proportions_on_window_resize() {
             flex_direction: FlexDirection::Row,
             size: geometry::Size {
                 width: length(initial_width),
-                height: length(800.0),
+                height: length(800.0_f32),
             },
             ..Default::default()
         })
@@ -444,13 +444,13 @@ fn test_panel_resize_preserves_proportions_on_window_resize() {
     // Simulate move_divider: set left to 80%, right to 20%
     // Uses flex_grow proportional to the size so panels scale on resize
     let mut left_style = tree.style(left).unwrap().clone();
-    left_style.flex_basis = length(0.0);
+    left_style.flex_basis = length(0.0_f32);
     left_style.flex_grow = 800.0;
     left_style.flex_shrink = 1.0;
     tree.set_style(left, left_style).unwrap();
 
     let mut right_style = tree.style(right).unwrap().clone();
-    right_style.flex_basis = length(0.0);
+    right_style.flex_basis = length(0.0_f32);
     right_style.flex_grow = 200.0;
     right_style.flex_shrink = 1.0;
     tree.set_style(right, right_style).unwrap();
@@ -521,8 +521,8 @@ fn test_split_inside_resized_panel_preserves_proportions() {
             display: Display::Flex,
             flex_direction: FlexDirection::Row,
             size: geometry::Size {
-                width: length(1000.0),
-                height: length(800.0),
+                width: length(1000.0_f32),
+                height: length(800.0_f32),
             },
             ..Default::default()
         })
@@ -551,13 +551,13 @@ fn test_split_inside_resized_panel_preserves_proportions() {
 
     // Resize: left=20%, right=80% (using flex_grow proportional)
     let mut left_style = tree.style(left).unwrap().clone();
-    left_style.flex_basis = length(0.0);
+    left_style.flex_basis = length(0.0_f32);
     left_style.flex_grow = 200.0;
     left_style.flex_shrink = 1.0;
     tree.set_style(left, left_style).unwrap();
 
     let mut right_style = tree.style(right).unwrap().clone();
-    right_style.flex_basis = length(0.0);
+    right_style.flex_basis = length(0.0_f32);
     right_style.flex_grow = 800.0;
     right_style.flex_shrink = 1.0;
     tree.set_style(right, right_style).unwrap();

@@ -674,11 +674,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Use flex_grow proportional to the desired size so panels
         // scale correctly when the window is resized.
         if let Some(w) = width {
-            style.flex_basis = length(0.0);
+            style.flex_basis = length(0.0_f32);
             style.flex_grow = w;
             style.flex_shrink = 1.0;
         } else if let Some(h) = height {
-            style.flex_basis = length(0.0);
+            style.flex_basis = length(0.0_f32);
             style.flex_grow = h;
             style.flex_shrink = 1.0;
         }

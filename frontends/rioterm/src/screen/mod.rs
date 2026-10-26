@@ -4651,11 +4651,11 @@ impl Screen<'_> {
             // (rows, per-cell styles, extras table). Closed routes
             // simply drop their PanelFrame; the context (and its
             // renderable_content) is gone too.
-            for (_, item) in self
+            for item in self
                 .context_manager
                 .current_grid_mut()
                 .contexts_mut()
-                .iter_mut()
+                .values_mut()
             {
                 let route_id = item.val.route_id;
                 if let Some(idx) = panels.iter().position(|p| p.route_id == route_id) {

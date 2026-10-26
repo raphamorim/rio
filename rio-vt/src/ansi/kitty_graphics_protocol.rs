@@ -1482,7 +1482,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                     let mut rgba =
                         Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
                     let mut opaque = true;
-                    for chunk in pixel_data.chunks_exact(2) {
+                    for chunk in pixel_data.as_chunks::<2>().0 {
                         let g = chunk[0];
                         let a = chunk[1];
                         if a != 255 {
@@ -1496,7 +1496,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                     // 3 bpp: add A=255
                     let mut rgba =
                         Vec::with_capacity(cmd.width as usize * cmd.height as usize * 4);
-                    for chunk in pixel_data.chunks_exact(3) {
+                    for chunk in pixel_data.as_chunks::<3>().0 {
                         rgba.extend_from_slice(&[chunk[0], chunk[1], chunk[2], 255]);
                     }
                     (rgba, true)

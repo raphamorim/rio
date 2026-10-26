@@ -264,7 +264,12 @@ impl GraphicData {
             let offset = offset_y * self.width * 4;
             let row = &self.pixels[offset..offset + width * 4];
 
-            if row.chunks_exact(4).any(|pixel| pixel.last() != Some(&255)) {
+            if row
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .any(|pixel| pixel.last() != Some(&255))
+            {
                 return false;
             }
         }
@@ -274,12 +279,7 @@ impl GraphicData {
 
     #[cfg(feature = "image")]
     pub fn from_dynamic_image(id: GraphicId, image: DynamicImage) -> Self {
-        let color_type;
-        let width;
-        let height;
-        let pixels;
-
-        match image {
+        let (color_type, width, height, pixels) = match image {
             // Sugarloaf only accepts rgba8 now
             // DynamicImage::ImageRgb8(image) => {
             //     color_type = ColorType::Rgb;
@@ -287,22 +287,24 @@ impl GraphicData {
             //     height = image.height() as usize;
             //     pixels = image.into_raw();
             // }
-            DynamicImage::ImageRgba8(image) => {
-                color_type = ColorType::Rgba;
-                width = image.width() as usize;
-                height = image.height() as usize;
-                pixels = image.into_raw();
-            }
+            DynamicImage::ImageRgba8(image) => (
+                ColorType::Rgba,
+                image.width() as usize,
+                image.height() as usize,
+                image.into_raw(),
+            ),
 
             _ => {
                 // Non-RGB image. Convert it to RGBA.
                 let image = image.into_rgba8();
-                color_type = ColorType::Rgba;
-                width = image.width() as usize;
-                height = image.height() as usize;
-                pixels = image.into_raw();
+                (
+                    ColorType::Rgba,
+                    image.width() as usize,
+                    image.height() as usize,
+                    image.into_raw(),
+                )
             }
-        }
+        };
 
         GraphicData {
             id,

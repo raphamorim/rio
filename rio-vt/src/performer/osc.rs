@@ -149,12 +149,11 @@ pub(super) fn parse_number(input: &[u8]) -> Option<u8> {
     let mut num: u8 = 0;
     for c in input {
         let c = *c as char;
-        if let Some(digit) = c.to_digit(10) {
+        {
+            let digit = c.to_digit(10)?;
             num = num
                 .checked_mul(10)
                 .and_then(|v| v.checked_add(digit as u8))?
-        } else {
-            return None;
         }
     }
     Some(num)
@@ -460,10 +459,9 @@ pub(super) fn parse_dynamic_colors(params: &[&[u8]]) -> Option<Vec<DynamicColorE
         };
         let spec = if *param == b"?" {
             ColorSpec::Query
-        } else if let Some(c) = xparse_color(param) {
-            ColorSpec::Set(c)
         } else {
-            return None;
+            let c = xparse_color(param)?;
+            ColorSpec::Set(c)
         };
         out.push(DynamicColorEntry {
             index,
