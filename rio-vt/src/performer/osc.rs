@@ -11,7 +11,6 @@ use cursor_icon::CursorIcon;
 
 use crate::ansi::CursorShape;
 use crate::config::colors::{ColorRgb, NamedColor};
-use crate::crosswords::square::Hyperlink;
 use crate::event::{ProgressReport, ProgressState};
 use crate::simd_utf8;
 
@@ -352,16 +351,6 @@ pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<&str> {
         .and_then(|kv| simd_utf8::from_utf8_fast(kv).ok())
 }
 
-/// Construct a [`Hyperlink`] from the link params + URI bytes. Returns
-/// `None` for an empty URI (caller should clear the active hyperlink).
-pub(super) fn parse_hyperlink(link_params: &[u8], uri_param: &[u8]) -> Option<Hyperlink> {
-    let uri = simd_utf8::from_utf8_fast(uri_param).unwrap_or_default();
-    if uri.is_empty() {
-        return None;
-    }
-    Some(Hyperlink::new(parse_hyperlink_id(link_params), uri))
-}
-
 /// OSC 9;4 — ConEmu/Windows-Terminal progress reporting.
 /// Format: `9;4;<state>;<progress>` (progress optional).
 pub(super) fn parse_progress_report(params: &[&[u8]]) -> Option<ProgressReport> {
@@ -384,23 +373,10 @@ pub(super) fn parse_progress_report(params: &[&[u8]]) -> Option<ProgressReport> 
     Some(ProgressReport { state, progress })
 }
 
-/// Rejoin `params[from..]` with the `;` the OSC parser split on, so a
-/// payload defined as verbatim text survives a `;` inside it.
-pub(super) fn join_params(params: &[&[u8]], from: usize) -> Option<String> {
-    Some(
-        params
-            .get(from..)?
-            .iter()
-            .map(|param| simd_utf8::from_utf8_fast(param).ok())
-            .collect::<Option<Vec<_>>>()?
-            .join(";"),
-    )
-}
-
 /// OSC 9;9: ConEmu/Windows-Terminal working directory report, the
 /// Windows counterpart of OSC 7. Format: `9;9;<path>`, with the path
 /// optionally wrapped in double quotes and travelling verbatim (no URL
-/// encoding), so everything after `9;9;` is rejoined.
+/// encoding): the parser keeps everything after `9;9;` as one param.
 ///
 /// The sequence carries no host field, so unlike OSC 7 a remote shell
 /// cannot be told apart from a local one (ConEmu and Windows Terminal
@@ -410,11 +386,11 @@ pub(super) fn parse_conemu_working_directory(params: &[&[u8]]) -> Option<String>
     if params.len() < 3 || params[1] != b"9" {
         return None;
     }
-    let path = join_params(params, 2)?;
+    let path = simd_utf8::from_utf8_fast(params[2]).ok()?;
     let path = path
         .strip_prefix('"')
         .and_then(|p| p.strip_suffix('"'))
-        .unwrap_or(&path);
+        .unwrap_or(path);
     if !is_absolute_path(path) {
         return None;
     }
@@ -593,8 +569,8 @@ mod tests {
             parse(&[b"9", b"9", b"\"C:\\Program Files\""]),
             Some("C:\\Program Files".into())
         );
-        // A `;` in the path arrives as extra params and is rejoined.
-        assert_eq!(parse(&[b"9", b"9", b"C:\\a", b"b"]), Some("C:\\a;b".into()));
+        // The parser keeps a `;` in the path inside the last param.
+        assert_eq!(parse(&[b"9", b"9", b"C:\\a;b"]), Some("C:\\a;b".into()));
 
         // Progress reports and notifications are not directories.
         assert_eq!(parse(&[b"9", b"4", b"1", b"50"]), None);
@@ -611,16 +587,6 @@ mod tests {
             parse(&[b"9", b"9", b"/home/user"]),
             Some("/home/user".into())
         );
-    }
-
-    #[test]
-    fn join_params_restores_split_semicolons() {
-        assert_eq!(
-            join_params(&[b"7", b"kitty-shell-cwd://h/tmp/a", b"b"], 1),
-            Some("kitty-shell-cwd://h/tmp/a;b".into())
-        );
-        assert_eq!(join_params(&[b"7", b"x"], 1), Some("x".into()));
-        assert_eq!(join_params(&[b"7"], 1), Some(String::new()));
     }
 
     #[cfg(not(windows))]
@@ -643,10 +609,8 @@ mod tests {
 
     #[cfg(not(windows))]
     #[test]
-    fn kitty_shell_cwd_keeps_semicolons_after_rejoin() {
-        // The handler rejoins split params before calling the parser.
-        let payload = join_params(&[b"7", b"kitty-shell-cwd:///tmp/a", b"b"], 1).unwrap();
-        assert_eq!(cwd(&payload), Some("/tmp/a;b".into()));
+    fn kitty_shell_cwd_keeps_semicolons() {
+        assert_eq!(cwd("kitty-shell-cwd:///tmp/a;b"), Some("/tmp/a;b".into()));
     }
 
     #[cfg(not(windows))]

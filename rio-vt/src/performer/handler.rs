@@ -1141,19 +1141,26 @@ impl<U: Handler> Perform for Performer<'_, U> {
 
             // Inform current directory.
             b"7" => {
-                // Rejoined: the kitty-shell-cwd flavor is verbatim, so a
-                // `;` in the directory arrives as extra params.
-                if let Some(payload) = osc::join_params(params, 1) {
-                    if let Some(path) = osc::parse_current_directory(payload.as_bytes()) {
-                        self.handler.set_current_directory(path.into());
-                    }
+                if let Some(path) = params
+                    .get(1)
+                    .and_then(|payload| osc::parse_current_directory(payload))
+                {
+                    self.handler.set_current_directory(path.into());
                 }
             }
 
             // Hyperlink.
             b"8" if params.len() > 2 => {
-                self.handler
-                    .set_hyperlink(osc::parse_hyperlink(params[1], params[2]));
+                let uri = match crate::simd_utf8::from_utf8_fast(params[2]) {
+                    Ok(uri) => std::borrow::Cow::Borrowed(uri),
+                    Err(_) => String::from_utf8_lossy(params[2]),
+                };
+                let link = (!uri.is_empty()).then(|| {
+                    let id =
+                        osc::parse_hyperlink_id(params[1]).filter(|id| !id.is_empty());
+                    Hyperlink::new(id, &*uri)
+                });
+                self.handler.set_hyperlink(link);
             }
 
             // OSC 9 dispatches on its sub-command: 9;4 progress and 9;9
