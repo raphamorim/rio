@@ -196,10 +196,79 @@ impl Parser {
         }
     }
 
+    /// Advance the parser until `performer` reports itself terminated.
+    ///
+    /// Identical to [`Parser::advance`] (kept a separate copy so that hot
+    /// path's codegen stays untouched), except the parser stops right
+    /// after the action that flipped [`Perform::terminated`] and returns
+    /// how many bytes it consumed; the caller owns the rest. The parser
+    /// state stays valid, so the remaining bytes can be fed back later.
+    ///
+    /// Termination can only be flipped by a CSI dispatch (which leaves the
+    /// parser in `Ground`) or a DCS hook (which leaves it in
+    /// `DcsPassthrough`), so testing it on entry to those two arms, before
+    /// they consume anything, covers every arming point without a
+    /// per-iteration check on any other path.
+    #[inline]
+    #[must_use = "the remaining bytes must be processed by the caller"]
+    pub fn advance_until_terminated<P: Perform>(
+        &mut self,
+        performer: &mut P,
+        bytes: &[u8],
+    ) -> usize {
+        let mut i = 0;
+
+        // Handle partial codepoints from previous calls to `advance`.
+        if self.partial_utf8_len != 0 {
+            i += self.advance_partial_utf8(performer, bytes);
+        }
+
+        while i != bytes.len() {
+            match self.state {
+                State::Ground => {
+                    if performer.terminated() {
+                        break;
+                    }
+                    i += self.advance_ground(performer, &bytes[i..]);
+                }
+                State::CsiParam => {
+                    i += self.advance_csi_param_run(performer, &bytes[i..])
+                }
+                State::OscString => {
+                    i += self.advance_osc_string_run(performer, &bytes[i..])
+                }
+                State::ApcString => {
+                    i += self.advance_apc_string_run(performer, &bytes[i..])
+                }
+                State::SosString => {
+                    i += self.advance_sos_string_run(performer, &bytes[i..])
+                }
+                State::PmString => {
+                    i += self.advance_pm_string_run(performer, &bytes[i..])
+                }
+                State::DcsPassthrough => {
+                    if performer.terminated() {
+                        break;
+                    }
+                    i += self.advance_dcs_passthrough_run(performer, &bytes[i..])
+                }
+                _ => {
+                    // Inlining it results in worse codegen.
+                    let byte = bytes[i];
+                    self.change_state(performer, byte);
+                    i += 1;
+                }
+            }
+        }
+
+        i
+    }
+
     /// Consume a run of bytes while in `CsiParam`, accumulating digit
     /// sub-runs into a local instead of paying the state dispatch and the
     /// `self.param` load/store per byte. Any byte outside the param set
     /// falls through to the generic per-byte path.
+    ///
     fn advance_csi_param_run<P: Perform>(
         &mut self,
         performer: &mut P,
@@ -588,6 +657,7 @@ impl Parser {
         n + 1
     }
 
+    #[inline]
     fn advance_osc_string<P: Perform>(&mut self, performer: &mut P, byte: u8) {
         match byte {
             0x00..=0x06 | 0x08..=0x17 | 0x19 | 0x1C..=0x1F => (),
@@ -1409,6 +1479,16 @@ enum State {
 /// The methods correspond to actions described in
 /// <http://vt100.net/emu/dec_ansi_parser>.
 pub trait Perform {
+    /// Whether the parser should stop consuming input.
+    ///
+    /// Checked between actions by [`Parser::advance_until_terminated`];
+    /// a performer flips this from a dispatch to take over the remaining
+    /// bytes itself (rio's synchronized-update buffering does).
+    #[inline(always)]
+    fn terminated(&self) -> bool {
+        false
+    }
+
     /// Draw a character to the screen and update states.
     fn print(&mut self, _c: char) {}
 
