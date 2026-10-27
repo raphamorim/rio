@@ -232,7 +232,7 @@ Colors are specified using their hexadecimal values with a _#_ prefix: _#RRGGBB_
 
 *tabs-active* = _"<string>"_
 
-	Active tab title color.
+	Active tab title color. Defaults to *foreground*.
 
 *split* = _"<string>"_
 
