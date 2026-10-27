@@ -103,6 +103,9 @@ pub struct RenderableContent {
     pub atlas_placements: Vec<AtlasPlacement>,
     /// `true` when the terminal has cursor blink enabled this frame.
     pub blinking_cursor: bool,
+    /// `true` when the terminal was in Vi mode at snapshot time, so
+    /// the cursor is drawn with the `vi-cursor` color.
+    pub is_vi_mode: bool,
     /// Kitty graphics state captured under the snapshot lock. Owned
     /// here so the kitty overlay path doesn't need to lock again.
     pub kitty_virtual_placements: FxHashMap<(u32, u32), VirtualPlacement>,
@@ -137,6 +140,7 @@ impl RenderableContent {
             lines_evicted: 0,
             atlas_placements: Vec::new(),
             blinking_cursor: false,
+            is_vi_mode: false,
             kitty_virtual_placements: FxHashMap::default(),
             kitty_images: FxHashMap::default(),
             kitty_placements: Vec::new(),
