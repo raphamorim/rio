@@ -5,6 +5,7 @@
 
 use crate::font::FontLibrary;
 use rustc_hash::FxHashMap;
+use std::sync::Arc;
 
 // `pos` is **pixel-space top-left** of the glyph's text bounding box.
 // `bearings.x` shifts it right to the glyph bitmap's left edge;
@@ -84,11 +85,16 @@ struct ShapedRun {
 }
 
 #[inline]
-fn shape_hash(font_id: u32, size_bucket: u16, style_flags: u8, text: &str) -> u64 {
+fn shape_hash(
+    font_id: Option<usize>,
+    size_bucket: u16,
+    style_flags: u8,
+    text: &str,
+) -> u64 {
     use core::hash::Hasher;
     use rustc_hash::FxHasher;
     let mut h = FxHasher::default();
-    h.write_u32(font_id);
+    h.write_u64(font_id.map_or(u64::MAX, |id| id as u64));
     h.write_u16(size_bucket);
     h.write_u8(style_flags);
     h.write(text.as_bytes());
@@ -152,12 +158,12 @@ pub struct Text {
     instances: Vec<TextInstance>,
     scale_factor: f32,
     font_library: FontLibrary,
-    font_resolve: FxHashMap<(char, u8), (u32, bool)>,
+    font_resolve: FxHashMap<(char, u8), u32>,
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
     #[cfg(not(target_os = "macos"))]
     wght_variation_cache: FxHashMap<u32, Option<f32>>,
     ascent_cache: FxHashMap<(u32, u16), i16>,
-    shape_cache: FxHashMap<u64, ShapedRun>,
+    shape_cache: FxHashMap<u64, Arc<[ShapedRun]>>,
 
     #[cfg(target_os = "macos")]
     handle_cache: FxHashMap<u32, crate::font::macos::FontHandle>,
@@ -247,12 +253,14 @@ impl Text {
         if text.is_empty() {
             return 0.0;
         }
-        let Some(shaped) = self.shape_for(text, opts) else {
-            return 0.0;
-        };
-        let width_px = shaped_width(&shaped);
-        self.emit_instances(x, y, &shaped, opts);
-        width_px / self.scale_factor
+        let runs = self.shape_for(text, opts);
+        let start_px = x * self.scale_factor;
+        let mut pen_px = start_px;
+        for run in runs.iter() {
+            self.emit_instances(pen_px, y, run, opts);
+            pen_px += shaped_width(run);
+        }
+        (pen_px - start_px) / self.scale_factor
     }
 
     /// Measure `text` under `opts` without recording a draw. Returns
@@ -261,51 +269,86 @@ impl Text {
         if text.is_empty() {
             return 0.0;
         }
-        self.shape_for(text, opts)
-            .map(|r| shaped_width(&r) / self.scale_factor)
-            .unwrap_or(0.0)
+        let width_px: f32 = self.shape_for(text, opts).iter().map(shaped_width).sum();
+        width_px / self.scale_factor
     }
 
-    fn shape_for(&mut self, text: &str, opts: &DrawOpts) -> Option<ShapedRun> {
-        use crate::{Attributes, SpanStyle, Stretch, Style as FontStyle, Weight};
-
+    /// Shape `text` into one run per span of consecutive grapheme
+    /// clusters that resolve to the same font, so every run is shaped
+    /// and rasterized against a font that covers it. `opts.font_id`
+    /// forces a single run in that font.
+    fn shape_for(&mut self, text: &str, opts: &DrawOpts) -> Arc<[ShapedRun]> {
         let scaled = opts.font_size * self.scale_factor;
         let size_bucket = (scaled * 4.0).round().clamp(0.0, u16::MAX as f32) as u16;
         let size_u16 = scaled.round().clamp(1.0, u16::MAX as f32) as u16;
         let style_flags =
             (if opts.bold { 1u8 } else { 0 }) | (if opts.italic { 2u8 } else { 0 });
 
-        let first_ch = text.chars().next()?;
-        let (font_id, _is_emoji) = match self.font_resolve.entry((first_ch, style_flags))
-        {
-            std::collections::hash_map::Entry::Occupied(e) => *e.get(),
-            std::collections::hash_map::Entry::Vacant(e) => {
-                let mut ss = SpanStyle::default();
-                let weight = if opts.bold {
+        let hash = shape_hash(opts.font_id, size_bucket, style_flags, text);
+        if let Some(runs) = self.shape_cache.get(&hash) {
+            return runs.clone();
+        }
+
+        let mut runs = Vec::new();
+        if let Some(font_id) = opts.font_id {
+            runs.extend(self.shape_segment(font_id as u32, text, size_u16, size_bucket));
+        } else {
+            let mut seg_start = 0;
+            let mut seg_font = None;
+            for (offset, cluster) in rio_unicode::grapheme::GraphemeIndices::new(text) {
+                let base = cluster.chars().next().expect("clusters are non-empty");
+                let font_id = self.resolve_font(base, style_flags);
+                if let Some(prev) = seg_font.filter(|&prev| prev != font_id) {
+                    let seg = &text[seg_start..offset];
+                    runs.extend(self.shape_segment(prev, seg, size_u16, size_bucket));
+                    seg_start = offset;
+                }
+                seg_font = Some(font_id);
+            }
+            if let Some(font_id) = seg_font {
+                let seg = &text[seg_start..];
+                runs.extend(self.shape_segment(font_id, seg, size_u16, size_bucket));
+            }
+        }
+
+        let runs: Arc<[ShapedRun]> = runs.into();
+        self.shape_cache.insert(hash, runs.clone());
+        runs
+    }
+
+    fn resolve_font(&mut self, ch: char, style_flags: u8) -> u32 {
+        use crate::{Attributes, SpanStyle, Stretch, Style as FontStyle, Weight};
+
+        *self
+            .font_resolve
+            .entry((ch, style_flags))
+            .or_insert_with(|| {
+                let weight = if style_flags & 1 != 0 {
                     Weight::BOLD
                 } else {
                     Weight::NORMAL
                 };
-                let fstyle = if opts.italic {
+                let style = if style_flags & 2 != 0 {
                     FontStyle::Italic
                 } else {
                     FontStyle::Normal
                 };
-                ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
-                let resolved =
-                    self.font_library.resolve_font_for_char(first_ch, &ss, None);
-                let v = (resolved.0 as u32, resolved.1);
-                e.insert(v);
-                v
-            }
-        };
-        let font_id = opts.font_id.map(|id| id as u32).unwrap_or(font_id);
+                let ss = SpanStyle {
+                    font_attrs: Attributes::new(Stretch::NORMAL, weight, style),
+                    ..SpanStyle::default()
+                };
+                self.font_library.resolve_font_for_char(ch, &ss, None).0 as u32
+            })
+    }
 
-        let hash = shape_hash(font_id, size_bucket, style_flags, text);
-        if let Some(entry) = self.shape_cache.get(&hash) {
-            return Some(entry.clone());
-        }
-
+    /// Shape `text` as a single run in `font_id`.
+    fn shape_segment(
+        &mut self,
+        font_id: u32,
+        text: &str,
+        size_u16: u16,
+        size_bucket: u16,
+    ) -> Option<ShapedRun> {
         let (synthetic_bold, synthetic_italic) = match self.synthesis_cache.entry(font_id)
         {
             std::collections::hash_map::Entry::Occupied(e) => *e.get(),
@@ -437,16 +480,20 @@ impl Text {
             ascent_px,
             glyphs,
         };
-        self.shape_cache.insert(hash, run.clone());
         Some(run)
     }
 
     //  Emit pipeline — rasterize + push TextInstance
 
-    fn emit_instances(&mut self, x: f32, y: f32, run: &ShapedRun, opts: &DrawOpts) {
-        let scale = self.scale_factor;
-        let mut pen_x = x * scale;
-        let py = y * scale;
+    /// `pen_x` is in device pixels; `y` is logical.
+    fn emit_instances(
+        &mut self,
+        mut pen_x: f32,
+        y: f32,
+        run: &ShapedRun,
+        opts: &DrawOpts,
+    ) {
+        let py = y * self.scale_factor;
         let color = opts.color;
 
         for glyph in &run.glyphs {
@@ -2008,5 +2055,64 @@ fn blit_text_color(
             let idx = buf_row + (dst_x as usize);
             buf[idx] = blend_premul_over(src, buf[idx]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn glyphs(text: &mut Text, s: &str) -> Vec<(u32, u16)> {
+        text.shape_for(s, &DrawOpts::default())
+            .iter()
+            .flat_map(|run| run.glyphs.iter().map(|g| (run.font_id, g.id)))
+            .collect()
+    }
+
+    // Each char must get the same font and glyph as when shaped on its
+    // own, even when the first char resolves to a font that lacks it.
+    #[test]
+    fn mixed_font_text_matches_per_char_shaping() {
+        let library = FontLibrary::default();
+        let mut text = Text::new(&library);
+        for s in ["a中", "中a", "\u{25D1} \u{4E2D}\u{6587}\u{6807}\u{9898}"] {
+            let mixed = glyphs(&mut text, s);
+            let alone: Vec<_> = s
+                .chars()
+                .flat_map(|c| glyphs(&mut text, c.encode_utf8(&mut [0; 4])))
+                .collect();
+            assert_eq!(mixed, alone, "{s}");
+        }
+    }
+
+    #[test]
+    fn mixed_font_text_splits_into_runs() {
+        let library = FontLibrary::default();
+        let mut text = Text::new(&library);
+        let runs = text.shape_for("ab\u{4E2D}\u{6587}cd", &DrawOpts::default());
+        let primary = runs[0].font_id;
+        let ids: Vec<_> = runs.iter().map(|r| r.font_id).collect();
+        // Skip on systems with no CJK font: everything stays primary.
+        if runs.len() > 1 {
+            assert_eq!(ids.len(), 3);
+            assert_eq!(ids[0], primary);
+            assert_ne!(ids[1], primary);
+            assert_eq!(ids[2], primary);
+        }
+        let opts = DrawOpts::default();
+        let total = text.measure("ab\u{4E2D}\u{6587}cd", &opts);
+        let parts = text.measure("ab", &opts)
+            + text.measure("\u{4E2D}\u{6587}", &opts)
+            + text.measure("cd", &opts);
+        assert!((total - parts).abs() < 0.01, "{total} vs {parts}");
+    }
+
+    #[test]
+    fn combining_mark_stays_with_its_base() {
+        let library = FontLibrary::default();
+        let mut text = Text::new(&library);
+        // `e` + U+0301: one cluster, one run, whatever font covers it.
+        let runs = text.shape_for("e\u{301}", &DrawOpts::default());
+        assert_eq!(runs.len(), 1);
     }
 }
