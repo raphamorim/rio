@@ -613,6 +613,12 @@ impl Config {
             if let Some(max_tab_width) = navigation_overwrite.max_tab_width {
                 self.navigation.max_tab_width = max_tab_width;
             }
+            if let Some(family) = &navigation_overwrite.title_font_family {
+                self.navigation.title_font_family = Some(family.clone());
+            }
+            if let Some(size) = navigation_overwrite.title_font_size {
+                self.navigation.title_font_size = size;
+            }
         }
 
         // Clamp after platform merge so both the base and any override go
@@ -623,6 +629,10 @@ impl Config {
             );
         self.navigation.max_tab_width =
             crate::config::navigation::clamp_max_tab_width(self.navigation.max_tab_width);
+        self.navigation.title_font_size =
+            crate::config::navigation::clamp_title_font_size(
+                self.navigation.title_font_size,
+            );
 
         // Merge renderer fields individually
         if let Some(renderer_overwrite) = &platform_config.renderer {
@@ -713,6 +723,22 @@ impl Default for CursorConfig {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn title_font_platform_override_preserves_unspecified_fields() {
+        let mut config: super::Config = toml::from_str(
+            "[navigation]\ntab-font-family = 'Segoe UI'\ntab-font-size = 13",
+        )
+        .unwrap();
+        let platform: super::platform::PlatformConfig =
+            toml::from_str("[navigation]\ntab-font-size = 100").unwrap();
+        config.overwrite_with_platform_config(platform);
+        assert_eq!(
+            config.navigation.title_font_family.as_deref(),
+            Some("Segoe UI")
+        );
+        assert_eq!(config.navigation.title_font_size, 20.0);
+    }
+
     use super::*;
     use colors::{hex_to_color_arr, hex_to_color_wgpu};
     use std::io::Write;
