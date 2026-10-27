@@ -22,6 +22,9 @@ use rio_backend::event::TerminalDamage;
 use crate::context::renderable::{PendingUpdate, RenderableContent};
 use crate::context::ContextManager;
 use crate::crosswords::style::{Style as CellStyle, StyleFlags};
+use crate::workspace::{
+    DRAWER_RESIZE_HIT_HALF_WIDTH, DRAWER_ROW_HEIGHT, DRAWER_ROW_STRIDE, DRAWER_ROW_TOP,
+};
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
@@ -285,6 +288,181 @@ impl Renderer {
                 start_threshold: config.effects.trail_cursor_start_threshold as f32,
             }),
         }
+    }
+
+    fn render_workspace_drawer(
+        &self,
+        sugarloaf: &mut Sugarloaf,
+        context_manager: &ContextManager<EventProxy>,
+    ) {
+        let width = context_manager.drawer_width();
+        let height = sugarloaf.window_size().height / sugarloaf.scale_factor();
+        let background = self
+            .last_window_bg
+            .map(|color| {
+                [
+                    color.r as f32,
+                    color.g as f32,
+                    color.b as f32,
+                    color.a as f32,
+                ]
+            })
+            .unwrap_or(self.named_colors.background.0);
+        let luminance =
+            0.2126 * background[0] + 0.7152 * background[1] + 0.0722 * background[2];
+        let surface_tint = if luminance > 0.5 { 0.0 } else { 1.0 };
+        let panel = [
+            background[0] * 0.965 + surface_tint * 0.035,
+            background[1] * 0.965 + surface_tint * 0.035,
+            background[2] * 0.965 + surface_tint * 0.035,
+            1.0,
+        ];
+        let selected = [
+            self.named_colors.tabs_active[0],
+            self.named_colors.tabs_active[1],
+            self.named_colors.tabs_active[2],
+            0.28,
+        ];
+        let divider = [
+            self.named_colors.foreground[0],
+            self.named_colors.foreground[1],
+            self.named_colors.foreground[2],
+            0.16,
+        ];
+        let foreground = [
+            (self.named_colors.foreground[0] * 255.0) as u8,
+            (self.named_colors.foreground[1] * 255.0) as u8,
+            (self.named_colors.foreground[2] * 255.0) as u8,
+            255,
+        ];
+        let muted = [foreground[0], foreground[1], foreground[2], 170];
+        let title_opts = DrawOpts {
+            font_size: 14.0,
+            color: foreground,
+            bold: true,
+            ..DrawOpts::default()
+        };
+        let row_opts = DrawOpts {
+            font_size: 13.0,
+            color: foreground,
+            ..DrawOpts::default()
+        };
+        let active_row_opts = DrawOpts {
+            bold: true,
+            ..row_opts
+        };
+        let muted_opts = DrawOpts {
+            font_size: 11.0,
+            color: muted,
+            ..DrawOpts::default()
+        };
+
+        // The macOS traffic lights occupy the upper-left corner of the
+        // unified titlebar. Keep the drawer heading clear of that chrome;
+        // workspace rows start below it and retain their normal inset.
+        #[cfg(target_os = "macos")]
+        let title_x = 76.0;
+        #[cfg(not(target_os = "macos"))]
+        let title_x = 16.0;
+
+        sugarloaf.rect(None, 0.0, 0.0, width, height, panel, 0.0, 30);
+        sugarloaf.line(width - 1.0, 0.0, width - 1.0, height, 1.0, 0.0, divider, 31);
+        let add_x = width - 36.0;
+        let header_width = (add_x - title_x - 8.0).max(0.0);
+        let header = {
+            let ui = sugarloaf.text_mut();
+            elide_tail("Workspaces", header_width, |text| {
+                ui.measure(text, &title_opts)
+            })
+        };
+        sugarloaf
+            .text_mut()
+            .draw(title_x, 17.0, &header, &title_opts);
+
+        let button_fill = if luminance > 0.5 {
+            [0.0, 0.0, 0.0, 0.06]
+        } else {
+            [1.0, 1.0, 1.0, 0.08]
+        };
+        sugarloaf.rounded_rect(None, add_x, 10.0, 26.0, 26.0, button_fill, 0.0, 6.0, 32);
+        let plus = [
+            self.named_colors.foreground[0],
+            self.named_colors.foreground[1],
+            self.named_colors.foreground[2],
+            0.82,
+        ];
+        let add_center_x = add_x + 13.0;
+        sugarloaf.line(
+            add_center_x - 4.0,
+            23.0,
+            add_center_x + 4.0,
+            23.0,
+            1.25,
+            0.0,
+            plus,
+            33,
+        );
+        sugarloaf.line(add_center_x, 19.0, add_center_x, 27.0, 1.25, 0.0, plus, 33);
+
+        for index in 0..context_manager.workspace_count() {
+            let y = DRAWER_ROW_TOP + index as f32 * DRAWER_ROW_STRIDE;
+            let active = index == context_manager.active_workspace();
+            if active {
+                sugarloaf.rounded_rect(
+                    None,
+                    8.0,
+                    y,
+                    width - 16.0,
+                    DRAWER_ROW_HEIGHT,
+                    selected,
+                    0.0,
+                    6.0,
+                    32,
+                );
+            }
+
+            let name = context_manager
+                .workspace_name(index)
+                .unwrap_or_else(|| String::from("Workspace"));
+            let tab_count = context_manager.workspace_tab_count(index);
+            let label = format!(
+                "{}{}",
+                if context_manager.workspace_has_bell(index) {
+                    "• "
+                } else {
+                    ""
+                },
+                name
+            );
+            let label = {
+                let ui = sugarloaf.text_mut();
+                let opts = if active { &active_row_opts } else { &row_opts };
+                elide_tail(&label, (width - 36.0).max(0.0), |text| {
+                    ui.measure(text, opts)
+                })
+            };
+            let opts = if active { &active_row_opts } else { &row_opts };
+            sugarloaf.text_mut().draw(18.0, y + 8.0, &label, opts);
+            let count = format!(
+                "{tab_count} {}",
+                if tab_count == 1 { "tab" } else { "tabs" }
+            );
+            sugarloaf
+                .text_mut()
+                .draw(18.0, y + 25.0, &count, &muted_opts);
+        }
+
+        // The handle remains a small, quiet hit target at the drawer edge.
+        sugarloaf.rect(
+            None,
+            width - DRAWER_RESIZE_HIT_HALF_WIDTH,
+            0.0,
+            DRAWER_RESIZE_HIT_HALF_WIDTH * 2.0,
+            height,
+            [0.0, 0.0, 0.0, 0.001],
+            0.0,
+            33,
+        );
     }
 
     #[inline]
@@ -820,9 +998,12 @@ impl Renderer {
                 sugarloaf,
                 (window_size.width, window_size.height, scale_factor),
                 context_manager,
+                context_manager.active_workspace_tab_indices(),
                 island_bg,
             );
         }
+
+        self.render_workspace_drawer(sugarloaf, context_manager);
 
         self.assistant.render(
             sugarloaf,

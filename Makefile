@@ -54,6 +54,16 @@ $(TARGET)-universal:
 	@lipo target/{x86_64,aarch64}-apple-darwin/release/$(TARGET) -create -output $(APP_BINARY)
 
 app-universal: $(APP_NAME)-universal ## Create a universal Rio.app
+
+app-aarch64: ## Create an Apple Silicon-only Rio.app
+	RUSTFLAGS='-C link-arg=-s' MACOSX_DEPLOYMENT_TARGET="11.0" cargo build --release --target=aarch64-apple-darwin
+	@mkdir -p $(APP_BINARY_DIR)
+	@mkdir -p $(APP_EXTRAS_DIR)
+	@cp -fRp $(APP_TEMPLATE) $(TARGET_DIR_OSX)
+	@cp -fp target/aarch64-apple-darwin/release/$(TARGET) $(APP_BINARY_DIR)
+	@touch -r "target/aarch64-apple-darwin/release/$(TARGET)" "$(TARGET_DIR_OSX)/$(APP_NAME)"
+	@echo "Created '$(APP_NAME)' in '$(TARGET_DIR_OSX)'"
+
 $(APP_NAME)-%: $(TARGET)-%
 	@mkdir -p $(APP_BINARY_DIR)
 	@mkdir -p $(APP_EXTRAS_DIR)

@@ -8,6 +8,10 @@ use crate::event::{Msg, RioEvent};
 pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
 use crate::performer::{self, Machine};
+use crate::workspace::{
+    tab_title_for_directory, workspace_title_for_directory, PersistedTab,
+    WorkspaceManager,
+};
 use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::layout::Margin;
@@ -21,16 +25,21 @@ use rio_backend::event::WindowId;
 use rio_backend::selection::SelectionRange;
 use rio_backend::sugarloaf::{font::SugarloafFont, Rect, Sugarloaf, SugarloafErrors};
 use std::error::Error;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 // Global atomic counter for generating unique route IDs
 static ROUTE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
 
 // Global atomic counter for generating unique rich text IDs
 static RICH_TEXT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+// The on-disk snapshot represents the app's primary workspace set. Only the
+// first terminal route owns it; additional windows keep their independent,
+// in-memory workspace state instead of overwriting the same file.
+static WORKSPACE_PERSISTENCE_OWNER: AtomicBool = AtomicBool::new(false);
 
 /// Generate a unique rich text ID for terminal contexts
 pub fn next_rich_text_id() -> usize {
@@ -141,6 +150,11 @@ pub struct ContextManager<T: EventListener> {
     event_proxy: T,
     window_id: WindowId,
     pub config: ContextManagerConfig,
+    pub workspaces: WorkspaceManager,
+    base_scaled_margin: Margin,
+    persistence_enabled: bool,
+    last_saved_state: Option<Vec<u8>>,
+    persistence_ready_at: Option<Instant>,
 }
 
 /// Display name for the command a pane spawns: the configured program,
@@ -418,13 +432,34 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         scaled_margin: Margin,
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
+        let persistence_enabled = !ctx_config.is_native
+            && !cfg!(test)
+            && !WORKSPACE_PERSISTENCE_OWNER.swap(true, Ordering::SeqCst);
+        let restored = persistence_enabled.then(WorkspaceManager::load).flatten();
+        let mut initial_config = ctx_config.clone();
+        if let Some(directory) = restored
+            .as_ref()
+            .and_then(|(_, tabs)| tabs.first())
+            .and_then(|tab| tab.current_directory.as_deref())
+            .filter(|directory| std::path::Path::new(directory).is_dir())
+        {
+            initial_config.working_dir = Some(directory.to_string());
+            // The fork-based PTY inherits Rio's cwd. Use the spawn path for
+            // restored tabs so the persisted directory is applied before the
+            // shell starts (the default on Linux/BSD is otherwise fork).
+            #[cfg(not(target_os = "windows"))]
+            {
+                initial_config.use_fork = false;
+            }
+        }
+
         let initial_context = match ContextManager::create_context(
             cursor_state,
             event_proxy.clone(),
             window_id,
             rich_text_id,
             size,
-            &ctx_config,
+            &initial_config,
         ) {
             Ok(context) => context,
             Err(err_message) => {
@@ -479,7 +514,44 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config: ctx_config,
+            workspaces: restored
+                .as_ref()
+                .map(|(workspaces, _)| workspaces.clone())
+                .unwrap_or_default(),
+            base_scaled_margin: scaled_margin,
+            persistence_enabled,
+            last_saved_state: None,
+            persistence_ready_at: restored
+                .as_ref()
+                .map(|_| Instant::now() + Duration::from_secs(1)),
         };
+
+        if let Some((_, tabs)) = restored {
+            let mut restore_succeeded = true;
+            for tab in tabs.iter().skip(1) {
+                let directory = tab
+                    .current_directory
+                    .as_deref()
+                    .filter(|directory| std::path::Path::new(directory).is_dir())
+                    .map(str::to_string);
+                if !manager.add_restored_context(directory, next_rich_text_id()) {
+                    restore_succeeded = false;
+                    break;
+                }
+            }
+            if !restore_succeeded {
+                // A shell can fail to spawn independently of the saved
+                // layout. Keep the contexts that did start usable rather
+                // than leaving workspace indices pointing past the vector.
+                manager.workspaces = WorkspaceManager::new();
+                for tab_index in 1..manager.contexts.len() {
+                    manager.workspaces.add_tab(tab_index);
+                }
+            }
+            if let Some(selected_tab) = manager.workspaces.selected_tab_for_active() {
+                manager.set_current(selected_tab);
+            }
+        }
         // The native titlebar starts as the placeholder; one poke makes
         // it converge on the displayed title even for shells that never
         // emit an OSC title or OSC 7.
@@ -521,6 +593,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config,
+            workspaces: WorkspaceManager::new(),
+            base_scaled_margin: Margin::default(),
+            persistence_enabled: false,
+            last_saved_state: None,
+            persistence_ready_at: None,
         })
     }
 
@@ -555,6 +632,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // A whole tab dies.
         self.contexts[tab_index].remove_from_sugarloaf(sugarloaf);
         self.contexts.remove(tab_index);
+        self.workspaces.remove_tab(tab_index);
 
         if self.contexts.is_empty() {
             return true;
@@ -569,6 +647,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.set_current(new_index);
         } else {
             self.current_index = new_index;
+        }
+
+        if let Some(workspace) = self.workspaces.workspace_for_tab(self.current_index) {
+            self.workspaces.set_active(workspace);
+            self.workspaces.select_tab(self.current_index);
         }
 
         self.keep_only_active_context_visible(sugarloaf);
@@ -663,7 +746,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.sync_current_route();
             return;
         }
-        self.switch_to_next();
+        self.switch_to_next_workspace_tab();
         // Make sure first split is selected - get the root key
         let current_tab = &mut self.contexts[self.current_index];
         if let Some(root) = current_tab.root {
@@ -678,7 +761,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.sync_current_route();
             return;
         }
-        self.switch_to_prev();
+        self.switch_to_prev_workspace_tab();
         // Make sure last split is selected - get the last key in order
         let current_tab = &mut self.contexts[self.current_index];
         let ordered_keys = current_tab.get_ordered_keys();
@@ -716,6 +799,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
+        if let Some(workspace) = self.workspaces.workspace_for_tab(tab_index) {
+            self.workspaces.set_active(workspace);
+            self.workspaces.select_tab(tab_index);
+        }
         self.set_current(tab_index);
     }
 
@@ -762,7 +849,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return;
         }
 
-        self.set_current(self.contexts.len() - 1);
+        let Some(&last_tab) =
+            self.workspaces.tab_indices(self.workspaces.active()).last()
+        else {
+            return;
+        };
+        self.workspaces.select_tab(last_tab);
+        self.set_current(last_tab);
     }
 
     #[inline]
@@ -779,6 +872,145 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn len(&self) -> usize {
         self.contexts.len()
+    }
+
+    #[inline]
+    pub fn workspace_count(&self) -> usize {
+        self.workspaces.len()
+    }
+
+    #[inline]
+    pub fn active_workspace(&self) -> usize {
+        self.workspaces.active()
+    }
+
+    #[inline]
+    pub fn workspace_name(&self, index: usize) -> Option<String> {
+        let workspace = self.workspaces.get(index)?;
+        let directory = workspace
+            .tabs
+            .first()
+            .and_then(|&tab| self.current_directory_for_tab(tab));
+        Some(match directory {
+            Some(directory) => {
+                workspace_title_for_directory(&directory, dirs::home_dir().as_deref())
+            }
+            None => workspace.name.clone(),
+        })
+    }
+
+    #[inline]
+    pub fn workspace_tab_count(&self, index: usize) -> usize {
+        self.workspaces.tab_count(index)
+    }
+
+    #[inline]
+    pub fn active_workspace_tab_indices(&self) -> &[usize] {
+        self.workspaces.tab_indices(self.workspaces.active())
+    }
+
+    #[inline]
+    pub fn workspace_has_bell(&self, index: usize) -> bool {
+        self.workspaces
+            .tab_indices(index)
+            .iter()
+            .any(|&tab| self.contexts.get(tab).is_some_and(|grid| grid.bell))
+    }
+
+    /// Create a workspace. Its first tab is created by the screen after
+    /// selecting it, so workspaces never appear without a terminal.
+    #[inline]
+    pub fn create_workspace(&mut self) -> usize {
+        self.workspaces.create()
+    }
+
+    #[inline]
+    pub fn select_workspace(&mut self, index: usize) -> Option<usize> {
+        self.workspaces.select(index)
+    }
+
+    /// Persist the workspace layout and the last OSC 7 directory reported by
+    /// each tab. The serialized bytes are cached so the event loop can call
+    /// this after ordinary terminal events without rewriting an unchanged
+    /// snapshot.
+    pub fn save_workspace_state(&mut self) {
+        self.save_workspace_state_inner(false);
+    }
+
+    /// Save immediately during shutdown, even if restored shells have not yet
+    /// had time to report their initial OSC 7 directories.
+    pub fn save_workspace_state_now(&mut self) {
+        self.save_workspace_state_inner(true);
+    }
+
+    fn save_workspace_state_inner(&mut self, force: bool) {
+        if !self.persistence_enabled {
+            return;
+        }
+        if let Some(ready_at) = self.persistence_ready_at {
+            if !force && Instant::now() < ready_at {
+                return;
+            }
+            self.persistence_ready_at = None;
+        }
+
+        let tabs: Vec<PersistedTab> = (0..self.contexts.len())
+            .map(|index| {
+                let title = self.displayed_title_for_tab(index);
+                let context = self.contexts[index].current();
+                let terminal = context.terminal.lock();
+                PersistedTab {
+                    title,
+                    current_directory: terminal
+                        .current_directory
+                        .as_ref()
+                        .map(|directory| directory.to_string_lossy().into_owned()),
+                }
+            })
+            .collect();
+        let state = self.workspaces.snapshot(|tab_index| {
+            tabs.get(tab_index).cloned().unwrap_or(PersistedTab {
+                title: String::new(),
+                current_directory: None,
+            })
+        });
+        let Ok(data) = serde_json::to_vec(&state) else {
+            return;
+        };
+        if self.last_saved_state.as_deref() == Some(data.as_slice()) {
+            return;
+        }
+        if WorkspaceManager::save_snapshot(&state) {
+            self.last_saved_state = Some(data);
+        }
+    }
+
+    #[inline]
+    pub fn drawer_width(&self) -> f32 {
+        self.workspaces.drawer_width()
+    }
+
+    pub fn set_drawer_width(&mut self, width: f32, scale: f32) {
+        self.workspaces.set_drawer_width(width);
+        let mut scaled_margin = self.base_scaled_margin;
+        scaled_margin.left += self.workspaces.drawer_width() * scale;
+        for grid in &mut self.contexts {
+            grid.update_scaled_margin(scaled_margin);
+        }
+    }
+
+    pub fn update_base_margin_scale(&mut self, new_scale: f32) {
+        let old_scale = self
+            .contexts
+            .first()
+            .map(|grid| grid.current().dimension.dimension.scale)
+            .unwrap_or(new_scale)
+            .max(1.0);
+        let ratio = new_scale / old_scale;
+        self.base_scaled_margin.top *= ratio;
+        self.base_scaled_margin.right *= ratio;
+        self.base_scaled_margin.bottom *= ratio;
+        self.base_scaled_margin.left *= ratio;
     }
 
     #[cfg(test)]
@@ -919,7 +1151,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let template = self.config.title.content.clone();
         let context = self.contexts[tab_index].current_mut();
         context.title_dirty = false;
-        Self::refresh_item_title(&template, context, raw_title)
+        let title_changed = Self::refresh_item_title(&template, context, raw_title);
+        // A directory change also changes the pwd-derived tab and workspace
+        // labels, even when the configured window-title template does not use
+        // a path variable.
+        title_changed || raw_title.is_none()
     }
 
     /// Mark every pane's title stale. For changes that affect panes no
@@ -963,12 +1199,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     /// The title the strip displays for `index`'s tab: the user rename,
-    /// else the rendered content, else the foreground program, else
-    /// "~". The native titlebar reads the same chain, so the two can
-    /// never disagree.
+    /// else the last component of its OSC 7 directory, else the rendered
+    /// content, foreground program, or "~". The native titlebar reads the
+    /// same chain, so the two can never disagree.
     pub fn displayed_title_for_tab(&self, index: usize) -> String {
         if let Some(custom) = self.custom_title(index) {
             return custom.to_string();
+        }
+        if let Some(directory) = self.current_directory_for_tab(index) {
+            return tab_title_for_directory(&directory);
         }
         if let Some(grid) = self.contexts.get(index) {
             let context = grid.current();
@@ -980,6 +1219,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         }
         String::from("~")
+    }
+
+    fn current_directory_for_tab(&self, index: usize) -> Option<std::path::PathBuf> {
+        self.contexts
+            .get(index)
+            .and_then(|grid| grid.current().terminal.lock().current_directory.clone())
     }
 
     #[inline]
@@ -1106,9 +1351,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // Remove all rich text from the grid before removing the context
         self.contexts[index_to_remove].remove_from_sugarloaf(sugarloaf);
         self.contexts.remove(index_to_remove);
+        self.workspaces.remove_tab(index_to_remove);
 
         if should_set_current {
             self.set_current(0);
+        }
+
+        if let Some(workspace) = self.workspaces.workspace_for_tab(self.current_index) {
+            self.workspaces.set_active(workspace);
+            self.workspaces.select_tab(self.current_index);
         }
 
         self.keep_only_active_context_visible(sugarloaf);
@@ -1168,6 +1419,48 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.sync_current_route();
     }
 
+    /// Switch to another tab in the active workspace without exposing tabs
+    /// that belong to a different workspace.
+    #[inline]
+    pub fn switch_to_next_workspace_tab(&mut self) {
+        if self.config.is_native {
+            self.event_proxy
+                .send_event(RioEvent::SelectNativeTabNext, self.window_id);
+            return;
+        }
+
+        let tabs = self.workspaces.tab_indices(self.workspaces.active());
+        if tabs.len() <= 1 {
+            return;
+        }
+        let Some(current) = tabs.iter().position(|&tab| tab == self.current_index) else {
+            return;
+        };
+        let next = tabs[(current + 1) % tabs.len()];
+        self.workspaces.select_tab(next);
+        self.set_current(next);
+    }
+
+    #[inline]
+    pub fn switch_to_prev_workspace_tab(&mut self) {
+        if self.config.is_native {
+            self.event_proxy
+                .send_event(RioEvent::SelectNativeTabPrev, self.window_id);
+            return;
+        }
+
+        let tabs = self.workspaces.tab_indices(self.workspaces.active());
+        if tabs.len() <= 1 {
+            return;
+        }
+        let Some(current) = tabs.iter().position(|&tab| tab == self.current_index) else {
+            return;
+        };
+        let previous = tabs[(current + tabs.len() - 1) % tabs.len()];
+        self.workspaces.select_tab(previous);
+        self.set_current(previous);
+    }
+
     #[inline]
     pub fn move_current_to_prev(&mut self) {
         let len = self.contexts.len();
@@ -1177,8 +1470,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let current = self.current_index;
         let target_index = if current == 0 { len - 1 } else { current - 1 };
-        self.contexts.swap(current, target_index);
-        self.select_tab(target_index);
+        self.swap_current_tab_with(target_index);
     }
 
     #[inline]
@@ -1190,7 +1482,17 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let current = self.current_index;
         let target_index = if current == len - 1 { 0 } else { current + 1 };
+        self.swap_current_tab_with(target_index);
+    }
+
+    #[inline]
+    pub fn swap_current_tab_with(&mut self, target_index: usize) {
+        let current = self.current_index;
+        if current == target_index || target_index >= self.contexts.len() {
+            return;
+        }
         self.contexts.swap(current, target_index);
+        self.workspaces.swap_tabs(current, target_index);
         self.select_tab(target_index);
     }
 
@@ -1207,6 +1509,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let grid = self.contexts.remove(current);
         self.contexts.insert(target, grid);
+        self.workspaces.move_tab(current, target);
+        self.workspaces.select_tab(target);
         self.set_current(target);
     }
 
@@ -1361,10 +1665,27 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         }
 
+        self.append_context(working_dir, redirect, rich_text_id, true, false);
+    }
+
+    fn add_restored_context(
+        &mut self,
+        working_dir: Option<String>,
+        rich_text_id: usize,
+    ) -> bool {
+        self.append_context(working_dir, false, rich_text_id, false, true)
+    }
+
+    fn append_context(
+        &mut self,
+        working_dir: Option<String>,
+        redirect: bool,
+        rich_text_id: usize,
+        add_to_workspace: bool,
+        force_spawn: bool,
+    ) -> bool {
         if self.config.is_native {
-            self.event_proxy
-                .send_event(RioEvent::CreateNativeTab(working_dir), self.window_id);
-            return;
+            return false;
         }
 
         let size = self.contexts.len();
@@ -1374,6 +1695,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             let mut cloned_config = self.config.clone();
             if working_dir.is_some() {
                 cloned_config.working_dir = working_dir;
+                #[cfg(not(target_os = "windows"))]
+                if force_spawn {
+                    cloned_config.use_fork = false;
+                }
             }
 
             let current = self.current();
@@ -1403,16 +1728,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                         self.config.split_active_color,
                         self.config.panel,
                     ));
+                    if add_to_workspace {
+                        self.workspaces.add_tab(last_index);
+                    }
                     if redirect {
                         self.current_index = last_index;
                         self.sync_current_route();
                     }
+                    return true;
                 }
                 Err(..) => {
                     tracing::error!("not able to create a new context");
                 }
             }
         }
+        false
     }
 
     /// Hide all rich text components except for the current tab
@@ -1660,6 +1990,18 @@ pub mod test {
 
         // Unknown routes (already-closed panes) are a no-op.
         assert!(!cm.on_title_change(usize::MAX, Some("x")));
+    }
+
+    #[test]
+    fn pwd_titles_tabs_and_workspaces_like_simple_cmux() {
+        let cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
+                .unwrap();
+        let directory = dirs::home_dir().unwrap().join("projects").join("rio");
+        cm.contexts[0].current().terminal.lock().current_directory = Some(directory);
+
+        assert_eq!(cm.displayed_title_for_tab(0), "rio");
+        assert_eq!(cm.workspace_name(0).as_deref(), Some("projects"));
     }
 
     fn set_tab_title(cm: &mut ContextManager<VoidListener>, index: usize, content: &str) {

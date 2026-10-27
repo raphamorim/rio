@@ -24,6 +24,7 @@ mod scheduler;
 mod screen;
 mod shell_integration;
 mod watcher;
+mod workspace;
 
 use clap::Parser;
 use rio_backend::config::config_dir_path;
