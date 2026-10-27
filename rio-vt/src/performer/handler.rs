@@ -1150,10 +1150,12 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 }
             }
 
-            // Hyperlink.
+            // Hyperlink. Only the first two `;` are delimiters: a `;` in
+            // the URI (`?a=1;b=2`) arrives as extra params, so rejoin them.
             b"8" if params.len() > 2 => {
+                let uri = osc::join_params(params, 2).unwrap_or_default();
                 self.handler
-                    .set_hyperlink(osc::parse_hyperlink(params[1], params[2]));
+                    .set_hyperlink(osc::parse_hyperlink(params[1], uri.as_bytes()));
             }
 
             // OSC 9 dispatches on its sub-command: 9;4 progress and 9;9

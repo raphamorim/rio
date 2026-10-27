@@ -6741,6 +6741,40 @@ mod tests {
         assert!(cw.cell_hyperlink_id(Line(0), Column(8)).is_none());
     }
 
+    /// A `;` in the URI is part of it: only the first two `;` of an
+    /// OSC 8 delimit its fields (`8 ; params ; URI`).
+    #[test]
+    fn osc8_hyperlink_uri_keeps_semicolons() {
+        use crate::performer::handler::Processor;
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = Processor::default();
+
+        // ST-terminated, empty params.
+        processor.advance(
+            &mut cw,
+            b"\x1b]8;;https://x.dev/p?q=1;b=2\x1b\\A\x1b]8;;\x1b\\\r\n",
+        );
+        // BEL-terminated, with an id.
+        processor.advance(&mut cw, b"\x1b]8;id=x;https://x.dev/a;b;c\x07B\x1b]8;;\x07");
+
+        let hl = cw.cell_hyperlink(Line(0), Column(0)).expect("hyperlink");
+        assert_eq!(hl.uri(), "https://x.dev/p?q=1;b=2");
+        let hl = cw.cell_hyperlink(Line(1), Column(0)).expect("hyperlink");
+        assert_eq!(hl.uri(), "https://x.dev/a;b;c");
+        assert_eq!(hl.id(), "x");
+        assert!(cw.cell_hyperlink(Line(0), Column(1)).is_none());
+    }
+
     /// Two distinct hyperlinks back-to-back must use *different*
     /// `extras_id`s so that consumers walking cell-by-cell can detect
     /// the boundary by id comparison.
