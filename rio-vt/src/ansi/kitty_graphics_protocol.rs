@@ -1120,7 +1120,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             data
         }
         TransmissionMedium::SharedMemory => {
-            #[cfg(unix)]
+            #[cfg(all(unix, not(target_os = "android")))]
             {
                 use std::ffi::CString;
                 use std::os::unix::io::RawFd;
@@ -1318,7 +1318,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                     data
                 }
             }
-            #[cfg(not(any(unix, windows)))]
+            #[cfg(any(target_os = "android", not(any(unix, windows))))]
             {
                 debug!("SharedMemory transmission not supported on this platform");
                 return Err(GraphicError::UnsupportedMedium);
