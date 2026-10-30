@@ -1035,6 +1035,39 @@ fn shm_range(offset: u32, size: u32, shm_size: usize) -> Option<std::ops::Range<
     Some(start..start + len)
 }
 
+/// Closes and unlinks a client shared memory object, which the kitty
+/// protocol makes the terminal's job on both success and failure.
+#[cfg(all(unix, not(target_os = "android")))]
+struct ShmGuard<'a> {
+    fd: libc::c_int,
+    name: &'a std::ffi::CStr,
+}
+
+#[cfg(all(unix, not(target_os = "android")))]
+impl Drop for ShmGuard<'_> {
+    fn drop(&mut self) {
+        unsafe {
+            libc::close(self.fd);
+            libc::shm_unlink(self.name.as_ptr());
+        }
+    }
+}
+
+#[cfg(all(unix, not(target_os = "android")))]
+struct MapGuard {
+    ptr: *mut libc::c_void,
+    len: usize,
+}
+
+#[cfg(all(unix, not(target_os = "android")))]
+impl Drop for MapGuard {
+    fn drop(&mut self) {
+        unsafe {
+            libc::munmap(self.ptr, self.len);
+        }
+    }
+}
+
 fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, GraphicError> {
     // Early dimension guard — applies to every non-PNG path. PNG
     // commands may transmit without declaring width/height (we pick
@@ -1166,61 +1199,58 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                         );
                         return Err(GraphicError::FileNotFound);
                     }
+                    let _shm = ShmGuard {
+                        fd,
+                        name: &shm_name,
+                    };
 
                     // Get size of shared memory
                     let mut stat: libc::stat = std::mem::zeroed();
                     if libc::fstat(fd, &mut stat) < 0 {
-                        libc::close(fd);
-                        libc::shm_unlink(shm_name.as_ptr());
                         debug!("Failed to fstat shared memory");
                         return Err(GraphicError::InvalidData);
                     }
 
-                    let shm_size = stat.st_size as usize;
+                    let shm_size = usize::try_from(stat.st_size)
+                        .map_err(|_| GraphicError::InvalidData)?;
                     debug!("Shared memory size: {} bytes", shm_size);
 
-                    let range = match shm_range(cmd.offset, cmd.size, shm_size) {
-                        Some(range) => range,
-                        None => {
-                            libc::close(fd);
-                            libc::shm_unlink(shm_name.as_ptr());
-                            debug!(
-                                "Invalid range offset={} size={} for shared memory size {}",
-                                cmd.offset, cmd.size, shm_size
-                            );
-                            return Err(GraphicError::InvalidData);
-                        }
+                    let Some(range) = shm_range(cmd.offset, cmd.size, shm_size) else {
+                        debug!(
+                            "Invalid range offset={} size={} for shared memory size {}",
+                            cmd.offset, cmd.size, shm_size
+                        );
+                        return Err(GraphicError::InvalidData);
                     };
 
                     if range.len() > MAX_SIZE {
-                        libc::close(fd);
-                        libc::shm_unlink(shm_name.as_ptr());
                         return Err(GraphicError::TooLarge);
                     }
 
+                    let page_size = match libc::sysconf(libc::_SC_PAGESIZE) {
+                        n if n > 0 => n as usize,
+                        _ => return Err(GraphicError::InvalidData),
+                    };
+                    let map_start = range.start - range.start % page_size;
+                    let map_len = range.end - map_start;
+
                     let ptr = libc::mmap(
                         std::ptr::null_mut(),
-                        shm_size,
+                        map_len,
                         libc::PROT_READ,
                         libc::MAP_SHARED,
                         fd,
-                        0,
+                        map_start as libc::off_t,
                     );
 
                     if ptr == libc::MAP_FAILED {
-                        libc::close(fd);
-                        libc::shm_unlink(shm_name.as_ptr());
                         debug!("Failed to mmap shared memory");
                         return Err(GraphicError::InvalidData);
                     }
+                    let _map = MapGuard { ptr, len: map_len };
 
-                    let data = std::slice::from_raw_parts(ptr as *const u8, shm_size)
-                        [range]
-                        .to_vec();
-
-                    libc::munmap(ptr, shm_size);
-                    libc::close(fd);
-                    libc::shm_unlink(shm_name.as_ptr());
+                    let mapped = std::slice::from_raw_parts(ptr as *const u8, map_len);
+                    let data = mapped[range.start - map_start..].to_vec();
 
                     debug!("Successfully read {} bytes from shared memory", data.len());
                     data
@@ -2452,7 +2482,7 @@ mod tests {
         }
     }
 
-    #[cfg(all(unix, not(target_os = "android"), feature = "graphics"))]
+    #[cfg(all(unix, not(target_os = "android")))]
     #[test]
     fn test_shm_unaligned_offset() {
         let name = format!("/rio-shm-a-{}", std::process::id());
@@ -2465,6 +2495,23 @@ mod tests {
             .expect("unaligned offset must load");
         assert_eq!(data.pixels, vec![1, 2, 3, 4]);
         assert!(!shm_exists(&cname), "shm must be unlinked after read");
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    #[test]
+    fn test_shm_unaligned_offset_past_first_page() {
+        let name = format!("/rio-shm-d-{}", std::process::id());
+        let cname = std::ffi::CString::new(name.clone()).unwrap();
+        let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+        let offset = page * 2 + 100;
+        let mut bytes = vec![0u8; page * 3];
+        bytes[offset..offset + 4].copy_from_slice(&[5, 6, 7, 8]);
+        create_shm(&cname, &bytes);
+
+        let data = create_graphic_data(&shm_command(&name, offset as u32, 4))
+            .expect("offset past the first page must load");
+        assert_eq!(data.pixels, vec![5, 6, 7, 8]);
+        assert!(!shm_exists(&cname));
     }
 
     #[cfg(all(unix, not(target_os = "android")))]
