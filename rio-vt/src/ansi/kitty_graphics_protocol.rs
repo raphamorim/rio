@@ -1116,10 +1116,30 @@ fn raw_image_size(cmd: &KittyGraphicsCommand) -> Option<usize> {
         .checked_mul(cmd.format.bytes_per_pixel())
 }
 
+/// Raw formats need declared dimensions within the cap. PNG commands may omit
+/// them and are re-checked after decoding.
+fn check_dimensions(cmd: &KittyGraphicsCommand) -> Result<(), GraphicError> {
+    if cmd.format == Format::Png {
+        return Ok(());
+    }
+    if cmd.width > MAX_DIMENSION || cmd.height > MAX_DIMENSION {
+        debug!(
+            "Rejecting kitty image: {}x{} exceeds {} cap",
+            cmd.width, cmd.height, MAX_DIMENSION
+        );
+        return Err(GraphicError::DimensionsTooLarge);
+    }
+    if cmd.width == 0 || cmd.height == 0 {
+        return Err(GraphicError::DimensionsRequired);
+    }
+    Ok(())
+}
+
 /// Bytes to read for a file or shared memory transmission. Without `S=`,
 /// uncompressed raw pixels imply `width * height * bpp`, which keeps page
 /// padding out of the image; anything else returns 0 (read to the end).
 fn requested_size(cmd: &KittyGraphicsCommand) -> Result<usize, GraphicError> {
+    check_dimensions(cmd)?;
     let size = if cmd.size > 0 {
         cmd.size as usize
     } else if cmd.compression != Compression::None {
@@ -1363,14 +1383,12 @@ fn local_windows_file(
     }
 }
 
-/// Opens a client supplied image path and returns it with its canonical
-/// path, which has already passed the sensitive path check. On unix the path
-/// read back from the handle must still name the opened inode, which rejects
-/// memfds and deleted files reached through /proc/self/fd.
+/// Opens a client supplied image path after the checks that must happen
+/// before any open.
 fn open_image_file(
     path: &std::path::Path,
     delete: bool,
-) -> Result<(std::fs::File, std::path::PathBuf), GraphicError> {
+) -> Result<std::fs::File, GraphicError> {
     #[cfg(windows)]
     let path = &local_windows_file(path)?;
     #[cfg(not(windows))]
@@ -1416,13 +1434,25 @@ fn open_image_file(
         }
         Err(_) => return Err(GraphicError::FileNotFound),
     };
+    Ok(file)
+}
 
+/// Canonical path of an opened image file, which has passed the sensitive
+/// path check. On unix the path read back from the handle must still name
+/// the opened inode, which rejects memfds and deleted files reached through
+/// /proc/self/fd.
+fn validate_open_file(
+    file: &std::fs::File,
+    path: &std::path::Path,
+) -> Result<std::path::PathBuf, GraphicError> {
+    #[cfg(windows)]
+    let _ = path;
     #[cfg(windows)]
     let real = {
         if file.metadata().is_ok_and(|m| is_reparse_point(&m)) {
             return Err(GraphicError::InvalidData);
         }
-        let real = opened_path(&file).ok_or(GraphicError::InvalidData)?;
+        let real = opened_path(file).ok_or(GraphicError::InvalidData)?;
         if !real.to_str().is_some_and(is_drive_absolute) {
             return Err(GraphicError::InvalidData);
         }
@@ -1431,7 +1461,7 @@ fn open_image_file(
     #[cfg(not(windows))]
     let real = {
         use std::os::unix::fs::MetadataExt;
-        let real = opened_path(&file)
+        let real = opened_path(file)
             .or_else(|| std::fs::canonicalize(path).ok())
             .ok_or(GraphicError::FileNotFound)?;
         let same_file = match (std::fs::metadata(&real), file.metadata()) {
@@ -1446,7 +1476,7 @@ fn open_image_file(
     if is_sensitive_path(&real) {
         return Err(GraphicError::InvalidData);
     }
-    Ok((file, real))
+    Ok(real)
 }
 
 /// Unlinks a validated temp file through a handle to its parent directory,
@@ -1465,11 +1495,16 @@ fn remove_temp_file(file: std::fs::File, path: &std::path::Path) {
     let Ok(name) = std::ffi::CString::new(name.as_bytes()) else {
         return;
     };
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    let flags = libc::O_DIRECTORY | libc::O_PATH;
+    #[cfg(target_os = "macos")]
+    let flags = libc::O_DIRECTORY;
     let Ok(dir) = std::fs::OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_DIRECTORY)
+        .custom_flags(flags)
         .open(parent)
     else {
+        let _ = std::fs::remove_file(path);
         return;
     };
     match opened_path(&dir) {
@@ -1573,20 +1608,10 @@ impl Drop for WinViewGuard {
 }
 
 fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, GraphicError> {
-    // Early dimension guard — applies to every non-PNG path. PNG
-    // commands may transmit without declaring width/height (we pick
-    // them up after decoding); we re-check post-decode.
-    if cmd.format != Format::Png
-        && (cmd.width > MAX_DIMENSION || cmd.height > MAX_DIMENSION)
-    {
-        debug!(
-            "Rejecting kitty image: {}x{} exceeds {} cap",
-            cmd.width, cmd.height, MAX_DIMENSION
-        );
-        return Err(GraphicError::DimensionsTooLarge);
-    }
-    if cmd.format != Format::Png && (cmd.width == 0 || cmd.height == 0) {
-        return Err(GraphicError::DimensionsRequired);
+    // Early dimension guard for direct payloads. File and shm media check
+    // inside requested_size, after their cleanup is in place.
+    if cmd.medium == TransmissionMedium::Direct {
+        check_dimensions(cmd)?;
     }
 
     // Payload is already base64-decoded by parse(). Pick up the bytes
@@ -1610,18 +1635,18 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             let path_str = std::str::from_utf8(&cmd.payload)
                 .map_err(|_| GraphicError::InvalidData)?;
             debug!("File path: {}", path_str);
+            let path = Path::new(path_str);
             let temp = cmd.medium == TransmissionMedium::TempFile;
-            let (mut file, real) = open_image_file(Path::new(path_str), temp)?;
+            let mut file = open_image_file(path, temp)?;
 
-            let entry = if temp {
-                match temp_entry(Path::new(path_str)) {
-                    Some(entry) if is_temp_file_path(&real) => Some(entry),
-                    _ => return Err(GraphicError::InvalidData),
-                }
-            } else {
-                None
-            };
-            let result = requested_size(cmd)
+            let entry = if temp { temp_entry(path) } else { None };
+            let result = validate_open_file(&file, path)
+                .and_then(|real| {
+                    if temp && (entry.is_none() || !is_temp_file_path(&real)) {
+                        return Err(GraphicError::InvalidData);
+                    }
+                    requested_size(cmd)
+                })
                 .and_then(|size| read_file_data(&mut file, cmd.offset, size));
             match entry {
                 Some(entry) => remove_temp_file(file, &entry),
@@ -3333,6 +3358,39 @@ mod tests {
         assert!(
             result.is_err(),
             "deleted files behind /proc/self/fd must not load"
+        );
+    }
+
+    #[test]
+    fn test_temp_file_removed_without_dimensions() {
+        let file = TestFile::new(&std::env::temp_dir(), "temp-no-dims", &[0u8; 4]);
+        let mut cmd = file_command(TransmissionMedium::TempFile, &file.0, 0, 0);
+        cmd.width = 0;
+        cmd.height = 0;
+
+        let result = create_graphic_data(&cmd);
+        assert!(matches!(result, Err(GraphicError::DimensionsRequired)));
+        assert!(
+            !file.0.exists(),
+            "temp file must be removed on dimension errors"
+        );
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    #[test]
+    fn test_shm_unlinked_without_dimensions() {
+        let name = format!("/rio-shm-e-{}", std::process::id());
+        let cname = std::ffi::CString::new(name.clone()).unwrap();
+        create_shm(&cname, &[0u8; 4096]);
+        let mut cmd = shm_command(&name, 0, 0);
+        cmd.width = 0;
+        cmd.height = 0;
+
+        let result = create_graphic_data(&cmd);
+        assert!(matches!(result, Err(GraphicError::DimensionsRequired)));
+        assert!(
+            !shm_exists(&cname),
+            "shm must be unlinked on dimension errors"
         );
     }
 }
