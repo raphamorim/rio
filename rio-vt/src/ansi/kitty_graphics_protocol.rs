@@ -1024,6 +1024,7 @@ impl GraphicError {
 /// Byte range to copy out of a file or shared memory segment of `total`
 /// bytes. `size == 0` means read to the end. Returns `None` if the range is
 /// empty or falls outside the source.
+#[cfg(any(test, windows, all(unix, not(target_os = "android"))))]
 fn data_range(offset: u32, size: usize, total: usize) -> Option<std::ops::Range<usize>> {
     let start = offset as usize;
     let available = total.checked_sub(start)?;
@@ -1032,6 +1033,26 @@ fn data_range(offset: u32, size: usize, total: usize) -> Option<std::ops::Range<
         return None;
     }
     Some(start..start + len)
+}
+
+/// Validated range to copy out of a shared memory segment of `shm_size` bytes.
+#[cfg(any(windows, all(unix, not(target_os = "android"))))]
+fn shm_range(
+    cmd: &KittyGraphicsCommand,
+    shm_size: usize,
+) -> Result<std::ops::Range<usize>, GraphicError> {
+    let size = requested_size(cmd)?;
+    let Some(range) = data_range(cmd.offset, size, shm_size) else {
+        debug!(
+            "Invalid range offset={} size={} for shared memory size {}",
+            cmd.offset, size, shm_size
+        );
+        return Err(GraphicError::InvalidData);
+    };
+    if range.len() > MAX_SIZE {
+        return Err(GraphicError::TooLarge);
+    }
+    Ok(range)
 }
 
 /// Closes and unlinks a client shared memory object, which the kitty
@@ -1096,24 +1117,43 @@ fn requested_size(cmd: &KittyGraphicsCommand) -> Result<usize, GraphicError> {
 
 /// Directories a `t=t` temp file must live in before the terminal will
 /// delete it.
-fn temp_dirs() -> Vec<std::path::PathBuf> {
-    let mut dirs = vec![std::env::temp_dir()];
-    if cfg!(unix) {
-        dirs.push("/tmp".into());
-        dirs.push("/dev/shm".into());
+fn temp_dirs() -> &'static [std::path::PathBuf] {
+    static DIRS: std::sync::OnceLock<Vec<std::path::PathBuf>> =
+        std::sync::OnceLock::new();
+    DIRS.get_or_init(|| {
+        let mut dirs = vec![std::env::temp_dir()];
+        if cfg!(unix) {
+            dirs.push("/tmp".into());
+            dirs.push("/dev/shm".into());
+        }
+        dirs.into_iter()
+            .filter_map(|dir| std::fs::canonicalize(dir).ok())
+            .collect()
+    })
+}
+
+fn in_temp_dir(path: &std::path::Path) -> bool {
+    path.parent()
+        .is_some_and(|parent| temp_dirs().iter().any(|dir| dir == parent))
+}
+
+/// Resolves a `t=t` path to one directly inside a temp dir, keeping the
+/// final component as given so a symlink is removed rather than its target.
+fn temp_file_path(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let name = path.file_name()?;
+    if !name.to_str()?.contains("tty-graphics-protocol") {
+        return None;
     }
-    dirs.into_iter()
-        .filter_map(|dir| std::fs::canonicalize(dir).ok())
-        .collect()
+    let parent = std::fs::canonicalize(path.parent()?).ok()?;
+    let path = parent.join(name);
+    in_temp_dir(&path).then_some(path)
 }
 
 /// `path` must already be canonical.
-fn is_temp_file_path(path: &std::path::Path) -> bool {
-    let named = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.contains("tty-graphics-protocol"));
-    named && temp_dirs().iter().any(|dir| path.starts_with(dir))
+fn is_sensitive_path(path: &std::path::Path) -> bool {
+    ["/proc", "/sys", "/dev"]
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
 }
 
 fn read_file_range(
@@ -1123,9 +1163,17 @@ fn read_file_range(
 ) -> Result<Vec<u8>, GraphicError> {
     use std::io::{Read, Seek, SeekFrom};
 
-    let mut file = std::fs::File::open(path).map_err(|_| GraphicError::FileNotFound)?;
-    let is_file = file.metadata().map(|m| m.is_file()).unwrap_or(false);
-    if !is_file {
+    let is_file = |m: std::io::Result<std::fs::Metadata>| m.is_ok_and(|m| m.is_file());
+    if !is_file(std::fs::metadata(path)) {
+        return Err(GraphicError::FileNotFound);
+    }
+
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NONBLOCK);
+    let mut file = options.open(path).map_err(|_| GraphicError::FileNotFound)?;
+    if !is_file(file.metadata()) {
         return Err(GraphicError::FileNotFound);
     }
 
@@ -1209,25 +1257,28 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             let path_str = std::str::from_utf8(&cmd.payload)
                 .map_err(|_| GraphicError::InvalidData)?;
             debug!("File path: {}", path_str);
-            let size = requested_size(cmd)?;
-
-            let path = std::fs::canonicalize(Path::new(path_str))
-                .map_err(|_| GraphicError::FileNotFound)?;
+            let path = Path::new(path_str);
 
             if cmd.medium == TransmissionMedium::TempFile {
-                if !is_temp_file_path(&path) {
+                let Some(path) = temp_file_path(path) else {
                     return Err(GraphicError::InvalidData);
-                }
-                let result = read_file_range(&path, cmd.offset, size);
+                };
+                let result = (|| {
+                    let size = requested_size(cmd)?;
+                    let target = std::fs::canonicalize(&path)
+                        .map_err(|_| GraphicError::FileNotFound)?;
+                    if !in_temp_dir(&target) {
+                        return Err(GraphicError::InvalidData);
+                    }
+                    read_file_range(&target, cmd.offset, size)
+                })();
                 let _ = std::fs::remove_file(&path);
                 result?
             } else {
-                // Check for sensitive paths
-                let path_str_lower = path.to_string_lossy().to_lowercase();
-                if path_str_lower.contains("/proc/")
-                    || path_str_lower.contains("/sys/")
-                    || path_str_lower.contains("/dev/")
-                {
+                let size = requested_size(cmd)?;
+                let path = std::fs::canonicalize(path)
+                    .map_err(|_| GraphicError::FileNotFound)?;
+                if is_sensitive_path(&path) {
                     return Err(GraphicError::InvalidData);
                 }
                 read_file_range(&path, cmd.offset, size)?
@@ -1247,11 +1298,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                 let shm_name =
                     CString::new(shm_name_str).map_err(|_| GraphicError::InvalidData)?;
 
-                debug!(
-                    "Opening shared memory: {}, expected size: {}",
-                    shm_name_str,
-                    cmd.width as usize * cmd.height as usize * 3 // RGB24
-                );
+                debug!("Opening shared memory: {}", shm_name_str);
 
                 unsafe {
                     // Open shared memory
@@ -1282,18 +1329,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                         .map_err(|_| GraphicError::InvalidData)?;
                     debug!("Shared memory size: {} bytes", shm_size);
 
-                    let size = requested_size(cmd)?;
-                    let Some(range) = data_range(cmd.offset, size, shm_size) else {
-                        debug!(
-                            "Invalid range offset={} size={} for shared memory size {}",
-                            cmd.offset, size, shm_size
-                        );
-                        return Err(GraphicError::InvalidData);
-                    };
-
-                    if range.len() > MAX_SIZE {
-                        return Err(GraphicError::TooLarge);
-                    }
+                    let range = shm_range(cmd, shm_size)?;
 
                     let page_size = match libc::sysconf(libc::_SC_PAGESIZE) {
                         n if n > 0 => n as usize,
@@ -1387,18 +1423,7 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                     let shm_size = mem_info.RegionSize;
                     debug!("Shared memory size: {} bytes", shm_size);
 
-                    let size = requested_size(cmd)?;
-                    let Some(range) = data_range(cmd.offset, size, shm_size) else {
-                        debug!(
-                            "Invalid range offset={} size={} for shared memory size {}",
-                            cmd.offset, size, shm_size
-                        );
-                        return Err(GraphicError::InvalidData);
-                    };
-
-                    if range.len() > MAX_SIZE {
-                        return Err(GraphicError::TooLarge);
-                    }
+                    let range = shm_range(cmd, shm_size)?;
 
                     let data =
                         std::slice::from_raw_parts(base_ptr.Value as *const u8, shm_size)
@@ -2696,7 +2721,10 @@ mod tests {
 
     #[test]
     fn test_temp_file_outside_temp_dir_is_kept() {
-        let dir = std::env::current_dir().unwrap();
+        let dir = std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap();
+        if temp_dirs().iter().any(|temp| dir.starts_with(temp)) {
+            return;
+        }
         let file = TestFile::new(&dir, "temp-outside", &[1, 2, 3, 4]);
 
         let result = create_graphic_data(&file_command(
@@ -2710,5 +2738,72 @@ mod tests {
             file.0.exists(),
             "files outside temp dirs must never be deleted"
         );
+    }
+
+    #[test]
+    fn test_temp_file_removed_when_too_large() {
+        let file = TestFile::new(&std::env::temp_dir(), "temp-too-large", &[0u8; 4]);
+
+        let result = create_graphic_data(&file_command(
+            TransmissionMedium::TempFile,
+            &file.0,
+            0,
+            MAX_SIZE as u32 + 1,
+        ));
+        assert!(matches!(result, Err(GraphicError::TooLarge)));
+        assert!(!file.0.exists(), "temp file must be removed when too large");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_temp_symlink_removes_link_not_target() {
+        let target = TestFile::new(&std::env::temp_dir(), "temp-target", &[1, 2, 3, 4]);
+        let link = TestFile(std::env::temp_dir().join(format!(
+            "rio-temp-link-tty-graphics-protocol-{}",
+            std::process::id()
+        )));
+        let _ = std::fs::remove_file(&link.0);
+        std::os::unix::fs::symlink(&target.0, &link.0).unwrap();
+
+        let data = create_graphic_data(&file_command(
+            TransmissionMedium::TempFile,
+            &link.0,
+            0,
+            0,
+        ))
+        .expect("symlink inside a temp dir must load");
+        assert_eq!(data.pixels, vec![1, 2, 3, 4]);
+        assert!(
+            std::fs::symlink_metadata(&link.0).is_err(),
+            "link must be removed"
+        );
+        assert!(target.0.exists(), "link target must be kept");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_file_fifo_is_rejected_without_blocking() {
+        let fifo = TestFile(std::env::temp_dir().join(format!(
+            "rio-fifo-tty-graphics-protocol-{}",
+            std::process::id()
+        )));
+        let _ = std::fs::remove_file(&fifo.0);
+        let cpath = std::ffi::CString::new(fifo.0.to_str().unwrap()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(cpath.as_ptr(), 0o600) }, 0);
+
+        let result =
+            create_graphic_data(&file_command(TransmissionMedium::File, &fifo.0, 0, 0));
+        assert!(matches!(result, Err(GraphicError::FileNotFound)));
+    }
+
+    #[test]
+    fn test_is_sensitive_path() {
+        use std::path::Path;
+        assert!(is_sensitive_path(Path::new("/proc/self/mem")));
+        assert!(is_sensitive_path(Path::new("/sys/kernel")));
+        assert!(is_sensitive_path(Path::new("/dev/zero")));
+        assert!(!is_sensitive_path(Path::new("/Users/me/Dev/img.png")));
+        assert!(!is_sensitive_path(Path::new("/home/me/proc/img.png")));
+        assert!(!is_sensitive_path(Path::new("/devices/img.png")));
     }
 }
