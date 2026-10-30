@@ -2375,16 +2375,21 @@ impl<U: EventListener> Crosswords<U> {
             }
             self.grid.cursor.pos
         };
-        if matches!(self.grid[pos].wide(), Wide::Spacer) {
-            pos.col -= 1;
-        }
+        let wide = match self.grid[pos].wide() {
+            Wide::Spacer => {
+                pos.col -= 1;
+                true
+            }
+            Wide::Wide => true,
+            Wide::Narrow | Wide::LeadingSpacer => false,
+        };
 
         // If the cursor is hidden then set content as hidden
         if !vi_mode && !self.mode.contains(Mode::SHOW_CURSOR) {
             content = CursorShape::Hidden;
         }
 
-        CursorState { pos, content }
+        CursorState { pos, content, wide }
     }
 
     pub fn swap_alt(&mut self) {
@@ -8230,6 +8235,33 @@ mod tests {
             0,
             10_000,
         )
+    }
+
+    #[test]
+    fn cursor_on_wide_char_spans_two_columns() {
+        use crate::performer::handler::Handler;
+        let mut cw = new_term(10, 3);
+        cw.input('a');
+        cw.input('\u{4F60}'); // 你: Wide at col 1, Spacer at col 2
+
+        cw.goto(Line(0), Column(0));
+        let cursor = cw.cursor();
+        assert_eq!(cursor.pos.col, Column(0));
+        assert!(!cursor.wide);
+
+        cw.goto(Line(0), Column(1));
+        let cursor = cw.cursor();
+        assert_eq!(cursor.pos.col, Column(1));
+        assert!(cursor.wide);
+
+        // On the spacer the cursor moves back onto the wide cell.
+        cw.goto(Line(0), Column(2));
+        let cursor = cw.cursor();
+        assert_eq!(cursor.pos.col, Column(1));
+        assert!(cursor.wide);
+
+        cw.goto(Line(0), Column(3));
+        assert!(!cw.cursor().wide);
     }
 
     #[test]
