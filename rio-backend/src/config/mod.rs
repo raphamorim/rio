@@ -63,8 +63,37 @@ where
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Scroll {
+    #[serde(deserialize_with = "deserialize_scroll_multiplier")]
     pub multiplier: f64,
+    #[serde(deserialize_with = "deserialize_scroll_divider")]
     pub divider: f64,
+}
+
+/// Scroll input is scaled by `multiplier / divider`, so a non-finite
+/// multiplier or a zero or non-finite divider would make it inf or NaN.
+/// Those fall back to the default.
+fn deserialize_scroll_multiplier<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let multiplier = f64::deserialize(deserializer)?;
+    Ok(if multiplier.is_finite() {
+        multiplier
+    } else {
+        Scroll::default().multiplier
+    })
+}
+
+fn deserialize_scroll_divider<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let divider = f64::deserialize(deserializer)?;
+    Ok(if divider.is_finite() && divider != 0.0 {
+        divider
+    } else {
+        Scroll::default().divider
+    })
 }
 
 impl Default for Scroll {
@@ -1282,6 +1311,41 @@ mod tests {
         );
 
         assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
+    }
+
+    #[test]
+    fn test_scroll_invalid_values_fall_back_to_default() {
+        let result = create_temporary_config(
+            "scroll-valid",
+            r#"
+            [scroll]
+            multiplier = 5.0
+            divider = 2.0
+        "#,
+        );
+        assert_eq!(result.scroll.multiplier, 5.0);
+        assert_eq!(result.scroll.divider, 2.0);
+
+        let result = create_temporary_config(
+            "scroll-zero-divider",
+            r#"
+            [scroll]
+            multiplier = 5.0
+            divider = 0.0
+        "#,
+        );
+        assert_eq!(result.scroll.multiplier, 5.0);
+        assert_eq!(result.scroll.divider, 1.0);
+
+        let result = create_temporary_config(
+            "scroll-non-finite",
+            r#"
+            [scroll]
+            multiplier = nan
+            divider = inf
+        "#,
+        );
+        assert_eq!(result.scroll, Scroll::default());
     }
 
     #[test]
