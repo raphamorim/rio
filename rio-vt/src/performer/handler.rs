@@ -26,7 +26,7 @@ use super::osc;
 use super::parser::{Params, ParamsIter, Parser, Perform};
 
 /// Maximum time before a synchronized update is aborted.
-const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
+const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(1000);
 
 fn parse_sgr_color(params: &mut impl Iterator<Item = u16>) -> Option<AnsiColor> {
     match params.next() {
@@ -522,14 +522,10 @@ impl StdSyncHandler {
         self.timeout
     }
 
-    /// Arm the deadline when a synchronized update starts. A BSU while one
-    /// is already active does not extend it, so a client that never sends
-    /// ESU cannot hold the frame forever.
+    /// Arm the deadline on every BSU, including one inside an active update.
     #[inline]
     fn start(&mut self, duration: Duration) {
-        if self.timeout.is_none() {
-            self.timeout = Some(Instant::now() + duration);
-        }
+        self.timeout = Some(Instant::now() + duration);
     }
 
     #[inline]
@@ -2301,17 +2297,23 @@ mod tests {
         assert!(!is_armed(&processor));
     }
 
-    /// A BSU while an update is active does not extend the deadline, so a
-    /// client that never sends ESU cannot hold the frame forever.
+    /// A BSU while an update is active re-arms the deadline.
     #[test]
-    fn sync_update_repeated_bsu_keeps_the_first_deadline() {
+    fn sync_update_repeated_bsu_rearms_the_deadline() {
         let mut handler = SyncHandler::default();
         let mut processor = Processor::default();
 
         processor.advance(&mut handler, b"\x1b[?2026h");
-        let deadline = processor.sync_timeout().sync_timeout();
-        processor.advance(&mut handler, b"\x1b[?2026h\x1bP=1s\x1b\\");
-        assert_eq!(processor.sync_timeout().sync_timeout(), deadline);
+        let near = Instant::now() + Duration::from_millis(1);
+        processor.state.sync_state.timeout.timeout = Some(near);
+
+        processor.advance(&mut handler, b"\x1b[?2026h");
+        let rearmed = processor.sync_timeout().sync_timeout().unwrap();
+        assert!(rearmed > near + Duration::from_millis(500));
+
+        processor.state.sync_state.timeout.timeout = Some(near);
+        processor.advance(&mut handler, b"\x1bP=1s\x1b\\");
+        assert!(processor.sync_timeout().sync_timeout().unwrap() > near);
         assert!(handler.synced);
     }
 
