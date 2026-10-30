@@ -342,3 +342,51 @@ fn explicit_shutdown_finalizes_once() {
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
 }
+
+#[derive(Clone)]
+struct EventRecorder(mpsc::Sender<&'static str>);
+
+impl EventListener for EventRecorder {
+    fn send_event(&self, event: RioEvent, _: WindowId) {
+        let name = match event {
+            RioEvent::TerminalDamaged(_) => "damaged",
+            RioEvent::ChildExited(..) => "exited",
+            _ => return,
+        };
+        let _ = self.0.send(name);
+    }
+}
+
+/// A hold still open when the child exits is ended and announced as
+/// damage, so the renderer repaints the panel it had stopped drawing.
+#[test]
+fn pending_sync_at_exit_is_announced_as_damage() {
+    let (sender, receiver) = mpsc::channel();
+    let recorder = EventRecorder(sender);
+    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        recorder.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let mut pty = machine(
+        b"\x1b[?2026hfinal output".to_vec(),
+        Some(ErrorKind::WouldBlock),
+    )
+    .pty;
+    let (registration, readiness) = corcovado::Registration::new2();
+    pty.child = Some(registration);
+    readiness.set_readiness(Ready::readable()).unwrap();
+    let machine =
+        Machine::new(terminal.clone(), pty, recorder, WindowId::from(0), 0).unwrap();
+    machine.spawn().join().unwrap();
+
+    let events: Vec<_> = receiver.try_iter().collect();
+    let damaged = events.iter().position(|e| *e == "damaged");
+    let exited = events.iter().position(|e| *e == "exited");
+    assert!(damaged.is_some(), "events: {events:?}");
+    assert!(damaged < exited, "events: {events:?}");
+    assert!(!terminal.lock().synchronized_output());
+}

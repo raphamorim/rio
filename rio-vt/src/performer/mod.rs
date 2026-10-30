@@ -440,8 +440,9 @@ where
                 .is_some_and(|deadline| deadline <= Instant::now())
             {
                 let mut terminal = self.terminal.lock();
+                let held = terminal.synchronized_output();
                 state.parser.stop_sync(&mut *terminal);
-                if !terminal.damage_event_in_flight {
+                if held && !terminal.damage_event_in_flight {
                     terminal.damage_event_in_flight = true;
                     self.event_proxy.send_event(
                         RioEvent::TerminalDamaged(self.route_id),
@@ -551,6 +552,11 @@ where
             let mut terminal = self.terminal.lock();
             let pending = terminal.synchronized_output();
             state.parser.stop_sync(&mut *terminal);
+            if pending && !terminal.damage_event_in_flight {
+                terminal.damage_event_in_flight = true;
+                self.event_proxy
+                    .send_event(RioEvent::TerminalDamaged(self.route_id), self.window_id);
+            }
             pending
         };
         match &reason {
