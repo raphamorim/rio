@@ -1055,6 +1055,14 @@ fn shm_range(
     Ok(range)
 }
 
+/// Rejects names `shm_open` can never accept. Slashes are left for
+/// `shm_open` itself since the valid forms are platform specific.
+#[cfg(any(test, all(unix, not(target_os = "android"))))]
+fn valid_shm_name(name: &str) -> bool {
+    const NAME_MAX: usize = 255;
+    !name.is_empty() && name != "/" && name.len() <= NAME_MAX
+}
+
 /// Closes and unlinks a client shared memory object, which the kitty
 /// protocol makes the terminal's job on both success and failure.
 #[cfg(all(unix, not(target_os = "android")))]
@@ -1128,8 +1136,19 @@ fn temp_dirs() -> &'static [std::path::PathBuf] {
         }
         dirs.into_iter()
             .filter_map(|dir| std::fs::canonicalize(dir).ok())
+            .map(strip_verbatim)
             .collect()
     })
+}
+
+/// Drops the `\\?\` prefix Windows adds to canonical paths so they compare
+/// equal to paths read back from a file handle.
+fn strip_verbatim(path: std::path::PathBuf) -> std::path::PathBuf {
+    #[cfg(windows)]
+    if let Some(rest) = path.to_str().and_then(|p| p.strip_prefix(r"\\?\")) {
+        return rest.into();
+    }
+    path
 }
 
 /// `path` must already be canonical.
@@ -1167,10 +1186,32 @@ fn is_unsafe_windows_path(path: &str) -> bool {
     path.split(['\\', '/']).any(is_reserved_device_name)
 }
 
+/// The canonical path of an opened file must be on a local volume with a
+/// drive letter; a file on an SMB share canonicalizes to a UNC path.
+#[cfg(any(test, windows))]
+fn is_local_windows_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    let drive_absolute = bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && bytes[2] == b'\\';
+    drive_absolute && !is_unsafe_windows_path(path)
+}
+
 #[cfg(any(test, windows))]
 fn is_reserved_device_name(component: &str) -> bool {
+    let component = match component.as_bytes() {
+        [drive, b':', ..] if drive.is_ascii_alphabetic() => &component[2..],
+        _ => component,
+    };
     let end = component.find(['.', ':']).unwrap_or(component.len());
     let stem = component[..end].trim_end_matches(' ');
+    if ["CONIN$", "CONOUT$", "CLOCK$"]
+        .iter()
+        .any(|name| stem.eq_ignore_ascii_case(name))
+    {
+        return true;
+    }
     if stem.len() < 3 || !stem.is_char_boundary(3) {
         return false;
     }
@@ -1208,7 +1249,34 @@ fn opened_path(file: &std::fs::File) -> Option<std::path::PathBuf> {
     Some(std::ffi::OsString::from_vec(buf).into())
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+#[cfg(windows)]
+fn opened_path(file: &std::fs::File) -> Option<std::path::PathBuf> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFinalPathNameByHandleW, FILE_NAME_NORMALIZED, VOLUME_NAME_DOS,
+    };
+    let mut buf = vec![0u16; 32768];
+    let len = unsafe {
+        GetFinalPathNameByHandleW(
+            file.as_raw_handle() as _,
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
+        )
+    } as usize;
+    if len == 0 || len >= buf.len() {
+        return None;
+    }
+    let path = String::from_utf16(&buf[..len]).ok()?;
+    Some(strip_verbatim(path.into()))
+}
+
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    windows
+)))]
 fn opened_path(_file: &std::fs::File) -> Option<std::path::PathBuf> {
     None
 }
@@ -1218,12 +1286,28 @@ fn opened_path(_file: &std::fs::File) -> Option<std::path::PathBuf> {
 fn open_image_file(
     path: &std::path::Path,
 ) -> Result<(std::fs::File, std::path::PathBuf), GraphicError> {
+    if !std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
+        return Err(GraphicError::FileNotFound);
+    }
+
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NONBLOCK);
+    std::os::unix::fs::OpenOptionsExt::custom_flags(
+        &mut options,
+        libc::O_NONBLOCK | libc::O_NOCTTY,
+    );
     let file = options.open(path).map_err(|_| GraphicError::FileNotFound)?;
 
+    #[cfg(windows)]
+    let real = {
+        let real = opened_path(&file).ok_or(GraphicError::InvalidData)?;
+        if !real.to_str().is_some_and(is_local_windows_path) {
+            return Err(GraphicError::InvalidData);
+        }
+        real
+    };
+    #[cfg(not(windows))]
     let real = opened_path(&file)
         .or_else(|| std::fs::canonicalize(path).ok())
         .ok_or(GraphicError::FileNotFound)?;
@@ -1240,14 +1324,17 @@ fn read_file_data(
 ) -> Result<Vec<u8>, GraphicError> {
     use std::io::{Read, Seek, SeekFrom};
 
-    if !file.metadata().is_ok_and(|m| m.is_file()) {
-        return Err(GraphicError::FileNotFound);
-    }
+    let len = match file.metadata() {
+        Ok(m) if m.is_file() => m.len(),
+        _ => return Err(GraphicError::FileNotFound),
+    };
 
     file.seek(SeekFrom::Start(offset as u64))
         .map_err(|_| GraphicError::InvalidData)?;
     let limit = if size > 0 { size } else { MAX_SIZE + 1 };
-    let mut data = Vec::new();
+    let available =
+        usize::try_from(len.saturating_sub(offset as u64)).unwrap_or(usize::MAX);
+    let mut data = Vec::with_capacity(limit.min(available));
     file.take(limit as u64)
         .read_to_end(&mut data)
         .map_err(|_| GraphicError::InvalidData)?;
@@ -1351,6 +1438,9 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                 debug!("Shared memory name payload: {} bytes", cmd.payload.len());
                 let shm_name_str = std::str::from_utf8(&cmd.payload)
                     .map_err(|_| GraphicError::InvalidData)?;
+                if !valid_shm_name(shm_name_str) {
+                    return Err(GraphicError::InvalidData);
+                }
                 let shm_name =
                     CString::new(shm_name_str).map_err(|_| GraphicError::InvalidData)?;
 
@@ -2916,6 +3006,11 @@ mod tests {
             r"C:\Users\me\com1",
             "C:\\Users\\me\\LPT\u{b9}",
             r"C:\Users\me\aux:stream",
+            "CONIN$",
+            r"C:\x\CONOUT$",
+            r"C:\x\clock$.txt",
+            "C:CON",
+            r"D:nul.txt",
         ] {
             assert!(is_unsafe_windows_path(path), "{path}");
         }
@@ -2925,6 +3020,8 @@ mod tests {
             r"C:\Users\me\com10",
             r"\Users\me\img.rgba",
             r"relative\img.rgba",
+            r"C:img.rgba",
+            r"C:\x\CONIN$file",
         ] {
             assert!(!is_unsafe_windows_path(path), "{path}");
         }
@@ -2956,5 +3053,25 @@ mod tests {
         assert!(!is_sensitive_path(Path::new("/devices/img.png")));
         assert!(!is_sensitive_path(Path::new("/dev/shm/img.rgba")));
         assert!(is_sensitive_path(Path::new("/dev/shm-evil/img.rgba")));
+    }
+
+    #[test]
+    fn test_is_local_windows_path() {
+        assert!(is_local_windows_path(r"C:\Users\me\img.rgba"));
+        assert!(is_local_windows_path(r"d:\tmp\tty-graphics-protocol-x"));
+        assert!(!is_local_windows_path(r"UNC\server\share\img.rgba"));
+        assert!(!is_local_windows_path(r"\\server\share\img.rgba"));
+        assert!(!is_local_windows_path(r"C:img.rgba"));
+        assert!(!is_local_windows_path(r"\Users\me\img.rgba"));
+        assert!(!is_local_windows_path(r"C:\Users\me\CON"));
+    }
+
+    #[test]
+    fn test_valid_shm_name() {
+        assert!(valid_shm_name("/rio-image"));
+        assert!(valid_shm_name("group.id/rio-image"));
+        assert!(!valid_shm_name(""));
+        assert!(!valid_shm_name("/"));
+        assert!(!valid_shm_name(&"a".repeat(256)));
     }
 }
