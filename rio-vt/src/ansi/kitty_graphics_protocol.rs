@@ -1132,68 +1132,130 @@ fn temp_dirs() -> &'static [std::path::PathBuf] {
     })
 }
 
-fn in_temp_dir(path: &std::path::Path) -> bool {
-    path.parent()
-        .is_some_and(|parent| temp_dirs().iter().any(|dir| dir == parent))
-}
-
-/// Resolves a `t=t` path to one directly inside a temp dir, keeping the
-/// final component as given so a symlink is removed rather than its target.
-fn temp_file_path(path: &std::path::Path) -> Option<std::path::PathBuf> {
-    let name = path.file_name()?;
-    if !name.to_str()?.contains("tty-graphics-protocol") {
-        return None;
-    }
-    let parent = std::fs::canonicalize(path.parent()?).ok()?;
-    let path = parent.join(name);
-    in_temp_dir(&path).then_some(path)
+/// `path` must already be canonical.
+fn is_temp_file_path(path: &std::path::Path) -> bool {
+    path.to_string_lossy().contains("tty-graphics-protocol")
+        && temp_dirs().iter().any(|dir| path.starts_with(dir))
 }
 
 /// `path` must already be canonical.
 fn is_sensitive_path(path: &std::path::Path) -> bool {
-    ["/proc", "/sys", "/dev"]
-        .iter()
-        .any(|prefix| path.starts_with(prefix))
+    path.starts_with("/proc")
+        || path.starts_with("/sys")
+        || (path.starts_with("/dev") && !path.starts_with("/dev/shm"))
 }
 
-fn read_file_range(
+/// Windows paths that are unsafe to even open: UNC paths make the process
+/// authenticate to a remote SMB server, device and NT object paths reach
+/// raw volumes and named pipes, and reserved DOS names resolve to devices
+/// from any directory.
+#[cfg(any(test, windows))]
+fn is_unsafe_windows_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    let is_sep = |c: u8| c == b'\\' || c == b'/';
+    if bytes.len() >= 2 && is_sep(bytes[0]) && is_sep(bytes[1]) {
+        return true;
+    }
+    if bytes.len() >= 4
+        && is_sep(bytes[0])
+        && bytes[1] == b'?'
+        && bytes[2] == b'?'
+        && is_sep(bytes[3])
+    {
+        return true;
+    }
+    path.split(['\\', '/']).any(is_reserved_device_name)
+}
+
+#[cfg(any(test, windows))]
+fn is_reserved_device_name(component: &str) -> bool {
+    let end = component.find(['.', ':']).unwrap_or(component.len());
+    let stem = component[..end].trim_end_matches(' ');
+    if stem.len() < 3 || !stem.is_char_boundary(3) {
+        return false;
+    }
+    let (base, rest) = stem.split_at(3);
+    if rest.is_empty() {
+        return ["CON", "PRN", "AUX", "NUL"]
+            .iter()
+            .any(|name| base.eq_ignore_ascii_case(name));
+    }
+    if !base.eq_ignore_ascii_case("COM") && !base.eq_ignore_ascii_case("LPT") {
+        return false;
+    }
+    (rest.len() == 1 && rest.as_bytes()[0].is_ascii_digit())
+        || matches!(rest, "\u{b9}" | "\u{b2}" | "\u{b3}")
+}
+
+/// Path of an open file as the kernel sees it, so checks apply to the file
+/// actually read rather than to a path that may have been swapped.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn opened_path(file: &std::fs::File) -> Option<std::path::PathBuf> {
+    use std::os::unix::io::AsRawFd;
+    std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())).ok()
+}
+
+#[cfg(target_os = "macos")]
+fn opened_path(file: &std::fs::File) -> Option<std::path::PathBuf> {
+    use std::os::unix::ffi::OsStringExt;
+    use std::os::unix::io::AsRawFd;
+    let mut buf = vec![0u8; libc::PATH_MAX as usize];
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETPATH, buf.as_mut_ptr()) } == -1 {
+        return None;
+    }
+    let len = buf.iter().position(|&b| b == 0)?;
+    buf.truncate(len);
+    Some(std::ffi::OsString::from_vec(buf).into())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
+fn opened_path(_file: &std::fs::File) -> Option<std::path::PathBuf> {
+    None
+}
+
+/// Opens a client supplied image path and returns it with its canonical
+/// path, which has already passed the sensitive path check.
+fn open_image_file(
     path: &std::path::Path,
+) -> Result<(std::fs::File, std::path::PathBuf), GraphicError> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NONBLOCK);
+    let file = options.open(path).map_err(|_| GraphicError::FileNotFound)?;
+
+    let real = opened_path(&file)
+        .or_else(|| std::fs::canonicalize(path).ok())
+        .ok_or(GraphicError::FileNotFound)?;
+    if is_sensitive_path(&real) {
+        return Err(GraphicError::InvalidData);
+    }
+    Ok((file, real))
+}
+
+fn read_file_data(
+    file: &mut std::fs::File,
     offset: u32,
     size: usize,
 ) -> Result<Vec<u8>, GraphicError> {
     use std::io::{Read, Seek, SeekFrom};
 
-    let is_file = |m: std::io::Result<std::fs::Metadata>| m.is_ok_and(|m| m.is_file());
-    if !is_file(std::fs::metadata(path)) {
-        return Err(GraphicError::FileNotFound);
-    }
-
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NONBLOCK);
-    let mut file = options.open(path).map_err(|_| GraphicError::FileNotFound)?;
-    if !is_file(file.metadata()) {
+    if !file.metadata().is_ok_and(|m| m.is_file()) {
         return Err(GraphicError::FileNotFound);
     }
 
     file.seek(SeekFrom::Start(offset as u64))
         .map_err(|_| GraphicError::InvalidData)?;
+    let limit = if size > 0 { size } else { MAX_SIZE + 1 };
     let mut data = Vec::new();
-    if size > 0 {
-        data.resize(size, 0);
-        file.read_exact(&mut data)
-            .map_err(|_| GraphicError::InvalidData)?;
-    } else {
-        file.take(MAX_SIZE as u64 + 1)
-            .read_to_end(&mut data)
-            .map_err(|_| GraphicError::InvalidData)?;
-        if data.len() > MAX_SIZE {
-            return Err(GraphicError::TooLarge);
-        }
-        if data.is_empty() {
-            return Err(GraphicError::InvalidData);
-        }
+    file.take(limit as u64)
+        .read_to_end(&mut data)
+        .map_err(|_| GraphicError::InvalidData)?;
+    if data.len() > MAX_SIZE {
+        return Err(GraphicError::TooLarge);
+    }
+    if data.is_empty() || (size > 0 && data.len() != size) {
+        return Err(GraphicError::InvalidData);
     }
     Ok(data)
 }
@@ -1257,31 +1319,25 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             let path_str = std::str::from_utf8(&cmd.payload)
                 .map_err(|_| GraphicError::InvalidData)?;
             debug!("File path: {}", path_str);
-            let path = Path::new(path_str);
+            #[cfg(windows)]
+            if is_unsafe_windows_path(path_str) {
+                return Err(GraphicError::InvalidData);
+            }
+
+            let (mut file, real) = open_image_file(Path::new(path_str))?;
 
             if cmd.medium == TransmissionMedium::TempFile {
-                let Some(path) = temp_file_path(path) else {
+                if !is_temp_file_path(&real) {
                     return Err(GraphicError::InvalidData);
-                };
-                let result = (|| {
-                    let size = requested_size(cmd)?;
-                    let target = std::fs::canonicalize(&path)
-                        .map_err(|_| GraphicError::FileNotFound)?;
-                    if !in_temp_dir(&target) {
-                        return Err(GraphicError::InvalidData);
-                    }
-                    read_file_range(&target, cmd.offset, size)
-                })();
-                let _ = std::fs::remove_file(&path);
+                }
+                let result = requested_size(cmd)
+                    .and_then(|size| read_file_data(&mut file, cmd.offset, size));
+                drop(file);
+                let _ = std::fs::remove_file(&real);
                 result?
             } else {
                 let size = requested_size(cmd)?;
-                let path = std::fs::canonicalize(path)
-                    .map_err(|_| GraphicError::FileNotFound)?;
-                if is_sensitive_path(&path) {
-                    return Err(GraphicError::InvalidData);
-                }
-                read_file_range(&path, cmd.offset, size)?
+                read_file_data(&mut file, cmd.offset, size)?
             }
         }
         TransmissionMedium::SharedMemory => {
@@ -2756,7 +2812,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn test_temp_symlink_removes_link_not_target() {
+    fn test_temp_symlink_removes_validated_target() {
         let target = TestFile::new(&std::env::temp_dir(), "temp-target", &[1, 2, 3, 4]);
         let link = TestFile(std::env::temp_dir().join(format!(
             "rio-temp-link-tty-graphics-protocol-{}",
@@ -2771,15 +2827,108 @@ mod tests {
             0,
             0,
         ))
-        .expect("symlink inside a temp dir must load");
+        .expect("symlink to a temp file must load");
         assert_eq!(data.pixels, vec![1, 2, 3, 4]);
-        assert!(
-            std::fs::symlink_metadata(&link.0).is_err(),
-            "link must be removed"
-        );
-        assert!(target.0.exists(), "link target must be kept");
+        assert!(!target.0.exists(), "the file actually read must be removed");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn test_temp_symlink_to_outside_is_rejected() {
+        let dir = std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap();
+        if temp_dirs().iter().any(|temp| dir.starts_with(temp)) {
+            return;
+        }
+        let target = TestFile::new(&dir, "temp-escape", &[1, 2, 3, 4]);
+        let link = TestFile(std::env::temp_dir().join(format!(
+            "rio-temp-escape-tty-graphics-protocol-{}",
+            std::process::id()
+        )));
+        let _ = std::fs::remove_file(&link.0);
+        std::os::unix::fs::symlink(&target.0, &link.0).unwrap();
+
+        let result = create_graphic_data(&file_command(
+            TransmissionMedium::TempFile,
+            &link.0,
+            0,
+            0,
+        ));
+        assert!(matches!(result, Err(GraphicError::InvalidData)));
+        assert!(
+            target.0.exists(),
+            "files outside temp dirs must never be deleted"
+        );
+    }
+
+    #[test]
+    fn test_temp_file_in_subdirectory_with_marked_dir() {
+        let dir = std::env::temp_dir().join(format!(
+            "rio-tty-graphics-protocol-dir-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("frame.rgba");
+        std::fs::write(&path, [1, 2, 3, 4]).unwrap();
+
+        let result =
+            create_graphic_data(&file_command(TransmissionMedium::TempFile, &path, 0, 0));
+        let exists = path.exists();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            result.expect("nested temp file must load").pixels,
+            vec![1, 2, 3, 4]
+        );
+        assert!(!exists, "nested temp file must be removed");
+    }
+
+    #[test]
+    fn test_file_implied_size_larger_than_file_is_rejected() {
+        let file = TestFile::new(&std::env::temp_dir(), "file-implied", &[0u8; 4]);
+        let mut cmd = file_command(TransmissionMedium::File, &file.0, 0, 0);
+        cmd.width = 10000;
+        cmd.height = 10000;
+
+        let result = create_graphic_data(&cmd);
+        assert!(matches!(result, Err(GraphicError::InvalidData)));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]
+    #[test]
+    fn test_opened_path_is_canonical() {
+        let file = TestFile::new(&std::env::temp_dir(), "opened-path", &[0u8; 4]);
+        let opened = std::fs::File::open(&file.0).unwrap();
+        assert_eq!(
+            opened_path(&opened),
+            Some(std::fs::canonicalize(&file.0).unwrap())
+        );
+    }
+
+    #[test]
+    fn test_is_unsafe_windows_path() {
+        for path in [
+            r"\\server\share\tty-graphics-protocol-image.data",
+            "//server/share/img.rgba",
+            r"\\?\C:\img.rgba",
+            r"\\.\pipe\name",
+            r"\??\C:\img.rgba",
+            r"C:\Users\me\CON",
+            r"C:\Users\me\nul.txt",
+            r"C:\Users\me\com1",
+            "C:\\Users\\me\\LPT\u{b9}",
+            r"C:\Users\me\aux:stream",
+        ] {
+            assert!(is_unsafe_windows_path(path), "{path}");
+        }
+        for path in [
+            r"C:\Users\me\img.rgba",
+            r"C:\Users\me\console.rgba",
+            r"C:\Users\me\com10",
+            r"\Users\me\img.rgba",
+            r"relative\img.rgba",
+        ] {
+            assert!(!is_unsafe_windows_path(path), "{path}");
+        }
+    }
     #[cfg(unix)]
     #[test]
     fn test_file_fifo_is_rejected_without_blocking() {
@@ -2805,5 +2954,7 @@ mod tests {
         assert!(!is_sensitive_path(Path::new("/Users/me/Dev/img.png")));
         assert!(!is_sensitive_path(Path::new("/home/me/proc/img.png")));
         assert!(!is_sensitive_path(Path::new("/devices/img.png")));
+        assert!(!is_sensitive_path(Path::new("/dev/shm/img.rgba")));
+        assert!(is_sensitive_path(Path::new("/dev/shm-evil/img.rgba")));
     }
 }
