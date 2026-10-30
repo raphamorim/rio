@@ -478,7 +478,13 @@ impl Renderer {
                 // Clear in-flight flag so PTY thread can notify again
                 terminal.damage_event_in_flight = false;
 
-                if terminal.synchronized_output() && !force_full_damage {
+                if terminal.synchronized_output() {
+                    if force_full_damage {
+                        context
+                            .renderable_content
+                            .pending_update
+                            .set_terminal_damage(TerminalDamage::Full);
+                    }
                     continue;
                 }
                 any_panel_dirty = true;

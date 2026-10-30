@@ -533,11 +533,6 @@ impl StdSyncHandler {
         self.timeout = None;
     }
 
-    #[inline]
-    fn pending_timeout(&self) -> bool {
-        self.timeout.is_some()
-    }
-
     /// Whether an armed synchronized update has outlived its deadline.
     #[inline]
     fn expired(&self) -> bool {
@@ -576,15 +571,13 @@ impl Processor {
         self.parser.advance(&mut performer, bytes);
     }
 
-    /// End a synchronized update, if one is active.
+    /// End a synchronized update.
     pub fn stop_sync<H>(&mut self, handler: &mut H)
     where
         H: Handler,
     {
-        if self.state.sync_state.timeout.pending_timeout() {
-            self.state.sync_state.timeout.clear_timeout();
-            handler.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
-        }
+        self.state.sync_state.timeout.clear_timeout();
+        handler.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
     }
 }
 
@@ -2268,10 +2261,6 @@ mod tests {
         processor.stop_sync(&mut handler);
         assert!(!handler.synced);
         assert!(!is_armed(&processor));
-
-        let changes = handler.sync_changes;
-        processor.stop_sync(&mut handler);
-        assert_eq!(handler.sync_changes, changes);
     }
 
     /// Embedders without an event loop never poll `sync_timeout()`; an

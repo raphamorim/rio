@@ -245,6 +245,7 @@ where
         // Reserve the next terminal lock for PTY reading.
         let _terminal_lease = Some(self.terminal.lease());
         let mut terminal = None;
+        let mut held_before = None;
 
         loop {
             // Read from the PTY.
@@ -285,6 +286,8 @@ where
                 }),
             };
 
+            held_before.get_or_insert(terminal.synchronized_output());
+
             // Parse the incoming bytes.
             state.parser.advance(&mut **terminal, &buf[..unprocessed]);
 
@@ -302,9 +305,9 @@ where
         // extract all accumulated damage when it locks the terminal.
         if processed > 0 {
             if let Some(ref mut term) = terminal {
-                if !term.synchronized_output()
-                    && !term.damage_event_in_flight
-                    && term.peek_damage_event().is_some()
+                let hold_ended = held_before == Some(true) && !term.synchronized_output();
+                if !term.damage_event_in_flight
+                    && (hold_ended || term.peek_damage_event().is_some())
                 {
                     term.damage_event_in_flight = true;
                     self.event_proxy.send_event(
@@ -429,21 +432,24 @@ where
             }
 
             // Handle synchronized update timeout.
-            if events.is_empty() && self.receiver.peek().is_none() {
+            if state
+                .parser
+                .sync_timeout()
+                .sync_timeout()
+                .is_some_and(|deadline| deadline <= Instant::now())
+            {
                 let mut terminal = self.terminal.lock();
                 state.parser.stop_sync(&mut *terminal);
-
-                // Notify renderer if damage available and no event in flight
-                if !terminal.damage_event_in_flight
-                    && terminal.peek_damage_event().is_some()
-                {
+                if !terminal.damage_event_in_flight {
                     terminal.damage_event_in_flight = true;
                     self.event_proxy.send_event(
                         RioEvent::TerminalDamaged(self.route_id),
                         self.window_id,
                     );
                 }
+            }
 
+            if events.is_empty() && self.receiver.peek().is_none() {
                 continue;
             }
 
@@ -540,7 +546,7 @@ where
         }
 
         // Flush exactly once before publishing any exit notification.
-        let pending_sync = state.parser.sync_timeout().sync_timeout().is_some();
+        let pending_sync = self.terminal.lock().synchronized_output();
         state.parser.stop_sync(&mut *self.terminal.lock());
         match &reason {
             Ok(ExitReason::ChildExited(status)) => {

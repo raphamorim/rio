@@ -308,11 +308,15 @@ mod pipeline_tests {
         fn consume(
             &mut self,
             term: &mut Crosswords<VoidListener>,
-            ui: Option<TerminalDamage>,
+            ui: &mut Option<TerminalDamage>,
         ) {
             let rows = term.screen_lines();
             let cols = term.columns();
             term.damage_event_in_flight = false;
+            if term.synchronized_output() {
+                return;
+            }
+            let ui = ui.take();
             let pty = term.peek_damage_event();
             let damage = match (ui, pty) {
                 (Some(u), Some(p)) => PendingUpdate::merge_terminal_damages(u, p),
@@ -369,14 +373,14 @@ mod pipeline_tests {
             term.peek_damage_event(),
             Some(TerminalDamage::Full) | Some(TerminalDamage::Partial)
         ) {
-            frame.consume(term, None);
+            frame.consume(term, &mut None);
             spins += 1;
             assert!(spins < 8, "{context}: damage never quiesces");
         }
         // A cursor-only event may fire once more; consuming it must not
         // change painted content and must reach silence.
         if event_would_fire(term) {
-            frame.consume(term, None);
+            frame.consume(term, &mut None);
         }
         assert!(
             !event_would_fire(term),
@@ -397,6 +401,28 @@ mod pipeline_tests {
         }
     }
 
+    /// A held frame paints nothing and keeps its UI damage for the frame
+    /// after the synchronized update ends.
+    #[test]
+    fn synchronized_update_holds_and_keeps_ui_damage() {
+        let mut term = new_term();
+        let mut parser = Processor::default();
+        let mut frame = Frame::new();
+        frame.consume(&mut term, &mut Some(TerminalDamage::Full));
+        let before = frame.painted.clone();
+
+        parser.advance(&mut term, b"\x1b[?2026h\x1b[1;1Hheld");
+        let mut ui = Some(TerminalDamage::Full);
+        frame.consume(&mut term, &mut ui);
+        assert_eq!(frame.painted, before);
+        assert!(ui.is_some(), "UI damage stays pending during the hold");
+
+        parser.advance(&mut term, b"\x1b[?2026l");
+        frame.consume(&mut term, &mut ui);
+        assert!(ui.is_none());
+        assert_eq!(frame.painted, grid_text(&term));
+    }
+
     /// Deterministic vim-shaped session: alt screen, scroll region with
     /// a status line, line redraws with EL, scrolls in both directions,
     /// insert/delete lines, with a renderer consuming at every step.
@@ -405,7 +431,7 @@ mod pipeline_tests {
         let mut term = new_term();
         let mut parser = Processor::default();
         let mut frame = Frame::new();
-        frame.consume(&mut term, Some(TerminalDamage::Full));
+        frame.consume(&mut term, &mut Some(TerminalDamage::Full));
 
         let steps: Vec<Vec<u8>> = vec![
             b"\x1b[?1049h".to_vec(),
@@ -476,7 +502,7 @@ mod pipeline_tests {
             let mut term = new_term();
             let mut parser = Processor::default();
             let mut frame = Frame::new();
-            frame.consume(&mut term, Some(TerminalDamage::Full));
+            frame.consume(&mut term, &mut Some(TerminalDamage::Full));
 
             let mut journal: Vec<String> = Vec::new();
             for step in 0..400 {
@@ -537,18 +563,18 @@ mod pipeline_tests {
                     1 => {
                         if event_would_fire(&term) {
                             journal.push(format!("s{step} consume(evt)"));
-                            frame.consume(&mut term, ui.take());
+                            frame.consume(&mut term, &mut ui);
                         }
                     }
                     _ => {
                         journal.push(format!("s{step} consume(forced)"));
-                        frame.consume(&mut term, ui.take());
+                        frame.consume(&mut term, &mut ui);
                     }
                 }
                 if let Some(ui) = ui {
                     // UI damage that missed this frame is carried to
                     // the next consume, like PendingUpdate does.
-                    frame.consume(&mut term, Some(ui));
+                    frame.consume(&mut term, &mut Some(ui));
                 }
                 if term.display_offset() > term.history_size() {
                     let tail: Vec<_> =
