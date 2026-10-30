@@ -63,8 +63,63 @@ where
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Scroll {
+    #[serde(
+        default = "default_scroll_multiplier",
+        deserialize_with = "deserialize_scroll_multiplier"
+    )]
     pub multiplier: f64,
+    #[serde(
+        default = "default_scroll_divider",
+        deserialize_with = "deserialize_scroll_divider"
+    )]
     pub divider: f64,
+}
+
+fn default_scroll_multiplier() -> f64 {
+    Scroll::default().multiplier
+}
+
+fn default_scroll_divider() -> f64 {
+    Scroll::default().divider
+}
+
+/// Scroll input is scaled by `multiplier / divider`. Both are clamped to
+/// [0.01, 10000] so the ratio stays positive and finite; NaN falls back to
+/// the default.
+fn sanitize_scroll_factor(name: &str, value: f64, default: f64) -> f64 {
+    let sanitized = if value.is_nan() {
+        default
+    } else {
+        value.clamp(0.01, 10_000.0)
+    };
+    if sanitized != value {
+        warn!("scroll.{name} = {value} is out of range, using {sanitized}");
+    }
+    sanitized
+}
+
+fn deserialize_scroll_multiplier<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let multiplier = f64::deserialize(deserializer)?;
+    Ok(sanitize_scroll_factor(
+        "multiplier",
+        multiplier,
+        default_scroll_multiplier(),
+    ))
+}
+
+fn deserialize_scroll_divider<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let divider = f64::deserialize(deserializer)?;
+    Ok(sanitize_scroll_factor(
+        "divider",
+        divider,
+        default_scroll_divider(),
+    ))
 }
 
 impl Default for Scroll {
@@ -1282,6 +1337,48 @@ mod tests {
         );
 
         assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
+    }
+
+    fn scroll_config(prefix: &str, scroll: &str) -> Scroll {
+        create_temporary_config(prefix, &format!("[scroll]\n{scroll}")).scroll
+    }
+
+    #[test]
+    fn test_scroll_values_are_kept_when_valid() {
+        let scroll = scroll_config("scroll-valid", "multiplier = 5.0\ndivider = 2.0");
+        assert_eq!((scroll.multiplier, scroll.divider), (5.0, 2.0));
+    }
+
+    #[test]
+    fn test_scroll_values_are_clamped() {
+        let scroll = scroll_config("scroll-zero", "multiplier = 0.0\ndivider = 0.0");
+        assert_eq!((scroll.multiplier, scroll.divider), (0.01, 0.01));
+
+        let scroll =
+            scroll_config("scroll-negative", "multiplier = -3.0\ndivider = -1.0");
+        assert_eq!((scroll.multiplier, scroll.divider), (0.01, 0.01));
+
+        let scroll =
+            scroll_config("scroll-extreme", "multiplier = 1e300\ndivider = 1e-320");
+        assert_eq!((scroll.multiplier, scroll.divider), (10_000.0, 0.01));
+
+        let scroll = scroll_config("scroll-inf", "multiplier = inf\ndivider = -inf");
+        assert_eq!((scroll.multiplier, scroll.divider), (10_000.0, 0.01));
+    }
+
+    #[test]
+    fn test_scroll_nan_falls_back_to_default() {
+        let scroll = scroll_config("scroll-nan", "multiplier = nan\ndivider = nan");
+        assert_eq!(scroll, Scroll::default());
+    }
+
+    #[test]
+    fn test_scroll_partial_table_keeps_other_default() {
+        let scroll = scroll_config("scroll-partial-divider", "divider = 2.0");
+        assert_eq!((scroll.multiplier, scroll.divider), (3.0, 2.0));
+
+        let scroll = scroll_config("scroll-partial-multiplier", "multiplier = 5.0");
+        assert_eq!((scroll.multiplier, scroll.divider), (5.0, 1.0));
     }
 
     #[test]

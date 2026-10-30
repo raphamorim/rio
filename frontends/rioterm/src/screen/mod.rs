@@ -3620,6 +3620,9 @@ impl Screen<'_> {
         let dim = self.context_manager.current().dimension.dimension;
         let width = dim.width as f64;
         let height = dim.height as f64;
+        if !(width > 0.0 && height > 0.0) {
+            return;
+        }
         let mode = self.get_mode();
 
         const MOUSE_WHEEL_UP: u8 = 64;
