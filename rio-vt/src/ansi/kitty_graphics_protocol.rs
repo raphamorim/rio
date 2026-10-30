@@ -1209,8 +1209,8 @@ fn is_sensitive_path(path: &std::path::Path) -> bool {
 
 /// Windows paths that are unsafe to even open: UNC paths make the process
 /// authenticate to a remote SMB server, device and NT object paths reach
-/// raw volumes and named pipes, and reserved DOS names resolve to devices
-/// from any directory.
+/// raw volumes and named pipes, and a reserved DOS name as the final
+/// component resolves to a device from any directory.
 #[cfg(any(test, windows))]
 fn is_unsafe_windows_path(path: &str) -> bool {
     let bytes = path.as_bytes();
@@ -1226,7 +1226,9 @@ fn is_unsafe_windows_path(path: &str) -> bool {
     {
         return true;
     }
-    path.split(['\\', '/']).any(is_reserved_device_name)
+    path.rsplit(['\\', '/'])
+        .next()
+        .is_some_and(is_reserved_device_name)
 }
 
 /// A local volume path with a drive letter (`X:\`). A file on an SMB share
@@ -1332,52 +1334,58 @@ fn opened_path(_file: &std::fs::File) -> Option<std::path::PathBuf> {
     None
 }
 
+/// Whether a local drive root such as `C:\` is not a network share.
 #[cfg(windows)]
-fn is_reparse_point(metadata: &std::fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    metadata.file_attributes()
-        & windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT
-        != 0
-}
-
-/// Checks a client path before it is opened and returns it made absolute.
-/// It must resolve to a drive that is not a network share, and neither the
-/// file nor any directory above it may be a symlink or junction, since
-/// following either can reach a remote SMB server.
-#[cfg(windows)]
-fn local_windows_file(
-    path: &std::path::Path,
-) -> Result<std::path::PathBuf, GraphicError> {
+fn is_local_drive(path: &str) -> bool {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
     const DRIVE_REMOTE: u32 = 4;
 
+    if !is_drive_absolute(path) {
+        return false;
+    }
+    let root: Vec<u16> = std::ffi::OsStr::new(&path[..3])
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe { GetDriveTypeW(root.as_ptr()) != DRIVE_REMOTE }
+}
+
+/// Checks a client path before it is opened and returns it made absolute.
+/// It must be on a drive that is not a network share, the file must not be a
+/// symlink or junction, and a symlink or junction above it must point at
+/// such a local drive, since following one to a share authenticates to a
+/// remote SMB server.
+#[cfg(windows)]
+fn local_windows_file(
+    path: &std::path::Path,
+) -> Result<std::path::PathBuf, GraphicError> {
     let raw = path.to_str().ok_or(GraphicError::InvalidData)?;
     if is_unsafe_windows_path(raw) {
         return Err(GraphicError::InvalidData);
     }
     let path = std::path::absolute(path).map_err(|_| GraphicError::InvalidData)?;
     let path_str = path.to_str().ok_or(GraphicError::InvalidData)?;
-    if !is_drive_absolute(path_str) || is_unsafe_windows_path(path_str) {
-        return Err(GraphicError::InvalidData);
-    }
-    let root: Vec<u16> = std::ffi::OsStr::new(&path_str[..3])
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    if unsafe { GetDriveTypeW(root.as_ptr()) } == DRIVE_REMOTE {
+    if !is_local_drive(path_str) || is_unsafe_windows_path(path_str) {
         return Err(GraphicError::InvalidData);
     }
     for dir in path.ancestors().skip(1) {
         if dir.parent().is_none() {
             break;
         }
-        if std::fs::symlink_metadata(dir).is_ok_and(|m| m.file_type().is_symlink()) {
+        if !std::fs::symlink_metadata(dir).is_ok_and(|m| m.file_type().is_symlink()) {
+            continue;
+        }
+        let target = std::fs::read_link(dir)
+            .ok()
+            .map(strip_verbatim)
+            .and_then(|t| t.to_str().map(is_local_drive));
+        if target != Some(true) {
             return Err(GraphicError::InvalidData);
         }
     }
     match std::fs::symlink_metadata(&path) {
-        Ok(m) if m.is_file() && !is_reparse_point(&m) => Ok(path),
+        Ok(m) if m.is_file() && !m.file_type().is_symlink() => Ok(path),
         Ok(_) => Err(GraphicError::InvalidData),
         Err(_) => Err(GraphicError::FileNotFound),
     }
@@ -1393,6 +1401,11 @@ fn open_image_file(
     let path = &local_windows_file(path)?;
     #[cfg(not(windows))]
     {
+        let absolute =
+            std::path::absolute(path).map_err(|_| GraphicError::FileNotFound)?;
+        if is_sensitive_path(&absolute) {
+            return Err(GraphicError::InvalidData);
+        }
         let resolved =
             std::fs::canonicalize(path).map_err(|_| GraphicError::FileNotFound)?;
         if is_sensitive_path(&resolved) {
@@ -1449,7 +1462,7 @@ fn validate_open_file(
     let _ = path;
     #[cfg(windows)]
     let real = {
-        if file.metadata().is_ok_and(|m| is_reparse_point(&m)) {
+        if file.metadata().is_ok_and(|m| m.file_type().is_symlink()) {
             return Err(GraphicError::InvalidData);
         }
         let real = opened_path(file).ok_or(GraphicError::InvalidData)?;
@@ -1608,9 +1621,12 @@ impl Drop for WinViewGuard {
 }
 
 fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, GraphicError> {
-    // Early dimension guard for direct payloads. File and shm media check
-    // inside requested_size, after their cleanup is in place.
-    if cmd.medium == TransmissionMedium::Direct {
+    // Early dimension guard. Temp file and shm media check inside
+    // requested_size instead, after their cleanup is in place.
+    if !matches!(
+        cmd.medium,
+        TransmissionMedium::TempFile | TransmissionMedium::SharedMemory
+    ) {
         check_dimensions(cmd)?;
     }
 
@@ -1921,15 +1937,8 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             result
         }
         Format::Gray | Format::GrayAlpha | Format::Rgb24 | Format::Rgba32 => {
-            if cmd.width == 0 || cmd.height == 0 {
-                return Err(GraphicError::DimensionsRequired);
-            }
-
-            // Validate data size
+            // Dimensions were validated by check_dimensions for every medium.
             let expected_size = raw_image_size(cmd).ok_or(GraphicError::TooLarge)?;
-            if expected_size > MAX_SIZE {
-                return Err(GraphicError::TooLarge);
-            }
             if pixel_data.len() < expected_size {
                 debug!(
                     "Pixel data size insufficient: got {} bytes, expected at least {}",
@@ -3252,6 +3261,8 @@ mod tests {
             r"relative\img.rgba",
             r"C:img.rgba",
             r"C:\x\CONIN$file",
+            r"C:\src\aux.d\img.png",
+            r"C:\CON\img.png",
         ] {
             assert!(!is_unsafe_windows_path(path), "{path}");
         }
@@ -3347,16 +3358,23 @@ mod tests {
     fn test_proc_self_fd_is_rejected() {
         let file = TestFile::new(&std::env::temp_dir(), "proc-fd", &[1, 2, 3, 4]);
         let held = std::fs::File::open(&file.0).unwrap();
-        std::fs::remove_file(&file.0).unwrap();
         let fd_path = std::path::PathBuf::from(format!(
             "/proc/self/fd/{}",
             std::os::unix::io::AsRawFd::as_raw_fd(&held)
         ));
 
-        let result =
+        let live =
             create_graphic_data(&file_command(TransmissionMedium::File, &fd_path, 0, 0));
         assert!(
-            result.is_err(),
+            live.is_err(),
+            "live files behind /proc/self/fd must not load"
+        );
+
+        std::fs::remove_file(&file.0).unwrap();
+        let deleted =
+            create_graphic_data(&file_command(TransmissionMedium::File, &fd_path, 0, 0));
+        assert!(
+            deleted.is_err(),
             "deleted files behind /proc/self/fd must not load"
         );
     }
