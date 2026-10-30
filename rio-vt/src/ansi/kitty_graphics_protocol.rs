@@ -1109,6 +1109,13 @@ impl Drop for MapGuard {
     }
 }
 
+/// `width * height * bpp` for raw formats, `None` on overflow.
+fn raw_image_size(cmd: &KittyGraphicsCommand) -> Option<usize> {
+    (cmd.width as usize)
+        .checked_mul(cmd.height as usize)?
+        .checked_mul(cmd.format.bytes_per_pixel())
+}
+
 /// Bytes to read for a file or shared memory transmission. Without `S=`,
 /// uncompressed raw pixels imply `width * height * bpp`, which keeps page
 /// padding out of the image; anything else returns 0 (read to the end).
@@ -1118,10 +1125,7 @@ fn requested_size(cmd: &KittyGraphicsCommand) -> Result<usize, GraphicError> {
     } else if cmd.compression != Compression::None {
         0
     } else {
-        (cmd.width as usize)
-            .checked_mul(cmd.height as usize)
-            .and_then(|n| n.checked_mul(cmd.format.bytes_per_pixel()))
-            .ok_or(GraphicError::TooLarge)?
+        raw_image_size(cmd).ok_or(GraphicError::TooLarge)?
     };
     if size > MAX_SIZE {
         return Err(GraphicError::TooLarge);
@@ -1192,16 +1196,15 @@ fn is_unsafe_windows_path(path: &str) -> bool {
     path.split(['\\', '/']).any(is_reserved_device_name)
 }
 
-/// The canonical path of an opened file must be on a local volume with a
-/// drive letter; a file on an SMB share canonicalizes to a UNC path.
+/// A local volume path with a drive letter (`X:\`). A file on an SMB share
+/// canonicalizes to a UNC path instead.
 #[cfg(any(test, windows))]
-fn is_local_windows_path(path: &str) -> bool {
+fn is_drive_absolute(path: &str) -> bool {
     let bytes = path.as_bytes();
-    let drive_absolute = bytes.len() >= 3
+    bytes.len() >= 3
         && bytes[0].is_ascii_alphabetic()
         && bytes[1] == b':'
-        && bytes[2] == b'\\';
-    drive_absolute && !is_unsafe_windows_path(path)
+        && bytes[2] == b'\\'
 }
 
 #[cfg(any(test, windows))]
@@ -1304,29 +1307,39 @@ fn is_reparse_point(metadata: &std::fs::Metadata) -> bool {
         != 0
 }
 
-/// Checks a client path before it is opened: it must be drive absolute on a
-/// drive that is not a network share, and must not itself be a symlink or
-/// junction, since following either can reach a remote SMB server.
+/// Checks a client path before it is opened and returns it made absolute.
+/// It must resolve to a drive that is not a network share and must not itself
+/// be a symlink or junction, since following either can reach a remote SMB
+/// server.
 #[cfg(windows)]
-fn is_local_windows_file(path: &std::path::Path) -> bool {
+fn local_windows_file(
+    path: &std::path::Path,
+) -> Result<std::path::PathBuf, GraphicError> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
     const DRIVE_REMOTE: u32 = 4;
 
-    let Some(path_str) = path.to_str() else {
-        return false;
-    };
-    if !is_local_windows_path(path_str) {
-        return false;
+    let raw = path.to_str().ok_or(GraphicError::InvalidData)?;
+    if is_unsafe_windows_path(raw) {
+        return Err(GraphicError::InvalidData);
+    }
+    let path = std::path::absolute(path).map_err(|_| GraphicError::InvalidData)?;
+    let path_str = path.to_str().ok_or(GraphicError::InvalidData)?;
+    if !is_drive_absolute(path_str) || is_unsafe_windows_path(path_str) {
+        return Err(GraphicError::InvalidData);
     }
     let root: Vec<u16> = std::ffi::OsStr::new(&path_str[..3])
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
     if unsafe { GetDriveTypeW(root.as_ptr()) } == DRIVE_REMOTE {
-        return false;
+        return Err(GraphicError::InvalidData);
     }
-    std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file() && !is_reparse_point(&m))
+    match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.is_file() && !is_reparse_point(&m) => Ok(path),
+        Ok(_) => Err(GraphicError::InvalidData),
+        Err(_) => Err(GraphicError::FileNotFound),
+    }
 }
 
 /// Opens a client supplied image path and returns it with its canonical
@@ -1335,9 +1348,7 @@ fn open_image_file(
     path: &std::path::Path,
 ) -> Result<(std::fs::File, std::path::PathBuf), GraphicError> {
     #[cfg(windows)]
-    if !is_local_windows_file(path) {
-        return Err(GraphicError::InvalidData);
-    }
+    let path = &local_windows_file(path)?;
     #[cfg(not(windows))]
     if !std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
         return Err(GraphicError::FileNotFound);
@@ -1363,7 +1374,7 @@ fn open_image_file(
             return Err(GraphicError::InvalidData);
         }
         let real = opened_path(&file).ok_or(GraphicError::InvalidData)?;
-        if !real.to_str().is_some_and(is_local_windows_path) {
+        if !real.to_str().is_some_and(is_drive_absolute) {
             return Err(GraphicError::InvalidData);
         }
         real
@@ -1400,11 +1411,14 @@ fn remove_temp_file(path: &std::path::Path) {
     else {
         return;
     };
-    if opened_path(&dir).as_deref() != Some(parent) {
-        return;
-    }
-    unsafe {
-        libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0);
+    match opened_path(&dir) {
+        Some(resolved) if resolved == parent => unsafe {
+            libc::unlinkat(dir.as_raw_fd(), name.as_ptr(), 0);
+        },
+        Some(_) => {}
+        None => {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
@@ -1783,15 +1797,12 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             result
         }
         Format::Gray | Format::GrayAlpha | Format::Rgb24 | Format::Rgba32 => {
-            let bytes_per_pixel = cmd.format.bytes_per_pixel();
-
             if cmd.width == 0 || cmd.height == 0 {
                 return Err(GraphicError::DimensionsRequired);
             }
 
             // Validate data size
-            let expected_size =
-                cmd.width as usize * cmd.height as usize * bytes_per_pixel;
+            let expected_size = raw_image_size(cmd).ok_or(GraphicError::TooLarge)?;
             if expected_size > MAX_SIZE {
                 return Err(GraphicError::TooLarge);
             }
@@ -2862,6 +2873,15 @@ mod tests {
         }
     }
 
+    /// A gitignored scratch dir outside the temp dirs, or `None` if the
+    /// build dir itself lives under one.
+    fn outside_temp_dir() -> Option<std::path::PathBuf> {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../target");
+        std::fs::create_dir_all(&dir).ok()?;
+        let dir = std::fs::canonicalize(dir).ok()?;
+        (!temp_dirs().iter().any(|temp| dir.starts_with(temp))).then_some(dir)
+    }
+
     /// Removes the file on drop so a failed assertion does not leave it behind.
     struct TestFile(std::path::PathBuf);
 
@@ -2951,10 +2971,9 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn test_temp_file_outside_temp_dir_is_kept() {
-        let dir = std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap();
-        if temp_dirs().iter().any(|temp| dir.starts_with(temp)) {
+        let Some(dir) = outside_temp_dir() else {
             return;
-        }
+        };
         let file = TestFile::new(&dir, "temp-outside", &[1, 2, 3, 4]);
 
         let result = create_graphic_data(&file_command(
@@ -3009,10 +3028,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn test_temp_symlink_to_outside_is_rejected() {
-        let dir = std::fs::canonicalize(std::env::current_dir().unwrap()).unwrap();
-        if temp_dirs().iter().any(|temp| dir.starts_with(temp)) {
+        let Some(dir) = outside_temp_dir() else {
             return;
-        }
+        };
         let target = TestFile::new(&dir, "temp-escape", &[1, 2, 3, 4]);
         let link = TestFile(std::env::temp_dir().join(format!(
             "rio-temp-escape-tty-graphics-protocol-{}",
@@ -3140,14 +3158,14 @@ mod tests {
     }
 
     #[test]
-    fn test_is_local_windows_path() {
-        assert!(is_local_windows_path(r"C:\Users\me\img.rgba"));
-        assert!(is_local_windows_path(r"d:\tmp\tty-graphics-protocol-x"));
-        assert!(!is_local_windows_path(r"UNC\server\share\img.rgba"));
-        assert!(!is_local_windows_path(r"\\server\share\img.rgba"));
-        assert!(!is_local_windows_path(r"C:img.rgba"));
-        assert!(!is_local_windows_path(r"\Users\me\img.rgba"));
-        assert!(!is_local_windows_path(r"C:\Users\me\CON"));
+    fn test_is_drive_absolute() {
+        assert!(is_drive_absolute(r"C:\Users\me\img.rgba"));
+        assert!(is_drive_absolute(r"d:\tmp\tty-graphics-protocol-x"));
+        assert!(is_drive_absolute(r"C:\src\aux.d\img.png"));
+        assert!(!is_drive_absolute(r"UNC\server\share\img.rgba"));
+        assert!(!is_drive_absolute(r"\\server\share\img.rgba"));
+        assert!(!is_drive_absolute(r"C:img.rgba"));
+        assert!(!is_drive_absolute(r"\Users\me\img.rgba"));
     }
 
     #[test]
