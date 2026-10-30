@@ -1211,7 +1211,6 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             debug!("File path: {}", path_str);
             let size = requested_size(cmd)?;
 
-            // Resolve symlinks so the checks below see the real target.
             let path = std::fs::canonicalize(Path::new(path_str))
                 .map_err(|_| GraphicError::FileNotFound)?;
 
