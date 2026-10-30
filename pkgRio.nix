@@ -15,13 +15,13 @@
   libGL,
   vulkan-loader,
   libxkbcommon,
-  withX11 ? !stdenv.hostPlatform.isDarwin,
+  withX11 ? stdenv.hostPlatform.isLinux,
   libX11,
   libXcursor,
   libXi,
   libXrandr,
   libxcb,
-  withWayland ? !stdenv.hostPlatform.isDarwin,
+  withWayland ? stdenv.hostPlatform.isLinux,
   wayland,
   shaderc,
   ...
@@ -119,7 +119,7 @@ in
       homepage = cargoToml.workspace.package.homepage;
       license = lib.licenses.mit;
       platforms = lib.platforms.unix;
-      changelog = "https://github.com/raphamorim/rio/blob/master/CHANGELOG.md";
+      changelog = "https://github.com/raphamorim/rio/releases/tag/v${cargoToml.workspace.package.version}";
       mainProgram = "rio";
     };
   }
