@@ -91,9 +91,6 @@ pub struct RenderState {
     epoch: rio_vt::time::Instant,
 }
 
-/// Longest a synchronized update may hold the snapshot.
-const SYNC_HOLD_LIMIT: rio_vt::time::Duration = rio_vt::time::Duration::from_secs(1);
-
 impl RenderState {
     pub fn new(surface: &Surface) -> Self {
         let terminal = surface.terminal();
@@ -124,17 +121,14 @@ impl RenderState {
     pub fn update(&mut self) {
         let mut term = self.terminal.lock();
         if term.synchronized_output() {
-            let within_limit = term
-                .sync_update_started
-                .is_none_or(|started| started.elapsed() < SYNC_HOLD_LIMIT);
-            if within_limit {
+            let expired = term
+                .sync_update_deadline()
+                .is_some_and(|deadline| deadline <= rio_vt::time::Instant::now());
+            if !expired {
                 term.damage_event_in_flight = false;
                 return;
             }
-            rio_vt::performer::handler::Handler::unset_private_mode(
-                &mut *term,
-                rio_vt::ansi::mode::NamedPrivateMode::SyncUpdate.into(),
-            );
+            term.end_sync_update();
         }
         let damage = if self.rows.is_empty() {
             TerminalDamage::Full

@@ -220,9 +220,8 @@ fn child_exit_drains_multiple_budgets_and_finishes_pending_sync() {
     let (registration, readiness) = corcovado::Registration::new2();
     machine.pty.child = Some(registration);
     readiness.set_readiness(Ready::readable()).unwrap();
-    let (machine, state) = machine.spawn().join().unwrap();
+    let (machine, _) = machine.spawn().join().unwrap();
     assert_eq!(first_line(&machine, 12), "final output");
-    assert!(state.parser.sync_timeout().sync_timeout().is_none());
     assert!(!machine.terminal.lock().synchronized_output());
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
@@ -251,11 +250,10 @@ fn read_failure_shuts_down_pty_and_finishes_pending_sync() {
     machine.pty.child = Some(registration);
     machine.pty.read_event = true;
     readiness.set_readiness(Ready::readable()).unwrap();
-    let (machine, state) = machine.spawn().join().unwrap();
+    let (machine, _) = machine.spawn().join().unwrap();
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
     assert_eq!(first_line(&machine, 12), "final output");
-    assert!(state.parser.sync_timeout().sync_timeout().is_none());
     assert!(!machine.terminal.lock().synchronized_output());
 }
 

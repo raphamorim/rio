@@ -6,10 +6,8 @@ use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
-use crate::time::Instant;
 use cursor_icon::CursorIcon;
 use rio_graphics::GraphicData;
-use std::time::Duration;
 use tracing::{debug, warn};
 
 use crate::crosswords::attr::Attr;
@@ -24,9 +22,6 @@ use std::fmt::Write;
 // https://vt100.net/emu/dec_ansi_parser
 use super::osc;
 use super::parser::{Params, ParamsIter, Parser, Perform};
-
-/// Maximum time before a synchronized update is aborted.
-const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(1000);
 
 fn parse_sgr_color(params: &mut impl Iterator<Item = u16>) -> Option<AnsiColor> {
     match params.next() {
@@ -473,20 +468,11 @@ struct ProcessorState {
     /// Last processed character for repetition.
     preceding_char: Option<char>,
 
-    /// State for synchronized terminal updates.
-    sync_state: SyncState,
-
     /// State for XTGETTCAP requests.
     xtgettcap_state: XtgettcapState,
 
     /// State for APC (Application Program Command) sequences.
     apc_state: ApcState,
-}
-
-#[derive(Debug, Default)]
-struct SyncState {
-    /// Expiration time of the synchronized update.
-    timeout: StdSyncHandler,
 }
 
 #[derive(Debug, Default)]
@@ -510,37 +496,6 @@ struct ApcState {
     buffer: Vec<u8>,
 }
 
-#[derive(Debug, Default)]
-pub struct StdSyncHandler {
-    timeout: Option<Instant>,
-}
-
-impl StdSyncHandler {
-    /// Synchronized update expiration time.
-    #[inline]
-    pub fn sync_timeout(&self) -> Option<Instant> {
-        self.timeout
-    }
-
-    /// Arm the deadline on every BSU, including one inside an active update.
-    #[inline]
-    fn start(&mut self, duration: Duration) {
-        self.timeout = Some(Instant::now() + duration);
-    }
-
-    #[inline]
-    fn clear_timeout(&mut self) {
-        self.timeout = None;
-    }
-
-    /// Whether an armed synchronized update has outlived its deadline.
-    #[inline]
-    fn expired(&self) -> bool {
-        self.timeout
-            .is_some_and(|deadline| deadline <= Instant::now())
-    }
-}
-
 #[derive(Default)]
 pub struct Processor {
     state: ProcessorState,
@@ -548,11 +503,6 @@ pub struct Processor {
 }
 
 impl Processor {
-    /// Synchronized update timeout.
-    pub fn sync_timeout(&self) -> &StdSyncHandler {
-        &self.state.sync_state.timeout
-    }
-
     /// Process a new byte from the PTY.
     ///
     /// Bytes are always applied to the grid. A synchronized update only sets
@@ -563,21 +513,8 @@ impl Processor {
     where
         H: Handler,
     {
-        if self.state.sync_state.timeout.expired() {
-            self.stop_sync(handler);
-        }
-
         let mut performer = Performer::new(&mut self.state, handler);
         self.parser.advance(&mut performer, bytes);
-    }
-
-    /// End a synchronized update.
-    pub fn stop_sync<H>(&mut self, handler: &mut H)
-    where
-        H: Handler,
-    {
-        self.state.sync_state.timeout.clear_timeout();
-        handler.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
     }
 }
 
@@ -877,12 +814,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 let param = params.iter().next().map(|p| p[0]).unwrap_or(0);
                 match param {
                     1 => {
-                        self.state.sync_state.timeout.start(SYNC_UPDATE_TIMEOUT);
                         self.handler
                             .set_private_mode(NamedPrivateMode::SyncUpdate.into());
                     }
                     2 => {
-                        self.state.sync_state.timeout.clear_timeout();
                         self.handler
                             .unset_private_mode(NamedPrivateMode::SyncUpdate.into());
                     }
@@ -1193,11 +1128,6 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
             ('h', [b'?']) => {
                 for param in params_iter.map(|param| param[0]) {
-                    // Handle sync updates opaquely.
-                    if param == NamedPrivateMode::SyncUpdate as u16 {
-                        self.state.sync_state.timeout.start(SYNC_UPDATE_TIMEOUT);
-                    }
-
                     handler.set_private_mode(PrivateMode::new(param))
                 }
             }
@@ -1261,11 +1191,6 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
             ('l', [b'?']) => {
                 for param in params_iter.map(|param| param[0]) {
-                    // Handle sync updates opaquely.
-                    if param == NamedPrivateMode::SyncUpdate as u16 {
-                        self.state.sync_state.timeout.clear_timeout();
-                    }
-
                     handler.unset_private_mode(PrivateMode::new(param))
                 }
             }
@@ -2167,12 +2092,8 @@ mod tests {
         assert!(handler.replies[0].contains("ENOENT"));
     }
 
-    fn is_armed(processor: &Processor) -> bool {
-        processor.sync_timeout().sync_timeout().is_some()
-    }
-
     #[test]
-    fn sync_update_inline_bsu_esu_disarms_timeout() {
+    fn sync_update_inline_bsu_esu() {
         let mut handler = SyncHandler::default();
         let mut processor = Processor::default();
 
@@ -2180,7 +2101,6 @@ mod tests {
 
         assert_eq!(handler.printed, "abc");
         assert!(!handler.synced);
-        assert!(!is_armed(&processor));
     }
 
     /// Bytes inside an update reach the handler immediately; only the mode
@@ -2194,12 +2114,10 @@ mod tests {
         processor.advance(&mut handler, b"a\x1b[?2026hhidden");
         assert_eq!(handler.printed, "ahidden");
         assert!(handler.synced);
-        assert!(is_armed(&processor));
 
         processor.advance(&mut handler, b"more\x1b[?2026lc");
         assert_eq!(handler.printed, "ahiddenmorec");
         assert!(!handler.synced);
-        assert!(!is_armed(&processor));
     }
 
     /// The legacy iTerm2 DCS form (`DCS = 1 s ST` / `DCS = 2 s ST`) must
@@ -2214,11 +2132,9 @@ mod tests {
         processor.advance(&mut handler, b"\x1bP=1s\x1b\\hidden");
         assert_eq!(handler.printed, "hidden");
         assert!(handler.synced);
-        assert!(is_armed(&processor));
 
         processor.advance(&mut handler, b"\x1bP=2s\x1b\\");
         assert!(!handler.synced);
-        assert!(!is_armed(&processor));
     }
 
     /// A DCS end may terminate a CSI-started update and the other way
@@ -2234,7 +2150,6 @@ mod tests {
         processor.advance(&mut handler, b"\x1bP=1s\x1b\\two\x1b[?2026l");
         assert!(!handler.synced);
         assert_eq!(handler.printed, "onetwo");
-        assert!(!is_armed(&processor));
     }
 
     /// A sync marker split across reads is recognized once complete.
@@ -2250,60 +2165,6 @@ mod tests {
         processor.advance(&mut handler, b"s\x1b\\after");
         assert!(!handler.synced);
         assert_eq!(handler.printed, "xafter");
-    }
-
-    #[test]
-    fn sync_update_stop_sync_ends_the_update() {
-        let mut handler = SyncHandler::default();
-        let mut processor = Processor::default();
-
-        processor.advance(&mut handler, b"\x1b[?2026hpending");
-        processor.stop_sync(&mut handler);
-        assert!(!handler.synced);
-        assert!(!is_armed(&processor));
-    }
-
-    /// Embedders without an event loop never poll `sync_timeout()`; an
-    /// expired deadline must end the update on the next `advance` call.
-    #[test]
-    fn sync_update_expired_deadline_ends_on_next_advance() {
-        let mut handler = SyncHandler::default();
-        let mut processor = Processor::default();
-
-        processor.advance(&mut handler, b"\x1b[?2026hhidden");
-        assert!(handler.synced);
-
-        // Simulate the deadline passing without an ESU arriving.
-        processor.state.sync_state.timeout.timeout = Some(
-            Instant::now()
-                .checked_sub(Duration::from_millis(1))
-                .unwrap_or_else(Instant::now),
-        );
-
-        processor.advance(&mut handler, b" visible");
-        assert_eq!(handler.printed, "hidden visible");
-        assert!(!handler.synced);
-        assert!(!is_armed(&processor));
-    }
-
-    /// A BSU while an update is active re-arms the deadline.
-    #[test]
-    fn sync_update_repeated_bsu_rearms_the_deadline() {
-        let mut handler = SyncHandler::default();
-        let mut processor = Processor::default();
-
-        processor.advance(&mut handler, b"\x1b[?2026h");
-        let near = Instant::now() + Duration::from_millis(1);
-        processor.state.sync_state.timeout.timeout = Some(near);
-
-        processor.advance(&mut handler, b"\x1b[?2026h");
-        let rearmed = processor.sync_timeout().sync_timeout().unwrap();
-        assert!(rearmed > near + Duration::from_millis(500));
-
-        processor.state.sync_state.timeout.timeout = Some(near);
-        processor.advance(&mut handler, b"\x1bP=1s\x1b\\");
-        assert!(processor.sync_timeout().sync_timeout().unwrap() > near);
-        assert!(handler.synced);
     }
 
     #[test]

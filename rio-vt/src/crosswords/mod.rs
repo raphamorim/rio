@@ -70,6 +70,11 @@ pub const MIN_LINES: usize = 1;
 // Max. number of graphics stored in a single cell.
 // const MAX_GRAPHICS_PER_CELL: usize = 20;
 
+/// Longest a synchronized update (mode 2026) may hold presentation. Every
+/// BSU re-arms it.
+pub const SYNC_UPDATE_TIMEOUT: crate::time::Duration =
+    crate::time::Duration::from_millis(1000);
+
 bitflags! {
      #[derive(Debug, Copy, Clone)]
      pub struct Mode: u32 {
@@ -469,8 +474,7 @@ where
     /// Set by PTY thread before sending; cleared by renderer after extracting damage.
     pub damage_event_in_flight: bool,
 
-    /// When the last BSU arrived, so a renderer without an event loop can
-    /// give up on an update that never ends. Re-armed by every BSU.
+    /// When the last BSU of the active synchronized update arrived.
     pub sync_update_started: Option<crate::time::Instant>,
 
     /// What DECRQM callers see after a full reset: the
@@ -660,6 +664,23 @@ impl<U: EventListener> Crosswords<U> {
         self.mode.contains(Mode::SYNC_UPDATE)
     }
 
+    /// When the active synchronized update expires, if one is active.
+    #[inline]
+    pub fn sync_update_deadline(&self) -> Option<crate::time::Instant> {
+        if !self.synchronized_output() {
+            return None;
+        }
+        self.sync_update_started
+            .map(|started| started + SYNC_UPDATE_TIMEOUT)
+    }
+
+    /// End the active synchronized update, if any.
+    #[inline]
+    pub fn end_sync_update(&mut self) {
+        self.mode.remove(Mode::SYNC_UPDATE);
+        self.sync_update_started = None;
+    }
+
     #[inline]
     pub fn display_offset(&self) -> usize {
         self.grid.display_offset()
@@ -829,8 +850,7 @@ impl<U: EventListener> Crosswords<U> {
             info!("Crosswords::resize dimensions unchanged");
             return;
         }
-        self.mode.remove(Mode::SYNC_UPDATE);
-        self.sync_update_started = None;
+        self.end_sync_update();
         // Move vi mode cursor with the content.
         let history_size = self.history_size();
         let mut delta = num_lines as i32 - old_lines as i32;
@@ -2974,10 +2994,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::GraphemeCluster => self.mode.remove(Mode::GRAPHEME_CLUSTER),
-            NamedPrivateMode::SyncUpdate => {
-                self.mode.remove(Mode::SYNC_UPDATE);
-                self.sync_update_started = None;
-            }
+            NamedPrivateMode::SyncUpdate => self.end_sync_update(),
         }
     }
 
@@ -5877,6 +5894,32 @@ mod tests {
         let size = CrosswordsSize::new(4, 4);
         let window_id = crate::event::WindowId::from(0);
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
+    }
+
+    #[test]
+    fn sync_update_deadline_is_armed_by_every_bsu() {
+        let mut cw = make_crosswords();
+        assert!(cw.sync_update_deadline().is_none());
+
+        cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
+        let deadline = cw.sync_update_deadline().expect("armed by BSU");
+        assert!(deadline > crate::time::Instant::now() + SYNC_UPDATE_TIMEOUT / 2);
+
+        let past = crate::time::Instant::now()
+            .checked_sub(SYNC_UPDATE_TIMEOUT * 2)
+            .unwrap();
+        cw.sync_update_started = Some(past);
+        assert!(cw.sync_update_deadline().unwrap() <= crate::time::Instant::now());
+
+        cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
+        assert!(
+            cw.sync_update_deadline().unwrap() > crate::time::Instant::now(),
+            "a BSU inside an active update re-arms the deadline"
+        );
+
+        cw.end_sync_update();
+        assert!(cw.sync_update_deadline().is_none());
+        assert!(!cw.synchronized_output());
     }
 
     #[test]

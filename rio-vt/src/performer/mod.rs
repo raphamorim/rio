@@ -136,6 +136,9 @@ pub struct State {
     write_list: VecDeque<Cow<'static, [u8]>>,
     writing: Option<Writing>,
     parser: handler::Processor,
+    /// Deadline of the terminal's active synchronized update, refreshed
+    /// whenever the terminal lock is held.
+    sync_deadline: Option<Instant>,
 }
 
 #[cfg(feature = "pty")]
@@ -305,6 +308,7 @@ where
         // extract all accumulated damage when it locks the terminal.
         if processed > 0 {
             if let Some(ref mut term) = terminal {
+                state.sync_deadline = term.sync_update_deadline();
                 let held = term.synchronized_output();
                 let hold_ended = held_before == Some(true) && !held;
                 if !term.damage_event_in_flight
@@ -419,10 +423,9 @@ where
 
         loop {
             // Wakeup the event loop when a synchronized update timeout was reached.
-            let handler = state.parser.sync_timeout();
-            let timeout = handler
-                .sync_timeout()
-                .map(|st| st.saturating_duration_since(Instant::now()));
+            let timeout = state
+                .sync_deadline
+                .map(|deadline| deadline.saturating_duration_since(Instant::now()));
 
             events.clear();
             if let Err(err) = self.poll.poll(&mut events, timeout) {
@@ -434,21 +437,24 @@ where
 
             // Handle synchronized update timeout.
             if state
-                .parser
-                .sync_timeout()
-                .sync_timeout()
+                .sync_deadline
                 .is_some_and(|deadline| deadline <= Instant::now())
             {
                 let mut terminal = self.terminal.lock();
-                let held = terminal.synchronized_output();
-                state.parser.stop_sync(&mut *terminal);
-                if held && !terminal.damage_event_in_flight {
-                    terminal.damage_event_in_flight = true;
-                    self.event_proxy.send_event(
-                        RioEvent::TerminalDamaged(self.route_id),
-                        self.window_id,
-                    );
+                let expired = terminal
+                    .sync_update_deadline()
+                    .is_some_and(|deadline| deadline <= Instant::now());
+                if expired {
+                    terminal.end_sync_update();
+                    if !terminal.damage_event_in_flight {
+                        terminal.damage_event_in_flight = true;
+                        self.event_proxy.send_event(
+                            RioEvent::TerminalDamaged(self.route_id),
+                            self.window_id,
+                        );
+                    }
                 }
+                state.sync_deadline = terminal.sync_update_deadline();
             }
 
             if events.is_empty() && self.receiver.peek().is_none() {
@@ -551,7 +557,7 @@ where
         let pending_sync = {
             let mut terminal = self.terminal.lock();
             let pending = terminal.synchronized_output();
-            state.parser.stop_sync(&mut *terminal);
+            terminal.end_sync_update();
             if pending && !terminal.damage_event_in_flight {
                 terminal.damage_event_in_flight = true;
                 self.event_proxy
