@@ -1024,10 +1024,10 @@ impl GraphicError {
 /// Byte range to copy out of a file or shared memory segment of `total`
 /// bytes. `size == 0` means read to the end. Returns `None` if the range is
 /// empty or falls outside the source.
-fn data_range(offset: u32, size: u32, total: usize) -> Option<std::ops::Range<usize>> {
+fn data_range(offset: u32, size: usize, total: usize) -> Option<std::ops::Range<usize>> {
     let start = offset as usize;
     let available = total.checked_sub(start)?;
-    let len = if size > 0 { size as usize } else { available };
+    let len = if size > 0 { size } else { available };
     if len == 0 || len > available {
         return None;
     }
@@ -1067,30 +1067,111 @@ impl Drop for MapGuard {
     }
 }
 
+/// Bytes to read for a file or shared memory transmission. Without `S=`,
+/// uncompressed raw pixels imply `width * height * bpp`, which keeps page
+/// padding out of the image; anything else returns 0 (read to the end).
+fn requested_size(cmd: &KittyGraphicsCommand) -> Result<usize, GraphicError> {
+    let size = if cmd.size > 0 {
+        cmd.size as usize
+    } else if cmd.compression != Compression::None {
+        0
+    } else {
+        let bytes_per_pixel = match cmd.format {
+            Format::Gray => 1,
+            Format::GrayAlpha => 2,
+            Format::Rgb24 => 3,
+            Format::Rgba32 => 4,
+            Format::Png => 0,
+        };
+        (cmd.width as usize)
+            .checked_mul(cmd.height as usize)
+            .and_then(|n| n.checked_mul(bytes_per_pixel))
+            .ok_or(GraphicError::TooLarge)?
+    };
+    if size > MAX_SIZE {
+        return Err(GraphicError::TooLarge);
+    }
+    Ok(size)
+}
+
+/// Directories a `t=t` temp file must live in before the terminal will
+/// delete it.
+fn temp_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = vec![std::env::temp_dir()];
+    if cfg!(unix) {
+        dirs.push("/tmp".into());
+        dirs.push("/dev/shm".into());
+    }
+    dirs.into_iter()
+        .filter_map(|dir| std::fs::canonicalize(dir).ok())
+        .collect()
+}
+
+/// `path` must already be canonical.
+fn is_temp_file_path(path: &std::path::Path) -> bool {
+    let named = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.contains("tty-graphics-protocol"));
+    named && temp_dirs().iter().any(|dir| path.starts_with(dir))
+}
+
 fn read_file_range(
     path: &std::path::Path,
     offset: u32,
-    size: u32,
+    size: usize,
 ) -> Result<Vec<u8>, GraphicError> {
     use std::io::{Read, Seek, SeekFrom};
 
     let mut file = std::fs::File::open(path).map_err(|_| GraphicError::FileNotFound)?;
-    let len = file
-        .metadata()
-        .ok()
-        .and_then(|m| usize::try_from(m.len()).ok())
-        .ok_or(GraphicError::InvalidData)?;
-    let range = data_range(offset, size, len).ok_or(GraphicError::InvalidData)?;
-    if range.len() > MAX_SIZE {
-        return Err(GraphicError::TooLarge);
+    let is_file = file.metadata().map(|m| m.is_file()).unwrap_or(false);
+    if !is_file {
+        return Err(GraphicError::FileNotFound);
     }
 
-    file.seek(SeekFrom::Start(range.start as u64))
+    file.seek(SeekFrom::Start(offset as u64))
         .map_err(|_| GraphicError::InvalidData)?;
-    let mut data = vec![0; range.len()];
-    file.read_exact(&mut data)
-        .map_err(|_| GraphicError::InvalidData)?;
+    let mut data = Vec::new();
+    if size > 0 {
+        data.resize(size, 0);
+        file.read_exact(&mut data)
+            .map_err(|_| GraphicError::InvalidData)?;
+    } else {
+        file.take(MAX_SIZE as u64 + 1)
+            .read_to_end(&mut data)
+            .map_err(|_| GraphicError::InvalidData)?;
+        if data.len() > MAX_SIZE {
+            return Err(GraphicError::TooLarge);
+        }
+        if data.is_empty() {
+            return Err(GraphicError::InvalidData);
+        }
+    }
     Ok(data)
+}
+
+#[cfg(windows)]
+struct WinHandleGuard(windows_sys::Win32::Foundation::HANDLE);
+
+#[cfg(windows)]
+impl Drop for WinHandleGuard {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::Foundation::CloseHandle(self.0);
+        }
+    }
+}
+
+#[cfg(windows)]
+struct WinViewGuard(windows_sys::Win32::System::Memory::MEMORY_MAPPED_VIEW_ADDRESS);
+
+#[cfg(windows)]
+impl Drop for WinViewGuard {
+    fn drop(&mut self) {
+        unsafe {
+            windows_sys::Win32::System::Memory::UnmapViewOfFile(self.0);
+        }
+    }
 }
 
 fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, GraphicError> {
@@ -1128,37 +1209,30 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             let path_str = std::str::from_utf8(&cmd.payload)
                 .map_err(|_| GraphicError::InvalidData)?;
             debug!("File path: {}", path_str);
-            let path = Path::new(path_str);
+            let size = requested_size(cmd)?;
 
-            // Security checks
-            if !path.is_file() {
-                return Err(GraphicError::FileNotFound);
-            }
+            // Resolve symlinks so the checks below see the real target.
+            let path = std::fs::canonicalize(Path::new(path_str))
+                .map_err(|_| GraphicError::FileNotFound)?;
 
-            // Check for sensitive paths
-            let path_str_lower = path_str.to_lowercase();
-            if path_str_lower.contains("/proc/")
-                || path_str_lower.contains("/sys/")
-                || path_str_lower.contains("/dev/")
-            {
-                return Err(GraphicError::InvalidData);
-            }
-
-            // For temp files, verify it contains "tty-graphics-protocol"
-            if cmd.medium == TransmissionMedium::TempFile
-                && !path_str.contains("tty-graphics-protocol")
-            {
-                return Err(GraphicError::InvalidData);
-            }
-
-            let result = read_file_range(path, cmd.offset, cmd.size);
-
-            // Delete temp file if requested
             if cmd.medium == TransmissionMedium::TempFile {
-                let _ = std::fs::remove_file(path);
+                if !is_temp_file_path(&path) {
+                    return Err(GraphicError::InvalidData);
+                }
+                let result = read_file_range(&path, cmd.offset, size);
+                let _ = std::fs::remove_file(&path);
+                result?
+            } else {
+                // Check for sensitive paths
+                let path_str_lower = path.to_string_lossy().to_lowercase();
+                if path_str_lower.contains("/proc/")
+                    || path_str_lower.contains("/sys/")
+                    || path_str_lower.contains("/dev/")
+                {
+                    return Err(GraphicError::InvalidData);
+                }
+                read_file_range(&path, cmd.offset, size)?
             }
-
-            result?
         }
         TransmissionMedium::SharedMemory => {
             #[cfg(all(unix, not(target_os = "android")))]
@@ -1209,10 +1283,11 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                         .map_err(|_| GraphicError::InvalidData)?;
                     debug!("Shared memory size: {} bytes", shm_size);
 
-                    let Some(range) = data_range(cmd.offset, cmd.size, shm_size) else {
+                    let size = requested_size(cmd)?;
+                    let Some(range) = data_range(cmd.offset, size, shm_size) else {
                         debug!(
                             "Invalid range offset={} size={} for shared memory size {}",
-                            cmd.offset, cmd.size, shm_size
+                            cmd.offset, size, shm_size
                         );
                         return Err(GraphicError::InvalidData);
                     };
@@ -1254,11 +1329,9 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             {
                 use std::ffi::OsStr;
                 use std::os::windows::ffi::OsStrExt;
-                use windows_sys::Win32::Foundation::CloseHandle;
                 use windows_sys::Win32::System::Memory::OpenFileMappingW;
                 use windows_sys::Win32::System::Memory::{
-                    MapViewOfFile, UnmapViewOfFile, VirtualQuery, FILE_MAP_READ,
-                    MEMORY_BASIC_INFORMATION,
+                    MapViewOfFile, VirtualQuery, FILE_MAP_READ, MEMORY_BASIC_INFORMATION,
                 };
 
                 // Payload is already base64-decoded by parse(); the bytes
@@ -1288,15 +1361,17 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                         return Err(GraphicError::FileNotFound);
                     }
 
+                    let _handle = WinHandleGuard(handle);
+
                     // Map view of file
                     let base_ptr = MapViewOfFile(handle, FILE_MAP_READ, 0, 0, 0);
 
                     if base_ptr.Value.is_null() {
                         let err = std::io::Error::last_os_error();
                         debug!("Failed to map view of file: {}", err);
-                        CloseHandle(handle);
                         return Err(GraphicError::InvalidData);
                     }
+                    let _view = WinViewGuard(base_ptr);
 
                     // Query memory to get size
                     let mut mem_info: MEMORY_BASIC_INFORMATION = std::mem::zeroed();
@@ -1307,27 +1382,22 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                     ) == 0
                     {
                         debug!("Failed to query memory information");
-                        UnmapViewOfFile(base_ptr);
-                        CloseHandle(handle);
                         return Err(GraphicError::InvalidData);
                     }
 
                     let shm_size = mem_info.RegionSize;
                     debug!("Shared memory size: {} bytes", shm_size);
 
-                    let Some(range) = data_range(cmd.offset, cmd.size, shm_size) else {
+                    let size = requested_size(cmd)?;
+                    let Some(range) = data_range(cmd.offset, size, shm_size) else {
                         debug!(
                             "Invalid range offset={} size={} for shared memory size {}",
-                            cmd.offset, cmd.size, shm_size
+                            cmd.offset, size, shm_size
                         );
-                        UnmapViewOfFile(base_ptr);
-                        CloseHandle(handle);
                         return Err(GraphicError::InvalidData);
                     };
 
                     if range.len() > MAX_SIZE {
-                        UnmapViewOfFile(base_ptr);
-                        CloseHandle(handle);
                         return Err(GraphicError::TooLarge);
                     }
 
@@ -1335,10 +1405,6 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                         std::slice::from_raw_parts(base_ptr.Value as *const u8, shm_size)
                             [range]
                             .to_vec();
-
-                    // Cleanup
-                    UnmapViewOfFile(base_ptr);
-                    CloseHandle(handle);
 
                     debug!("Successfully read {} bytes from shared memory", data.len());
                     data
@@ -2411,7 +2477,7 @@ mod tests {
         assert_eq!(data_range(8192, 0, 4096), None);
         assert_eq!(data_range(4096, 0, 4096), None);
         assert_eq!(data_range(0, 0, 0), None);
-        assert_eq!(data_range(u32::MAX, u32::MAX, 4096), None);
+        assert_eq!(data_range(u32::MAX, u32::MAX as usize, 4096), None);
     }
 
     #[cfg(all(unix, not(target_os = "android")))]
@@ -2543,46 +2609,107 @@ mod tests {
         }
     }
 
+    /// Removes the file on drop so a failed assertion does not leave it behind.
+    struct TestFile(std::path::PathBuf);
+
+    impl TestFile {
+        fn new(dir: &std::path::Path, test: &str, bytes: &[u8]) -> Self {
+            let path = dir.join(format!(
+                "rio-{}-tty-graphics-protocol-{}",
+                test,
+                std::process::id()
+            ));
+            std::fs::write(&path, bytes).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TestFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
     #[test]
     fn test_file_offset_without_size_reads_to_end() {
-        let path =
-            std::env::temp_dir().join(format!("rio-file-a-{}", std::process::id()));
         let mut bytes = vec![0u8; 54];
         bytes.extend_from_slice(&[1, 2, 3, 4]);
-        std::fs::write(&path, &bytes).unwrap();
+        let file = TestFile::new(&std::env::temp_dir(), "file-offset", &bytes);
 
         let data =
-            create_graphic_data(&file_command(TransmissionMedium::File, &path, 54, 0))
+            create_graphic_data(&file_command(TransmissionMedium::File, &file.0, 54, 0))
                 .expect("offset without size must read to the end");
         assert_eq!(data.pixels, vec![1, 2, 3, 4]);
-        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_file_without_size_ignores_trailing_bytes() {
+        let file = TestFile::new(
+            &std::env::temp_dir(),
+            "file-trailing",
+            &[1, 2, 3, 4, 9, 9, 9, 9],
+        );
+
+        let data =
+            create_graphic_data(&file_command(TransmissionMedium::File, &file.0, 0, 0))
+                .expect("raw pixels without size read width * height * bpp");
+        assert_eq!(data.pixels, vec![1, 2, 3, 4]);
     }
 
     #[test]
     fn test_file_offset_past_end_is_rejected() {
-        let path =
-            std::env::temp_dir().join(format!("rio-file-b-{}", std::process::id()));
-        std::fs::write(&path, [0u8; 4]).unwrap();
+        let file = TestFile::new(&std::env::temp_dir(), "file-past-end", &[0u8; 4]);
 
         let result =
-            create_graphic_data(&file_command(TransmissionMedium::File, &path, 8, 0));
+            create_graphic_data(&file_command(TransmissionMedium::File, &file.0, 8, 0));
         assert!(matches!(result, Err(GraphicError::InvalidData)));
-        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_file_oversized_size_is_too_large() {
+        let file = TestFile::new(&std::env::temp_dir(), "file-too-large", &[0u8; 4]);
+
+        let result = create_graphic_data(&file_command(
+            TransmissionMedium::File,
+            &file.0,
+            0,
+            MAX_SIZE as u32 + 1,
+        ));
+        assert!(matches!(result, Err(GraphicError::TooLarge)));
     }
 
     #[test]
     fn test_temp_file_removed_after_failed_read() {
-        let path = std::env::temp_dir()
-            .join(format!("rio-tty-graphics-protocol-{}", std::process::id()));
-        std::fs::write(&path, [0u8; 4]).unwrap();
+        let file = TestFile::new(&std::env::temp_dir(), "temp-failed", &[0u8; 4]);
 
         let result = create_graphic_data(&file_command(
             TransmissionMedium::TempFile,
-            &path,
+            &file.0,
             0,
             64,
         ));
         assert!(matches!(result, Err(GraphicError::InvalidData)));
-        assert!(!path.exists(), "temp file must be removed even on failure");
+        assert!(
+            !file.0.exists(),
+            "temp file must be removed even on failure"
+        );
+    }
+
+    #[test]
+    fn test_temp_file_outside_temp_dir_is_kept() {
+        let dir = std::env::current_dir().unwrap();
+        let file = TestFile::new(&dir, "temp-outside", &[1, 2, 3, 4]);
+
+        let result = create_graphic_data(&file_command(
+            TransmissionMedium::TempFile,
+            &file.0,
+            0,
+            0,
+        ));
+        assert!(matches!(result, Err(GraphicError::InvalidData)));
+        assert!(
+            file.0.exists(),
+            "files outside temp dirs must never be deleted"
+        );
     }
 }
