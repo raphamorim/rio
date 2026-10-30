@@ -1161,6 +1161,19 @@ fn strip_verbatim(path: std::path::PathBuf) -> std::path::PathBuf {
     path
 }
 
+/// The directory entry a `t=t` client named: its parent resolved, its final
+/// component kept, so a symlink is removed rather than its target. It must
+/// itself pass `is_temp_file_path`.
+fn temp_entry(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let name = path.file_name()?;
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => std::path::Path::new("."),
+    };
+    let entry = strip_verbatim(std::fs::canonicalize(parent).ok()?).join(name);
+    is_temp_file_path(&entry).then_some(entry)
+}
+
 /// `path` must already be canonical.
 fn is_temp_file_path(path: &std::path::Path) -> bool {
     path.to_string_lossy().contains("tty-graphics-protocol")
@@ -1308,9 +1321,9 @@ fn is_reparse_point(metadata: &std::fs::Metadata) -> bool {
 }
 
 /// Checks a client path before it is opened and returns it made absolute.
-/// It must resolve to a drive that is not a network share and must not itself
-/// be a symlink or junction, since following either can reach a remote SMB
-/// server.
+/// It must resolve to a drive that is not a network share, and neither the
+/// file nor any directory above it may be a symlink or junction, since
+/// following either can reach a remote SMB server.
 #[cfg(windows)]
 fn local_windows_file(
     path: &std::path::Path,
@@ -1335,6 +1348,14 @@ fn local_windows_file(
     if unsafe { GetDriveTypeW(root.as_ptr()) } == DRIVE_REMOTE {
         return Err(GraphicError::InvalidData);
     }
+    for dir in path.ancestors().skip(1) {
+        if dir.parent().is_none() {
+            break;
+        }
+        if std::fs::symlink_metadata(dir).is_ok_and(|m| m.file_type().is_symlink()) {
+            return Err(GraphicError::InvalidData);
+        }
+    }
     match std::fs::symlink_metadata(&path) {
         Ok(m) if m.is_file() && !is_reparse_point(&m) => Ok(path),
         Ok(_) => Err(GraphicError::InvalidData),
@@ -1343,7 +1364,9 @@ fn local_windows_file(
 }
 
 /// Opens a client supplied image path and returns it with its canonical
-/// path, which has already passed the sensitive path check.
+/// path, which has already passed the sensitive path check. On unix the path
+/// read back from the handle must still name the opened inode, which rejects
+/// memfds and deleted files reached through /proc/self/fd.
 fn open_image_file(
     path: &std::path::Path,
     delete: bool,
@@ -1351,8 +1374,15 @@ fn open_image_file(
     #[cfg(windows)]
     let path = &local_windows_file(path)?;
     #[cfg(not(windows))]
-    if !std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
-        return Err(GraphicError::FileNotFound);
+    {
+        let resolved =
+            std::fs::canonicalize(path).map_err(|_| GraphicError::FileNotFound)?;
+        if is_sensitive_path(&resolved) {
+            return Err(GraphicError::InvalidData);
+        }
+        if !std::fs::metadata(&resolved).is_ok_and(|m| m.is_file()) {
+            return Err(GraphicError::FileNotFound);
+        }
     }
 
     let mut options = std::fs::OpenOptions::new();
@@ -1375,7 +1405,17 @@ fn open_image_file(
     }
     #[cfg(not(windows))]
     let _ = delete;
-    let file = options.open(path).map_err(|_| GraphicError::FileNotFound)?;
+    let file = match options.open(path) {
+        Ok(file) => file,
+        #[cfg(windows)]
+        Err(_) if delete => {
+            use std::os::windows::fs::OpenOptionsExt;
+            options
+                .access_mode(windows_sys::Win32::Storage::FileSystem::FILE_GENERIC_READ);
+            options.open(path).map_err(|_| GraphicError::FileNotFound)?
+        }
+        Err(_) => return Err(GraphicError::FileNotFound),
+    };
 
     #[cfg(windows)]
     let real = {
@@ -1389,9 +1429,20 @@ fn open_image_file(
         real
     };
     #[cfg(not(windows))]
-    let real = opened_path(&file)
-        .or_else(|| std::fs::canonicalize(path).ok())
-        .ok_or(GraphicError::FileNotFound)?;
+    let real = {
+        use std::os::unix::fs::MetadataExt;
+        let real = opened_path(&file)
+            .or_else(|| std::fs::canonicalize(path).ok())
+            .ok_or(GraphicError::FileNotFound)?;
+        let same_file = match (std::fs::metadata(&real), file.metadata()) {
+            (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+            _ => false,
+        };
+        if !same_file {
+            return Err(GraphicError::InvalidData);
+        }
+        real
+    };
     if is_sensitive_path(&real) {
         return Err(GraphicError::InvalidData);
     }
@@ -1433,21 +1484,26 @@ fn remove_temp_file(file: std::fs::File, path: &std::path::Path) {
 }
 
 /// Marks the validated handle itself for deletion, so the file removed is
-/// exactly the one that was checked and read.
+/// exactly the one that was checked and read. Falls back to removing by path
+/// when the handle could only be opened without DELETE access.
 #[cfg(windows)]
-fn remove_temp_file(file: std::fs::File, _path: &std::path::Path) {
+fn remove_temp_file(file: std::fs::File, path: &std::path::Path) {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
         FileDispositionInfo, SetFileInformationByHandle, FILE_DISPOSITION_INFO,
     };
     let info = FILE_DISPOSITION_INFO { DeleteFile: true };
-    unsafe {
+    let marked = unsafe {
         SetFileInformationByHandle(
             file.as_raw_handle() as _,
             FileDispositionInfo,
             &info as *const FILE_DISPOSITION_INFO as *const _,
             std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
-        );
+        )
+    } != 0;
+    drop(file);
+    if !marked {
+        let _ = std::fs::remove_file(path);
     }
 }
 
@@ -1529,6 +1585,9 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
         );
         return Err(GraphicError::DimensionsTooLarge);
     }
+    if cmd.format != Format::Png && (cmd.width == 0 || cmd.height == 0) {
+        return Err(GraphicError::DimensionsRequired);
+    }
 
     // Payload is already base64-decoded by parse(). Pick up the bytes
     // based on the transmission medium — direct means they're the image
@@ -1554,13 +1613,19 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             let temp = cmd.medium == TransmissionMedium::TempFile;
             let (mut file, real) = open_image_file(Path::new(path_str), temp)?;
 
-            if temp && !is_temp_file_path(&real) {
-                return Err(GraphicError::InvalidData);
-            }
+            let entry = if temp {
+                match temp_entry(Path::new(path_str)) {
+                    Some(entry) if is_temp_file_path(&real) => Some(entry),
+                    _ => return Err(GraphicError::InvalidData),
+                }
+            } else {
+                None
+            };
             let result = requested_size(cmd)
                 .and_then(|size| read_file_data(&mut file, cmd.offset, size));
-            if temp {
-                remove_temp_file(file, &real);
+            match entry {
+                Some(entry) => remove_temp_file(file, &entry),
+                None => drop(file),
             }
             result?
         }
@@ -3039,7 +3104,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn test_temp_symlink_removes_validated_target() {
+    fn test_temp_symlink_removes_link_not_target() {
         let target = TestFile::new(&std::env::temp_dir(), "temp-target", &[1, 2, 3, 4]);
         let link = TestFile(std::env::temp_dir().join(format!(
             "rio-temp-link-tty-graphics-protocol-{}",
@@ -3056,7 +3121,11 @@ mod tests {
         ))
         .expect("symlink to a temp file must load");
         assert_eq!(data.pixels, vec![1, 2, 3, 4]);
-        assert!(!target.0.exists(), "the file actually read must be removed");
+        assert!(
+            std::fs::symlink_metadata(&link.0).is_err(),
+            "the entry the client named must be removed"
+        );
+        assert!(target.0.exists(), "the link target must be kept");
     }
 
     #[cfg(unix)]
@@ -3235,5 +3304,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(&real_dir);
         assert!(kept, "a parent that resolves elsewhere must not be used");
         assert!(removed, "the validated path must be removed");
+    }
+
+    #[test]
+    fn test_raw_without_dimensions_is_rejected_before_reading() {
+        let file = TestFile::new(&std::env::temp_dir(), "no-dims", &[0u8; 4]);
+        let mut cmd = file_command(TransmissionMedium::File, &file.0, 0, 0);
+        cmd.width = 0;
+        cmd.height = 0;
+
+        let result = create_graphic_data(&cmd);
+        assert!(matches!(result, Err(GraphicError::DimensionsRequired)));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn test_proc_self_fd_is_rejected() {
+        let file = TestFile::new(&std::env::temp_dir(), "proc-fd", &[1, 2, 3, 4]);
+        let held = std::fs::File::open(&file.0).unwrap();
+        std::fs::remove_file(&file.0).unwrap();
+        let fd_path = std::path::PathBuf::from(format!(
+            "/proc/self/fd/{}",
+            std::os::unix::io::AsRawFd::as_raw_fd(&held)
+        ));
+
+        let result =
+            create_graphic_data(&file_command(TransmissionMedium::File, &fd_path, 0, 0));
+        assert!(
+            result.is_err(),
+            "deleted files behind /proc/self/fd must not load"
+        );
     }
 }
