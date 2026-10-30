@@ -305,9 +305,10 @@ where
         // extract all accumulated damage when it locks the terminal.
         if processed > 0 {
             if let Some(ref mut term) = terminal {
-                let hold_ended = held_before == Some(true) && !term.synchronized_output();
+                let held = term.synchronized_output();
+                let hold_ended = held_before == Some(true) && !held;
                 if !term.damage_event_in_flight
-                    && (hold_ended || term.peek_damage_event().is_some())
+                    && (hold_ended || (!held && term.peek_damage_event().is_some()))
                 {
                     term.damage_event_in_flight = true;
                     self.event_proxy.send_event(

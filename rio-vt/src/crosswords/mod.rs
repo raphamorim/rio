@@ -830,6 +830,7 @@ impl<U: EventListener> Crosswords<U> {
             return;
         }
         self.mode.remove(Mode::SYNC_UPDATE);
+        self.sync_update_started = None;
         // Move vi mode cursor with the content.
         let history_size = self.history_size();
         let mut delta = num_lines as i32 - old_lines as i32;
@@ -2973,7 +2974,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::GraphemeCluster => self.mode.remove(Mode::GRAPHEME_CLUSTER),
-            NamedPrivateMode::SyncUpdate => self.mode.remove(Mode::SYNC_UPDATE),
+            NamedPrivateMode::SyncUpdate => {
+                self.mode.remove(Mode::SYNC_UPDATE);
+                self.sync_update_started = None;
+            }
         }
     }
 
@@ -3393,6 +3397,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
+        self.sync_update_started = None;
         self.mode.insert(Mode::default());
         self.mode
             .set(Mode::GRAPHEME_CLUSTER, self.grapheme_clustering_default);
@@ -5881,8 +5886,10 @@ mod tests {
 
         cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
         assert!(cw.synchronized_output());
+        assert!(cw.sync_update_started.is_some());
         cw.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
         assert!(!cw.synchronized_output());
+        assert!(cw.sync_update_started.is_none());
 
         cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
         cw.resize(CrosswordsSize::new(4, 4));
@@ -5892,10 +5899,12 @@ mod tests {
         );
         cw.resize(CrosswordsSize::new(6, 4));
         assert!(!cw.synchronized_output(), "resize ends the update");
+        assert!(cw.sync_update_started.is_none());
 
         cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
         cw.reset_state();
         assert!(!cw.synchronized_output(), "RIS ends the update");
+        assert!(cw.sync_update_started.is_none());
     }
 
     #[test]
