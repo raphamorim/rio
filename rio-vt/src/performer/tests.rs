@@ -222,7 +222,8 @@ fn child_exit_drains_multiple_budgets_and_finishes_pending_sync() {
     readiness.set_readiness(Ready::readable()).unwrap();
     let (machine, state) = machine.spawn().join().unwrap();
     assert_eq!(first_line(&machine, 12), "final output");
-    assert_eq!(state.parser.sync_bytes_count(), 0);
+    assert!(state.parser.sync_timeout().sync_timeout().is_none());
+    assert!(!machine.terminal.lock().synchronized_output());
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
 }
@@ -254,7 +255,8 @@ fn read_failure_shuts_down_pty_and_finishes_pending_sync() {
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
     assert_eq!(first_line(&machine, 12), "final output");
-    assert_eq!(state.parser.sync_bytes_count(), 0);
+    assert!(state.parser.sync_timeout().sync_timeout().is_none());
+    assert!(!machine.terminal.lock().synchronized_output());
 }
 
 #[derive(Clone)]

@@ -102,6 +102,9 @@ bitflags! {
         /// across main/alt screens (the mode lives on the terminal,
         /// not the grid), matching contour.
         const GRAPHEME_CLUSTER        = 1 << 24;
+        /// DEC private mode 2026: synchronized output. While set, bytes
+        /// still reach the grid but the renderer holds the last frame.
+        const SYNC_UPDATE             = 1 << 25;
         const MOUSE_MODE = Self::MOUSE_REPORT_CLICK.bits() | Self::MOUSE_MOTION.bits() | Self::MOUSE_DRAG.bits() | Self::MOUSE_REPORT_X10.bits();
         const KITTY_KEYBOARD_PROTOCOL = Self::DISAMBIGUATE_ESC_CODES.bits()
                                       | Self::REPORT_EVENT_TYPES.bits()
@@ -645,6 +648,13 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.last_cursor = self.grid.cursor.pos;
     }
 
+    /// Whether a synchronized update (mode 2026) is active, during which
+    /// the renderer should keep presenting the previous frame.
+    #[inline]
+    pub fn synchronized_output(&self) -> bool {
+        self.mode.contains(Mode::SYNC_UPDATE)
+    }
+
     #[inline]
     pub fn display_offset(&self) -> usize {
         self.grid.display_offset()
@@ -759,6 +769,8 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn resize<S: Dimensions>(&mut self, size: S) {
+        self.mode.remove(Mode::SYNC_UPDATE);
+
         let old_cols = self.grid.columns();
         let old_lines = self.grid.screen_lines();
         let num_cols = size.columns();
@@ -2885,7 +2897,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::GraphemeCluster => self.mode.insert(Mode::GRAPHEME_CLUSTER),
-            NamedPrivateMode::SyncUpdate => (),
+            NamedPrivateMode::SyncUpdate => self.mode.insert(Mode::SYNC_UPDATE),
         }
     }
 
@@ -2954,7 +2966,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::GraphemeCluster => self.mode.remove(Mode::GRAPHEME_CLUSTER),
-            NamedPrivateMode::SyncUpdate => (),
+            NamedPrivateMode::SyncUpdate => self.mode.remove(Mode::SYNC_UPDATE),
         }
     }
 
@@ -3010,7 +3022,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                         ModeState::Reset
                     }
                 }
-                NamedPrivateMode::SyncUpdate => ModeState::Reset,
+                NamedPrivateMode::SyncUpdate => {
+                    self.mode.contains(Mode::SYNC_UPDATE).into()
+                }
                 NamedPrivateMode::ColumnMode => ModeState::NotSupported,
             },
             PrivateMode::Unknown(_) => ModeState::NotSupported,
@@ -5851,6 +5865,25 @@ mod tests {
         let size = CrosswordsSize::new(4, 4);
         let window_id = crate::event::WindowId::from(0);
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
+    }
+
+    #[test]
+    fn sync_update_mode_tracks_bsu_esu_and_ends_on_resize_and_reset() {
+        let mut cw = make_crosswords();
+        assert!(!cw.synchronized_output());
+
+        cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
+        assert!(cw.synchronized_output());
+        cw.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
+        assert!(!cw.synchronized_output());
+
+        cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
+        cw.resize(CrosswordsSize::new(4, 4));
+        assert!(!cw.synchronized_output(), "resize ends the update");
+
+        cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
+        cw.reset_state();
+        assert!(!cw.synchronized_output(), "RIS ends the update");
     }
 
     #[test]

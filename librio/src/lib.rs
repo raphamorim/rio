@@ -1324,6 +1324,32 @@ mod tests {
     // The wasm renderer draws a cell's full cluster text (base +
     // attached codepoints) when the wire flag says one exists; the
     // accessor is the source of that text.
+    /// A synchronized update holds the last snapshot until it ends, so an
+    /// embedder never draws a half-written frame.
+    #[test]
+    fn render_state_holds_during_synchronized_update() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+        let cell = |state: &RenderState| state.square(9, 0).map(|sq| sq.c());
+
+        surface.inject_output(b"\x1b[10;1Ha");
+        state.update();
+        assert_eq!(cell(&state), Some('a'));
+
+        surface.inject_output(b"\x1b[?2026h\x1b[10;1Hb");
+        state.update();
+        assert_eq!(cell(&state), Some('a'), "held during the update");
+
+        surface.inject_output(b"\x1b[?2026l");
+        state.update();
+        assert_eq!(cell(&state), Some('b'));
+    }
+
     #[test]
     fn render_state_exposes_cluster_text() {
         let engine = Engine::new(Arc::new(CountingDelegate {

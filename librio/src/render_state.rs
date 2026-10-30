@@ -120,6 +120,10 @@ impl RenderState {
 
     pub fn update(&mut self) {
         let mut term = self.terminal.lock();
+        if term.synchronized_output() && !self.rows.is_empty() {
+            term.damage_event_in_flight = false;
+            return;
+        }
         let damage = if self.rows.is_empty() {
             TerminalDamage::Full
         } else {

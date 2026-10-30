@@ -300,9 +300,12 @@ where
         // Notify renderer that new damage is available.
         // Only send if no event is already in flight: the renderer will
         // extract all accumulated damage when it locks the terminal.
-        if state.parser.sync_bytes_count() < processed && processed > 0 {
+        if processed > 0 {
             if let Some(ref mut term) = terminal {
-                if !term.damage_event_in_flight && term.peek_damage_event().is_some() {
+                if !term.synchronized_output()
+                    && !term.damage_event_in_flight
+                    && term.peek_damage_event().is_some()
+                {
                     term.damage_event_in_flight = true;
                     self.event_proxy.send_event(
                         RioEvent::TerminalDamaged(self.route_id),
@@ -537,7 +540,7 @@ where
         }
 
         // Flush exactly once before publishing any exit notification.
-        let pending_sync = state.parser.sync_bytes_count() > 0;
+        let pending_sync = state.parser.sync_timeout().sync_timeout().is_some();
         state.parser.stop_sync(&mut *self.terminal.lock());
         match &reason {
             Ok(ExitReason::ChildExited(status)) => {

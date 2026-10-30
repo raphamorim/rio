@@ -471,20 +471,24 @@ impl Renderer {
                 // No updates pending, skip rendering
                 continue;
             }
-            any_panel_dirty = true;
-
-            // UI-side damage (scroll, selection, resize, etc.)
-            let ui_terminal_damage = context
-                .renderable_content
-                .pending_update
-                .take_terminal_damage();
-            context.renderable_content.pending_update.reset();
 
             {
                 let mut terminal = context.terminal.lock();
 
                 // Clear in-flight flag so PTY thread can notify again
                 terminal.damage_event_in_flight = false;
+
+                if terminal.synchronized_output() && !force_full_damage {
+                    continue;
+                }
+                any_panel_dirty = true;
+
+                // UI-side damage (scroll, selection, resize, etc.)
+                let ui_terminal_damage = context
+                    .renderable_content
+                    .pending_update
+                    .take_terminal_damage();
+                context.renderable_content.pending_update.reset();
 
                 let pty_damage = terminal.peek_damage_event();
 
