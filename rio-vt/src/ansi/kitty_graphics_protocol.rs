@@ -1021,6 +1021,20 @@ impl GraphicError {
     }
 }
 
+/// Byte range to copy out of a shared memory segment of `shm_size` bytes.
+/// `size == 0` means read to the end. Returns `None` if the range is empty
+/// or falls outside the segment.
+#[cfg(any(test, all(unix, not(target_os = "android"))))]
+fn shm_range(offset: u32, size: u32, shm_size: usize) -> Option<std::ops::Range<usize>> {
+    let start = offset as usize;
+    let available = shm_size.checked_sub(start)?;
+    let len = if size > 0 { size as usize } else { available };
+    if len == 0 || len > available {
+        return None;
+    }
+    Some(start..start + len)
+}
+
 fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, GraphicError> {
     // Early dimension guard — applies to every non-PNG path. PNG
     // commands may transmit without declaring width/height (we pick
@@ -1165,51 +1179,46 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                     let shm_size = stat.st_size as usize;
                     debug!("Shared memory size: {} bytes", shm_size);
 
-                    // Use cmd.size if specified, otherwise use the full shm size
-                    let data_size = if cmd.size > 0 {
-                        cmd.size as usize
-                    } else {
-                        shm_size
+                    let range = match shm_range(cmd.offset, cmd.size, shm_size) {
+                        Some(range) => range,
+                        None => {
+                            libc::close(fd);
+                            libc::shm_unlink(shm_name.as_ptr());
+                            debug!(
+                                "Invalid range offset={} size={} for shared memory size {}",
+                                cmd.offset, cmd.size, shm_size
+                            );
+                            return Err(GraphicError::InvalidData);
+                        }
                     };
 
-                    if data_size > shm_size {
-                        libc::close(fd);
-                        libc::shm_unlink(shm_name.as_ptr());
-                        debug!(
-                            "Requested size {} exceeds shared memory size {}",
-                            data_size, shm_size
-                        );
-                        return Err(GraphicError::InvalidData);
-                    }
-
-                    if data_size > MAX_SIZE {
+                    if range.len() > MAX_SIZE {
                         libc::close(fd);
                         libc::shm_unlink(shm_name.as_ptr());
                         return Err(GraphicError::TooLarge);
                     }
 
-                    // Map shared memory
                     let ptr = libc::mmap(
                         std::ptr::null_mut(),
-                        data_size,
+                        shm_size,
                         libc::PROT_READ,
                         libc::MAP_SHARED,
                         fd,
-                        cmd.offset as libc::off_t,
+                        0,
                     );
 
                     if ptr == libc::MAP_FAILED {
                         libc::close(fd);
+                        libc::shm_unlink(shm_name.as_ptr());
                         debug!("Failed to mmap shared memory");
                         return Err(GraphicError::InvalidData);
                     }
 
-                    // Copy data from shared memory
-                    let data =
-                        std::slice::from_raw_parts(ptr as *const u8, data_size).to_vec();
+                    let data = std::slice::from_raw_parts(ptr as *const u8, shm_size)
+                        [range]
+                        .to_vec();
 
-                    // Cleanup
-                    libc::munmap(ptr, data_size);
+                    libc::munmap(ptr, shm_size);
                     libc::close(fd);
                     libc::shm_unlink(shm_name.as_ptr());
 
@@ -2372,5 +2381,113 @@ mod tests {
         let result = parse_kitty_graphics_protocol("a=q,i=1,q=2", "");
         let response = result.expect("response struct must exist");
         assert!(response.response.is_none(), "q=2 must suppress all output");
+    }
+
+    #[test]
+    fn test_shm_range() {
+        assert_eq!(shm_range(0, 0, 4096), Some(0..4096));
+        assert_eq!(shm_range(100, 4, 4096), Some(100..104));
+        assert_eq!(shm_range(8192, 0, 16384), Some(8192..16384));
+        assert_eq!(shm_range(4092, 4, 4096), Some(4092..4096));
+        assert_eq!(shm_range(4096, 4096, 4096), None);
+        assert_eq!(shm_range(4093, 4, 4096), None);
+        assert_eq!(shm_range(8192, 0, 4096), None);
+        assert_eq!(shm_range(4096, 0, 4096), None);
+        assert_eq!(shm_range(0, 0, 0), None);
+        assert_eq!(shm_range(u32::MAX, u32::MAX, 4096), None);
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    /// Returns the size fstat reports, which may be page-rounded (macOS).
+    fn create_shm(name: &std::ffi::CStr, bytes: &[u8]) -> usize {
+        unsafe {
+            libc::shm_unlink(name.as_ptr());
+            let fd = libc::shm_open(
+                name.as_ptr(),
+                libc::O_CREAT | libc::O_RDWR | libc::O_EXCL,
+                0o600,
+            );
+            assert!(fd >= 0, "shm_open failed");
+            assert_eq!(libc::ftruncate(fd, bytes.len() as libc::off_t), 0);
+            let ptr = libc::mmap(
+                std::ptr::null_mut(),
+                bytes.len(),
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_SHARED,
+                fd,
+                0,
+            );
+            assert_ne!(ptr, libc::MAP_FAILED);
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr as *mut u8, bytes.len());
+            libc::munmap(ptr, bytes.len());
+            let mut stat: libc::stat = std::mem::zeroed();
+            assert_eq!(libc::fstat(fd, &mut stat), 0);
+            libc::close(fd);
+            stat.st_size as usize
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    fn shm_exists(name: &std::ffi::CStr) -> bool {
+        unsafe {
+            let fd = libc::shm_open(name.as_ptr(), libc::O_RDONLY, 0);
+            if fd >= 0 {
+                libc::close(fd);
+            }
+            fd >= 0
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    fn shm_command(name: &str, offset: u32, size: u32) -> KittyGraphicsCommand {
+        KittyGraphicsCommand {
+            medium: TransmissionMedium::SharedMemory,
+            format: Format::Rgba32,
+            width: 1,
+            height: 1,
+            offset,
+            size,
+            payload: SmallVec::from_slice(name.as_bytes()),
+            ..Default::default()
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "android"), feature = "graphics"))]
+    #[test]
+    fn test_shm_unaligned_offset() {
+        let name = format!("/rio-shm-a-{}", std::process::id());
+        let cname = std::ffi::CString::new(name.clone()).unwrap();
+        let mut bytes = vec![0u8; 4096];
+        bytes[100..104].copy_from_slice(&[1, 2, 3, 4]);
+        create_shm(&cname, &bytes);
+
+        let data = create_graphic_data(&shm_command(&name, 100, 4))
+            .expect("unaligned offset must load");
+        assert_eq!(data.pixels, vec![1, 2, 3, 4]);
+        assert!(!shm_exists(&cname), "shm must be unlinked after read");
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    #[test]
+    fn test_shm_range_past_end_is_rejected_and_unlinked() {
+        let name = format!("/rio-shm-b-{}", std::process::id());
+        let cname = std::ffi::CString::new(name.clone()).unwrap();
+        let shm_size = create_shm(&cname, &[0u8; 4096]) as u32;
+
+        let result = create_graphic_data(&shm_command(&name, shm_size, 4));
+        assert!(matches!(result, Err(GraphicError::InvalidData)));
+        assert!(!shm_exists(&cname), "shm must be unlinked on error");
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    #[test]
+    fn test_shm_offset_without_size_reads_to_end() {
+        let name = format!("/rio-shm-c-{}", std::process::id());
+        let cname = std::ffi::CString::new(name.clone()).unwrap();
+        let shm_size = create_shm(&cname, &[0u8; 4096]) as u32;
+
+        let result = create_graphic_data(&shm_command(&name, shm_size - 4, 0));
+        assert!(result.is_ok(), "{:?}", result.err());
+        assert!(!shm_exists(&cname));
     }
 }
