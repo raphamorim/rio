@@ -1346,6 +1346,7 @@ fn local_windows_file(
 /// path, which has already passed the sensitive path check.
 fn open_image_file(
     path: &std::path::Path,
+    delete: bool,
 ) -> Result<(std::fs::File, std::path::PathBuf), GraphicError> {
     #[cfg(windows)]
     let path = &local_windows_file(path)?;
@@ -1362,10 +1363,18 @@ fn open_image_file(
         libc::O_NONBLOCK | libc::O_NOCTTY,
     );
     #[cfg(windows)]
-    std::os::windows::fs::OpenOptionsExt::custom_flags(
-        &mut options,
-        windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT,
-    );
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            DELETE, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
+        };
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+        if delete {
+            options.access_mode(FILE_GENERIC_READ | DELETE);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = delete;
     let file = options.open(path).map_err(|_| GraphicError::FileNotFound)?;
 
     #[cfg(windows)]
@@ -1393,11 +1402,12 @@ fn open_image_file(
 /// after checking that handle still points at the validated directory, so
 /// swapping a parent for a symlink cannot redirect the delete.
 #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]
-fn remove_temp_file(path: &std::path::Path) {
+fn remove_temp_file(file: std::fs::File, path: &std::path::Path) {
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::OpenOptionsExt;
     use std::os::unix::io::AsRawFd;
 
+    drop(file);
     let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
         return;
     };
@@ -1422,8 +1432,33 @@ fn remove_temp_file(path: &std::path::Path) {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
-fn remove_temp_file(path: &std::path::Path) {
+/// Marks the validated handle itself for deletion, so the file removed is
+/// exactly the one that was checked and read.
+#[cfg(windows)]
+fn remove_temp_file(file: std::fs::File, _path: &std::path::Path) {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FileDispositionInfo, SetFileInformationByHandle, FILE_DISPOSITION_INFO,
+    };
+    let info = FILE_DISPOSITION_INFO { DeleteFile: true };
+    unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle() as _,
+            FileDispositionInfo,
+            &info as *const FILE_DISPOSITION_INFO as *const _,
+            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+        );
+    }
+}
+
+#[cfg(not(any(
+    target_os = "linux",
+    target_os = "android",
+    target_os = "macos",
+    windows
+)))]
+fn remove_temp_file(file: std::fs::File, path: &std::path::Path) {
+    drop(file);
     let _ = std::fs::remove_file(path);
 }
 
@@ -1516,17 +1551,16 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
             let path_str = std::str::from_utf8(&cmd.payload)
                 .map_err(|_| GraphicError::InvalidData)?;
             debug!("File path: {}", path_str);
-            let (mut file, real) = open_image_file(Path::new(path_str))?;
-
             let temp = cmd.medium == TransmissionMedium::TempFile;
+            let (mut file, real) = open_image_file(Path::new(path_str), temp)?;
+
             if temp && !is_temp_file_path(&real) {
                 return Err(GraphicError::InvalidData);
             }
             let result = requested_size(cmd)
                 .and_then(|size| read_file_data(&mut file, cmd.offset, size));
-            drop(file);
             if temp {
-                remove_temp_file(&real);
+                remove_temp_file(file, &real);
             }
             result?
         }
@@ -3189,9 +3223,12 @@ mod tests {
         let file = real_dir.join("tty-graphics-protocol-x");
         std::fs::write(&file, [0u8; 4]).unwrap();
 
-        remove_temp_file(&link_dir.join("tty-graphics-protocol-x"));
+        remove_temp_file(
+            std::fs::File::open(&file).unwrap(),
+            &link_dir.join("tty-graphics-protocol-x"),
+        );
         let kept = file.exists();
-        remove_temp_file(&file);
+        remove_temp_file(std::fs::File::open(&file).unwrap(), &file);
         let removed = !file.exists();
 
         let _ = std::fs::remove_file(&link_dir);
