@@ -2137,6 +2137,18 @@ mod tests {
         assert!(!handler.synced);
     }
 
+    #[test]
+    fn sync_update_dcs_form_inline_bsu_esu() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"a\x1bP=1s\x1b\\b\x1bP=2s\x1b\\c");
+
+        assert_eq!(handler.printed, "abc");
+        assert!(!handler.synced);
+        assert_eq!(handler.sync_changes, 2);
+    }
+
     /// A DCS end may terminate a CSI-started update and the other way
     /// around: both name the same mode.
     #[test]
