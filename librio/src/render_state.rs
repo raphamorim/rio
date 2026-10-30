@@ -89,9 +89,6 @@ pub struct RenderState {
     /// Baseline for image change stamps (Instants aren't representable
     /// over the C ABI; nanoseconds relative to this are).
     epoch: rio_vt::time::Instant,
-    /// When the current synchronized update was first seen, so a program
-    /// that never ends it cannot hold the snapshot forever.
-    pub(crate) hold_started: Option<rio_vt::time::Instant>,
 }
 
 /// Longest a synchronized update may hold the snapshot.
@@ -121,17 +118,16 @@ impl RenderState {
             alt_screen: false,
             kitty: Vec::new(),
             epoch: rio_vt::time::Instant::now(),
-            hold_started: None,
         }
     }
 
     pub fn update(&mut self) {
         let mut term = self.terminal.lock();
         if term.synchronized_output() {
-            let started = *self
-                .hold_started
-                .get_or_insert_with(rio_vt::time::Instant::now);
-            if started.elapsed() < SYNC_HOLD_LIMIT {
+            let within_limit = term
+                .sync_update_started
+                .is_none_or(|started| started.elapsed() < SYNC_HOLD_LIMIT);
+            if within_limit {
                 term.damage_event_in_flight = false;
                 return;
             }
@@ -140,7 +136,6 @@ impl RenderState {
                 rio_vt::ansi::mode::NamedPrivateMode::SyncUpdate.into(),
             );
         }
-        self.hold_started = None;
         let damage = if self.rows.is_empty() {
             TerminalDamage::Full
         } else {

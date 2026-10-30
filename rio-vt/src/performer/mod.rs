@@ -546,8 +546,12 @@ where
         }
 
         // Flush exactly once before publishing any exit notification.
-        let pending_sync = self.terminal.lock().synchronized_output();
-        state.parser.stop_sync(&mut *self.terminal.lock());
+        let pending_sync = {
+            let mut terminal = self.terminal.lock();
+            let pending = terminal.synchronized_output();
+            state.parser.stop_sync(&mut *terminal);
+            pending
+        };
         match &reason {
             Ok(ExitReason::ChildExited(status)) => {
                 self.event_proxy.send_event(

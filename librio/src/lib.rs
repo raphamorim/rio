@@ -1366,11 +1366,36 @@ mod tests {
         state.update();
         assert_eq!(cell(&state), Some('a'));
 
-        state.hold_started = rio_vt::time::Instant::now()
+        surface.terminal().lock().sync_update_started = rio_vt::time::Instant::now()
             .checked_sub(rio_vt::time::Duration::from_secs(2));
         state.update();
         assert_eq!(cell(&state), Some('b'));
         assert!(!surface.terminal().lock().synchronized_output());
+    }
+
+    /// Every BSU re-arms the limit, so a stream of back-to-back updates is
+    /// not cut off mid-frame.
+    #[test]
+    fn render_state_hold_limit_rearms_on_bsu() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let mut state = RenderState::new(&surface);
+        let cell = |state: &RenderState| state.square(9, 0).map(|sq| sq.c());
+
+        surface.inject_output(b"\x1b[10;1Ha");
+        state.update();
+        surface.inject_output(b"\x1b[?2026h\x1b[10;1Hb");
+        surface.terminal().lock().sync_update_started = rio_vt::time::Instant::now()
+            .checked_sub(rio_vt::time::Duration::from_secs(2));
+
+        surface.inject_output(b"\x1b[?2026l\x1b[?2026h\x1b[10;1Hc");
+        state.update();
+        assert_eq!(cell(&state), Some('a'), "the new update is still held");
+        assert!(surface.terminal().lock().synchronized_output());
     }
 
     // The wasm renderer draws a cell's full cluster text (base +

@@ -469,6 +469,10 @@ where
     /// Set by PTY thread before sending; cleared by renderer after extracting damage.
     pub damage_event_in_flight: bool,
 
+    /// When the last BSU arrived, so a renderer without an event loop can
+    /// give up on an update that never ends. Re-armed by every BSU.
+    pub sync_update_started: Option<crate::time::Instant>,
+
     /// What DECRQM callers see after a full reset: the
     /// consumer-configured default for grapheme clustering (mode
     /// 2027). On by default; embedders serving legacy wcwidth
@@ -536,6 +540,7 @@ impl<U: EventListener> Crosswords<U> {
             current_directory: None,
             user_vars: rustc_hash::FxHashMap::default(),
             damage_event_in_flight: false,
+            sync_update_started: None,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
             keyboard_mode_idx: 0,
@@ -769,8 +774,6 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn resize<S: Dimensions>(&mut self, size: S) {
-        self.mode.remove(Mode::SYNC_UPDATE);
-
         let old_cols = self.grid.columns();
         let old_lines = self.grid.screen_lines();
         let num_cols = size.columns();
@@ -826,6 +829,7 @@ impl<U: EventListener> Crosswords<U> {
             info!("Crosswords::resize dimensions unchanged");
             return;
         }
+        self.mode.remove(Mode::SYNC_UPDATE);
         // Move vi mode cursor with the content.
         let history_size = self.history_size();
         let mut delta = num_lines as i32 - old_lines as i32;
@@ -2897,7 +2901,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
             NamedPrivateMode::GraphemeCluster => self.mode.insert(Mode::GRAPHEME_CLUSTER),
-            NamedPrivateMode::SyncUpdate => self.mode.insert(Mode::SYNC_UPDATE),
+            NamedPrivateMode::SyncUpdate => {
+                self.mode.insert(Mode::SYNC_UPDATE);
+                self.sync_update_started = Some(crate::time::Instant::now());
+            }
         }
     }
 
@@ -5879,6 +5886,11 @@ mod tests {
 
         cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
         cw.resize(CrosswordsSize::new(4, 4));
+        assert!(
+            cw.synchronized_output(),
+            "a resize that keeps the grid size does not end the update"
+        );
+        cw.resize(CrosswordsSize::new(6, 4));
         assert!(!cw.synchronized_output(), "resize ends the update");
 
         cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());

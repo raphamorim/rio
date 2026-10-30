@@ -479,12 +479,11 @@ impl Renderer {
                 terminal.damage_event_in_flight = false;
 
                 if terminal.synchronized_output() {
+                    let pending = &mut context.renderable_content.pending_update;
                     if force_full_damage {
-                        context
-                            .renderable_content
-                            .pending_update
-                            .set_terminal_damage(TerminalDamage::Full);
+                        pending.set_terminal_damage(TerminalDamage::Full);
                     }
+                    pending.reset();
                     continue;
                 }
                 any_panel_dirty = true;
