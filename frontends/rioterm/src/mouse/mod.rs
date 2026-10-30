@@ -78,17 +78,29 @@ impl Default for Mouse {
 
 impl Mouse {
     pub fn new(multiplier: f64, divider: f64) -> Self {
-        Self {
-            multiplier,
-            divider,
-            ..Default::default()
-        }
+        let mut mouse = Self::default();
+        mouse.set_multiplier_and_divider(multiplier, divider);
+        mouse
     }
 
+    /// A non-finite multiplier, or a zero or non-finite divider, falls back
+    /// to the default, since either would turn the scroll accumulator into
+    /// inf or NaN. The accumulator is reset so a bad value applied earlier
+    /// stops affecting scrolling once the config is fixed.
     #[inline]
     pub fn set_multiplier_and_divider(&mut self, multiplier: f64, divider: f64) {
-        self.multiplier = multiplier;
-        self.divider = divider;
+        let default = Mouse::default();
+        self.multiplier = if multiplier.is_finite() {
+            multiplier
+        } else {
+            default.multiplier
+        };
+        self.divider = if divider.is_finite() && divider != 0.0 {
+            divider
+        } else {
+            default.divider
+        };
+        self.accumulated_scroll = AccumulatedScroll::default();
     }
 }
 
@@ -511,5 +523,22 @@ pub mod test {
             calculate_side_by_pos(49.61, margin_x, cell, grid_w),
             Side::Right,
         );
+    }
+
+    #[test]
+    fn test_scroll_multiplier_and_divider_fall_back_when_invalid() {
+        let mouse = Mouse::new(5.0, 2.0);
+        assert_eq!((mouse.multiplier, mouse.divider), (5.0, 2.0));
+
+        let mouse = Mouse::new(5.0, 0.0);
+        assert_eq!((mouse.multiplier, mouse.divider), (5.0, 1.0));
+
+        let mouse = Mouse::new(f64::NAN, f64::INFINITY);
+        assert_eq!((mouse.multiplier, mouse.divider), (3.0, 1.0));
+
+        let mut mouse = Mouse::new(3.0, 1.0);
+        mouse.accumulated_scroll.y = f64::NAN;
+        mouse.set_multiplier_and_divider(3.0, 1.0);
+        assert_eq!(mouse.accumulated_scroll.y, 0.0);
     }
 }

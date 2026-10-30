@@ -3620,7 +3620,10 @@ impl Screen<'_> {
         let dim = self.context_manager.current().dimension.dimension;
         let width = dim.width as f64;
         let height = dim.height as f64;
-        if !(width > 0.0 && height > 0.0) {
+        if !(width > 0.0 && height > 0.0)
+            || !new_scroll_x_px.is_finite()
+            || !new_scroll_y_px.is_finite()
+        {
             return;
         }
         let mode = self.get_mode();
