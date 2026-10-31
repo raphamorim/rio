@@ -1,5 +1,6 @@
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::{Preedit, PreeditCursor};
+use crate::renderer::island::PROGRESS_BAR_TIMEOUT;
 use crate::renderer::utils::update_colors_based_on_theme;
 use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
@@ -773,8 +774,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::ProgressReport(report)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if let Some(island) = &mut route.window.screen.renderer.island {
+                        let state = report.state;
                         island.set_progress_report(report);
                         route.request_overlay_redraw();
+
+                        let timer_id = TimerId::new(
+                            Topic::ProgressTimeout,
+                            u64::from(window_id) as usize,
+                        );
+                        self.scheduler.unschedule(timer_id);
+                        if state != rio_backend::event::ProgressState::Remove {
+                            self.scheduler.schedule(
+                                EventPayload::new(
+                                    RioEventType::Rio(RioEvent::Render),
+                                    window_id,
+                                ),
+                                PROGRESS_BAR_TIMEOUT,
+                                false,
+                                timer_id,
+                            );
+                        }
                     }
                 }
             }
