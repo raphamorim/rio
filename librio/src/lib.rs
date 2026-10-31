@@ -651,12 +651,15 @@ impl Surface {
     }
 
     pub fn resize(&self, cols: u16, rows: u16, pixel_width: u16, pixel_height: u16) {
-        self.terminal.lock().resize(GridSize::new(
+        let mut terminal = self.terminal.lock();
+        terminal.end_sync_update();
+        terminal.resize(GridSize::new(
             cols as usize,
             rows as usize,
             pixel_width,
             pixel_height,
         ));
+        drop(terminal);
         #[cfg(feature = "pty")]
         let _ = self.channel.send(Msg::Resize(WindowSize {
             rows,
@@ -1359,6 +1362,23 @@ mod tests {
         assert_eq!(row_10(&state), Some('a'), "held during the update");
 
         surface.inject_output(b"\x1b[?2026l");
+        state.update();
+        assert_eq!(row_10(&state), Some('b'));
+    }
+
+    /// A resize ends the update even when the grid keeps its size.
+    #[test]
+    fn render_state_resize_ends_hold() {
+        let (_engine, surface, mut state) = hold_fixture();
+        let desc = SurfaceDesc::default();
+
+        surface.inject_output(b"\x1b[10;1Ha");
+        state.update();
+        surface.inject_output(b"\x1b[?2026h\x1b[10;1Hb");
+        state.update();
+        assert_eq!(row_10(&state), Some('a'));
+
+        surface.resize(desc.cols, desc.rows, desc.pixel_width, desc.pixel_height);
         state.update();
         assert_eq!(row_10(&state), Some('b'));
     }

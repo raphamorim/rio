@@ -914,11 +914,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             // Clear margin since Taffy layout already accounts for spacing
             item.val.dimension.margin = Margin::all(0.0);
+            let resized =
+                item.val.dimension.width != width || item.val.dimension.height != height;
             item.val.dimension.update_width(width);
             item.val.dimension.update_height(height);
 
             // Update terminal size
             let mut terminal = item.val.terminal.lock();
+            if resized {
+                terminal.end_sync_update();
+            }
             terminal.resize::<ContextDimension>(item.val.dimension);
             drop(terminal);
 
