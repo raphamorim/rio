@@ -231,6 +231,16 @@ where
         })
     }
 
+    /// Wake the renderer unless an earlier wakeup is still unconsumed.
+    #[inline]
+    fn notify_damage(&self, terminal: &mut Crosswords<U>) {
+        if !terminal.damage_event_in_flight {
+            terminal.damage_event_in_flight = true;
+            self.event_proxy
+                .send_event(RioEvent::TerminalDamaged(self.route_id), self.window_id);
+        }
+    }
+
     /// Read from the PTY and parse into the terminal.
     ///
     /// Reads until the PTY returns `WouldBlock` (or `MAX_LOCKED_READ`
@@ -311,14 +321,8 @@ where
                 state.sync_deadline = term.sync_update_deadline();
                 let held = term.synchronized_output();
                 let hold_ended = held_before == Some(true) && !held;
-                if !term.damage_event_in_flight
-                    && (hold_ended || (!held && term.peek_damage_event().is_some()))
-                {
-                    term.damage_event_in_flight = true;
-                    self.event_proxy.send_event(
-                        RioEvent::TerminalDamaged(self.route_id),
-                        self.window_id,
-                    );
+                if hold_ended || (!held && term.peek_damage_event().is_some()) {
+                    self.notify_damage(term);
                 }
             }
         }
@@ -443,13 +447,7 @@ where
                 let mut terminal = self.terminal.lock();
                 if terminal.sync_update_expired(Instant::now()) {
                     terminal.end_sync_update();
-                    if !terminal.damage_event_in_flight {
-                        terminal.damage_event_in_flight = true;
-                        self.event_proxy.send_event(
-                            RioEvent::TerminalDamaged(self.route_id),
-                            self.window_id,
-                        );
-                    }
+                    self.notify_damage(&mut terminal);
                 }
                 state.sync_deadline = terminal.sync_update_deadline();
             }
@@ -555,10 +553,8 @@ where
             let mut terminal = self.terminal.lock();
             let pending = terminal.synchronized_output();
             terminal.end_sync_update();
-            if pending && !terminal.damage_event_in_flight {
-                terminal.damage_event_in_flight = true;
-                self.event_proxy
-                    .send_event(RioEvent::TerminalDamaged(self.route_id), self.window_id);
+            if pending {
+                self.notify_damage(&mut terminal);
             }
             pending
         };
