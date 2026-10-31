@@ -478,90 +478,96 @@ impl Renderer {
                 // Clear in-flight flag so PTY thread can notify again
                 terminal.damage_event_in_flight = false;
 
-                if terminal.synchronized_output() {
-                    let pending = &mut context.renderable_content.pending_update;
-                    if force_full_damage {
-                        pending.set_terminal_damage(TerminalDamage::Full);
-                    }
-                    pending.reset();
-                    continue;
-                }
                 any_panel_dirty = true;
-
-                // UI-side damage (scroll, selection, resize, etc.)
-                let ui_terminal_damage = context
-                    .renderable_content
-                    .pending_update
-                    .take_terminal_damage();
-                context.renderable_content.pending_update.reset();
-
-                let pty_damage = terminal.peek_damage_event();
-
-                let damage = if force_full_damage {
-                    TerminalDamage::Full
-                } else {
-                    match (ui_terminal_damage, pty_damage) {
-                        (Some(ui), Some(pty)) => {
-                            PendingUpdate::merge_terminal_damages(ui, pty)
-                        }
-                        (Some(d), None) | (None, Some(d)) => d,
-                        // UI-only damage (overlay hover, command-palette
-                        // input, etc.): cells didn't change, but the
-                        // panel still has to go through the render path
-                        // so UI overlays paint on top of a fresh frame.
-                        // Noop propagates to `RowsToRebuild::None` in
-                        // `screen::render`'s emit loop — grid keeps its
-                        // resident CPU bg/fg buffers, zero row work.
-                        (None, None) => TerminalDamage::Noop,
+                if terminal.synchronized_output() {
+                    let content = &mut context.renderable_content;
+                    if force_full_damage {
+                        content
+                            .pending_update
+                            .set_terminal_damage(TerminalDamage::Full);
                     }
-                };
-
-                terminal.reset_damage();
-
-                terminal.snapshot_visible(
-                    &damage,
-                    &mut context.renderable_content.visible_rows,
-                    &mut context.renderable_content.row_styles,
-                    &mut context.renderable_content.extras,
-                );
-                context.renderable_content.term_colors = terminal.colors;
-                context.renderable_content.display_offset = terminal.display_offset();
-                context.renderable_content.columns = terminal.columns();
-                context.renderable_content.screen_lines = terminal.screen_lines();
-                context.renderable_content.history_size = terminal.history_size();
-                context.renderable_content.lines_evicted = terminal.lines_evicted();
-                context.renderable_content.blinking_cursor = terminal.blinking_cursor;
-                context.renderable_content.cursor.state = terminal.cursor();
-                if terminal.graphics.kitty_graphics_dirty {
-                    context.renderable_content.kitty_virtual_placements =
-                        terminal.graphics.kitty_virtual_placements.clone();
-                    context.renderable_content.kitty_images =
-                        terminal.graphics.kitty_images.clone();
-                    context.renderable_content.kitty_placements = {
-                        let mut placements: Vec<_> = terminal
-                            .graphics
-                            .kitty_placements
-                            .values()
-                            .filter(|p| {
-                                terminal.graphics.kitty_images.contains_key(&p.image_id)
-                            })
-                            .cloned()
-                            .collect();
-                        // Tie-break on the unique key so equal
-                        // z-indexes keep a stable paint order across
-                        // frames (map iteration order is not).
-                        placements
-                            .sort_by_key(|p| (p.z_index, p.image_id, p.placement_id));
-                        placements
-                    };
-                    context.renderable_content.atlas_placements =
-                        terminal.graphics.atlas_placements.clone();
-                    context.renderable_content.kitty_graphics_dirty = true;
-                    terminal.graphics.kitty_graphics_dirty = false;
+                    content.pending_update.reset();
+                    content.frame_damage = TerminalDamage::Noop;
+                    content.kitty_graphics_dirty = false;
                 } else {
-                    context.renderable_content.kitty_graphics_dirty = false;
+                    // UI-side damage (scroll, selection, resize, etc.)
+                    let ui_terminal_damage = context
+                        .renderable_content
+                        .pending_update
+                        .take_terminal_damage();
+                    context.renderable_content.pending_update.reset();
+
+                    let pty_damage = terminal.peek_damage_event();
+
+                    let damage = if force_full_damage {
+                        TerminalDamage::Full
+                    } else {
+                        match (ui_terminal_damage, pty_damage) {
+                            (Some(ui), Some(pty)) => {
+                                PendingUpdate::merge_terminal_damages(ui, pty)
+                            }
+                            (Some(d), None) | (None, Some(d)) => d,
+                            // UI-only damage (overlay hover, command-palette
+                            // input, etc.): cells didn't change, but the
+                            // panel still has to go through the render path
+                            // so UI overlays paint on top of a fresh frame.
+                            // Noop propagates to `RowsToRebuild::None` in
+                            // `screen::render`'s emit loop — grid keeps its
+                            // resident CPU bg/fg buffers, zero row work.
+                            (None, None) => TerminalDamage::Noop,
+                        }
+                    };
+
+                    terminal.reset_damage();
+
+                    terminal.snapshot_visible(
+                        &damage,
+                        &mut context.renderable_content.visible_rows,
+                        &mut context.renderable_content.row_styles,
+                        &mut context.renderable_content.extras,
+                    );
+                    context.renderable_content.term_colors = terminal.colors;
+                    context.renderable_content.display_offset = terminal.display_offset();
+                    context.renderable_content.columns = terminal.columns();
+                    context.renderable_content.screen_lines = terminal.screen_lines();
+                    context.renderable_content.history_size = terminal.history_size();
+                    context.renderable_content.lines_evicted = terminal.lines_evicted();
+                    context.renderable_content.blinking_cursor = terminal.blinking_cursor;
+                    context.renderable_content.cursor.state = terminal.cursor();
+                    if terminal.graphics.kitty_graphics_dirty {
+                        context.renderable_content.kitty_virtual_placements =
+                            terminal.graphics.kitty_virtual_placements.clone();
+                        context.renderable_content.kitty_images =
+                            terminal.graphics.kitty_images.clone();
+                        context.renderable_content.kitty_placements = {
+                            let mut placements: Vec<_> = terminal
+                                .graphics
+                                .kitty_placements
+                                .values()
+                                .filter(|p| {
+                                    terminal
+                                        .graphics
+                                        .kitty_images
+                                        .contains_key(&p.image_id)
+                                })
+                                .cloned()
+                                .collect();
+                            // Tie-break on the unique key so equal
+                            // z-indexes keep a stable paint order across
+                            // frames (map iteration order is not).
+                            placements
+                                .sort_by_key(|p| (p.z_index, p.image_id, p.placement_id));
+                            placements
+                        };
+                        context.renderable_content.atlas_placements =
+                            terminal.graphics.atlas_placements.clone();
+                        context.renderable_content.kitty_graphics_dirty = true;
+                        terminal.graphics.kitty_graphics_dirty = false;
+                    } else {
+                        context.renderable_content.kitty_graphics_dirty = false;
+                    }
+                    context.renderable_content.frame_damage = damage;
                 }
-                context.renderable_content.frame_damage = damage;
                 drop(terminal);
             }
 

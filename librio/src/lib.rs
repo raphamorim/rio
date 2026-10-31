@@ -1321,55 +1321,63 @@ mod tests {
         assert!(state.display_offset() > 0, "the view should have moved");
     }
 
-    /// A synchronized update holds the last snapshot until it ends, so an
-    /// embedder never draws a half-written frame.
-    #[test]
-    fn render_state_holds_during_synchronized_update() {
+    /// A surface and render state for the synchronized update tests. The
+    /// engine is returned too, since the surface must not outlive it.
+    fn hold_fixture() -> (Engine, Surface, RenderState) {
         let engine = Engine::new(Arc::new(CountingDelegate {
             wakeups: AtomicUsize::new(0),
         }));
         let surface = engine
             .create_surface(&SurfaceDesc::default())
             .expect("spawn shell");
-        let mut state = RenderState::new(&surface);
-        let cell = |state: &RenderState| state.square(9, 0).map(|sq| sq.c());
+        let state = RenderState::new(&surface);
+        (engine, surface, state)
+    }
+
+    fn row_10(state: &RenderState) -> Option<char> {
+        state.square(9, 0).map(|sq| sq.c())
+    }
+
+    /// Move the active update's last BSU far enough back that it expired.
+    fn expire_hold(surface: &Surface) {
+        surface.terminal().lock().sync_update_started = rio_vt::time::Instant::now()
+            .checked_sub(rio_vt::time::Duration::from_secs(2));
+    }
+
+    /// A synchronized update holds the last snapshot until it ends, so an
+    /// embedder never draws a half-written frame.
+    #[test]
+    fn render_state_holds_during_synchronized_update() {
+        let (_engine, surface, mut state) = hold_fixture();
 
         surface.inject_output(b"\x1b[10;1Ha");
         state.update();
-        assert_eq!(cell(&state), Some('a'));
+        assert_eq!(row_10(&state), Some('a'));
 
         surface.inject_output(b"\x1b[?2026h\x1b[10;1Hb");
         state.update();
-        assert_eq!(cell(&state), Some('a'), "held during the update");
+        assert_eq!(row_10(&state), Some('a'), "held during the update");
 
         surface.inject_output(b"\x1b[?2026l");
         state.update();
-        assert_eq!(cell(&state), Some('b'));
+        assert_eq!(row_10(&state), Some('b'));
     }
 
     /// A program that never ends its update cannot hold the snapshot for
     /// more than a second.
     #[test]
     fn render_state_gives_up_on_a_stuck_hold() {
-        let engine = Engine::new(Arc::new(CountingDelegate {
-            wakeups: AtomicUsize::new(0),
-        }));
-        let surface = engine
-            .create_surface(&SurfaceDesc::default())
-            .expect("spawn shell");
-        let mut state = RenderState::new(&surface);
-        let cell = |state: &RenderState| state.square(9, 0).map(|sq| sq.c());
+        let (_engine, surface, mut state) = hold_fixture();
 
         surface.inject_output(b"\x1b[10;1Ha");
         state.update();
         surface.inject_output(b"\x1b[?2026h\x1b[10;1Hb");
         state.update();
-        assert_eq!(cell(&state), Some('a'));
+        assert_eq!(row_10(&state), Some('a'));
 
-        surface.terminal().lock().sync_update_started = rio_vt::time::Instant::now()
-            .checked_sub(rio_vt::time::Duration::from_secs(2));
+        expire_hold(&surface);
         state.update();
-        assert_eq!(cell(&state), Some('b'));
+        assert_eq!(row_10(&state), Some('b'));
         assert!(!surface.terminal().lock().synchronized_output());
     }
 
@@ -1377,24 +1385,16 @@ mod tests {
     /// not cut off mid-frame.
     #[test]
     fn render_state_hold_limit_rearms_on_bsu() {
-        let engine = Engine::new(Arc::new(CountingDelegate {
-            wakeups: AtomicUsize::new(0),
-        }));
-        let surface = engine
-            .create_surface(&SurfaceDesc::default())
-            .expect("spawn shell");
-        let mut state = RenderState::new(&surface);
-        let cell = |state: &RenderState| state.square(9, 0).map(|sq| sq.c());
+        let (_engine, surface, mut state) = hold_fixture();
 
         surface.inject_output(b"\x1b[10;1Ha");
         state.update();
         surface.inject_output(b"\x1b[?2026h\x1b[10;1Hb");
-        surface.terminal().lock().sync_update_started = rio_vt::time::Instant::now()
-            .checked_sub(rio_vt::time::Duration::from_secs(2));
+        expire_hold(&surface);
 
         surface.inject_output(b"\x1b[?2026l\x1b[?2026h\x1b[10;1Hc");
         state.update();
-        assert_eq!(cell(&state), Some('a'), "the new update is still held");
+        assert_eq!(row_10(&state), Some('a'), "the new update is still held");
         assert!(surface.terminal().lock().synchronized_output());
     }
 

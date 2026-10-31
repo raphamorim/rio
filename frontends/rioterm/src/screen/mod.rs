@@ -3894,24 +3894,27 @@ impl Screen<'_> {
         if is_search_active {
             // Update search hints in renderable content
             let terminal = self.context_manager.current().terminal.lock();
-            let hints = self
-                .search_state
-                .dfas_mut()
-                .map(|dfas| HintMatches::visible_regex_matches(&terminal, dfas));
+            let hints = (!terminal.synchronized_output()).then(|| {
+                self.search_state
+                    .dfas_mut()
+                    .map(|dfas| HintMatches::visible_regex_matches(&terminal, dfas))
+            });
             drop(terminal);
 
-            self.context_manager
-                .current_mut()
-                .renderable_content
-                .hint_matches = hints.map(|h| h.iter().cloned().collect());
-
-            // Force invalidation for search with full damage
-            {
-                let current = self.context_manager.current_mut();
-                current
+            if let Some(hints) = hints {
+                self.context_manager
+                    .current_mut()
                     .renderable_content
-                    .pending_update
-                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                    .hint_matches = hints.map(|h| h.iter().cloned().collect());
+
+                // Force invalidation for search with full damage
+                {
+                    let current = self.context_manager.current_mut();
+                    current
+                        .renderable_content
+                        .pending_update
+                        .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                }
             }
         }
 

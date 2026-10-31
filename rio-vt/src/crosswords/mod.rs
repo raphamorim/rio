@@ -674,6 +674,13 @@ impl<U: EventListener> Crosswords<U> {
             .map(|started| started + SYNC_UPDATE_TIMEOUT)
     }
 
+    /// Whether the active synchronized update has outlived its deadline.
+    #[inline]
+    pub fn sync_update_expired(&self, now: crate::time::Instant) -> bool {
+        self.sync_update_deadline()
+            .is_some_and(|deadline| deadline <= now)
+    }
+
     /// End the active synchronized update, if any.
     #[inline]
     pub fn end_sync_update(&mut self) {
@@ -5894,6 +5901,40 @@ mod tests {
         let size = CrosswordsSize::new(4, 4);
         let window_id = crate::event::WindowId::from(0);
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
+    }
+
+    #[derive(Clone, Default)]
+    struct ReplyRecorder(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
+
+    impl EventListener for ReplyRecorder {
+        fn send_event(&self, event: RioEvent, _: crate::event::WindowId) {
+            if let RioEvent::PtyWrite(_, text) = event {
+                self.0.lock().unwrap().push(text);
+            }
+        }
+    }
+
+    #[test]
+    fn decrqm_reports_sync_update_state() {
+        let replies = ReplyRecorder::default();
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(4, 4),
+            CursorShape::Block,
+            replies.clone(),
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+
+        parser.advance(&mut cw, b"\x1b[?2026$p");
+        parser.advance(&mut cw, b"\x1b[?2026h\x1b[?2026$p");
+        parser.advance(&mut cw, b"\x1b[?2026l\x1b[?2026$p");
+
+        assert_eq!(
+            *replies.0.lock().unwrap(),
+            vec!["\x1b[?2026;2$y", "\x1b[?2026;1$y", "\x1b[?2026;2$y"]
+        );
     }
 
     #[test]

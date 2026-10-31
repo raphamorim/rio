@@ -121,10 +121,7 @@ impl RenderState {
     pub fn update(&mut self) {
         let mut term = self.terminal.lock();
         if term.synchronized_output() {
-            let expired = term
-                .sync_update_deadline()
-                .is_some_and(|deadline| deadline <= rio_vt::time::Instant::now());
-            if !expired {
+            if !term.sync_update_expired(rio_vt::time::Instant::now()) {
                 term.damage_event_in_flight = false;
                 return;
             }

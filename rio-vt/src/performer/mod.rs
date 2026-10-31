@@ -441,10 +441,7 @@ where
                 .is_some_and(|deadline| deadline <= Instant::now())
             {
                 let mut terminal = self.terminal.lock();
-                let expired = terminal
-                    .sync_update_deadline()
-                    .is_some_and(|deadline| deadline <= Instant::now());
-                if expired {
+                if terminal.sync_update_expired(Instant::now()) {
                     terminal.end_sync_update();
                     if !terminal.damage_event_in_flight {
                         terminal.damage_event_in_flight = true;
