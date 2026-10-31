@@ -13,19 +13,19 @@ use rio_backend::sugarloaf::text::DrawOpts;
 use rio_backend::sugarloaf::{Attributes, Sugarloaf};
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub const ISLAND_HEIGHT: f32 = 38.0;
 const PROGRESS_BAR_HEIGHT: f32 = 3.0;
 
-const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
-/// Time for the indeterminate block to travel one full window width.
-const PROGRESS_CYCLE_MS: f32 = 2000.0;
-/// Block length as a fraction of the window width.
-const PROGRESS_BAR_FRACTION: f32 = 0.2;
-/// Grow-in / shrink-out duration: how long the travelling block takes to
-/// reach its designated length at the travel speed.
-const PROGRESS_EDGE_MS: f32 = PROGRESS_CYCLE_MS * PROGRESS_BAR_FRACTION;
+/// A bar with no report for this long is dismissed.
+pub const PROGRESS_BAR_TIMEOUT: Duration = Duration::from_secs(15);
+/// One sweep of the indeterminate block across the window.
+const PROGRESS_BOUNCE_MS: u128 = 1200;
+/// Indeterminate block length, in percent of the window width.
+const PROGRESS_BOUNCE_LEN: f32 = 25.0;
+/// How long the bar takes to ease into a new length or position.
+const PROGRESS_EASE_SECS: f32 = 0.2;
 const TITLE_FONT_SIZE: f32 = 12.0;
 
 const TAB_PADDING_X: f32 = 27.0;
@@ -346,53 +346,24 @@ fn draw_close_button(
     );
 }
 
-/// Position and length of the indeterminate block at `head_ms` into its
-/// travel, where `exit` is the 0..1 shrink-out progress after dismissal.
-///
-/// Head and tail sweep at the same speed with the tail lagging by
-/// `PROGRESS_EDGE_MS`: the block grows out of nothing at the left edge, then
-/// travels at its designated length, and whatever slides past the right edge
-/// re-enters on the left (the caller wraps `x`). During the exit the head is
-/// frozen and the tail runs into it, so the bar shrinks away.
-fn indeterminate_span(width: f32, head_ms: f32, exit: Option<f32>) -> (f32, f32) {
-    let speed = width / PROGRESS_CYCLE_MS;
-    let tail_ms = (head_ms - PROGRESS_EDGE_MS).max(0.0);
-    let tail_ms = match exit {
-        Some(e) => tail_ms + (head_ms - tail_ms) * e.clamp(0.0, 1.0),
-        None => tail_ms,
-    };
-    (speed * tail_ms, speed * (head_ms - tail_ms))
+/// Fill percentage drawn for a report, or `None` for the bouncing block.
+/// Pause without a value reads as complete; Set and Error without one bounce.
+fn progress_fill(state: ProgressState, value: Option<u8>) -> Option<f32> {
+    match (state, value) {
+        (ProgressState::Indeterminate | ProgressState::Remove, _) => None,
+        (_, Some(v)) => Some(v as f32),
+        (ProgressState::Pause, None) => Some(100.0),
+        (_, None) => None,
+    }
 }
 
-/// States drawn as a fill from the left edge. Switching between them keeps
-/// the fill in place instead of growing it in again.
-fn is_determinate(state: ProgressState) -> bool {
-    matches!(
-        state,
-        ProgressState::Set | ProgressState::Error | ProgressState::Pause
-    )
-}
-
-/// Draw a bar of `len` starting at `x`, wrapping the part that runs past the
-/// right edge back around to the left.
-fn draw_progress_segment(
-    sugarloaf: &mut Sugarloaf,
-    x: f32,
-    len: f32,
-    width: f32,
-    y: f32,
-    color: [f32; 4],
-) {
-    if width <= 0.0 || len <= 0.0 {
-        return;
-    }
-    let len = len.min(width);
-    let x = x.rem_euclid(width);
-    let head = (width - x).min(len);
-    sugarloaf.rect(None, x, y, head, PROGRESS_BAR_HEIGHT, color, 0.0, 0);
-    if len > head {
-        sugarloaf.rect(None, 0.0, y, len - head, PROGRESS_BAR_HEIGHT, color, 0.0, 0);
-    }
+/// Left edge of the bouncing block, in percent of the window width, at
+/// `elapsed` into the bounce. Eases in and out at each end.
+fn bounce_x(elapsed: Duration) -> f32 {
+    let ms = elapsed.as_millis() % (2 * PROGRESS_BOUNCE_MS);
+    let t = ms as f32 / PROGRESS_BOUNCE_MS as f32;
+    let t = if t <= 1.0 { t } else { 2.0 - t };
+    t * t * (3.0 - 2.0 * t) * (100.0 - PROGRESS_BOUNCE_LEN)
 }
 
 pub struct Island {
@@ -405,18 +376,26 @@ pub struct Island {
     progress_state: Option<ProgressState>,
     /// Current progress value (0-100)
     progress_value: Option<u8>,
-    /// When the *current* state began. Reset only when transitioning into a
-    /// new state, so the indeterminate animation phase is not yanked back to
-    /// zero by repeated identical OSC 9;4 reports (issue #1509).
+    /// When the bar started bouncing. Kept while it keeps bouncing, so the
+    /// animation phase is not yanked back to zero by repeated identical
+    /// OSC 9;4 reports (issue #1509).
     progress_started_at: Option<Instant>,
     /// Last time we saw an OSC 9;4 report — bumped on every report, used by
     /// the stale-bar dismissal timer. Decoupled from `progress_started_at`
     /// for the same reason.
     progress_last_seen: Option<Instant>,
-    /// When the bar was dismissed (OSC 9;4;0 or timeout). The state is kept
-    /// alive until the shrink-out finishes so the bar leaves gradually
-    /// instead of blinking off.
-    progress_exit_at: Option<Instant>,
+    /// Dismissed (OSC 9;4;0 or timeout): the state is kept until the bar has
+    /// eased down to nothing, so it leaves gradually instead of blinking off.
+    progress_exiting: bool,
+    /// Target bar length in percent of the window width.
+    progress_len_target: f32,
+    /// Offset of the drawn length from `progress_len_target`, eased to zero.
+    progress_len: Spring,
+    /// Offset of the drawn left edge from where the state puts it, eased to
+    /// zero.
+    progress_x: Spring,
+    /// Timestamp of the last progress spring advance, for per-frame dt.
+    progress_last_frame: Instant,
     /// Progress bar color
     pub progress_bar_color: [f32; 4],
     /// Progress bar error color
@@ -455,7 +434,11 @@ impl Island {
             progress_value: None,
             progress_started_at: None,
             progress_last_seen: None,
-            progress_exit_at: None,
+            progress_exiting: false,
+            progress_len_target: 0.0,
+            progress_len: Spring::new(),
+            progress_x: Spring::new(),
+            progress_last_frame: Instant::now(),
             // Default progress bar color (blue-ish)
             progress_bar_color: [0.3, 0.6, 1.0, 1.0],
             // Default error color (red-ish)
@@ -489,37 +472,68 @@ impl Island {
 
     /// Update the progress bar state from an OSC 9;4 report.
     ///
+    /// The drawn bar eases from wherever it is toward the new report, so
+    /// appearing, value changes, state switches and dismissal never pop.
     /// `progress_last_seen` is bumped on every (non-Remove) report so the
     /// stale-bar dismissal timer keeps the bar alive while the TUI is
-    /// actively reporting. `progress_started_at` is reset only when the
-    /// state actually transitions, so a TUI sending the same `OSC 9;4;3`
-    /// every 100 ms (issue #1509) doesn't yank the indeterminate animation
-    /// phase back to zero on every report.
+    /// actively reporting. `progress_started_at` is kept while the bar
+    /// keeps bouncing, so a TUI sending the same `OSC 9;4;3` every 100 ms
+    /// (issue #1509) doesn't yank the animation phase back to zero.
     pub fn set_progress_report(&mut self, report: ProgressReport) {
-        match report.state {
-            ProgressState::Remove => self.begin_progress_exit(),
-            new_state => {
-                let now = Instant::now();
-                self.progress_last_seen = Some(now);
+        if report.state == ProgressState::Remove {
+            self.begin_progress_exit();
+            return;
+        }
 
-                let transitioning = self.progress_state != Some(new_state);
-                let keeps_fill = self.progress_state.is_some_and(is_determinate)
-                    && is_determinate(new_state);
-                let resuming = self.progress_exit_at.take().is_some();
-                self.progress_state = Some(new_state);
-                self.progress_value = report.progress;
-                if resuming || (transitioning && !keeps_fill) {
-                    self.progress_started_at = Some(now);
+        let now = Instant::now();
+        self.wake_progress_clock(now);
+        self.progress_last_seen = Some(now);
+        self.progress_exiting = false;
+        self.progress_state = Some(report.state);
+        self.progress_value = report.progress;
+
+        match progress_fill(report.state, report.progress) {
+            Some(fill) => {
+                if let Some(started_at) = self.progress_started_at.take() {
+                    self.progress_x.position +=
+                        bounce_x(now.saturating_duration_since(started_at));
                 }
+                self.retarget_progress_len(fill);
+            }
+            None => {
+                self.progress_started_at.get_or_insert(now);
+                self.retarget_progress_len(PROGRESS_BOUNCE_LEN);
             }
         }
     }
 
-    /// Start the shrink-out. Idempotent: a repeated dismissal (or the
-    /// timeout firing every frame) must not restart the animation.
+    /// Move the length target while keeping the drawn length where it is,
+    /// so the bar eases into the new length. Motion away from the new target
+    /// is dropped, so a dismissed bar never grows on before it shrinks.
+    fn retarget_progress_len(&mut self, target: f32) {
+        let len = &mut self.progress_len;
+        len.position += self.progress_len_target - target;
+        if len.position * len.velocity > 0.0 {
+            len.velocity = 0.0;
+        }
+        self.progress_len_target = target;
+    }
+
+    /// Restart the frame clock when the bar was idle, so the first frame of
+    /// a new animation doesn't count the idle time.
+    fn wake_progress_clock(&mut self, now: Instant) {
+        if !self.progress_animating() {
+            self.progress_last_frame = now;
+        }
+    }
+
+    /// Start easing the bar down to nothing. Idempotent: a repeated dismissal
+    /// (or the timeout firing every frame) must not restart the animation.
     fn begin_progress_exit(&mut self) {
-        if self.progress_state.is_some() && self.progress_exit_at.is_none() {
-            self.progress_exit_at = Some(Instant::now());
+        if self.progress_state.is_some() && !self.progress_exiting {
+            self.wake_progress_clock(Instant::now());
+            self.progress_exiting = true;
+            self.retarget_progress_len(0.0);
         }
     }
 
@@ -528,18 +542,17 @@ impl Island {
         self.progress_value = None;
         self.progress_started_at = None;
         self.progress_last_seen = None;
-        self.progress_exit_at = None;
+        self.progress_exiting = false;
+        self.progress_len_target = 0.0;
+        self.progress_len.reset();
+        self.progress_x.reset();
     }
 
-    /// How far through the shrink-out the bar is (0..1), or `None` when it is
-    /// not leaving. Clears every progress field once the shrink finishes.
-    fn progress_exit_phase(&mut self) -> Option<f32> {
-        let phase =
-            self.progress_exit_at?.elapsed().as_millis() as f32 / PROGRESS_EDGE_MS;
-        if phase >= 1.0 {
-            self.clear_progress();
-        }
-        Some(phase)
+    fn progress_animating(&self) -> bool {
+        self.progress_started_at.is_some()
+            || self.progress_exiting
+            || self.progress_len.position != 0.0
+            || self.progress_x.position != 0.0
     }
 
     /// Check if the island needs continuous rendering (for animations)
@@ -547,14 +560,7 @@ impl Island {
         // A held drag doesn't need continuous frames: the floating tab
         // only moves on CursorMoved (which requests its own redraws);
         // only the slide springs animate between input events.
-        let progress_animating =
-            matches!(self.progress_state, Some(ProgressState::Indeterminate))
-                || self.progress_exit_at.is_some()
-                || self.progress_started_at.is_some_and(|t| {
-                    self.progress_state.is_some()
-                        && t.elapsed().as_millis() as f32 <= PROGRESS_EDGE_MS
-                });
-        progress_animating || !self.slide_springs.is_empty()
+        self.progress_animating() || !self.slide_springs.is_empty()
     }
 
     /// Arm a tab drag at mouse press. The drag only `started`s once the
@@ -737,10 +743,41 @@ impl Island {
     /// a long-running TUI that keeps reporting stays visible.
     fn check_progress_timeout(&mut self) {
         if let Some(last_seen) = self.progress_last_seen {
-            if last_seen.elapsed().as_secs() >= PROGRESS_BAR_TIMEOUT_SECS {
+            if last_seen.elapsed() >= PROGRESS_BAR_TIMEOUT {
                 self.begin_progress_exit();
             }
         }
+    }
+
+    /// Advance the progress animation to `now` and return the state plus the
+    /// drawn span (left edge, length) in percent of the window width.
+    fn progress_span(&mut self, now: Instant) -> Option<(ProgressState, f32, f32)> {
+        self.check_progress_timeout();
+
+        let dt = now
+            .saturating_duration_since(self.progress_last_frame)
+            .as_secs_f32()
+            .min(DRAG_MAX_DT);
+        self.progress_last_frame = now;
+        self.progress_len.update(dt, PROGRESS_EASE_SECS);
+        self.progress_x.update(dt, PROGRESS_EASE_SECS);
+        if self.progress_exiting && self.progress_len.position == 0.0 {
+            self.clear_progress();
+        }
+        let state = self.progress_state?;
+
+        // Phase is anchored to `progress_started_at` (kept while bouncing);
+        // using `progress_last_seen` here would freeze the block at position
+        // 0 for any TUI that heartbeats its OSC 9;4;3 faster than the bounce.
+        // (Issue #1509.)
+        let x = self
+            .progress_started_at
+            .map_or(0.0, |t| bounce_x(now.saturating_duration_since(t)))
+            + self.progress_x.position;
+        let len = self.progress_len_target + self.progress_len.position;
+        let left = x.max(0.0);
+        let right = (x + len).min(100.0);
+        Some((state, left, (right - left).max(0.0)))
     }
 
     /// Render the progress bar below the tab strip, or at the top when hidden.
@@ -751,16 +788,12 @@ impl Island {
         scale_factor: f32,
         y_position: f32,
     ) {
-        // Check for timeout first
-        self.check_progress_timeout();
-
-        // 0..1 through the shrink-out; at 1 the bar has been cleared for good.
-        let exit = self.progress_exit_phase();
-        let (Some(state), Some(started_at)) =
-            (self.progress_state, self.progress_started_at)
-        else {
+        let Some((state, left, len)) = self.progress_span(Instant::now()) else {
             return;
         };
+        if len <= 0.0 {
+            return;
+        }
 
         let width = window_width / scale_factor;
 
@@ -770,33 +803,16 @@ impl Island {
             _ => self.progress_bar_color,
         };
 
-        // Phase is anchored to `progress_started_at` (set only on state
-        // transition); using `progress_last_seen` here would freeze the bar
-        // at position 0 for any TUI that heartbeats its OSC 9;4;3 faster than
-        // the cycle. (Issue #1509.)
-        let elapsed = started_at.elapsed().as_millis() as f32;
-
-        let (x, bar_width) = match state {
-            ProgressState::Remove => return,
-            ProgressState::Set | ProgressState::Error | ProgressState::Pause => {
-                // The fill grows out of the left edge on arrival and retracts
-                // into it on dismissal, so it never pops in or out.
-                let target = width * self.progress_value.unwrap_or(0) as f32 / 100.0;
-                let grow = (elapsed / PROGRESS_EDGE_MS).min(1.0);
-                let shrink = exit.map_or(1.0, |e| 1.0 - e);
-                (0.0, target * grow * shrink)
-            }
-            ProgressState::Indeterminate => {
-                // Head time is frozen at dismissal so the tail runs into it.
-                let head_ms = match self.progress_exit_at {
-                    Some(t) => t.saturating_duration_since(started_at).as_millis() as f32,
-                    None => elapsed,
-                };
-                indeterminate_span(width, head_ms, exit)
-            }
-        };
-
-        draw_progress_segment(sugarloaf, x, bar_width, width, y_position, color);
+        sugarloaf.rect(
+            None,
+            width * left / 100.0,
+            y_position,
+            width * len / 100.0,
+            PROGRESS_BAR_HEIGHT,
+            color,
+            0.0,
+            0,
+        );
     }
 
     /// Get the height of the island
@@ -1688,92 +1704,6 @@ mod tests {
     }
 
     #[test]
-    fn indeterminate_block_grows_travels_wraps_and_shrinks() {
-        let w = 1000.0;
-        let full = w * PROGRESS_BAR_FRACTION;
-
-        // Starts at nothing on the left edge, then grows to its size.
-        assert_eq!(indeterminate_span(w, 0.0, None), (0.0, 0.0));
-        let (x, len) = indeterminate_span(w, PROGRESS_EDGE_MS / 2.0, None);
-        assert_eq!(x, 0.0);
-        assert!((len - full / 2.0).abs() < 0.01, "half-grown: {len}");
-        let (x, len) = indeterminate_span(w, PROGRESS_EDGE_MS, None);
-        assert_eq!(x, 0.0);
-        assert!((len - full).abs() < 0.01, "grown: {len}");
-
-        // Then moves at a constant length, no clamp at the right edge: the
-        // tail keeps walking past `width` so the head wraps around.
-        let (x, len) = indeterminate_span(w, PROGRESS_CYCLE_MS, None);
-        assert!((len - full).abs() < 0.01);
-        assert!((x - (w - full)).abs() < 0.01, "trailing edge: {x}");
-        let (x, len) = indeterminate_span(w, PROGRESS_CYCLE_MS + PROGRESS_EDGE_MS, None);
-        assert!((len - full).abs() < 0.01);
-        assert!((x.rem_euclid(w)).abs() < 0.01, "wrapped back to left: {x}");
-
-        // Dismissal shrinks the block into its frozen head instead of
-        // blinking it off.
-        let (_, half) = indeterminate_span(w, PROGRESS_CYCLE_MS, Some(0.5));
-        assert!((half - full / 2.0).abs() < 0.01, "half shrunk: {half}");
-        let (_, gone) = indeterminate_span(w, PROGRESS_CYCLE_MS, Some(1.0));
-        assert!(gone.abs() < 0.01, "fully shrunk: {gone}");
-    }
-
-    #[test]
-    fn determinate_state_switch_keeps_the_fill() {
-        let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(80),
-        });
-        let started = island.progress_started_at.unwrap();
-
-        std::thread::sleep(std::time::Duration::from_millis(15));
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Error,
-            progress: Some(80),
-        });
-        assert_eq!(
-            island.progress_started_at,
-            Some(started),
-            "Set -> Error keeps the bar instead of regrowing it"
-        );
-
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Indeterminate,
-            progress: None,
-        });
-        assert!(
-            island.progress_started_at.unwrap() > started,
-            "switching to indeterminate starts the travel from the edge"
-        );
-    }
-
-    #[test]
-    fn progress_report_mid_exit_cancels_the_shrink_and_regrows() {
-        let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Indeterminate,
-            progress: None,
-        });
-        let first_started = island.progress_started_at.unwrap();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Remove,
-            progress: None,
-        });
-
-        std::thread::sleep(std::time::Duration::from_millis(15));
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Indeterminate,
-            progress: None,
-        });
-        assert!(island.progress_exit_at.is_none());
-        assert!(
-            island.progress_started_at.unwrap() > first_started,
-            "a bar returning mid-exit grows back in from zero"
-        );
-    }
-
-    #[test]
     fn test_island_height() {
         let island =
             Island::new([0.8, 0.8, 0.8, 1.0], [1.0, 1.0, 1.0, 1.0], false, 240.0);
@@ -1829,51 +1759,180 @@ mod tests {
     }
 
     #[test]
-    fn progress_state_transition_resets_started_at() {
-        // Set → Indeterminate is a real state change, so the animation
-        // anchor should be reseated. (Set has no animation, but the
-        // started_at field still becomes meaningful as soon as we hit
-        // Indeterminate.)
+    fn progress_bounce_restarts_only_when_it_comes_back() {
         let mut island = test_island();
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Indeterminate,
+            progress: None,
+        });
+        let first = island.progress_started_at.unwrap();
+
         island.set_progress_report(ProgressReport {
             state: ProgressState::Set,
             progress: Some(50),
         });
-        let first = island.progress_started_at.unwrap();
+        assert!(
+            island.progress_started_at.is_none(),
+            "a fill does not bounce"
+        );
 
         std::thread::sleep(std::time::Duration::from_millis(15));
         island.set_progress_report(ProgressReport {
             state: ProgressState::Indeterminate,
             progress: None,
         });
-
         assert!(
             island.progress_started_at.unwrap() > first,
-            "transitioning into a new state must move started_at forward"
+            "bouncing again starts the sweep from the left edge"
         );
-        assert_eq!(island.progress_state, Some(ProgressState::Indeterminate));
     }
 
     #[test]
-    fn progress_set_value_change_does_not_reseat_started_at() {
-        // Same `Set` state with a different percentage is still the same
-        // state — only the value updates. started_at stays put; the bar
-        // just redraws at the new fraction.
+    fn progress_value_without_percentage_matches_the_state() {
+        assert_eq!(progress_fill(ProgressState::Set, Some(40)), Some(40.0));
+        assert_eq!(progress_fill(ProgressState::Error, Some(40)), Some(40.0));
+        assert_eq!(progress_fill(ProgressState::Pause, None), Some(100.0));
+        assert_eq!(progress_fill(ProgressState::Error, None), None);
+        assert_eq!(progress_fill(ProgressState::Set, None), None);
+        assert_eq!(progress_fill(ProgressState::Indeterminate, Some(30)), None);
+    }
+
+    #[test]
+    fn bounce_eases_across_and_back_without_drift() {
+        let ms = std::time::Duration::from_millis;
+        let far = 100.0 - PROGRESS_BOUNCE_LEN;
+        assert_eq!(bounce_x(ms(0)), 0.0);
+        assert_eq!(bounce_x(ms(PROGRESS_BOUNCE_MS as u64)), far);
+        assert_eq!(bounce_x(ms(2 * PROGRESS_BOUNCE_MS as u64)), 0.0);
+        assert_eq!(bounce_x(ms(300)), bounce_x(ms(2100)));
+        assert!(bounce_x(ms(120)) < far * 0.1);
+        let day = std::time::Duration::from_secs(86_400);
+        assert_eq!(bounce_x(day + ms(600)), bounce_x(ms(600)));
+    }
+
+    /// Run frames 16ms apart for `ms` and return the last drawn span.
+    fn step(island: &mut Island, ms: u64) -> Option<(f32, f32)> {
+        let mut span = None;
+        for _ in 0..ms.div_ceil(16) {
+            let now = island.progress_last_frame + std::time::Duration::from_millis(16);
+            span = island.progress_span(now).map(|(_, x, len)| (x, len));
+        }
+        span
+    }
+
+    fn report(island: &mut Island, state: ProgressState, progress: Option<u8>) {
+        island.set_progress_report(ProgressReport { state, progress });
+    }
+
+    #[test]
+    fn progress_fill_eases_in_and_between_values() {
         let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(20),
-        });
-        let first = island.progress_started_at.unwrap();
+        report(&mut island, ProgressState::Set, Some(80));
+        let (_, len) = step(&mut island, 16).unwrap();
+        assert!(len > 0.0 && len < 40.0, "grows in from nothing: {len}");
+        let (_, len) = step(&mut island, 800).unwrap();
+        assert!((len - 80.0).abs() < 0.1, "settles at the value: {len}");
+        assert!(!island.needs_redraw());
 
-        std::thread::sleep(std::time::Duration::from_millis(15));
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(60),
-        });
+        report(&mut island, ProgressState::Set, Some(20));
+        let (_, len) = step(&mut island, 16).unwrap();
+        assert!(len > 50.0, "eases toward the new value: {len}");
+        let (_, len) = step(&mut island, 800).unwrap();
+        assert!((len - 20.0).abs() < 0.1, "{len}");
+    }
 
-        assert_eq!(island.progress_started_at, Some(first));
-        assert_eq!(island.progress_value, Some(60));
+    #[test]
+    fn progress_state_switch_keeps_the_fill() {
+        let mut island = test_island();
+        report(&mut island, ProgressState::Set, Some(80));
+        step(&mut island, 800);
+
+        report(&mut island, ProgressState::Error, Some(80));
+        let (_, len) = step(&mut island, 16).unwrap();
+        assert!(
+            (len - 80.0).abs() < 0.1,
+            "Set -> Error keeps the bar: {len}"
+        );
+
+        report(&mut island, ProgressState::Error, None);
+        assert!(island.progress_started_at.is_some());
+        let (_, len) = step(&mut island, 16).unwrap();
+        assert!(len > 60.0, "eases down to the block: {len}");
+        let (_, len) = step(&mut island, 800).unwrap();
+        assert!((len - PROGRESS_BOUNCE_LEN).abs() < 0.1, "{len}");
+    }
+
+    #[test]
+    fn progress_bounce_to_fill_slides_back_to_the_edge() {
+        let mut island = test_island();
+        report(&mut island, ProgressState::Indeterminate, None);
+        step(&mut island, 800);
+        let ago = std::time::Duration::from_millis(600);
+        island.progress_started_at = Some(Instant::now() - ago);
+        let before = bounce_x(ago);
+
+        report(&mut island, ProgressState::Set, Some(50));
+        let (x, _) = step(&mut island, 16).unwrap();
+        assert!(x > before / 2.0, "slides instead of jumping: {x}");
+        let (x, len) = step(&mut island, 800).unwrap();
+        assert_eq!(x, 0.0);
+        assert!((len - 50.0).abs() < 0.1, "{len}");
+    }
+
+    #[test]
+    fn progress_dismissed_mid_grow_only_shrinks() {
+        let mut island = test_island();
+        report(&mut island, ProgressState::Set, Some(100));
+        let (_, mut prev) = step(&mut island, 48).unwrap();
+        report(&mut island, ProgressState::Remove, None);
+        assert!(island.needs_redraw());
+        while let Some((_, len)) = step(&mut island, 16) {
+            assert!(len <= prev + 0.5, "grew after dismissal: {prev} -> {len}");
+            prev = len;
+        }
+        assert!(island.progress_state.is_none());
+        assert!(!island.needs_redraw());
+    }
+
+    #[test]
+    fn progress_report_mid_exit_eases_back_from_where_it_is() {
+        let mut island = test_island();
+        report(&mut island, ProgressState::Set, Some(80));
+        step(&mut island, 800);
+        report(&mut island, ProgressState::Remove, None);
+        let (_, shrinking) = step(&mut island, 64).unwrap();
+        assert!(shrinking > 5.0 && shrinking < 75.0, "{shrinking}");
+
+        report(&mut island, ProgressState::Set, Some(80));
+        assert!(!island.progress_exiting);
+        let (_, len) = step(&mut island, 16).unwrap();
+        assert!(
+            len > shrinking / 2.0,
+            "no snap to zero: {shrinking} -> {len}"
+        );
+        let (_, len) = step(&mut island, 800).unwrap();
+        assert!((len - 80.0).abs() < 0.1, "{len}");
+
+        report(&mut island, ProgressState::Indeterminate, None);
+        let started = island.progress_started_at.unwrap();
+        report(&mut island, ProgressState::Remove, None);
+        step(&mut island, 32);
+        report(&mut island, ProgressState::Indeterminate, None);
+        assert_eq!(island.progress_started_at, Some(started));
+    }
+
+    #[test]
+    fn progress_times_out_into_the_shrink() {
+        let mut island = test_island();
+        report(&mut island, ProgressState::Set, Some(50));
+        step(&mut island, 800);
+        island.progress_last_seen = Some(
+            Instant::now() - PROGRESS_BAR_TIMEOUT - std::time::Duration::from_millis(1),
+        );
+        step(&mut island, 16);
+        assert!(island.progress_exiting);
+        step(&mut island, 800);
+        assert!(island.progress_state.is_none());
     }
 
     /// Each char = 1.0 wide, including the ellipsis. Easy arithmetic.
@@ -2151,32 +2210,23 @@ mod tests {
     #[test]
     fn progress_remove_shrinks_out_then_clears_all_progress_state() {
         let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(50),
-        });
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Remove,
-            progress: None,
-        });
+        report(&mut island, ProgressState::Set, Some(50));
+        step(&mut island, 800);
+        report(&mut island, ProgressState::Remove, None);
 
         // Still on screen and still animating: the bar retracts gradually
         // instead of blinking off.
         assert_eq!(island.progress_state, Some(ProgressState::Set));
-        assert!(island.progress_exit_at.is_some());
+        assert!(island.progress_exiting);
         assert!(island.needs_redraw());
 
         // Once the shrink-out has run its course everything is dropped.
-        island.progress_exit_at = Some(
-            Instant::now()
-                - std::time::Duration::from_millis(PROGRESS_EDGE_MS as u64 + 1),
-        );
-        assert!(island.progress_exit_phase().unwrap() >= 1.0);
+        assert!(step(&mut island, 800).is_none());
         assert!(island.progress_state.is_none());
         assert!(island.progress_value.is_none());
         assert!(island.progress_started_at.is_none());
         assert!(island.progress_last_seen.is_none());
-        assert!(island.progress_exit_at.is_none());
+        assert!(!island.progress_exiting);
         assert!(!island.needs_redraw());
     }
 }
