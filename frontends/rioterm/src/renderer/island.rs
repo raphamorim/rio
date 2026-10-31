@@ -364,6 +364,15 @@ fn indeterminate_span(width: f32, head_ms: f32, exit: Option<f32>) -> (f32, f32)
     (speed * tail_ms, speed * (head_ms - tail_ms))
 }
 
+/// States drawn as a fill from the left edge. Switching between them keeps
+/// the fill in place instead of growing it in again.
+fn is_determinate(state: ProgressState) -> bool {
+    matches!(
+        state,
+        ProgressState::Set | ProgressState::Error | ProgressState::Pause
+    )
+}
+
 /// Draw a bar of `len` starting at `x`, wrapping the part that runs past the
 /// right edge back around to the left.
 fn draw_progress_segment(
@@ -494,10 +503,12 @@ impl Island {
                 self.progress_last_seen = Some(now);
 
                 let transitioning = self.progress_state != Some(new_state);
+                let keeps_fill = self.progress_state.is_some_and(is_determinate)
+                    && is_determinate(new_state);
                 let resuming = self.progress_exit_at.take().is_some();
                 self.progress_state = Some(new_state);
                 self.progress_value = report.progress;
-                if transitioning || resuming {
+                if resuming || (transitioning && !keeps_fill) {
                     self.progress_started_at = Some(now);
                 }
             }
@@ -1705,6 +1716,36 @@ mod tests {
         assert!((half - full / 2.0).abs() < 0.01, "half shrunk: {half}");
         let (_, gone) = indeterminate_span(w, PROGRESS_CYCLE_MS, Some(1.0));
         assert!(gone.abs() < 0.01, "fully shrunk: {gone}");
+    }
+
+    #[test]
+    fn determinate_state_switch_keeps_the_fill() {
+        let mut island = test_island();
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Set,
+            progress: Some(80),
+        });
+        let started = island.progress_started_at.unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Error,
+            progress: Some(80),
+        });
+        assert_eq!(
+            island.progress_started_at,
+            Some(started),
+            "Set -> Error keeps the bar instead of regrowing it"
+        );
+
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Indeterminate,
+            progress: None,
+        });
+        assert!(
+            island.progress_started_at.unwrap() > started,
+            "switching to indeterminate starts the travel from the edge"
+        );
     }
 
     #[test]
