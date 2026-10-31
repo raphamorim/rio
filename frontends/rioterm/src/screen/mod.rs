@@ -3962,11 +3962,10 @@ impl Screen<'_> {
                     current.route_id,
                 );
 
-                let cursor_color = if current.renderable_content.is_vi_mode {
-                    self.renderer.named_colors.vi_cursor
-                } else {
-                    self.renderer.named_colors.cursor
-                };
+                let cursor_color = self.renderer.cursor_color(
+                    &current.renderable_content.term_colors,
+                    current.renderable_content.is_vi_mode,
+                );
                 self.renderer.trail_cursor.draw(
                     &mut self.sugarloaf,
                     scale_factor,
