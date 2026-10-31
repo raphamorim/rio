@@ -6,7 +6,8 @@ use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::grid::row::Row;
 use rio_backend::crosswords::pos::CursorState;
 use rio_backend::crosswords::square::Square;
-use rio_backend::event::TerminalDamage;
+use rio_backend::crosswords::Crosswords;
+use rio_backend::event::{EventListener, TerminalDamage};
 use rio_backend::selection::SelectionRange;
 use rustc_hash::FxHashMap;
 use std::time::Instant;
@@ -144,6 +145,95 @@ impl RenderableContent {
         }
     }
 
+    /// Copy the terminal's visible state into this snapshot, or keep the
+    /// last one while a synchronized update holds presentation. Returns
+    /// whether a new snapshot was taken.
+    pub fn update_from_terminal<U: EventListener>(
+        &mut self,
+        terminal: &mut Crosswords<U>,
+        force_full_damage: bool,
+    ) -> bool {
+        // Clear in-flight flag so PTY thread can notify again
+        terminal.damage_event_in_flight = false;
+
+        if terminal.synchronized_output() {
+            if force_full_damage {
+                self.pending_update
+                    .set_terminal_damage(TerminalDamage::Full);
+            }
+            self.pending_update.reset();
+            self.frame_damage = TerminalDamage::Noop;
+            self.kitty_graphics_dirty = false;
+            return false;
+        }
+
+        // UI-side damage (scroll, selection, resize, etc.)
+        let ui_terminal_damage = self.pending_update.take_terminal_damage();
+        self.pending_update.reset();
+
+        let pty_damage = terminal.peek_damage_event();
+
+        let damage = if force_full_damage {
+            TerminalDamage::Full
+        } else {
+            match (ui_terminal_damage, pty_damage) {
+                (Some(ui), Some(pty)) => PendingUpdate::merge_terminal_damages(ui, pty),
+                (Some(d), None) | (None, Some(d)) => d,
+                // UI-only damage (overlay hover, command-palette
+                // input, etc.): cells didn't change, but the
+                // panel still has to go through the render path
+                // so UI overlays paint on top of a fresh frame.
+                // Noop propagates to `RowsToRebuild::None` in
+                // `screen::render`'s emit loop — grid keeps its
+                // resident CPU bg/fg buffers, zero row work.
+                (None, None) => TerminalDamage::Noop,
+            }
+        };
+
+        terminal.reset_damage();
+
+        terminal.snapshot_visible(
+            &damage,
+            &mut self.visible_rows,
+            &mut self.row_styles,
+            &mut self.extras,
+        );
+        self.term_colors = terminal.colors;
+        self.display_offset = terminal.display_offset();
+        self.columns = terminal.columns();
+        self.screen_lines = terminal.screen_lines();
+        self.history_size = terminal.history_size();
+        self.lines_evicted = terminal.lines_evicted();
+        self.blinking_cursor = terminal.blinking_cursor;
+        self.cursor.state = terminal.cursor();
+        if terminal.graphics.kitty_graphics_dirty {
+            self.kitty_virtual_placements =
+                terminal.graphics.kitty_virtual_placements.clone();
+            self.kitty_images = terminal.graphics.kitty_images.clone();
+            self.kitty_placements = {
+                let mut placements: Vec<_> = terminal
+                    .graphics
+                    .kitty_placements
+                    .values()
+                    .filter(|p| terminal.graphics.kitty_images.contains_key(&p.image_id))
+                    .cloned()
+                    .collect();
+                // Tie-break on the unique key so equal
+                // z-indexes keep a stable paint order across
+                // frames (map iteration order is not).
+                placements.sort_by_key(|p| (p.z_index, p.image_id, p.placement_id));
+                placements
+            };
+            self.atlas_placements = terminal.graphics.atlas_placements.clone();
+            self.kitty_graphics_dirty = true;
+            terminal.graphics.kitty_graphics_dirty = false;
+        } else {
+            self.kitty_graphics_dirty = false;
+        }
+        self.frame_damage = damage;
+        true
+    }
+
     pub fn from_cursor_config(config_cursor: &CursorConfig) -> Self {
         let cursor = Cursor {
             content: config_cursor.shape.into(),
@@ -185,6 +275,11 @@ impl PendingUpdate {
             None => damage,
             Some(existing) => Self::merge_terminal_damages(existing, damage),
         });
+    }
+
+    #[cfg(test)]
+    pub fn has_terminal_damage(&self) -> bool {
+        self.terminal_damage.is_some()
     }
 
     /// Get and clear terminal damage
@@ -229,15 +324,14 @@ mod pipeline_tests {
     //! Any mutation path that dirties rows without viewport damage, or
     //! any frame classification that consumes damage without painting,
     //! fails here instead of as stale glyphs in someone's editor.
-    use super::PendingUpdate;
+    use super::RenderableContent;
     use rio_backend::ansi::CursorShape;
     use rio_backend::crosswords::grid::row::Row;
     use rio_backend::crosswords::pos::{Column, Line};
-    use rio_backend::crosswords::square::{Extras, Square};
+    use rio_backend::crosswords::square::Square;
     use rio_backend::crosswords::{Crosswords, CrosswordsSize};
     use rio_backend::event::{TerminalDamage, VoidListener, WindowId};
     use rio_backend::performer::handler::Processor;
-    use rustc_hash::FxHashMap;
 
     const COLS: usize = 40;
     const ROWS: usize = 12;
@@ -284,27 +378,23 @@ mod pipeline_tests {
         visible_range(term).any(|y| term.grid[Line(y)].dirty)
     }
 
-    /// The renderer's per-panel state: snapshot buffers plus the
+    /// The renderer's per-panel state: the real snapshot plus the
     /// painted mirror standing in for the GPU grid.
     struct Frame {
-        visible_rows: Vec<Row<Square>>,
-        row_styles: Vec<Vec<rio_backend::crosswords::style::Style>>,
-        extras: FxHashMap<u16, Extras>,
+        content: RenderableContent,
         painted: Vec<String>,
     }
 
     impl Frame {
         fn new() -> Self {
             Self {
-                visible_rows: Vec::new(),
-                row_styles: Vec::new(),
-                extras: FxHashMap::default(),
+                content: RenderableContent::new(Default::default()),
                 painted: vec![String::new(); ROWS],
             }
         }
 
-        /// Mirror of `renderer/mod.rs` consumption + `screen::render`
-        /// row-rebuild decisions, step for step.
+        /// `Renderer::run` consumption followed by a mirror of
+        /// `screen::render` row-rebuild decisions, step for step.
         fn consume(
             &mut self,
             term: &mut Crosswords<VoidListener>,
@@ -312,44 +402,36 @@ mod pipeline_tests {
         ) {
             let rows = term.screen_lines();
             let cols = term.columns();
-            term.damage_event_in_flight = false;
-            if term.synchronized_output() {
+            if let Some(ui) = ui.take() {
+                self.content.pending_update.set_terminal_damage(ui);
+            }
+            let snapshot_rows = self.content.visible_rows.len();
+            if !self.content.update_from_terminal(term, false) {
                 return;
             }
-            let ui = ui.take();
-            let pty = term.peek_damage_event();
-            let damage = match (ui, pty) {
-                (Some(u), Some(p)) => PendingUpdate::merge_terminal_damages(u, p),
-                (Some(d), None) | (None, Some(d)) => d,
-                (None, None) => TerminalDamage::Noop,
-            };
-            term.reset_damage();
+            let damage =
+                std::mem::replace(&mut self.content.frame_damage, TerminalDamage::Noop);
             let needs_full =
-                matches!(damage, TerminalDamage::Full) || self.visible_rows.len() != rows;
-            term.snapshot_visible(
-                &damage,
-                &mut self.visible_rows,
-                &mut self.row_styles,
-                &mut self.extras,
-            );
+                matches!(damage, TerminalDamage::Full) || snapshot_rows != rows;
+            let visible_rows = &mut self.content.visible_rows;
             self.painted.resize(rows, String::new());
             if needs_full {
                 // RowsToRebuild::All: rebuild everything, bits not
                 // cleared (matches screen::render).
-                for y in 0..self.visible_rows.len() {
-                    self.painted[y] = row_text(&self.visible_rows[y], cols);
+                for (painted, row) in self.painted.iter_mut().zip(visible_rows) {
+                    *painted = row_text(row, cols);
                 }
                 return;
             }
             match damage {
                 TerminalDamage::Full => unreachable!(),
                 TerminalDamage::Partial => {
-                    for y in 0..self.visible_rows.len() {
-                        if !self.visible_rows[y].dirty {
+                    for (painted, row) in self.painted.iter_mut().zip(visible_rows) {
+                        if !row.dirty {
                             continue;
                         }
-                        self.painted[y] = row_text(&self.visible_rows[y], cols);
-                        self.visible_rows[y].dirty = false;
+                        *painted = row_text(row, cols);
+                        row.dirty = false;
                     }
                 }
                 TerminalDamage::CursorOnly | TerminalDamage::Noop => {}
@@ -412,14 +494,16 @@ mod pipeline_tests {
         let before = frame.painted.clone();
 
         parser.advance(&mut term, b"\x1b[?2026h\x1b[1;1Hheld");
-        let mut ui = Some(TerminalDamage::Full);
-        frame.consume(&mut term, &mut ui);
+        frame.consume(&mut term, &mut Some(TerminalDamage::Full));
         assert_eq!(frame.painted, before);
-        assert!(ui.is_some(), "UI damage stays pending during the hold");
+        assert!(
+            frame.content.pending_update.has_terminal_damage(),
+            "UI damage stays pending during the hold"
+        );
 
         parser.advance(&mut term, b"\x1b[?2026l");
-        frame.consume(&mut term, &mut ui);
-        assert!(ui.is_none());
+        frame.consume(&mut term, &mut None);
+        assert!(!frame.content.pending_update.has_terminal_damage());
         assert_eq!(frame.painted, grid_text(&term));
     }
 

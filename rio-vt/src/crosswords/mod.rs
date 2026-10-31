@@ -807,6 +807,8 @@ impl<U: EventListener> Crosswords<U> {
         let num_cols = size.columns();
         let num_lines = size.screen_lines();
 
+        self.end_sync_update();
+
         if old_cols == num_cols && old_lines == num_lines {
             // Same grid, but the cell size may still have changed (a
             // font or DPI change that kept cols/rows constant). Keep
@@ -857,7 +859,6 @@ impl<U: EventListener> Crosswords<U> {
             info!("Crosswords::resize dimensions unchanged");
             return;
         }
-        self.end_sync_update();
         // Move vi mode cursor with the content.
         let history_size = self.history_size();
         let mut delta = num_lines as i32 - old_lines as i32;
@@ -5978,9 +5979,10 @@ mod tests {
         cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
         cw.resize(CrosswordsSize::new(4, 4));
         assert!(
-            cw.synchronized_output(),
-            "a resize that keeps the grid size does not end the update"
+            !cw.synchronized_output(),
+            "a resize that keeps the grid size still ends the update"
         );
+        cw.set_private_mode(NamedPrivateMode::SyncUpdate.into());
         cw.resize(CrosswordsSize::new(6, 4));
         assert!(!cw.synchronized_output(), "resize ends the update");
         assert!(cw.sync_update_started.is_none());

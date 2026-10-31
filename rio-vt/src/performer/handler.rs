@@ -809,7 +809,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
             // Legacy iTerm2 synchronized updates (`DCS = 1 s ST` begin,
             // `DCS = 2 s ST` end), the form older `Sync` terminfo
-            // capabilities advertise. Mirrors the CSI ?2026 intercepts.
+            // capabilities advertise. Same effect as CSI ?2026 h/l.
             ('s', [b'=']) => {
                 let param = params.iter().next().map(|p| p[0]).unwrap_or(0);
                 match param {
