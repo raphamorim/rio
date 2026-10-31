@@ -151,7 +151,6 @@ fn window_bg_alpha(config: &Config) -> f32 {
 pub use rio_backend::sugarloaf::{atlas_image_key, kitty_image_key, route_image_key};
 
 pub struct Renderer {
-    is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
     pub is_window_focused: bool,
     draw_bold_text_with_light_colors: bool,
@@ -248,7 +247,6 @@ impl Renderer {
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
-            is_vi_mode_enabled: false,
             config_has_blinking_enabled: config.cursor.blinking,
             is_window_focused: true,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
@@ -415,11 +413,6 @@ impl Renderer {
             return self.named_colors.vi_cursor;
         }
         term_colors[NamedColor::Cursor as usize].unwrap_or(self.named_colors.cursor)
-    }
-
-    #[inline]
-    pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
-        self.is_vi_mode_enabled = is_vi_mode_enabled;
     }
 
     // Get the RGB value for a color index.

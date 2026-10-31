@@ -1164,7 +1164,6 @@ impl Screen<'_> {
                         let context = self.context_manager.current_mut();
                         let mut terminal = context.terminal.lock();
                         terminal.toggle_vi_mode();
-                        let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
                         drop(terminal);
                         context
                             .renderable_content
@@ -1172,7 +1171,6 @@ impl Screen<'_> {
                             .set_terminal_damage(
                                 rio_backend::event::TerminalDamage::Full,
                             );
-                        self.renderer.set_vi_mode(has_vi_mode_enabled);
                         self.mark_dirty();
                     }
                     Act::ViMotion(motion) => {
@@ -4036,10 +4034,7 @@ impl Screen<'_> {
                 /// configured shape so the user can tell IME is
                 /// taking input.
                 cursor_preedit: bool,
-                /// Resolved cursor color: `vi-cursor` in Vi mode,
-                /// otherwise OSC 12 wins, then config / theme `cursor`.
-                /// `state.colors.cursor → config.cursor_color`
-                /// resolution. Per-panel
+                /// Resolved by `Renderer::cursor_color`. Per-panel
                 /// because each terminal can issue its own OSC 12.
                 cursor_color: rio_backend::config::colors::ColorArray,
                 is_active: bool,

@@ -488,6 +488,24 @@ mod pipeline_tests {
         }
     }
 
+    /// The snapshot records Vi mode so the cursor gets the `vi-cursor`
+    /// color.
+    #[test]
+    fn snapshot_tracks_vi_mode() {
+        let mut term = new_term();
+        let mut frame = Frame::new();
+        frame.consume(&mut term, &mut Some(TerminalDamage::Full));
+        assert!(!frame.content.is_vi_mode);
+
+        term.toggle_vi_mode();
+        frame.consume(&mut term, &mut Some(TerminalDamage::Full));
+        assert!(frame.content.is_vi_mode);
+
+        term.toggle_vi_mode();
+        frame.consume(&mut term, &mut Some(TerminalDamage::Full));
+        assert!(!frame.content.is_vi_mode);
+    }
+
     /// A held frame paints nothing and keeps its UI damage for the frame
     /// after the synchronized update ends.
     #[test]
