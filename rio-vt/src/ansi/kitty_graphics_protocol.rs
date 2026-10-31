@@ -1454,6 +1454,21 @@ fn open_image_file(
 /// path check. On unix the path read back from the handle must still name
 /// the opened inode, which rejects memfds and deleted files reached through
 /// /proc/self/fd.
+/// Whether `path` still names the inode `file` has open.
+#[cfg(unix)]
+fn names_open_file(path: &std::path::Path, file: &std::fs::File) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (std::fs::metadata(path), file.metadata()) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+        _ => false,
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn names_open_file(_path: &std::path::Path, _file: &std::fs::File) -> bool {
+    true
+}
+
 fn validate_open_file(
     file: &std::fs::File,
     path: &std::path::Path,
@@ -1473,15 +1488,10 @@ fn validate_open_file(
     };
     #[cfg(not(windows))]
     let real = {
-        use std::os::unix::fs::MetadataExt;
         let real = opened_path(file)
             .or_else(|| std::fs::canonicalize(path).ok())
             .ok_or(GraphicError::FileNotFound)?;
-        let same_file = match (std::fs::metadata(&real), file.metadata()) {
-            (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
-            _ => false,
-        };
-        if !same_file {
+        if !names_open_file(&real, file) {
             return Err(GraphicError::InvalidData);
         }
         real
