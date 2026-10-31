@@ -1164,7 +1164,6 @@ impl Screen<'_> {
                         let context = self.context_manager.current_mut();
                         let mut terminal = context.terminal.lock();
                         terminal.toggle_vi_mode();
-                        let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
                         drop(terminal);
                         context
                             .renderable_content
@@ -1172,7 +1171,6 @@ impl Screen<'_> {
                             .set_terminal_damage(
                                 rio_backend::event::TerminalDamage::Full,
                             );
-                        self.renderer.set_vi_mode(has_vi_mode_enabled);
                         self.mark_dirty();
                     }
                     Act::ViMotion(motion) => {
@@ -3962,7 +3960,10 @@ impl Screen<'_> {
                     current.route_id,
                 );
 
-                let cursor_color = self.renderer.named_colors.cursor;
+                let cursor_color = self.renderer.cursor_color(
+                    &current.renderable_content.term_colors,
+                    current.renderable_content.is_vi_mode,
+                );
                 self.renderer.trail_cursor.draw(
                     &mut self.sugarloaf,
                     scale_factor,
@@ -4033,10 +4034,7 @@ impl Screen<'_> {
                 /// configured shape so the user can tell IME is
                 /// taking input.
                 cursor_preedit: bool,
-                /// Resolved cursor color: OSC 12 wins, then config /
-                /// theme `cursor`.
-                /// `state.colors.cursor → config.cursor_color`
-                /// resolution. Per-panel
+                /// Resolved by `Renderer::cursor_color`. Per-panel
                 /// because each terminal can issue its own OSC 12.
                 cursor_color: rio_backend::config::colors::ColorArray,
                 is_active: bool,
@@ -4188,14 +4186,11 @@ impl Screen<'_> {
                     None
                 };
                 let cursor_preedit = preedit_line.is_some();
-                // OSC 12 wins; otherwise fall back to the named-color
-                // theme value. `Renderer::color`'s fallback (the
-                // indexed-color List) is not populated for the Cursor
-                // slot — `List::fill_named` skips it — so we read
-                // `named_colors.cursor` directly.
-                let cursor_color = term_colors
-                    [rio_backend::config::colors::NamedColor::Cursor as usize]
-                    .unwrap_or(self.renderer.named_colors.cursor);
+                // `vi-cursor` in Vi mode; otherwise OSC 12, then the
+                // theme `cursor`.
+                let cursor_color = self
+                    .renderer
+                    .cursor_color(&term_colors, ctx.renderable_content.is_vi_mode);
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
