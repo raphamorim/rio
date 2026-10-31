@@ -17,11 +17,10 @@ pub mod search;
 pub mod trail_cursor;
 pub mod utils;
 
-use rio_backend::event::TerminalDamage;
-
-use crate::context::renderable::{PendingUpdate, RenderableContent};
+use crate::context::renderable::RenderableContent;
 use crate::context::ContextManager;
 use crate::crosswords::style::{Style as CellStyle, StyleFlags};
+use crate::screen::hint::HintMatches;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
@@ -29,6 +28,7 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
+use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::text::DrawOpts;
 use rio_backend::sugarloaf::Sugarloaf;
@@ -447,6 +447,7 @@ impl Renderer {
         &mut self,
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
+        mut search: Option<Option<&mut RegexSearch>>,
     ) -> (Option<crate::context::renderable::WindowUpdate>, bool) {
         let mut any_panel_dirty = false;
         let grid = context_manager.current_grid_mut();
@@ -471,88 +472,25 @@ impl Renderer {
                 // No updates pending, skip rendering
                 continue;
             }
-            any_panel_dirty = true;
-
-            // UI-side damage (scroll, selection, resize, etc.)
-            let ui_terminal_damage = context
-                .renderable_content
-                .pending_update
-                .take_terminal_damage();
-            context.renderable_content.pending_update.reset();
 
             {
                 let mut terminal = context.terminal.lock();
-
-                // Clear in-flight flag so PTY thread can notify again
-                terminal.damage_event_in_flight = false;
-
-                let pty_damage = terminal.peek_damage_event();
-
-                let damage = if force_full_damage {
-                    TerminalDamage::Full
-                } else {
-                    match (ui_terminal_damage, pty_damage) {
-                        (Some(ui), Some(pty)) => {
-                            PendingUpdate::merge_terminal_damages(ui, pty)
-                        }
-                        (Some(d), None) | (None, Some(d)) => d,
-                        // UI-only damage (overlay hover, command-palette
-                        // input, etc.): cells didn't change, but the
-                        // panel still has to go through the render path
-                        // so UI overlays paint on top of a fresh frame.
-                        // Noop propagates to `RowsToRebuild::None` in
-                        // `screen::render`'s emit loop — grid keeps its
-                        // resident CPU bg/fg buffers, zero row work.
-                        (None, None) => TerminalDamage::Noop,
-                    }
-                };
-
-                terminal.reset_damage();
-
-                terminal.snapshot_visible(
-                    &damage,
-                    &mut context.renderable_content.visible_rows,
-                    &mut context.renderable_content.row_styles,
-                    &mut context.renderable_content.extras,
-                );
-                context.renderable_content.term_colors = terminal.colors;
-                context.renderable_content.display_offset = terminal.display_offset();
-                context.renderable_content.columns = terminal.columns();
-                context.renderable_content.screen_lines = terminal.screen_lines();
-                context.renderable_content.history_size = terminal.history_size();
-                context.renderable_content.lines_evicted = terminal.lines_evicted();
-                context.renderable_content.blinking_cursor = terminal.blinking_cursor;
-                context.renderable_content.cursor.state = terminal.cursor();
-                if terminal.graphics.kitty_graphics_dirty {
-                    context.renderable_content.kitty_virtual_placements =
-                        terminal.graphics.kitty_virtual_placements.clone();
-                    context.renderable_content.kitty_images =
-                        terminal.graphics.kitty_images.clone();
-                    context.renderable_content.kitty_placements = {
-                        let mut placements: Vec<_> = terminal
-                            .graphics
-                            .kitty_placements
-                            .values()
-                            .filter(|p| {
-                                terminal.graphics.kitty_images.contains_key(&p.image_id)
-                            })
-                            .cloned()
-                            .collect();
-                        // Tie-break on the unique key so equal
-                        // z-indexes keep a stable paint order across
-                        // frames (map iteration order is not).
-                        placements
-                            .sort_by_key(|p| (p.z_index, p.image_id, p.placement_id));
-                        placements
-                    };
-                    context.renderable_content.atlas_placements =
-                        terminal.graphics.atlas_placements.clone();
-                    context.renderable_content.kitty_graphics_dirty = true;
-                    terminal.graphics.kitty_graphics_dirty = false;
-                } else {
-                    context.renderable_content.kitty_graphics_dirty = false;
+                any_panel_dirty = true;
+                let snapshotted = context
+                    .renderable_content
+                    .update_from_terminal(&mut terminal, force_full_damage);
+                if let Some(dfas) = search
+                    .as_mut()
+                    .filter(|_| snapshotted && context.route_id == active_route)
+                {
+                    context.renderable_content.hint_matches =
+                        dfas.as_deref_mut().map(|dfas| {
+                            HintMatches::visible_regex_matches(&terminal, dfas)
+                                .iter()
+                                .cloned()
+                                .collect()
+                        });
                 }
-                context.renderable_content.frame_damage = damage;
                 drop(terminal);
             }
 

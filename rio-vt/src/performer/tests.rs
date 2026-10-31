@@ -220,9 +220,9 @@ fn child_exit_drains_multiple_budgets_and_finishes_pending_sync() {
     let (registration, readiness) = corcovado::Registration::new2();
     machine.pty.child = Some(registration);
     readiness.set_readiness(Ready::readable()).unwrap();
-    let (machine, state) = machine.spawn().join().unwrap();
+    let (machine, _) = machine.spawn().join().unwrap();
     assert_eq!(first_line(&machine, 12), "final output");
-    assert_eq!(state.parser.sync_bytes_count(), 0);
+    assert!(!machine.terminal.lock().synchronized_output());
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
 }
@@ -250,11 +250,11 @@ fn read_failure_shuts_down_pty_and_finishes_pending_sync() {
     machine.pty.child = Some(registration);
     machine.pty.read_event = true;
     readiness.set_readiness(Ready::readable()).unwrap();
-    let (machine, state) = machine.spawn().join().unwrap();
+    let (machine, _) = machine.spawn().join().unwrap();
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
     assert_eq!(first_line(&machine, 12), "final output");
-    assert_eq!(state.parser.sync_bytes_count(), 0);
+    assert!(!machine.terminal.lock().synchronized_output());
 }
 
 #[derive(Clone)]
@@ -339,4 +339,125 @@ fn explicit_shutdown_finalizes_once() {
     let (machine, _) = machine.spawn().join().unwrap();
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
+}
+
+#[derive(Clone)]
+struct EventRecorder(mpsc::Sender<&'static str>);
+
+impl EventListener for EventRecorder {
+    fn send_event(&self, event: RioEvent, _: WindowId) {
+        let name = match event {
+            RioEvent::TerminalDamaged(_) => "damaged",
+            RioEvent::ChildExited(..) => "exited",
+            _ => return,
+        };
+        let _ = self.0.send(name);
+    }
+}
+
+/// A hold still open when the child exits is ended and announced as
+/// damage, so the renderer repaints the panel it had stopped drawing.
+#[test]
+fn pending_sync_at_exit_is_announced_as_damage() {
+    let (sender, receiver) = mpsc::channel();
+    let recorder = EventRecorder(sender);
+    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        recorder.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let mut pty = machine(
+        b"\x1b[?2026hfinal output".to_vec(),
+        Some(ErrorKind::WouldBlock),
+    )
+    .pty;
+    let (registration, readiness) = corcovado::Registration::new2();
+    pty.child = Some(registration);
+    readiness.set_readiness(Ready::readable()).unwrap();
+    let machine =
+        Machine::new(terminal.clone(), pty, recorder, WindowId::from(0), 0).unwrap();
+    machine.spawn().join().unwrap();
+
+    let events: Vec<_> = receiver.try_iter().collect();
+    let damaged = events.iter().position(|e| *e == "damaged");
+    let exited = events.iter().position(|e| *e == "exited");
+    assert!(damaged.is_some(), "events: {events:?}");
+    assert!(damaged < exited, "events: {events:?}");
+    assert!(!terminal.lock().synchronized_output());
+}
+
+type RecordingMachine = (
+    Machine<TestPty, EventRecorder>,
+    mpsc::Receiver<&'static str>,
+    Arc<FairMutex<Crosswords<EventRecorder>>>,
+);
+
+fn recording_machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> RecordingMachine {
+    let (sender, receiver) = mpsc::channel();
+    let recorder = EventRecorder(sender);
+    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        recorder.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let pty = machine(bytes, ending).pty;
+    let machine =
+        Machine::new(terminal.clone(), pty, recorder, WindowId::from(0), 0).unwrap();
+    (machine, receiver, terminal)
+}
+
+/// Reads inside a hold do not wake the renderer; the read that ends it
+/// does, even when it changes no cells.
+#[test]
+fn sync_hold_suppresses_damage_until_esu() {
+    let (mut machine, events, terminal) = recording_machine(
+        b"\x1b[?2026h\x1b[1;1Hheld".to_vec(),
+        Some(ErrorKind::WouldBlock),
+    );
+    let mut state = State::default();
+    let mut buf = vec![0; READ_BUFFER_SIZE];
+
+    machine.pty_read(&mut state, &mut buf).unwrap();
+    assert!(terminal.lock().synchronized_output());
+    assert_eq!(events.try_iter().collect::<Vec<_>>(), Vec::<&str>::new());
+
+    machine.pty.bytes = io::Cursor::new(b"\x1b[?2026l".to_vec());
+    machine.pty_read(&mut state, &mut buf).unwrap();
+    assert!(!terminal.lock().synchronized_output());
+    assert_eq!(events.try_iter().collect::<Vec<_>>(), vec!["damaged"]);
+}
+
+/// A hold that never ends is ended by the event loop once its deadline
+/// passes, and the renderer is woken.
+#[test]
+fn sync_hold_times_out_and_wakes_the_renderer() {
+    let (mut machine, events, terminal) = recording_machine(
+        b"\x1b[?2026h\x1b[1;1Hheld".to_vec(),
+        Some(ErrorKind::WouldBlock),
+    );
+    let (registration, readiness) = corcovado::Registration::new2();
+    machine.pty.child = Some(registration);
+    machine.pty.read_event = true;
+    readiness.set_readiness(Ready::readable()).unwrap();
+    let channel = machine.channel();
+    let worker = machine.spawn();
+
+    let started = std::time::Instant::now();
+    let first = events.recv_timeout(Duration::from_secs(5));
+    let elapsed = started.elapsed();
+    channel.send(Msg::Shutdown).unwrap();
+    worker.join().unwrap();
+
+    assert_eq!(first, Ok("damaged"));
+    assert!(
+        elapsed >= crate::crosswords::SYNC_UPDATE_TIMEOUT / 2,
+        "woken after {elapsed:?}, before the deadline"
+    );
+    assert!(!terminal.lock().synchronized_output());
 }

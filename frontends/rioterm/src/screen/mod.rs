@@ -28,7 +28,6 @@ use crate::layout::ContextDimension;
 use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::renderer::island::{self, TabStripLayout, ISLAND_HEIGHT};
 use crate::renderer::{utils::padding_top_from_config, Renderer};
-use crate::screen::hint::HintMatches;
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
@@ -3895,32 +3894,24 @@ impl Screen<'_> {
         }
 
         if is_search_active {
-            // Update search hints in renderable content
-            let terminal = self.context_manager.current().terminal.lock();
-            let hints = self
-                .search_state
-                .dfas_mut()
-                .map(|dfas| HintMatches::visible_regex_matches(&terminal, dfas));
-            drop(terminal);
-
+            // Force invalidation for search with full damage
             self.context_manager
                 .current_mut()
                 .renderable_content
-                .hint_matches = hints.map(|h| h.iter().cloned().collect());
-
-            // Force invalidation for search with full damage
-            {
-                let current = self.context_manager.current_mut();
-                current
-                    .renderable_content
-                    .pending_update
-                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
-            }
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
         }
 
-        let (window_update, any_panel_dirty) = self
-            .renderer
-            .run(&mut self.sugarloaf, &mut self.context_manager);
+        let search_dfas = if is_search_active {
+            Some(self.search_state.dfas_mut())
+        } else {
+            None
+        };
+        let (window_update, any_panel_dirty) = self.renderer.run(
+            &mut self.sugarloaf,
+            &mut self.context_manager,
+            search_dfas,
+        );
 
         if self.renderer.custom_mouse_cursor {
             let scale = self.sugarloaf.scale_factor();

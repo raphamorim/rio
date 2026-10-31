@@ -6,11 +6,8 @@ use crate::ansi::{sixel, KeyboardModes, KeyboardModesApplyBehavior};
 use crate::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use crate::crosswords::pos::{CharsetIndex, Column, Line, StandardCharset};
 use crate::crosswords::square::Hyperlink;
-use crate::time::Instant;
 use cursor_icon::CursorIcon;
 use rio_graphics::GraphicData;
-use std::mem;
-use std::time::Duration;
 use tracing::{debug, warn};
 
 use crate::crosswords::attr::Attr;
@@ -25,34 +22,6 @@ use std::fmt::Write;
 // https://vt100.net/emu/dec_ansi_parser
 use super::osc;
 use super::parser::{Params, ParamsIter, Parser, Perform};
-
-/// Maximum time before a synchronized update is aborted.
-const SYNC_UPDATE_TIMEOUT: Duration = Duration::from_millis(150);
-
-/// Maximum number of bytes read in one synchronized update (2MiB).
-const SYNC_BUFFER_SIZE: usize = 0x20_0000;
-
-/// Number of bytes in the BSU/ESU CSI sequences.
-const SYNC_ESCAPE_LEN: usize = 8;
-
-/// BSU CSI sequence for beginning or extending synchronized updates.
-const BSU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026h";
-
-/// Shortest synchronized-update escape (the DCS form).
-const SYNC_ESCAPE_MIN_LEN: usize = 7;
-
-/// BSU in the legacy iTerm2 DCS form (`DCS = 1 s ST`). Terminfo files in
-/// the wild advertise this via the `Sync` capability, and tmux brackets
-/// every redraw with whatever that capability says, so both forms must
-/// gate presentation or a multiplexer believes its frames are atomic
-/// while the terminal paints mid-redraw states.
-const BSU_DCS: [u8; SYNC_ESCAPE_MIN_LEN] = *b"\x1bP=1s\x1b\\";
-
-/// ESU CSI sequence for terminating synchronized updates.
-const ESU_CSI: [u8; SYNC_ESCAPE_LEN] = *b"\x1b[?2026l";
-
-/// ESU in the legacy iTerm2 DCS form (`DCS = 2 s ST`).
-const ESU_DCS: [u8; SYNC_ESCAPE_MIN_LEN] = *b"\x1bP=2s\x1b\\";
 
 fn parse_sgr_color(params: &mut impl Iterator<Item = u16>) -> Option<AnsiColor> {
     match params.next() {
@@ -499,23 +468,11 @@ struct ProcessorState {
     /// Last processed character for repetition.
     preceding_char: Option<char>,
 
-    /// State for synchronized terminal updates.
-    sync_state: SyncState,
-
     /// State for XTGETTCAP requests.
     xtgettcap_state: XtgettcapState,
 
     /// State for APC (Application Program Command) sequences.
     apc_state: ApcState,
-}
-
-#[derive(Debug)]
-struct SyncState {
-    /// Expiration time of the synchronized update.
-    timeout: StdSyncHandler,
-
-    /// Bytes read during the synchronized update.
-    buffer: Vec<u8>,
 }
 
 #[derive(Debug, Default)]
@@ -539,50 +496,6 @@ struct ApcState {
     buffer: Vec<u8>,
 }
 
-impl Default for SyncState {
-    fn default() -> Self {
-        Self {
-            buffer: Vec::with_capacity(SYNC_BUFFER_SIZE),
-            timeout: Default::default(),
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct StdSyncHandler {
-    timeout: Option<Instant>,
-}
-
-impl StdSyncHandler {
-    /// Synchronized update expiration time.
-    #[inline]
-    pub fn sync_timeout(&self) -> Option<Instant> {
-        self.timeout
-    }
-
-    #[inline]
-    fn set_timeout(&mut self, duration: Duration) {
-        self.timeout = Some(Instant::now() + duration);
-    }
-
-    #[inline]
-    fn clear_timeout(&mut self) {
-        self.timeout = None;
-    }
-
-    #[inline]
-    fn pending_timeout(&self) -> bool {
-        self.timeout.is_some()
-    }
-
-    /// Whether an armed synchronized update has outlived its deadline.
-    #[inline]
-    fn expired(&self) -> bool {
-        self.timeout
-            .is_some_and(|deadline| deadline <= Instant::now())
-    }
-}
-
 #[derive(Default)]
 pub struct Processor {
     state: ProcessorState,
@@ -590,156 +503,18 @@ pub struct Processor {
 }
 
 impl Processor {
-    /// Synchronized update timeout.
-    pub fn sync_timeout(&self) -> &StdSyncHandler {
-        &self.state.sync_state.timeout
-    }
-
     /// Process a new byte from the PTY.
+    ///
+    /// Bytes are always applied to the grid. A synchronized update only sets
+    /// `SyncUpdate` on the handler so the renderer holds the last frame
+    /// until it ends.
     #[inline]
     pub fn advance<H>(&mut self, handler: &mut H, bytes: &[u8])
     where
         H: Handler,
     {
-        if self.state.sync_state.timeout.pending_timeout() {
-            // Cap synchronized-update latency for embedders that do not
-            // drive the timeout externally: once the deadline has passed,
-            // flush the buffered update before processing new bytes. Event
-            // loops that poll `sync_timeout()` (like Rio's machine) flush at
-            // the deadline itself and never reach this branch.
-            if self.state.sync_state.timeout.expired() {
-                self.stop_sync(handler);
-                let mut performer = Performer::new(&mut self.state, handler);
-                self.parser.advance(&mut performer, bytes);
-            } else {
-                self.advance_sync(handler, bytes);
-            }
-        } else {
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, bytes);
-        }
-    }
-
-    /// End a synchronized update.
-    pub fn stop_sync<H>(&mut self, handler: &mut H)
-    where
-        H: Handler,
-    {
-        self.stop_sync_internal(handler, None);
-    }
-
-    /// End a synchronized update.
-    ///
-    /// The `bsu_offset` parameter should be passed if the sync buffer contains
-    /// a new BSU escape that is not part of the current synchronized
-    /// update.
-    fn stop_sync_internal<H>(&mut self, handler: &mut H, bsu_offset: Option<usize>)
-    where
-        H: Handler,
-    {
-        // Process all synchronized bytes. BSU sequences are processed
-        // automatically during the synchronized update.
-        let buffer = mem::take(&mut self.state.sync_state.buffer);
-        let offset = bsu_offset.unwrap_or(buffer.len());
         let mut performer = Performer::new(&mut self.state, handler);
-        self.parser.advance(&mut performer, &buffer[..offset]);
-        self.state.sync_state.buffer = buffer;
-
-        match bsu_offset {
-            // Just clear processed bytes if there is a new BSU.
-            //
-            // NOTE: We do not need to re-process for a new ESU since the `advance_sync`
-            // function checks for BSUs in reverse.
-            Some(bsu_offset) => {
-                let new_len = self.state.sync_state.buffer.len() - bsu_offset;
-                self.state.sync_state.buffer.copy_within(bsu_offset.., 0);
-                self.state.sync_state.buffer.truncate(new_len);
-
-                // Replaying the processed bytes may have parsed an inline ESU
-                // that cleared the timeout, but this BSU is still pending.
-                self.state
-                    .sync_state
-                    .timeout
-                    .set_timeout(SYNC_UPDATE_TIMEOUT);
-            }
-            // Report mode and clear state if no new BSU is present.
-            None => {
-                handler.unset_private_mode(NamedPrivateMode::SyncUpdate.into());
-                self.state.sync_state.timeout.clear_timeout();
-                self.state.sync_state.buffer.clear();
-            }
-        }
-    }
-
-    /// Number of bytes in the synchronization buffer.
-    #[inline]
-    pub fn sync_bytes_count(&self) -> usize {
-        self.state.sync_state.buffer.len()
-    }
-
-    /// Process a new byte during a synchronized update.
-    #[cold]
-    fn advance_sync<H>(&mut self, handler: &mut H, bytes: &[u8])
-    where
-        H: Handler,
-    {
-        // Advance sync parser or stop sync if we'd exceed the maximum buffer size.
-        if self.state.sync_state.buffer.len() + bytes.len() >= SYNC_BUFFER_SIZE - 1 {
-            // Terminate the synchronized update.
-            self.stop_sync_internal(handler, None);
-
-            // Just parse the bytes normally.
-            let mut performer = Performer::new(&mut self.state, handler);
-            self.parser.advance(&mut performer, bytes);
-        } else {
-            self.state.sync_state.buffer.extend(bytes);
-            self.advance_sync_csi(handler, bytes.len());
-        }
-    }
-
-    /// Handle BSU/ESU CSI sequences during synchronized update.
-    fn advance_sync_csi<H>(&mut self, handler: &mut H, new_bytes: usize)
-    where
-        H: Handler,
-    {
-        // Get constraints within which a new escape character might be
-        // relevant. The lookback covers the longest escape; the scan end
-        // leaves room for the shortest, with per-candidate bounds checks
-        // below covering the difference.
-        let buffer_len = self.state.sync_state.buffer.len();
-        let start_offset = (buffer_len - new_bytes).saturating_sub(SYNC_ESCAPE_LEN - 1);
-        let end_offset = buffer_len.saturating_sub(SYNC_ESCAPE_MIN_LEN - 1);
-        let search_buffer = &self.state.sync_state.buffer[start_offset..end_offset];
-
-        // Search for termination/extension escapes in the added bytes.
-        //
-        // NOTE: It is technically legal to specify multiple private modes in the same
-        // escape, but we only allow EXACTLY `\e[?2026h`/`\e[?2026l` (or their DCS
-        // `\eP=1s\e\\`/`\eP=2s\e\\` equivalents) to keep the parser more simple.
-        let mut bsu_offset = None;
-        for index in memchr::memchr_iter(0x1B, search_buffer).rev() {
-            let offset = start_offset + index;
-            let buffer = &self.state.sync_state.buffer;
-            let is_bsu = buffer.get(offset..offset + SYNC_ESCAPE_LEN)
-                == Some(BSU_CSI.as_slice())
-                || buffer.get(offset..offset + SYNC_ESCAPE_MIN_LEN)
-                    == Some(BSU_DCS.as_slice());
-            let is_esu = buffer.get(offset..offset + SYNC_ESCAPE_LEN)
-                == Some(ESU_CSI.as_slice())
-                || buffer.get(offset..offset + SYNC_ESCAPE_MIN_LEN)
-                    == Some(ESU_DCS.as_slice());
-
-            if is_bsu {
-                self.state
-                    .sync_state
-                    .timeout
-                    .set_timeout(SYNC_UPDATE_TIMEOUT);
-                bsu_offset = Some(offset);
-            } else if is_esu {
-                self.stop_sync_internal(handler, bsu_offset);
-                break;
-            }
-        }
+        self.parser.advance(&mut performer, bytes);
     }
 }
 
@@ -1034,20 +809,15 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
             // Legacy iTerm2 synchronized updates (`DCS = 1 s ST` begin,
             // `DCS = 2 s ST` end), the form older `Sync` terminfo
-            // capabilities advertise. Mirrors the CSI ?2026 intercepts.
+            // capabilities advertise. Same effect as CSI ?2026 h/l.
             ('s', [b'=']) => {
                 let param = params.iter().next().map(|p| p[0]).unwrap_or(0);
                 match param {
                     1 => {
-                        self.state
-                            .sync_state
-                            .timeout
-                            .set_timeout(SYNC_UPDATE_TIMEOUT);
                         self.handler
                             .set_private_mode(NamedPrivateMode::SyncUpdate.into());
                     }
                     2 => {
-                        self.state.sync_state.timeout.clear_timeout();
                         self.handler
                             .unset_private_mode(NamedPrivateMode::SyncUpdate.into());
                     }
@@ -1358,14 +1128,6 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
             ('h', [b'?']) => {
                 for param in params_iter.map(|param| param[0]) {
-                    // Handle sync updates opaquely.
-                    if param == NamedPrivateMode::SyncUpdate as u16 {
-                        self.state
-                            .sync_state
-                            .timeout
-                            .set_timeout(SYNC_UPDATE_TIMEOUT);
-                    }
-
                     handler.set_private_mode(PrivateMode::new(param))
                 }
             }
@@ -1429,11 +1191,6 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
             ('l', [b'?']) => {
                 for param in params_iter.map(|param| param[0]) {
-                    // Handle sync updates opaquely.
-                    if param == NamedPrivateMode::SyncUpdate as u16 {
-                        self.state.sync_state.timeout.clear_timeout();
-                    }
-
                     handler.unset_private_mode(PrivateMode::new(param))
                 }
             }
@@ -2241,11 +1998,27 @@ mod tests {
     #[derive(Default)]
     struct SyncHandler {
         printed: String,
+        synced: bool,
+        sync_changes: usize,
     }
 
     impl Handler for SyncHandler {
         fn input(&mut self, c: char) {
             self.printed.push(c);
+        }
+
+        fn set_private_mode(&mut self, mode: PrivateMode) {
+            if mode == NamedPrivateMode::SyncUpdate.into() {
+                self.synced = true;
+                self.sync_changes += 1;
+            }
+        }
+
+        fn unset_private_mode(&mut self, mode: PrivateMode) {
+            if mode == NamedPrivateMode::SyncUpdate.into() {
+                self.synced = false;
+                self.sync_changes += 1;
+            }
         }
     }
 
@@ -2320,32 +2093,31 @@ mod tests {
     }
 
     #[test]
-    fn sync_update_inline_bsu_esu_disarms_timeout() {
+    fn sync_update_inline_bsu_esu() {
         let mut handler = SyncHandler::default();
         let mut processor = Processor::default();
 
         processor.advance(&mut handler, b"a\x1b[?2026hb\x1b[?2026lc");
 
         assert_eq!(handler.printed, "abc");
-        assert!(processor.sync_timeout().sync_timeout().is_none());
-        assert_eq!(processor.sync_bytes_count(), 0);
+        assert!(!handler.synced);
     }
 
+    /// Bytes inside an update reach the handler immediately; only the mode
+    /// tells the renderer to hold. This includes the rest of the read that
+    /// carried the BSU.
     #[test]
-    fn sync_update_buffers_across_chunks_until_esu() {
+    fn sync_update_applies_bytes_and_holds_until_esu() {
         let mut handler = SyncHandler::default();
         let mut processor = Processor::default();
 
-        processor.advance(&mut handler, b"\x1b[?2026h");
-        assert!(processor.sync_timeout().sync_timeout().is_some());
+        processor.advance(&mut handler, b"a\x1b[?2026hhidden");
+        assert_eq!(handler.printed, "ahidden");
+        assert!(handler.synced);
 
-        processor.advance(&mut handler, b"hidden");
-        assert_eq!(handler.printed, "");
-
-        processor.advance(&mut handler, b"\x1b[?2026l");
-        assert_eq!(handler.printed, "hidden");
-        assert!(processor.sync_timeout().sync_timeout().is_none());
-        assert_eq!(processor.sync_bytes_count(), 0);
+        processor.advance(&mut handler, b"more\x1b[?2026lc");
+        assert_eq!(handler.printed, "ahiddenmorec");
+        assert!(!handler.synced);
     }
 
     /// The legacy iTerm2 DCS form (`DCS = 1 s ST` / `DCS = 2 s ST`) must
@@ -2353,32 +2125,28 @@ mod tests {
     /// capabilities in the wild advertise this form, and tmux brackets
     /// its redraws with whatever the capability says.
     #[test]
-    fn sync_update_dcs_form_inline_disarms_timeout() {
+    fn sync_update_dcs_form_holds_until_esu() {
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1bP=1s\x1b\\hidden");
+        assert_eq!(handler.printed, "hidden");
+        assert!(handler.synced);
+
+        processor.advance(&mut handler, b"\x1bP=2s\x1b\\");
+        assert!(!handler.synced);
+    }
+
+    #[test]
+    fn sync_update_dcs_form_inline_bsu_esu() {
         let mut handler = SyncHandler::default();
         let mut processor = Processor::default();
 
         processor.advance(&mut handler, b"a\x1bP=1s\x1b\\b\x1bP=2s\x1b\\c");
 
         assert_eq!(handler.printed, "abc");
-        assert!(processor.sync_timeout().sync_timeout().is_none());
-        assert_eq!(processor.sync_bytes_count(), 0);
-    }
-
-    #[test]
-    fn sync_update_dcs_form_buffers_across_chunks_until_esu() {
-        let mut handler = SyncHandler::default();
-        let mut processor = Processor::default();
-
-        processor.advance(&mut handler, b"\x1bP=1s\x1b\\");
-        assert!(processor.sync_timeout().sync_timeout().is_some());
-
-        processor.advance(&mut handler, b"hidden");
-        assert_eq!(handler.printed, "");
-
-        processor.advance(&mut handler, b"\x1bP=2s\x1b\\");
-        assert_eq!(handler.printed, "hidden");
-        assert!(processor.sync_timeout().sync_timeout().is_none());
-        assert_eq!(processor.sync_bytes_count(), 0);
+        assert!(!handler.synced);
+        assert_eq!(handler.sync_changes, 2);
     }
 
     /// A DCS end may terminate a CSI-started update and the other way
@@ -2388,88 +2156,27 @@ mod tests {
         let mut handler = SyncHandler::default();
         let mut processor = Processor::default();
 
-        processor.advance(&mut handler, b"\x1b[?2026h");
-        processor.advance(&mut handler, b"one");
-        processor.advance(&mut handler, b"\x1bP=2s\x1b\\");
-        assert_eq!(handler.printed, "one");
+        processor.advance(&mut handler, b"\x1b[?2026hone\x1bP=2s\x1b\\");
+        assert!(!handler.synced);
 
-        processor.advance(&mut handler, b"\x1bP=1s\x1b\\");
-        processor.advance(&mut handler, b"two");
-        assert_eq!(handler.printed, "one");
-        processor.advance(&mut handler, b"\x1b[?2026l");
+        processor.advance(&mut handler, b"\x1bP=1s\x1b\\two\x1b[?2026l");
+        assert!(!handler.synced);
         assert_eq!(handler.printed, "onetwo");
-        assert!(processor.sync_timeout().sync_timeout().is_none());
     }
 
-    /// A DCS sync marker split across reads must still be recognized
-    /// once complete (the scanner re-examines the lookback window).
+    /// A sync marker split across reads is recognized once complete.
     #[test]
-    fn sync_update_dcs_form_split_across_chunks() {
+    fn sync_update_marker_split_across_chunks() {
         let mut handler = SyncHandler::default();
         let mut processor = Processor::default();
 
-        processor.advance(&mut handler, b"\x1bP=1s\x1b\\");
-        processor.advance(&mut handler, b"hidden\x1bP=2");
-        assert_eq!(handler.printed, "");
+        processor.advance(&mut handler, b"\x1b[?20");
+        assert!(!handler.synced);
+        processor.advance(&mut handler, b"26hx\x1bP=2");
+        assert!(handler.synced);
         processor.advance(&mut handler, b"s\x1b\\after");
-        assert_eq!(handler.printed, "hiddenafter");
-        assert!(processor.sync_timeout().sync_timeout().is_none());
-    }
-
-    #[test]
-    fn sync_update_stop_sync_flushes_pending_bytes() {
-        let mut handler = SyncHandler::default();
-        let mut processor = Processor::default();
-
-        processor.advance(&mut handler, b"\x1b[?2026h");
-        processor.advance(&mut handler, b"pending");
-        assert_eq!(handler.printed, "");
-
-        processor.stop_sync(&mut handler);
-        assert_eq!(handler.printed, "pending");
-        assert!(processor.sync_timeout().sync_timeout().is_none());
-        assert_eq!(processor.sync_bytes_count(), 0);
-    }
-
-    /// Embedders without an event loop never poll `sync_timeout()`; an
-    /// expired deadline must flush on the next `advance` call instead of
-    /// buffering until `SYNC_BUFFER_SIZE`.
-    #[test]
-    fn sync_update_expired_deadline_flushes_on_next_advance() {
-        let mut handler = SyncHandler::default();
-        let mut processor = Processor::default();
-
-        processor.advance(&mut handler, b"\x1b[?2026h");
-        processor.advance(&mut handler, b"hidden");
-        assert_eq!(handler.printed, "");
-
-        // Simulate the deadline passing without an ESU arriving.
-        processor.state.sync_state.timeout.timeout = Some(
-            Instant::now()
-                .checked_sub(Duration::from_millis(1))
-                .unwrap_or_else(Instant::now),
-        );
-
-        processor.advance(&mut handler, b" visible");
-        assert_eq!(handler.printed, "hidden visible");
-        assert!(processor.sync_timeout().sync_timeout().is_none());
-        assert_eq!(processor.sync_bytes_count(), 0);
-    }
-
-    #[test]
-    fn sync_update_new_bsu_in_replayed_buffer_stays_armed() {
-        let mut handler = SyncHandler::default();
-        let mut processor = Processor::default();
-
-        processor.advance(&mut handler, b"\x1b[?2026h");
-        processor.advance(&mut handler, b"\x1b[?2026l\x1b[?2026htwo");
-        assert_eq!(handler.printed, "");
-        assert!(processor.sync_timeout().sync_timeout().is_some());
-
-        processor.advance(&mut handler, b"\x1b[?2026l");
-        assert_eq!(handler.printed, "two");
-        assert!(processor.sync_timeout().sync_timeout().is_none());
-        assert_eq!(processor.sync_bytes_count(), 0);
+        assert!(!handler.synced);
+        assert_eq!(handler.printed, "xafter");
     }
 
     #[test]
