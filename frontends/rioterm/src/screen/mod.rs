@@ -129,8 +129,13 @@ pub struct ScreenWindowProperties {
     pub window_id: rio_window::window::WindowId,
 }
 
+/// True when the window can present an opaque surface (no per-pixel alpha
+/// needed). Shared with `router::window`: on Windows the
+/// `WS_EX_NOREDIRECTIONBITMAP` style and the DX12 DirectComposition path are
+/// only used when this returns false (with the GPU renderer active), so both
+/// sides must agree or the window ends up without a presentable surface.
 #[inline]
-fn window_should_be_opaque(config: &rio_backend::config::Config) -> bool {
+pub(crate) fn window_should_be_opaque(config: &rio_backend::config::Config) -> bool {
     config.window.opacity >= 1.0 && !config.window.blur.is_glass()
 }
 
@@ -171,8 +176,35 @@ impl Screen<'_> {
             },
         };
 
+        // A transparent Windows window needs a DirectComposition swap
+        // chain. wgpu only creates that for DX12; Vulkan's legacy HWND
+        // path reports PreMultiplied but DWM still composites it opaque
+        // on current drivers. Keep this cfg-gated: macOS builds without
+        // the wgpu feature do not have the wgpu crate in scope.
+        // A transparent GPU window uses DX12 + DirectComposition. The
+        // window builder must also have enabled WS_EX_NOREDIRECTIONBITMAP
+        // for that path; honoring an explicit false here keeps the old
+        // HWND behavior available as an escape hatch.
+        let windows_dcomp = cfg!(target_os = "windows")
+            && !config.renderer.use_cpu
+            && !window_should_be_opaque(config)
+            && config
+                .window
+                .windows_use_no_redirection_bitmap
+                .unwrap_or(true);
+        #[cfg(all(target_os = "windows", wgpu_backend))]
+        let windows_transparent_backend = if windows_dcomp {
+            Some(SugarloafBackend::Wgpu(wgpu::Backends::DX12))
+        } else {
+            None
+        };
+        #[cfg(not(all(target_os = "windows", wgpu_backend)))]
+        let windows_transparent_backend: Option<SugarloafBackend> = None;
+
         let backend = if config.renderer.use_cpu {
             SugarloafBackend::Cpu
+        } else if let Some(backend) = windows_transparent_backend {
+            backend
         } else {
             // `wgpu_backend` (see build.rs): rioterm's own `wgpu`
             // feature, or Windows, where sugarloaf and rio-backend get
@@ -214,6 +246,7 @@ impl Screen<'_> {
             // `window.opacity < 1` does. Fixed at surface creation; a
             // live-reloaded opacity change takes effect on restart.
             prefer_alpha_capable_adapter: !window_should_be_opaque(config),
+            windows_dcomp,
         };
 
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(
