@@ -919,6 +919,40 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
     })
 }
 
+pub(crate) fn key_for_binding(
+    logical_key: &Key,
+    unmodified_key: Key,
+    text: Option<&str>,
+    mods: ModifiersState,
+) -> Key {
+    if cfg!(windows) && matches!(logical_key, Key::Unidentified(_)) {
+        // Ctrl+Alt can lose its logical key: https://github.com/rust-windowing/winit/issues/2945.
+        if mods.control_key()
+            && mods.alt_key()
+            && matches!(unmodified_key, Key::Character(_))
+        {
+            return unmodified_key;
+        }
+
+        // VK_PACKET supplies text without a layout-derived logical key.
+        return text
+            .filter(|text| text.chars().count() == 1)
+            .map(|text| Key::Character(text.to_lowercase().into()))
+            .unwrap_or_else(|| logical_key.clone());
+    }
+
+    if let Key::Character(ch) = logical_key {
+        // Shift/Alt bindings use the base character, not composed text.
+        if mods.shift_key() || mods.alt_key() {
+            unmodified_key
+        } else {
+            Key::Character(ch.to_lowercase().into())
+        }
+    } else {
+        logical_key.clone()
+    }
+}
+
 /// Legacy (non-kitty) C0 byte for a ctrl+character combo, using the
 /// same table and modifier discipline as kitty. The platform is
 /// inconsistent about synthesizing these (ctrl+6, ctrl+/), so the byte
@@ -1334,6 +1368,135 @@ mod tests {
     use rio_window::keyboard::ModifiersState;
 
     type MockBinding = Binding<usize>;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_unidentified_ctrl_alt_matches_custom_binding() {
+        use rio_window::keyboard::NativeKey;
+
+        let mods = ModifiersState::CONTROL | ModifiersState::ALT;
+        for ch in ['n', 'e', 'd', 'm', 'g'] {
+            let binding = convert(ConfigKeyBinding {
+                key: ch.to_string(),
+                with: "control | alt".into(),
+                action: "CreateTab".into(),
+                esc: String::new(),
+                mode: String::new(),
+            })
+            .unwrap();
+            let key = key_for_binding(
+                &Key::Unidentified(NativeKey::Windows(ch.to_ascii_uppercase() as u16)),
+                Key::Character(ch.to_string().into()),
+                None,
+                mods,
+            );
+            assert!(binding.is_triggered_by(
+                BindingMode::empty(),
+                mods,
+                &BindingKey::Keycode {
+                    key,
+                    location: KeyLocation::Standard
+                },
+            ));
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_unicode_packet_matches_custom_binding() {
+        use rio_window::keyboard::NativeKey;
+
+        let unidentified = Key::Unidentified(NativeKey::Windows(0xe7));
+        for text in ["\u{e010}", "\u{e018}", "\u{1f680}"] {
+            let binding = convert(ConfigKeyBinding {
+                key: text.into(),
+                esc: "\x1b[101;7u".into(),
+                with: String::new(),
+                action: String::new(),
+                mode: String::new(),
+            })
+            .unwrap();
+            let key = key_for_binding(
+                &unidentified,
+                unidentified.clone(),
+                Some(text),
+                ModifiersState::empty(),
+            );
+            assert!(binding.is_triggered_by(
+                BindingMode::empty(),
+                ModifiersState::empty(),
+                &BindingKey::Keycode {
+                    key,
+                    location: KeyLocation::Standard
+                },
+            ));
+        }
+        for text in [None, Some(""), Some("ab"), Some("a\u{301}")] {
+            assert_eq!(
+                key_for_binding(
+                    &unidentified,
+                    unidentified.clone(),
+                    text,
+                    ModifiersState::empty()
+                ),
+                unidentified,
+            );
+        }
+    }
+
+    #[test]
+    fn binding_key_preserves_character_and_named_key_rules() {
+        let a = Key::Character("a".into());
+        for mods in [
+            ModifiersState::empty(),
+            ModifiersState::SHIFT,
+            ModifiersState::ALT,
+        ] {
+            assert_eq!(
+                key_for_binding(&Key::Character("A".into()), a.clone(), Some("A"), mods),
+                a
+            );
+        }
+        assert_eq!(
+            key_for_binding(
+                &Key::Character("\u{e5}".into()),
+                a.clone(),
+                Some("\u{e5}"),
+                ModifiersState::ALT
+            ),
+            a
+        );
+        assert_eq!(
+            key_for_binding(
+                &Key::Character("!".into()),
+                Key::Character("1".into()),
+                Some("!"),
+                ModifiersState::SHIFT
+            ),
+            Key::Character("1".into())
+        );
+        let enter = Key::Named(Enter);
+        assert_eq!(
+            key_for_binding(
+                &enter,
+                enter.clone(),
+                Some("\r"),
+                ModifiersState::CONTROL | ModifiersState::ALT
+            ),
+            enter
+        );
+        let unidentified =
+            Key::Unidentified(rio_window::keyboard::NativeKey::Unidentified);
+        assert_eq!(
+            key_for_binding(&unidentified, a.clone(), None, ModifiersState::CONTROL),
+            unidentified
+        );
+        #[cfg(not(windows))]
+        assert_eq!(
+            key_for_binding(&unidentified, a, Some("\u{e010}"), ModifiersState::empty()),
+            unidentified
+        );
+    }
 
     impl Default for MockBinding {
         fn default() -> Self {
