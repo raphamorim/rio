@@ -133,7 +133,15 @@ pub(crate) fn create_key_event(
                 // The key may be one of the funky function keys
                 physical_key = extra_function_key_to_code(scancode, &characters);
             }
-            Some(SmolStr::new(characters))
+            // AppKit reports keypad Enter as ETX (0x03), which is the same
+            // byte as Ctrl+C. Report it as a carriage return like Return.
+            if physical_key == PhysicalKey::Code(KeyCode::NumpadEnter)
+                && characters == "\u{3}"
+            {
+                Some(SmolStr::new_inline("\r"))
+            } else {
+                Some(SmolStr::new(characters))
+            }
         }
     };
 
