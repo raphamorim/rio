@@ -30,6 +30,13 @@ const MAX_OSC_PARAMS: usize = 16;
 /// `OscBuffer::overflow`.
 const OSC_FIXED_LEN: usize = 2048;
 
+/// Upper bound on the bytes one OSC sequence may hold. An OSC whose
+/// terminator never arrives would otherwise grow `OscBuffer::overflow`
+/// for as long as the program keeps writing. Bytes past the bound are
+/// discarded and the sequence is dropped when it ends, so a handler never
+/// sees a cut-off payload. 32 MiB leaves room for large OSC 52 pastes.
+const OSC_MAX_LEN: usize = 32 * 1024 * 1024;
+
 /// Parser for raw _VTE_ protocol which delegates actions to a [`Perform`].
 #[derive(Default)]
 pub struct Parser {
@@ -60,6 +67,9 @@ struct OscBuffer {
     fixed: [u8; OSC_FIXED_LEN],
     fixed_len: usize,
     overflow: Vec<u8>,
+    /// Set once bytes past `OSC_MAX_LEN` were discarded; the sequence is
+    /// then dropped at `osc_end` instead of being dispatched.
+    truncated: bool,
 }
 
 impl Default for OscBuffer {
@@ -68,6 +78,7 @@ impl Default for OscBuffer {
             fixed: [0; OSC_FIXED_LEN],
             fixed_len: 0,
             overflow: Vec::new(),
+            truncated: false,
         }
     }
 }
@@ -96,6 +107,10 @@ impl OscBuffer {
             self.overflow
                 .extend_from_slice(&self.fixed[..self.fixed_len]);
         }
+        if self.overflow.len() >= OSC_MAX_LEN {
+            self.truncated = true;
+            return;
+        }
         self.overflow.push(byte);
     }
 
@@ -116,6 +131,12 @@ impl OscBuffer {
             self.overflow
                 .extend_from_slice(&self.fixed[..self.fixed_len]);
         }
+        let room = OSC_MAX_LEN.saturating_sub(self.overflow.len());
+        if bytes.len() > room {
+            self.truncated = true;
+            self.overflow.extend_from_slice(&bytes[..room]);
+            return;
+        }
         self.overflow.extend_from_slice(bytes);
     }
 
@@ -131,9 +152,15 @@ impl OscBuffer {
     #[inline]
     fn clear(&mut self) {
         self.fixed_len = 0;
-        // Keep `overflow`'s capacity so a session that hits one large paste
-        // doesn't re-allocate on the next one.
-        self.overflow.clear();
+        if self.truncated {
+            // A sequence that hit the cap gives its memory back.
+            self.overflow = Vec::new();
+            self.truncated = false;
+        } else {
+            // Keep `overflow`'s capacity so a session that hits one large
+            // paste doesn't re-allocate on the next one.
+            self.overflow.clear();
+        }
     }
 }
 
@@ -805,7 +832,11 @@ impl Parser {
 
     fn osc_end<P: Perform>(&mut self, performer: &mut P, byte: u8) {
         self.action_osc_put_param();
-        self.osc_dispatch(performer, byte);
+        // A payload cut at `OSC_MAX_LEN` is dropped whole rather than
+        // handed to the performer half-complete.
+        if !self.osc_raw.truncated {
+            self.osc_dispatch(performer, byte);
+        }
         self.osc_raw.clear();
         self.osc_num_params = 0;
     }
@@ -2046,6 +2077,43 @@ mod tests {
                 assert_eq!(params[1].len(), NUM_BYTES + INPUT_END.len());
                 assert_eq!(params[1][0], b's');
                 assert!(params[1][1..].iter().all(|&b| b == b'a'));
+            }
+            _ => panic!("expected osc sequence"),
+        }
+    }
+
+    #[test]
+    fn osc_past_max_len_is_capped_and_dropped() {
+        // An OSC that never terminates must not grow the heap without
+        // bound, and once it does end its cut-off payload must not be
+        // dispatched. The next OSC parses as usual.
+        let chunk = vec![b'a'; 1024 * 1024];
+        let chunks = OSC_MAX_LEN / chunk.len() + 8;
+
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::default();
+
+        parser.advance(&mut dispatcher, b"\x1b]52;c;");
+        for _ in 0..chunks {
+            parser.advance(&mut dispatcher, &chunk);
+        }
+        assert!(
+            parser.osc_raw.len() <= OSC_MAX_LEN,
+            "osc buffer grew to {} bytes",
+            parser.osc_raw.len()
+        );
+
+        parser.advance(&mut dispatcher, b"\x07\x1b]0;title\x07");
+        assert!(
+            parser.osc_raw.overflow.capacity() < OSC_MAX_LEN,
+            "a dropped osc must give its memory back"
+        );
+        assert_eq!(dispatcher.dispatched.len(), 1);
+        match &dispatcher.dispatched[0] {
+            Sequence::Osc(params, _) => {
+                assert_eq!(params.len(), 2);
+                assert_eq!(params[0], b"0");
+                assert!(params[1].starts_with(b"title"));
             }
             _ => panic!("expected osc sequence"),
         }
