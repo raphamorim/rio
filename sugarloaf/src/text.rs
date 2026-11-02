@@ -6,6 +6,10 @@
 use crate::font::FontLibrary;
 use rustc_hash::FxHashMap;
 
+/// Runs one generation of the shape cache holds. Two generations stay
+/// resident, so at most twice this many runs are kept.
+const SHAPE_CACHE_GENERATION: usize = 2048;
+
 // `pos` is **pixel-space top-left** of the glyph's text bounding box.
 // `bearings.x` shifts it right to the glyph bitmap's left edge;
 // `bearings.y` shifts it down to the bitmap top. The vertex shader
@@ -158,6 +162,9 @@ pub struct Text {
     wght_variation_cache: FxHashMap<u32, Option<f32>>,
     ascent_cache: FxHashMap<(u32, u16), i16>,
     shape_cache: FxHashMap<u64, ShapedRun>,
+    /// The previous generation of `shape_cache`. A hit moves the run
+    /// back into the current generation; the next turn drops the rest.
+    shape_cache_old: FxHashMap<u64, ShapedRun>,
 
     #[cfg(target_os = "macos")]
     handle_cache: FxHashMap<u32, crate::font::macos::FontHandle>,
@@ -189,6 +196,7 @@ impl Text {
             wght_variation_cache: FxHashMap::default(),
             ascent_cache: FxHashMap::default(),
             shape_cache: FxHashMap::default(),
+            shape_cache_old: FxHashMap::default(),
             #[cfg(target_os = "macos")]
             handle_cache: FxHashMap::default(),
             #[cfg(target_os = "macos")]
@@ -304,6 +312,10 @@ impl Text {
         let hash = shape_hash(font_id, size_bucket, style_flags, text);
         if let Some(entry) = self.shape_cache.get(&hash) {
             return Some(entry.clone());
+        }
+        if let Some(entry) = self.shape_cache_old.remove(&hash) {
+            self.insert_shaped(hash, entry.clone());
+            return Some(entry);
         }
 
         let (synthetic_bold, synthetic_italic) = match self.synthesis_cache.entry(font_id)
@@ -437,8 +449,19 @@ impl Text {
             ascent_px,
             glyphs,
         };
-        self.shape_cache.insert(hash, run.clone());
+        self.insert_shaped(hash, run.clone());
         Some(run)
+    }
+
+    /// Put a shaped run in the current generation. A full generation
+    /// becomes the old one first and the old one is dropped, so at most
+    /// two generations stay resident. Clearing on a cap instead would
+    /// re-shape every visible run in a single frame.
+    fn insert_shaped(&mut self, hash: u64, run: ShapedRun) {
+        if self.shape_cache.len() >= SHAPE_CACHE_GENERATION {
+            self.shape_cache_old = std::mem::take(&mut self.shape_cache);
+        }
+        self.shape_cache.insert(hash, run);
     }
 
     //  Emit pipeline — rasterize + push TextInstance
@@ -2008,5 +2031,72 @@ fn blit_text_color(
             let idx = buf_row + (dst_x as usize);
             buf[idx] = blend_premul_over(src, buf[idx]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const GEN: usize = SHAPE_CACHE_GENERATION;
+
+    fn resident(text: &Text) -> usize {
+        text.shape_cache.len() + text.shape_cache_old.len()
+    }
+
+    fn shape(text: &mut Text, s: &str) -> Vec<(u16, f32, f32)> {
+        text.shape_for(s, &DrawOpts::default())
+            .map(|run| run.glyphs.iter().map(|g| (g.id, g.x, g.y)).collect())
+            .unwrap_or_default()
+    }
+
+    fn shape_distinct(text: &mut Text, from: usize, count: usize) {
+        for i in from..from + count {
+            shape(text, &format!("row {i} hello"));
+        }
+    }
+
+    // Overlays that draw many distinct strings must not keep every
+    // run ever shaped: at most two generations stay resident.
+    #[test]
+    fn shape_cache_stays_within_two_generations() {
+        let library = FontLibrary::default();
+        let mut text = Text::new(&library);
+        let first = shape(&mut text, "row 0 hello");
+        assert!(!first.is_empty(), "the control run must shape");
+        shape_distinct(&mut text, 1, 3 * GEN);
+        let count = resident(&text);
+        assert!(
+            count <= 2 * GEN,
+            "{count} runs resident, more than two generations of {GEN}"
+        );
+        // An evicted run shapes again to the same glyphs.
+        assert_eq!(shape(&mut text, "row 0 hello"), first);
+    }
+
+    // A run hit in the old generation moves back into the current one
+    // and survives the next generation turn; an untouched neighbour
+    // from the same generation does not.
+    #[test]
+    fn recently_used_run_survives_generation_turn() {
+        let library = FontLibrary::default();
+        let mut text = Text::new(&library);
+        shape(&mut text, "kept");
+        shape(&mut text, "dropped");
+        // Fill the rest of the generation and turn it once: both runs
+        // are now in the old generation.
+        shape_distinct(&mut text, 0, GEN - 2);
+        shape_distinct(&mut text, GEN, 1);
+        // Touch "kept" so it moves to the current generation, then
+        // turn the generation again.
+        shape(&mut text, "kept");
+        shape_distinct(&mut text, GEN + 1, GEN - 1);
+        // "kept" is a hit: the resident count does not change.
+        let before = resident(&text);
+        shape(&mut text, "kept");
+        assert_eq!(resident(&text), before, "kept run was evicted");
+        // "dropped" is a miss: it is shaped and inserted again.
+        shape(&mut text, "dropped");
+        assert_eq!(resident(&text), before + 1, "dropped run survived");
     }
 }
