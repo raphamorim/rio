@@ -14,13 +14,16 @@
 //!
 //! Reference: <https://github.com/tmux/tmux/wiki/Control-Mode>
 
+pub mod keys;
 pub mod layout;
 pub mod protocol;
 #[cfg(feature = "pty")]
 pub mod session;
 
 use crate::time::Instant;
+use keys::TmuxKeys;
 use layout::LayoutNode;
+use std::sync::Arc;
 
 /// Longest run of `send-keys` bytes per command. tmux has no hard limit, but
 /// a paste should not become a single multi-megabyte line.
@@ -41,6 +44,7 @@ pub struct TmuxWindow {
 pub struct TmuxSnapshot {
     pub windows: Vec<TmuxWindow>,
     pub active_window: Option<u32>,
+    pub keys: Arc<TmuxKeys>,
 }
 
 /// Destination for one pane's output. Implemented by

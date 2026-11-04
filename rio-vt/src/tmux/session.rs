@@ -1,6 +1,7 @@
 //! The reader-thread half of control mode: consumes the stream, tracks the
 //! attached session and routes pane output.
 
+use super::keys::{TmuxKeys, KEY_OPTIONS, LIST_PREFIX_KEYS};
 use super::layout::LayoutNode;
 use super::protocol::{id_of, parse_line, Notification};
 use super::{PaneSink, TmuxSnapshot, TmuxWindow};
@@ -60,6 +61,12 @@ enum Expect {
     WindowList,
     PaneState(u32),
     PaneCapture(u32),
+    KeyOptions,
+    KeyBindings,
+    /// Everything up to this marker answers a binding. Its commands reply
+    /// with a block each, stopping early if one fails, so unlike every other
+    /// command there's no telling how many replies it gets.
+    BindingEnd(String),
 }
 
 struct Block {
@@ -170,6 +177,8 @@ pub struct ControlSession {
     /// The first `list-windows` reply has landed.
     synced: bool,
     dirty: bool,
+    keys: Arc<TmuxKeys>,
+    bindings_run: u64,
 }
 
 impl ControlSession {
@@ -230,6 +239,27 @@ impl ControlSession {
         self.send(command, Expect::Nothing);
     }
 
+    /// Run a binding reported by [`TmuxKeys`]. Must only be called with text
+    /// tmux gave us, for the same reason as [`Self::command`].
+    pub fn run_binding(&mut self, commands: &str) {
+        let mut line = Vec::with_capacity(commands.len() + 1);
+        line.extend_from_slice(commands.as_bytes());
+        line.push(b'\n');
+        self.commands.push(line);
+
+        self.bindings_run += 1;
+        let marker = format!("rio-binding-end-{}", self.bindings_run);
+        self.send(
+            &format!("display-message -p '{marker}'"),
+            Expect::BindingEnd(marker),
+        );
+
+        // The usual way to reload a config, which may rebind anything.
+        if commands.contains("source-file") {
+            self.request_keys();
+        }
+    }
+
     /// Start routing a pane's output to `sink`, replaying its current
     /// content first.
     pub fn attach_pane(&mut self, id: u32, mut sink: Box<dyn PaneSink>) {
@@ -279,6 +309,7 @@ impl ControlSession {
         Some(TmuxSnapshot {
             windows: self.windows.clone(),
             active_window: self.active_window,
+            keys: Arc::clone(&self.keys),
         })
     }
 
@@ -309,6 +340,11 @@ impl ControlSession {
             self.refreshing = true;
             self.send(LIST_WINDOWS, Expect::WindowList);
         }
+    }
+
+    fn request_keys(&mut self) {
+        self.send(KEY_OPTIONS, Expect::KeyOptions);
+        self.send(LIST_PREFIX_KEYS, Expect::KeyBindings);
     }
 
     fn handle_line(&mut self, line: &mut Vec<u8>) -> Option<EndReason> {
@@ -414,11 +450,39 @@ impl ControlSession {
             return;
         }
 
+        if let Some(Expect::BindingEnd(marker)) = self.expected.front() {
+            if block.lines.first().map(Vec::as_slice) != Some(marker.as_bytes()) {
+                return;
+            }
+        }
+
         match self.expected.pop_front() {
             Some(Expect::WindowList) => {
                 self.refreshing = false;
                 if success {
+                    let first = !self.synced;
                     self.apply_window_list(&block.lines);
+                    if first {
+                        self.request_keys();
+                    }
+                }
+            }
+            Some(Expect::KeyOptions) => {
+                if let Some(line) = block.lines.first().filter(|_| success) {
+                    Arc::make_mut(&mut self.keys)
+                        .parse_options(&String::from_utf8_lossy(line));
+                }
+            }
+            Some(Expect::KeyBindings) => {
+                if success {
+                    let lines: Vec<_> = block
+                        .lines
+                        .iter()
+                        .map(|line| String::from_utf8_lossy(line))
+                        .collect();
+                    Arc::make_mut(&mut self.keys)
+                        .parse_bindings(lines.iter().map(|line| line.as_ref()));
+                    self.dirty = true;
                 }
             }
             Some(Expect::PaneState(id)) => match block.lines.first() {
@@ -445,7 +509,7 @@ impl ControlSession {
                     }
                 }
             }
-            Some(Expect::Nothing) | None => (),
+            Some(Expect::Nothing | Expect::BindingEnd(_)) | None => (),
         }
     }
 
@@ -663,6 +727,7 @@ impl<U: EventListener + Send + 'static> PaneSink for TerminalSink<U> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::keys::{KeyPress, PrefixState};
     use super::*;
     use std::sync::Mutex;
 
@@ -678,6 +743,12 @@ mod tests {
         %begin 1793790355 262 1\r\n\
         @0 a87d,100x30,0,0,0 a87d,100x30,0,0,0 1 %0 bash\r\n\
         %end 1793790355 262 1\r\n\
+        %begin 1793790355 263 1\r\n\
+        C-b None 500\r\n\
+        %end 1793790355 263 1\r\n\
+        %begin 1793790355 264 1\r\n\
+        bind-key -T prefix c new-window\r\n\
+        %end 1793790355 264 1\r\n\
         %layout-change @0 a87d,100x30,0,0,0 a87d,100x30,0,0,0 *\r\n\
         %window-pane-changed @0 %1\r\n\
         %layout-change @0 6b8b,100x30,0,0{50x30,0,0,0,49x30,51,0,1} \
@@ -742,8 +813,8 @@ mod tests {
         );
     }
 
-    /// A session past its first `list-windows`, with `%0` in window `@0`.
-    fn synced_session() -> ControlSession {
+    /// A session that has just asked for its keys, with `%0` in window `@0`.
+    fn session_with_key_requests() -> ControlSession {
         let mut session = ControlSession::new();
         feed(&mut session, b"%begin 1 1 0\r\n%end 1 1 0\r\n");
         session.take_commands();
@@ -752,6 +823,18 @@ mod tests {
             b"%begin 2 2 1\r\n\
               @0 a87d,80x24,0,0,0 a87d,80x24,0,0,0 1 %0 bash\r\n\
               %end 2 2 1\r\n",
+        );
+        session
+    }
+
+    /// A session past its opening requests.
+    fn synced_session() -> ControlSession {
+        let mut session = session_with_key_requests();
+        session.take_commands();
+        feed(
+            &mut session,
+            b"%begin 2 3 1\r\nC-b None 500\r\n%end 2 3 1\r\n\
+              %begin 2 4 1\r\n%end 2 4 1\r\n",
         );
         session
     }
@@ -1016,6 +1099,129 @@ mod tests {
             b"%session-changed $3 mine\r\n%session-window-changed $9 @7\r\n",
         );
         assert_eq!(session.active_window, None);
+    }
+
+    fn sent(session: &mut ControlSession) -> Vec<String> {
+        commands(session)
+            .iter()
+            .map(|line| line.trim_end().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn keys_are_requested_once_the_windows_are_known() {
+        let mut session = session_with_key_requests();
+        assert_eq!(sent(&mut session), [KEY_OPTIONS, LIST_PREFIX_KEYS]);
+    }
+
+    #[test]
+    fn keys_reach_the_frontend_in_a_snapshot() {
+        let mut session = session_with_key_requests();
+        session.take_snapshot();
+        feed(
+            &mut session,
+            b"%begin 1 3 1\r\nC-a None 500\r\n%end 1 3 1\r\n\
+              %begin 1 4 1\r\nbind-key -T prefix % split-window -h\r\n%end 1 4 1\r\n",
+        );
+
+        let snapshot = session.take_snapshot().unwrap();
+        assert_eq!(snapshot.keys.prefix(), Some("C-a"));
+        let mut state = PrefixState::default();
+        snapshot
+            .keys
+            .press(&mut state, "C-a", false, Instant::now());
+        assert_eq!(
+            snapshot.keys.press(&mut state, "%", false, Instant::now()),
+            KeyPress::Run("split-window -h".to_string())
+        );
+    }
+
+    #[test]
+    fn failed_key_requests_leave_the_prefix_off() {
+        let mut session = session_with_key_requests();
+        feed(
+            &mut session,
+            b"%begin 1 3 1\r\nbad\r\n%error 1 3 1\r\n\
+              %begin 1 4 1\r\nbad\r\n%error 1 4 1\r\n",
+        );
+        assert_eq!(session.keys.prefix(), None);
+        let mut state = PrefixState::default();
+        assert_eq!(
+            session.keys.press(&mut state, "C-b", false, Instant::now()),
+            KeyPress::Pass
+        );
+    }
+
+    #[test]
+    fn a_binding_is_followed_by_its_marker() {
+        let mut session = synced_session();
+        session.run_binding("split-window -h ; select-pane -L");
+        assert_eq!(
+            sent(&mut session),
+            [
+                "split-window -h ; select-pane -L",
+                "display-message -p 'rio-binding-end-1'",
+            ]
+        );
+    }
+
+    /// One reply for each command of the binding, or fewer if one fails:
+    /// neither may shift the replies of what comes after it.
+    #[test]
+    fn replies_stay_matched_after_a_binding() {
+        for binding_replies in [
+            &b"%begin 1 10 1\r\n%end 1 10 1\r\n%begin 1 11 1\r\n%end 1 11 1\r\n"[..],
+            &b"%begin 1 10 1\r\ncan't find pane\r\n%error 1 10 1\r\n"[..],
+            &b""[..],
+        ] {
+            let mut session = synced_session();
+            let sink = Recorder::default();
+            session.run_binding("select-pane -L ; select-pane -R");
+            session.attach_pane(0, Box::new(sink.clone()));
+            session.take_commands();
+
+            feed(&mut session, binding_replies);
+            feed(
+                &mut session,
+                b"%begin 1 12 1\r\nrio-binding-end-1\r\n%end 1 12 1\r\n\
+                  %begin 1 13 1\r\n0,3,0,1,0,0,0,0\r\n%end 1 13 1\r\n\
+                  %begin 1 14 1\r\ncaptured\r\n%end 1 14 1\r\n",
+            );
+            let written = String::from_utf8(sink.written()).unwrap();
+            assert!(written.contains("captured"));
+            assert!(session.expected.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_marker_from_an_older_binding_is_not_the_end() {
+        let mut session = synced_session();
+        session.run_binding("a");
+        session.run_binding("b");
+        session.take_commands();
+        feed(
+            &mut session,
+            b"%begin 1 10 1\r\nrio-binding-end-1\r\n%end 1 10 1\r\n",
+        );
+        assert_eq!(session.expected.len(), 1);
+        feed(
+            &mut session,
+            b"%begin 1 11 1\r\nrio-binding-end-1\r\n%end 1 11 1\r\n",
+        );
+        assert_eq!(session.expected.len(), 1);
+        feed(
+            &mut session,
+            b"%begin 1 12 1\r\nrio-binding-end-2\r\n%end 1 12 1\r\n",
+        );
+        assert!(session.expected.is_empty());
+    }
+
+    #[test]
+    fn reloading_a_config_fetches_the_keys_again() {
+        let mut session = synced_session();
+        session.run_binding("source-file ~/.tmux.conf ; display-message Reloaded");
+        let commands = sent(&mut session);
+        assert_eq!(&commands[2..], [KEY_OPTIONS, LIST_PREFIX_KEYS]);
     }
 
     #[test]

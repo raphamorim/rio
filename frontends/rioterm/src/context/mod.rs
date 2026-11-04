@@ -133,6 +133,7 @@ pub struct ContextManagerConfig {
     pub scrollback_history_limit: usize,
     pub grapheme_clustering: bool,
     pub tmux_control_mode: bool,
+    pub tmux_prefix: bool,
 }
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
@@ -1004,7 +1005,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// never disagree.
     pub fn displayed_title_for_tab(&self, index: usize) -> String {
         if let Some(custom) = self.custom_title(index) {
-            return custom.to_string();
+            return match self
+                .tmux_armed_prefix()
+                .filter(|_| index == self.current_index)
+            {
+                Some(prefix) => format!("[{prefix}] {custom}"),
+                None => custom.to_string(),
+            };
         }
         if let Some(grid) = self.contexts.get(index) {
             let context = grid.current();
@@ -1370,6 +1377,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
             tmux_control_mode: config.tmux_control_mode,
+            tmux_prefix: config.tmux_prefix,
         };
 
         let current = self.current();

@@ -418,6 +418,12 @@ where
                         self.flush_tmux(state);
                     }
                 }
+                Msg::TmuxBinding(commands) => {
+                    if let Some(session) = &mut state.tmux {
+                        session.run_binding(&commands);
+                        self.flush_tmux(state);
+                    }
+                }
                 Msg::TmuxAttachPane(pane, sink) => {
                     if let Some(session) = &mut state.tmux {
                         session.attach_pane(pane, sink);

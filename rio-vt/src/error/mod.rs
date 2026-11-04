@@ -52,6 +52,9 @@ pub enum RioErrorType {
     // NavigationHasChanged,
     InitializationError(String),
 
+    // a tmux key is bound to a command that needs tmux's own display
+    TmuxBindingUnsupported(String),
+
     // configurlation file was not found
     ConfigurationNotFound,
     // configuration file have an invalid format
@@ -86,6 +89,12 @@ impl std::fmt::Display for RioErrorType {
             // }
             RioErrorType::InitializationError(message) => {
                 write!(f, "Error initializing Rio terminal:\n{message}")
+            }
+            RioErrorType::TmuxBindingUnsupported(command) => {
+                write!(
+                    f,
+                    "That key runs `{command}`, which needs tmux's own display.\n\nA control mode client doesn't have one."
+                )
             }
             RioErrorType::IgnoredReport => write!(f, ""),
             RioErrorType::InvalidConfigurationFormat(message) => {

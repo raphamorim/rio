@@ -255,6 +255,10 @@ pub struct Config {
     /// tabs and panes as splits until the session ends.
     #[serde(default = "default_bool_true", rename = "tmux-control-mode")]
     pub tmux_control_mode: bool,
+    /// Handle tmux's prefix key while a control mode session runs, which
+    /// tmux can't do for a control client.
+    #[serde(default = "default_bool_true", rename = "tmux-prefix")]
+    pub tmux_prefix: bool,
     #[serde(default = "effects::Effects::default")]
     pub effects: effects::Effects,
 }
@@ -761,6 +765,7 @@ impl Default for Config {
             enable_scroll_bar: true,
             scrollback_history_limit: default_scrollback_history_limit(),
             tmux_control_mode: true,
+            tmux_prefix: true,
             effects: effects::Effects::default(),
         }
     }

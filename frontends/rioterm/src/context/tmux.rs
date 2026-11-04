@@ -22,10 +22,12 @@ use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::Crosswords;
 use rio_backend::event::{EventListener, TerminalDamage, WindowId};
 use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::tmux::keys::{KeyPress, PrefixState, TmuxKeys};
 use rio_backend::tmux::session::TerminalSink;
 use rio_backend::tmux::{TmuxSnapshot, TmuxWindow};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Instant;
 
 /// A running control mode session of this window.
 pub struct TmuxTakeover<T: EventListener> {
@@ -37,6 +39,8 @@ pub struct TmuxTakeover<T: EventListener> {
     active_window: Option<u32>,
     /// Client size last sent to tmux.
     size: Option<(usize, usize)>,
+    keys: Arc<TmuxKeys>,
+    prefix: PrefixState,
 }
 
 /// What a tmux tab's panes are built from.
@@ -205,6 +209,8 @@ impl<T: EventListener + Clone + Send + 'static> ContextManager<T> {
                 channel,
                 active_window: None,
                 size: None,
+                keys: Arc::clone(&snapshot.keys),
+                prefix: PrefixState::default(),
             });
         }
 
@@ -227,6 +233,7 @@ impl<T: EventListener + Clone + Send + 'static> ContextManager<T> {
             return;
         };
         takeover.active_window = snapshot.active_window;
+        takeover.keys = Arc::clone(&snapshot.keys);
 
         let factory = PaneFactory {
             event_proxy: &self.event_proxy,
@@ -430,6 +437,41 @@ impl<T: EventListener + Clone + Send + 'static> ContextManager<T> {
     /// was started from.
     pub fn tmux_detach(&self) -> bool {
         self.tmux_command(|_, _| String::from("detach-client"))
+    }
+
+    /// The session of the focused tab, if it shows one.
+    fn focused_takeover(&self) -> Option<&TmuxTakeover<T>> {
+        let host = self.current_grid().tmux_host()?;
+        self.tmux.iter().find(|t| t.host_route == host)
+    }
+
+    #[inline]
+    pub fn tmux_focused(&self) -> bool {
+        self.config.tmux_prefix && self.focused_takeover().is_some()
+    }
+
+    /// Run a key press, named as tmux names it, through the prefix handling
+    /// of the focused tab's session.
+    pub fn tmux_key(&mut self, key: &str, held: bool) -> KeyPress {
+        let host = self.current_grid().tmux_host();
+        let Some(takeover) = self.tmux.iter_mut().find(|t| Some(t.host_route) == host)
+        else {
+            return KeyPress::Pass;
+        };
+
+        let keys = Arc::clone(&takeover.keys);
+        let press = keys.press(&mut takeover.prefix, key, held, Instant::now());
+        if let KeyPress::Run(commands) = &press {
+            let _ = takeover.channel.send(Msg::TmuxBinding(commands.clone()));
+        }
+        press
+    }
+
+    /// The prefix, while the focused tab's session waits for the key after it.
+    pub(super) fn tmux_armed_prefix(&self) -> Option<&str> {
+        self.focused_takeover()
+            .filter(|takeover| takeover.prefix.is_armed())
+            .and_then(|takeover| takeover.keys.prefix())
     }
 
     /// Indexes of the tabs showing the session on `host_route`, ascending.

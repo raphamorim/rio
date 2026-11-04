@@ -43,6 +43,7 @@ use rio_backend::sugarloaf::{
     layout::RootStyle, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
 };
+use rio_backend::tmux::keys::KeyPress;
 use rio_window::event::ElementState;
 use rio_window::event::Modifiers;
 use rio_window::event::MouseButton;
@@ -69,6 +70,8 @@ pub struct Screen<'screen> {
     pub touchpurpose: TouchPurpose,
     pub search_state: SearchState,
     pub hint_state: HintState,
+    /// The assistant is showing a warning about a tmux key.
+    tmux_key_warning: bool,
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
@@ -263,6 +266,7 @@ impl Screen<'_> {
             keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
             tmux_control_mode: config.tmux_control_mode,
+            tmux_prefix: config.tmux_prefix,
             grapheme_clustering: config.grapheme_clustering,
         };
 
@@ -329,6 +333,7 @@ impl Screen<'_> {
         Ok(Screen {
             search_state: SearchState::default(),
             hint_state: HintState::new(config.hints.alphabet.clone()),
+            tmux_key_warning: false,
             hints_config: config
                 .hints
                 .rules
@@ -906,6 +911,10 @@ impl Screen<'_> {
             return;
         }
 
+        if self.process_tmux_key(key, &mode, mods) {
+            return;
+        }
+
         let ignore_chars = self.process_key_bindings(key, &mode, mods, clipboard);
         if ignore_chars {
             return;
@@ -979,6 +988,45 @@ impl Screen<'_> {
 
             self.ctx_mut().current_mut().messenger.send_write(bytes);
         }
+    }
+
+    /// Give tmux's prefix key handling a look at a key press. Returns whether
+    /// the key was taken.
+    fn process_tmux_key(
+        &mut self,
+        key: &rio_window::event::KeyEvent,
+        mode: &Mode,
+        mods: ModifiersState,
+    ) -> bool {
+        if !self.context_manager.tmux_focused()
+            || mode.contains(Mode::VI)
+            || self.search_active()
+        {
+            return false;
+        }
+        let Some(name) = crate::bindings::tmux_key_name(&key.logical_key, mods) else {
+            return false;
+        };
+
+        let press = self.context_manager.tmux_key(&name, key.repeat);
+        if press == KeyPress::Pass {
+            return false;
+        }
+
+        if self.tmux_key_warning {
+            self.tmux_key_warning = false;
+            self.renderer.assistant.clear();
+        }
+        if let KeyPress::Unsupported(command) = press {
+            self.tmux_key_warning = true;
+            self.renderer.assistant.set_error(RioError {
+                report: RioErrorType::TmuxBindingUnsupported(command),
+                level: RioErrorLevel::Warning,
+            });
+        }
+        self.refresh_titles();
+        self.mark_dirty();
+        true
     }
 
     /// Check whether we should try to build escape sequence for the [`KeyEvent`].

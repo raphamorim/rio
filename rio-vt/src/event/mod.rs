@@ -98,6 +98,9 @@ pub enum Msg {
     /// Must be built from ids and literals only.
     TmuxCommand(String),
 
+    /// Run a binding the tmux session reported.
+    TmuxBinding(String),
+
     /// Route the output of a tmux pane to `sink`.
     TmuxAttachPane(u32, Box<dyn crate::tmux::PaneSink>),
 }
