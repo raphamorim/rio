@@ -662,8 +662,6 @@ pub fn default_key_bindings(config: &rio_backend::config::Config) -> Vec<KeyBind
             Action::Esc("\x1bOC".into());
         Key::Named(ArrowLeft),  +BindingMode::APP_CURSOR, ~BindingMode::VI;
             Action::Esc("\x1bOD".into());
-        Key::Named(Enter) => KeyLocation::Numpad, +BindingMode::APP_KEYPAD, ~BindingMode::VI, ~BindingMode::SEARCH, ~BindingMode::ALL_KEYS_AS_ESC, ~BindingMode::DISAMBIGUATE_KEYS;
-            Action::Esc("\x1bOM".into());
 
         // VI Mode
         Key::Named(Space), ModifiersState::ALT | ModifiersState::SHIFT; Action::ToggleViMode;
@@ -1778,25 +1776,9 @@ mod tests {
     }
 
     #[test]
-    fn numpad_enter_sends_esc_o_m_in_app_keypad_mode() {
+    fn numpad_enter_ignores_app_keypad_mode() {
         let none = ModifiersState::empty();
-        let esc = vec![Action::Esc("\x1bOM".into())];
-        assert_eq!(
-            triggered(BindingMode::APP_KEYPAD, none, KeyLocation::Numpad),
-            esc
-        );
-        assert!(
-            triggered(BindingMode::APP_KEYPAD, none, KeyLocation::Standard).is_empty()
-        );
-        assert!(triggered(BindingMode::empty(), none, KeyLocation::Numpad).is_empty());
-        for kitty in [BindingMode::DISAMBIGUATE_KEYS, BindingMode::ALL_KEYS_AS_ESC] {
-            assert!(triggered(
-                BindingMode::APP_KEYPAD | kitty,
-                none,
-                KeyLocation::Numpad
-            )
-            .is_empty());
-        }
+        assert!(triggered(BindingMode::APP_KEYPAD, none, KeyLocation::Numpad).is_empty());
         assert_eq!(
             triggered(
                 BindingMode::APP_KEYPAD | BindingMode::SEARCH,
