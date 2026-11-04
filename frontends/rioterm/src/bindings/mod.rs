@@ -12,7 +12,9 @@ use rio_backend::config::keyboard::Keyboard as ConfigKeyboard;
 use rio_window::event::MouseButton;
 use rio_window::keyboard::Key::*;
 use rio_window::keyboard::NamedKey::*;
-use rio_window::keyboard::{Key, KeyLocation, ModifiersState, PhysicalKey};
+use rio_window::keyboard::{
+    Key, KeyLocation as WinitKeyLocation, ModifiersState, PhysicalKey,
+};
 use std::fmt::Debug;
 // use rio_window::platform::scancode::PhysicalKeyExtScancode;
 
@@ -135,7 +137,38 @@ impl<T: Eq> Binding<T> {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+/// Where a binding's key sits. `Any` matches both the standard and the
+/// numpad copy of a key, so numpad Enter or `+` reach the regular bindings.
+#[derive(Clone, Copy, Debug, Eq)]
+pub enum KeyLocation {
+    Standard,
+    Numpad,
+    Any,
+}
+
+impl From<WinitKeyLocation> for KeyLocation {
+    fn from(value: WinitKeyLocation) -> Self {
+        match value {
+            WinitKeyLocation::Standard => KeyLocation::Standard,
+            WinitKeyLocation::Numpad => KeyLocation::Numpad,
+            WinitKeyLocation::Left | WinitKeyLocation::Right => KeyLocation::Any,
+        }
+    }
+}
+
+impl PartialEq for KeyLocation {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (_, KeyLocation::Any)
+                | (KeyLocation::Any, _)
+                | (KeyLocation::Standard, KeyLocation::Standard)
+                | (KeyLocation::Numpad, KeyLocation::Numpad)
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BindingKey {
     #[allow(dead_code)]
     Scancode(PhysicalKey),
@@ -606,22 +639,16 @@ macro_rules! trigger {
             location: $location,
         }
     }};
-    (KeyBinding, $key:expr, $location:expr) => {{
-        BindingKey::Keycode {
-            key: $key,
-            location: $location,
-        }
-    }};
     (KeyBinding, $key:literal,) => {{
         BindingKey::Keycode {
             key: Character($key.into()),
-            location: KeyLocation::Standard,
+            location: KeyLocation::Any,
         }
     }};
     (KeyBinding, $key:expr,) => {{
         BindingKey::Keycode {
             key: $key,
-            location: KeyLocation::Standard,
+            location: KeyLocation::Any,
         }
     }};
     ($ty:ident, $key:expr,) => {{
@@ -672,9 +699,6 @@ pub fn default_key_bindings(config: &rio_backend::config::Config) -> Vec<KeyBind
         Key::Named(Enter), +BindingMode::SEARCH, +BindingMode::VI; SearchAction::SearchConfirm;
         Key::Named(Escape), +BindingMode::SEARCH; SearchAction::SearchCancel;
         Key::Named(Enter), ModifiersState::SHIFT, +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusPrevious;
-        Key::Named(Enter) => KeyLocation::Numpad, +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusNext;
-        Key::Named(Enter) => KeyLocation::Numpad, +BindingMode::SEARCH, +BindingMode::VI; SearchAction::SearchConfirm;
-        Key::Named(Enter) => KeyLocation::Numpad, ModifiersState::SHIFT, +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusPrevious;
         "i", +BindingMode::VI, ~BindingMode::SEARCH; Action::ToggleViMode;
         "c", ModifiersState::CONTROL, +BindingMode::VI; Action::ToggleViMode;
         Key::Named(Escape), +BindingMode::VI; Action::ClearSelection;
@@ -778,69 +802,69 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
     let (key, location) = if config_key_binding.key.chars().count() == 1 {
         (
             Key::Character(config_key_binding.key.to_lowercase().into()),
-            KeyLocation::Standard,
+            KeyLocation::Any,
         )
     } else {
         match config_key_binding.key.to_lowercase().as_str() {
-            "home" => (Key::Named(Home), KeyLocation::Standard),
-            "space" => (Key::Named(Space), KeyLocation::Standard),
-            "delete" => (Key::Named(Delete), KeyLocation::Standard),
-            "esc" | "escape" => (Key::Named(Escape), KeyLocation::Standard),
-            "insert" => (Key::Named(Insert), KeyLocation::Standard),
-            "pageup" => (Key::Named(PageUp), KeyLocation::Standard),
-            "pagedown" => (Key::Named(PageDown), KeyLocation::Standard),
-            "end" => (Key::Named(End), KeyLocation::Standard),
-            "up" => (Key::Named(ArrowUp), KeyLocation::Standard),
-            "back" | "backspace" => (Key::Named(Backspace), KeyLocation::Standard),
-            "down" => (Key::Named(ArrowDown), KeyLocation::Standard),
-            "left" => (Key::Named(ArrowLeft), KeyLocation::Standard),
-            "right" => (Key::Named(ArrowRight), KeyLocation::Standard),
-            "@" => (Key::Character("@".into()), KeyLocation::Standard),
-            "colon" => (Key::Character(":".into()), KeyLocation::Standard),
-            "." => (Key::Character(".".into()), KeyLocation::Standard),
-            "return" | "enter" => (Key::Named(Enter), KeyLocation::Standard),
-            "f1" => (Key::Named(F1), KeyLocation::Standard),
-            "f2" => (Key::Named(F2), KeyLocation::Standard),
-            "f3" => (Key::Named(F3), KeyLocation::Standard),
-            "f4" => (Key::Named(F4), KeyLocation::Standard),
-            "f5" => (Key::Named(F5), KeyLocation::Standard),
-            "f6" => (Key::Named(F6), KeyLocation::Standard),
-            "f7" => (Key::Named(F7), KeyLocation::Standard),
-            "f8" => (Key::Named(F8), KeyLocation::Standard),
-            "f9" => (Key::Named(F9), KeyLocation::Standard),
-            "f10" => (Key::Named(F10), KeyLocation::Standard),
-            "f11" => (Key::Named(F11), KeyLocation::Standard),
-            "f12" => (Key::Named(F12), KeyLocation::Standard),
-            "f13" => (Key::Named(F13), KeyLocation::Standard),
-            "f14" => (Key::Named(F14), KeyLocation::Standard),
-            "f15" => (Key::Named(F15), KeyLocation::Standard),
-            "f16" => (Key::Named(F16), KeyLocation::Standard),
-            "f17" => (Key::Named(F17), KeyLocation::Standard),
-            "f18" => (Key::Named(F18), KeyLocation::Standard),
-            "f19" => (Key::Named(F19), KeyLocation::Standard),
-            "f20" => (Key::Named(F20), KeyLocation::Standard),
-            "[" => (Key::Character("[".into()), KeyLocation::Standard),
-            "]" => (Key::Character("]".into()), KeyLocation::Standard),
-            "{" => (Key::Character("{".into()), KeyLocation::Standard),
-            "}" => (Key::Character("}".into()), KeyLocation::Standard),
-            ";" => (Key::Character(";".into()), KeyLocation::Standard),
-            "\\" => (Key::Character("\\".into()), KeyLocation::Standard),
-            "+" => (Key::Character("+".into()), KeyLocation::Standard),
-            "," => (Key::Character(",".into()), KeyLocation::Standard),
-            "/" => (Key::Character("/".into()), KeyLocation::Standard),
-            "=" => (Key::Character("=".into()), KeyLocation::Standard),
-            "-" => (Key::Character("-".into()), KeyLocation::Standard),
-            "*" => (Key::Character("*".into()), KeyLocation::Standard),
-            "1" => (Key::Character("1".into()), KeyLocation::Standard),
-            "2" => (Key::Character("2".into()), KeyLocation::Standard),
-            "3" => (Key::Character("3".into()), KeyLocation::Standard),
-            "4" => (Key::Character("4".into()), KeyLocation::Standard),
-            "5" => (Key::Character("5".into()), KeyLocation::Standard),
-            "6" => (Key::Character("6".into()), KeyLocation::Standard),
-            "7" => (Key::Character("7".into()), KeyLocation::Standard),
-            "8" => (Key::Character("8".into()), KeyLocation::Standard),
-            "9" => (Key::Character("9".into()), KeyLocation::Standard),
-            "0" => (Key::Character("0".into()), KeyLocation::Standard),
+            "home" => (Key::Named(Home), KeyLocation::Any),
+            "space" => (Key::Named(Space), KeyLocation::Any),
+            "delete" => (Key::Named(Delete), KeyLocation::Any),
+            "esc" | "escape" => (Key::Named(Escape), KeyLocation::Any),
+            "insert" => (Key::Named(Insert), KeyLocation::Any),
+            "pageup" => (Key::Named(PageUp), KeyLocation::Any),
+            "pagedown" => (Key::Named(PageDown), KeyLocation::Any),
+            "end" => (Key::Named(End), KeyLocation::Any),
+            "up" => (Key::Named(ArrowUp), KeyLocation::Any),
+            "back" | "backspace" => (Key::Named(Backspace), KeyLocation::Any),
+            "down" => (Key::Named(ArrowDown), KeyLocation::Any),
+            "left" => (Key::Named(ArrowLeft), KeyLocation::Any),
+            "right" => (Key::Named(ArrowRight), KeyLocation::Any),
+            "@" => (Key::Character("@".into()), KeyLocation::Any),
+            "colon" => (Key::Character(":".into()), KeyLocation::Any),
+            "." => (Key::Character(".".into()), KeyLocation::Any),
+            "return" | "enter" => (Key::Named(Enter), KeyLocation::Any),
+            "f1" => (Key::Named(F1), KeyLocation::Any),
+            "f2" => (Key::Named(F2), KeyLocation::Any),
+            "f3" => (Key::Named(F3), KeyLocation::Any),
+            "f4" => (Key::Named(F4), KeyLocation::Any),
+            "f5" => (Key::Named(F5), KeyLocation::Any),
+            "f6" => (Key::Named(F6), KeyLocation::Any),
+            "f7" => (Key::Named(F7), KeyLocation::Any),
+            "f8" => (Key::Named(F8), KeyLocation::Any),
+            "f9" => (Key::Named(F9), KeyLocation::Any),
+            "f10" => (Key::Named(F10), KeyLocation::Any),
+            "f11" => (Key::Named(F11), KeyLocation::Any),
+            "f12" => (Key::Named(F12), KeyLocation::Any),
+            "f13" => (Key::Named(F13), KeyLocation::Any),
+            "f14" => (Key::Named(F14), KeyLocation::Any),
+            "f15" => (Key::Named(F15), KeyLocation::Any),
+            "f16" => (Key::Named(F16), KeyLocation::Any),
+            "f17" => (Key::Named(F17), KeyLocation::Any),
+            "f18" => (Key::Named(F18), KeyLocation::Any),
+            "f19" => (Key::Named(F19), KeyLocation::Any),
+            "f20" => (Key::Named(F20), KeyLocation::Any),
+            "[" => (Key::Character("[".into()), KeyLocation::Any),
+            "]" => (Key::Character("]".into()), KeyLocation::Any),
+            "{" => (Key::Character("{".into()), KeyLocation::Any),
+            "}" => (Key::Character("}".into()), KeyLocation::Any),
+            ";" => (Key::Character(";".into()), KeyLocation::Any),
+            "\\" => (Key::Character("\\".into()), KeyLocation::Any),
+            "+" => (Key::Character("+".into()), KeyLocation::Any),
+            "," => (Key::Character(",".into()), KeyLocation::Any),
+            "/" => (Key::Character("/".into()), KeyLocation::Any),
+            "=" => (Key::Character("=".into()), KeyLocation::Any),
+            "-" => (Key::Character("-".into()), KeyLocation::Any),
+            "*" => (Key::Character("*".into()), KeyLocation::Any),
+            "1" => (Key::Character("1".into()), KeyLocation::Any),
+            "2" => (Key::Character("2".into()), KeyLocation::Any),
+            "3" => (Key::Character("3".into()), KeyLocation::Any),
+            "4" => (Key::Character("4".into()), KeyLocation::Any),
+            "5" => (Key::Character("5".into()), KeyLocation::Any),
+            "6" => (Key::Character("6".into()), KeyLocation::Any),
+            "7" => (Key::Character("7".into()), KeyLocation::Any),
+            "8" => (Key::Character("8".into()), KeyLocation::Any),
+            "9" => (Key::Character("9".into()), KeyLocation::Any),
+            "0" => (Key::Character("0".into()), KeyLocation::Any),
 
             // Special case numpad.
             "numpadenter" => (Key::Named(Enter), KeyLocation::Numpad),
@@ -863,7 +887,7 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
             "numpad0" => (Key::Character("0".into()), KeyLocation::Numpad),
 
             // Special cases
-            "tab" => (Key::Named(Tab), KeyLocation::Standard),
+            "tab" => (Key::Named(Tab), KeyLocation::Any),
             _ => return Err("Unable to find defined 'keycode'".to_string()),
         }
     };
@@ -1038,37 +1062,37 @@ pub fn create_hint_bindings(
             let (key, location) = match binding_config.key.to_lowercase().as_str() {
                 // Letters
                 single_char if single_char.len() == 1 => {
-                    (Key::Character(single_char.into()), KeyLocation::Standard)
+                    (Key::Character(single_char.into()), KeyLocation::Any)
                 }
                 // Named keys
-                "space" => (Key::Named(Space), KeyLocation::Standard),
-                "enter" | "return" => (Key::Named(Enter), KeyLocation::Standard),
-                "escape" | "esc" => (Key::Named(Escape), KeyLocation::Standard),
-                "tab" => (Key::Named(Tab), KeyLocation::Standard),
-                "backspace" => (Key::Named(Backspace), KeyLocation::Standard),
-                "delete" => (Key::Named(Delete), KeyLocation::Standard),
-                "insert" => (Key::Named(Insert), KeyLocation::Standard),
-                "home" => (Key::Named(Home), KeyLocation::Standard),
-                "end" => (Key::Named(End), KeyLocation::Standard),
-                "pageup" => (Key::Named(PageUp), KeyLocation::Standard),
-                "pagedown" => (Key::Named(PageDown), KeyLocation::Standard),
-                "up" => (Key::Named(ArrowUp), KeyLocation::Standard),
-                "down" => (Key::Named(ArrowDown), KeyLocation::Standard),
-                "left" => (Key::Named(ArrowLeft), KeyLocation::Standard),
-                "right" => (Key::Named(ArrowRight), KeyLocation::Standard),
+                "space" => (Key::Named(Space), KeyLocation::Any),
+                "enter" | "return" => (Key::Named(Enter), KeyLocation::Any),
+                "escape" | "esc" => (Key::Named(Escape), KeyLocation::Any),
+                "tab" => (Key::Named(Tab), KeyLocation::Any),
+                "backspace" => (Key::Named(Backspace), KeyLocation::Any),
+                "delete" => (Key::Named(Delete), KeyLocation::Any),
+                "insert" => (Key::Named(Insert), KeyLocation::Any),
+                "home" => (Key::Named(Home), KeyLocation::Any),
+                "end" => (Key::Named(End), KeyLocation::Any),
+                "pageup" => (Key::Named(PageUp), KeyLocation::Any),
+                "pagedown" => (Key::Named(PageDown), KeyLocation::Any),
+                "up" => (Key::Named(ArrowUp), KeyLocation::Any),
+                "down" => (Key::Named(ArrowDown), KeyLocation::Any),
+                "left" => (Key::Named(ArrowLeft), KeyLocation::Any),
+                "right" => (Key::Named(ArrowRight), KeyLocation::Any),
                 // Function keys
-                "f1" => (Key::Named(F1), KeyLocation::Standard),
-                "f2" => (Key::Named(F2), KeyLocation::Standard),
-                "f3" => (Key::Named(F3), KeyLocation::Standard),
-                "f4" => (Key::Named(F4), KeyLocation::Standard),
-                "f5" => (Key::Named(F5), KeyLocation::Standard),
-                "f6" => (Key::Named(F6), KeyLocation::Standard),
-                "f7" => (Key::Named(F7), KeyLocation::Standard),
-                "f8" => (Key::Named(F8), KeyLocation::Standard),
-                "f9" => (Key::Named(F9), KeyLocation::Standard),
-                "f10" => (Key::Named(F10), KeyLocation::Standard),
-                "f11" => (Key::Named(F11), KeyLocation::Standard),
-                "f12" => (Key::Named(F12), KeyLocation::Standard),
+                "f1" => (Key::Named(F1), KeyLocation::Any),
+                "f2" => (Key::Named(F2), KeyLocation::Any),
+                "f3" => (Key::Named(F3), KeyLocation::Any),
+                "f4" => (Key::Named(F4), KeyLocation::Any),
+                "f5" => (Key::Named(F5), KeyLocation::Any),
+                "f6" => (Key::Named(F6), KeyLocation::Any),
+                "f7" => (Key::Named(F7), KeyLocation::Any),
+                "f8" => (Key::Named(F8), KeyLocation::Any),
+                "f9" => (Key::Named(F9), KeyLocation::Any),
+                "f10" => (Key::Named(F10), KeyLocation::Any),
+                "f11" => (Key::Named(F11), KeyLocation::Any),
+                "f12" => (Key::Named(F12), KeyLocation::Any),
                 _ => {
                     tracing::warn!(
                         "Unknown key '{}' in hint binding",
@@ -1715,7 +1739,7 @@ mod tests {
                 new_bindings[0].trigger,
                 BindingKey::Keycode {
                     key: Key::Named(named),
-                    location: KeyLocation::Standard
+                    location: KeyLocation::Any
                 }
             );
         }
@@ -1763,6 +1787,7 @@ mod tests {
             (BindingMode::SEARCH, none),
             (BindingMode::SEARCH | BindingMode::VI, none),
             (BindingMode::SEARCH, ModifiersState::SHIFT),
+            (BindingMode::empty(), ModifiersState::ALT),
         ] {
             assert_eq!(
                 triggered(mode.clone(), mods, KeyLocation::Numpad),
@@ -1786,6 +1811,77 @@ mod tests {
                 KeyLocation::Numpad
             ),
             vec![Action::Search(SearchAction::SearchFocusNext)]
+        );
+    }
+
+    fn config_binding(key: &str, with: &str, esc: &str, mode: &str) -> ConfigKeyBinding {
+        ConfigKeyBinding {
+            key: String::from(key),
+            action: String::from(""),
+            with: String::from(with),
+            esc: String::from(esc),
+            mode: String::from(mode),
+        }
+    }
+
+    fn fired(
+        bindings: &[KeyBinding],
+        mode: BindingMode,
+        location: KeyLocation,
+    ) -> Vec<Action> {
+        let input = BindingKey::Keycode {
+            key: Key::Named(Enter),
+            location,
+        };
+        bindings
+            .iter()
+            .filter(|b| b.is_triggered_by(mode.clone(), ModifiersState::SHIFT, &input))
+            .map(|b| b.action.clone())
+            .collect()
+    }
+
+    #[test]
+    fn config_enter_binding_covers_numpad_enter() {
+        let bindings = config_key_bindings(
+            vec![config_binding("enter", "shift", "\n", "")],
+            Vec::new(),
+        );
+        let newline = vec![Action::Esc("\n".into())];
+        assert_eq!(
+            fired(&bindings, BindingMode::empty(), KeyLocation::Standard),
+            newline
+        );
+        assert_eq!(
+            fired(&bindings, BindingMode::empty(), KeyLocation::Numpad),
+            newline
+        );
+
+        let bindings = config_key_bindings(
+            vec![config_binding("numpadenter", "shift", "\n", "")],
+            Vec::new(),
+        );
+        assert!(fired(&bindings, BindingMode::empty(), KeyLocation::Standard).is_empty());
+        assert_eq!(
+            fired(&bindings, BindingMode::empty(), KeyLocation::Numpad),
+            newline
+        );
+    }
+
+    #[test]
+    fn config_search_enter_override_covers_numpad_enter() {
+        let config = rio_backend::config::Config::default();
+        let bindings = config_key_bindings(
+            vec![config_binding("enter", "shift", "x", "search")],
+            default_key_bindings(&config),
+        );
+        let x = vec![Action::Esc("x".into())];
+        assert_eq!(
+            fired(&bindings, BindingMode::SEARCH, KeyLocation::Standard),
+            x
+        );
+        assert_eq!(
+            fired(&bindings, BindingMode::SEARCH, KeyLocation::Numpad),
+            x
         );
     }
 
