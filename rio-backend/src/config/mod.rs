@@ -49,6 +49,11 @@ pub struct Shell {
     pub program: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
+    /// Windows only: run the program on plain pipes instead of ConPTY, which
+    /// strips sequences like the one that starts tmux control mode. Only for
+    /// programs that don't need a console, like `ssh -tt`.
+    #[serde(default, rename = "use-pipes")]
+    pub use_pipes: bool,
 }
 
 /// `program = ""` used to be how you asked for the default shell, so keep
@@ -1258,6 +1263,19 @@ mod tests {
 
         assert_eq!(result.shell.program, None);
         assert_eq!(result.shell.args, ["--login"]);
+    }
+
+    #[test]
+    fn test_shell_use_pipes() {
+        let result = create_temporary_config(
+            "change-shell-use-pipes",
+            r#"
+            shell = { program = "ssh", args = ["-tt", "host"], use-pipes = true }
+        "#,
+        );
+
+        assert!(result.shell.use_pipes);
+        assert!(!default_shell().use_pipes);
     }
 
     #[test]

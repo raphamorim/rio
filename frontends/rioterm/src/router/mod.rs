@@ -582,6 +582,7 @@ impl Router<'_> {
             shell: rio_backend::config::Shell {
                 program: editor.program,
                 args,
+                use_pipes: false,
             },
             ..current_config
         };
@@ -616,6 +617,7 @@ impl Router<'_> {
             shell: rio_backend::config::Shell {
                 program: editor.program,
                 args,
+                use_pipes: false,
             },
             ..current_config
         };

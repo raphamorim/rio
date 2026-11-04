@@ -39,7 +39,7 @@ pub fn next_rich_text_id() -> usize {
 }
 
 #[cfg(target_os = "windows")]
-use teletypewriter::create_pty;
+use teletypewriter::{create_pty, create_pty_with_pipes};
 #[cfg(not(target_os = "windows"))]
 use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 
@@ -357,14 +357,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(target_os = "windows")]
         {
-            pty = match create_pty(
-                shell_program,
-                shell_args.to_vec(),
-                &config.working_dir,
-                (!integration.env.is_empty()).then(|| integration.env.clone()),
-                cols,
-                rows,
-            ) {
+            let env = (!integration.env.is_empty()).then(|| integration.env.clone());
+            let created = if config.shell.use_pipes {
+                tracing::info!("rio -> teletypewriter: create_pty_with_pipes");
+                create_pty_with_pipes(shell_program, shell_args, &config.working_dir, env)
+            } else {
+                create_pty(
+                    shell_program,
+                    shell_args.to_vec(),
+                    &config.working_dir,
+                    env,
+                    cols,
+                    rows,
+                )
+            };
+            pty = match created {
                 Ok(created_pty) => created_pty,
                 Err(err) => {
                     tracing::error!("{err:?}");
@@ -1522,6 +1529,7 @@ pub fn process_open_url(
                     shell = Shell {
                         program: editor.program,
                         args,
+                        use_pipes: false,
                     }
                 } else if path_buf.is_dir() {
                     working_dir = Some(path_buf.display().to_string());

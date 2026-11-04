@@ -129,20 +129,12 @@ impl EventedAnonRead {
 
 impl io::Read for EventedAnonRead {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        if self.thread.is_none() {
-            return Err(io::Error::new(io::ErrorKind::BrokenPipe, ""));
-        }
-
-        match self.error_receiver.try_recv() {
-            Ok(err) => {
-                // Other thread will be closing
-                self.thread.take().unwrap().join().unwrap();
-                return Err(io::Error::new(io::ErrorKind::BrokenPipe, err));
-            }
-            Err(TryRecvError::Disconnected) => {
-                return Err(io::Error::new(io::ErrorKind::BrokenPipe, ""))
-            }
-            Err(TryRecvError::Empty) => {}
+        // A closed pipe is the end of the output, not a failure: a program on
+        // plain pipes closes it by exiting. The worker stops once it fails,
+        // so what it stored stays readable here and the exit event, not this
+        // read, ends the terminal.
+        if let Ok(err) = self.error_receiver.try_recv() {
+            tracing::debug!("pipe reader stopped: {err}");
         }
 
         let nbytes = self.consumer.read_to_slice(buf);
@@ -389,10 +381,11 @@ impl Drop for EventedAnonWrite {
         // Stop the writer thread waiting for contents
         self.inner.sig_buffer_not_empty.notify_one();
 
-        self.thread
-            .take()
-            .unwrap()
-            .join()
-            .expect("Could not close EventedAnonWrite worker");
+        // Already gone if a write found the pipe closed.
+        if let Some(thread) = self.thread.take() {
+            thread
+                .join()
+                .expect("Could not close EventedAnonWrite worker");
+        }
     }
 }
