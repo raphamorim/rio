@@ -262,6 +262,7 @@ impl Screen<'_> {
             title: config.title.clone(),
             keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
+            tmux_control_mode: config.tmux_control_mode,
             grapheme_clustering: config.grapheme_clustering,
         };
 
@@ -767,6 +768,10 @@ impl Screen<'_> {
         for context_grid in self.context_manager.contexts_mut() {
             for context in context_grid.contexts_mut().values_mut() {
                 let ctx = context.context_mut();
+                // Sized by tmux, in response to `tmux_sync_size`.
+                if ctx.tmux_size.is_some() {
+                    continue;
+                }
                 let mut terminal = ctx.terminal.lock();
                 terminal.resize::<ContextDimension>(ctx.dimension);
                 drop(terminal);
@@ -774,6 +779,7 @@ impl Screen<'_> {
                 let _ = ctx.messenger.send_resize(winsize);
             }
         }
+        self.context_manager.tmux_sync_size();
     }
 
     #[inline]
@@ -1483,6 +1489,9 @@ impl Screen<'_> {
                     Act::HideOtherApplications => {
                         self.context_manager.hide_other_apps();
                     }
+                    Act::TmuxDetach => {
+                        self.context_manager.tmux_detach();
+                    }
                     Act::SelectNextSplit => {
                         self.cancel_search(clipboard);
                         self.context_manager.select_next_split();
@@ -1699,6 +1708,10 @@ impl Screen<'_> {
     }
 
     pub fn create_tab(&mut self, clipboard: &mut Clipboard) {
+        if self.context_manager.tmux_new_window() {
+            return;
+        }
+
         let redirect = true;
 
         // We resize the current tab ahead to prepare the
@@ -1728,6 +1741,35 @@ impl Screen<'_> {
         );
 
         self.cancel_search(clipboard);
+        self.mark_dirty();
+    }
+
+    /// A tmux session changed shape, or started.
+    pub fn tmux_update(
+        &mut self,
+        host_route: usize,
+        snapshot: &rio_backend::tmux::TmuxSnapshot,
+    ) {
+        self.clear_selection();
+        self.context_manager
+            .tmux_update(host_route, snapshot, &mut self.sugarloaf);
+        self.tmux_refresh_chrome();
+    }
+
+    /// A tmux session ended: the tab it took over is back.
+    pub fn tmux_end(&mut self, host_route: usize) {
+        self.clear_selection();
+        self.context_manager
+            .tmux_end(host_route, &mut self.sugarloaf);
+        self.tmux_refresh_chrome();
+    }
+
+    fn tmux_refresh_chrome(&mut self) {
+        let num_tabs = self.ctx().len();
+        self.resize_top_or_bottom_line(num_tabs);
+        // A tab bar that just appeared takes room from the panes.
+        self.context_manager.tmux_sync_size();
+        self.refresh_titles();
         self.mark_dirty();
     }
 

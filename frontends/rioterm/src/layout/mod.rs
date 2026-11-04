@@ -7,6 +7,8 @@ use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::grid::Dimensions;
 use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{layout::TextDimensions, Rect, Sugarloaf};
+use rio_backend::tmux::layout::{LayoutKind, LayoutNode};
+use rio_backend::tmux::TmuxWindow;
 use rustc_hash::FxHashMap;
 
 use taffy::{
@@ -105,6 +107,16 @@ impl Default for BorderConfig {
     }
 }
 
+/// Marks a tab as showing a tmux window. tmux owns such a tab's layout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TmuxGridState {
+    /// Route of the PTY running the control client.
+    pub host_route: usize,
+    pub window: u32,
+    pub layout: LayoutNode,
+    pub active_pane: Option<u32>,
+}
+
 pub struct ContextGrid<T: EventListener> {
     pub width: f32,
     pub height: f32,
@@ -117,6 +129,7 @@ pub struct ContextGrid<T: EventListener> {
     // bell is set when a pane in this tab rang while the tab was in the
     // background; cleared once the tab is focused again.
     pub bell: bool,
+    pub tmux: Option<TmuxGridState>,
     scale: f32,
     inner: FxHashMap<NodeId, ContextGridItem<T>>,
     pub root: Option<NodeId>,
@@ -233,6 +246,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             custom_title: None,
             custom_color: None,
             bell: false,
+            tmux: None,
             scale,
             width,
             height,
@@ -350,6 +364,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// Find a draggable border near the given mouse position (physical pixels).
     /// Returns None if no border is within the hit threshold.
     pub fn find_border_at_position(&self, x: f32, y: f32) -> Option<PanelBorder> {
+        if self.tmux.is_some() {
+            return None;
+        }
+
         if self.inner.len() <= 1 {
             return None;
         }
@@ -918,6 +936,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 item.val.dimension.width != width || item.val.dimension.height != height;
             item.val.dimension.update_width(width);
             item.val.dimension.update_height(height);
+            if let Some((columns, lines)) = item.val.tmux_size {
+                item.val.dimension.columns = columns;
+                item.val.dimension.lines = lines;
+            }
 
             // Update terminal size
             let mut terminal = item.val.terminal.lock();
@@ -943,6 +965,206 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             let _ = (x, y, abs_x, abs_y, width, height, is_multi_panel);
         }
         true
+    }
+
+    /// Recompute panel rects and terminal sizes.
+    pub fn apply_layout(&mut self, sugarloaf: &mut Sugarloaf) {
+        self.apply_taffy_layout(sugarloaf);
+    }
+
+    #[inline]
+    pub fn tmux_host(&self) -> Option<usize> {
+        self.tmux.as_ref().map(|state| state.host_route)
+    }
+
+    #[inline]
+    pub fn tmux_window(&self) -> Option<u32> {
+        self.tmux.as_ref().map(|state| state.window)
+    }
+
+    /// Whether `window` differs from what the panels were last built from.
+    pub fn tmux_outdated(&self, window: &TmuxWindow) -> bool {
+        self.custom_title.as_deref() != Some(&window.name)
+            || self.tmux.as_ref().is_none_or(|state| {
+                state.layout != window.layout || state.active_pane != window.active_pane
+            })
+    }
+
+    pub fn contains_route(&self, route_id: usize) -> bool {
+        self.inner
+            .values()
+            .any(|item| item.val.route_id == route_id)
+    }
+
+    /// The cells to offer tmux as the client size: what fits in a single
+    /// panel, which unlike the grid as a whole has its margin taken out.
+    pub fn tmux_client_size(&self) -> (usize, usize) {
+        let dimension = self.grid_dimension();
+        let cell = dimension.cell;
+        if cell.cell_width == 0 || cell.cell_height == 0 {
+            return (dimension.columns, dimension.lines);
+        }
+
+        let (margin_x, margin_y) = self.tmux_panel_margin();
+        let width =
+            self.width - self.scaled_margin.left - self.scaled_margin.right - margin_x;
+        let height =
+            self.height - self.scaled_margin.top - self.scaled_margin.bottom - margin_y;
+        (
+            ((width / cell.cell_width as f32) as usize).max(MIN_COLS),
+            ((height / cell.cell_height as f32) as usize).max(MIN_LINES),
+        )
+    }
+
+    /// Panel margin in physical pixels per axis. Panel padding stays out of
+    /// this: cells are drawn from the panel's own origin, over its full size.
+    fn tmux_panel_margin(&self) -> (f32, f32) {
+        let margin = self.panel_config.margin;
+        (
+            (margin.left + margin.right) * self.scale,
+            (margin.top + margin.bottom) * self.scale,
+        )
+    }
+
+    /// Room a layout node takes along an axis, panel margins included.
+    fn tmux_extent(&self, layout: &LayoutNode, cell: (f32, f32), row: bool) -> f32 {
+        let (margin_x, margin_y) = self.tmux_panel_margin();
+        let (children, along) = match &layout.kind {
+            LayoutKind::Pane(_) => {
+                return if row {
+                    layout.columns as f32 * cell.0 + margin_x
+                } else {
+                    layout.lines as f32 * cell.1 + margin_y
+                };
+            }
+            LayoutKind::Row(children) => (children, row),
+            LayoutKind::Column(children) => (children, !row),
+        };
+
+        let extents = children.iter().map(|c| self.tmux_extent(c, cell, row));
+        if along {
+            let gap = if row {
+                self.panel_config.column_gap
+            } else {
+                self.panel_config.row_gap
+            };
+            let gaps = children.len().saturating_sub(1) as f32 * gap * self.scale;
+            extents.sum::<f32>() + gaps
+        } else {
+            extents.fold(0.0, f32::max)
+        }
+    }
+
+    /// Rebuild the panel tree after a tmux layout, reusing the contexts of
+    /// panes that stay and asking `create` for new ones. Returns the items
+    /// of panes that are gone.
+    ///
+    /// Every panel reserves exactly the cells tmux gave it, since a terminal
+    /// wider than its panel gets clipped. What is left over, such as the
+    /// divider cells tmux counts and a panel gap may not need, is shared by
+    /// weight.
+    pub fn set_tmux_layout(
+        &mut self,
+        layout: &LayoutNode,
+        active_pane: Option<u32>,
+        create: &mut dyn FnMut(u32, usize, usize) -> Context<T>,
+    ) -> Vec<ContextGridItem<T>> {
+        let metrics = self.current().dimension.cell;
+        let cell = (metrics.cell_width as f32, metrics.cell_height as f32);
+
+        let mut existing: FxHashMap<u32, ContextGridItem<T>> = self
+            .inner
+            .drain()
+            .filter_map(|(_, item)| Some((item.val.messenger.tmux_pane()?, item)))
+            .collect();
+
+        let root_style = self.tree.style(self.root_node).cloned().unwrap_or_default();
+        self.tree = TaffyTree::new();
+        self.root_node = self
+            .tree
+            .new_leaf(root_style)
+            .expect("Failed to create root node");
+
+        // The root container lays its child out in a row.
+        let node = self
+            .build_tmux_node(layout, 1.0, true, cell, active_pane, &mut existing, create)
+            .expect("Failed to create panel node");
+        self.tree
+            .add_child(self.root_node, node)
+            .expect("Failed to add child");
+
+        self.root = self.get_ordered_keys().first().copied();
+        if !self.inner.contains_key(&self.current) {
+            self.current = self.root.unwrap_or(node);
+        }
+        existing.into_values().collect()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_tmux_node(
+        &mut self,
+        layout: &LayoutNode,
+        weight: f32,
+        in_row: bool,
+        cell: (f32, f32),
+        active_pane: Option<u32>,
+        existing: &mut FxHashMap<u32, ContextGridItem<T>>,
+        create: &mut dyn FnMut(u32, usize, usize) -> Context<T>,
+    ) -> Result<NodeId, TaffyError> {
+        let extent = self.tmux_extent(layout, cell, in_row);
+        let (direction, children) = match &layout.kind {
+            LayoutKind::Pane(pane) => {
+                // Unlike `extent`, a flex basis does not include the margin.
+                let (margin_x, margin_y) = self.tmux_panel_margin();
+                let margin = if in_row { margin_x } else { margin_y };
+                let mut style = self.create_panel_style();
+                style.flex_basis = length(extent - margin);
+                style.flex_grow = weight;
+                let node = self.tree.new_leaf(style)?;
+
+                let size = (layout.columns, layout.lines);
+                let mut item = existing.remove(pane).unwrap_or_else(|| {
+                    ContextGridItem::new(create(*pane, size.0, size.1))
+                });
+                item.val.tmux_size = Some(size);
+                self.inner.insert(node, item);
+                if active_pane == Some(*pane) {
+                    self.current = node;
+                }
+                return Ok(node);
+            }
+            LayoutKind::Row(children) => (taffy::FlexDirection::Row, children),
+            LayoutKind::Column(children) => (taffy::FlexDirection::Column, children),
+        };
+
+        let scale = self.scale;
+        let container = self.tree.new_leaf(Style {
+            display: Display::Flex,
+            flex_direction: direction,
+            flex_basis: length(extent),
+            flex_grow: weight,
+            flex_shrink: 1.0,
+            gap: geometry::Size {
+                width: length(self.panel_config.column_gap * scale),
+                height: length(self.panel_config.row_gap * scale),
+            },
+            ..Default::default()
+        })?;
+        let row = direction == taffy::FlexDirection::Row;
+        for child in children {
+            let weight = if row { child.columns } else { child.lines };
+            let node = self.build_tmux_node(
+                child,
+                weight as f32,
+                row,
+                cell,
+                active_pane,
+                existing,
+                create,
+            )?;
+            self.tree.add_child(container, node)?;
+        }
+        Ok(container)
     }
 
     #[inline]

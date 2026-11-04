@@ -349,6 +349,8 @@ impl EventListener for EventRecorder {
         let name = match event {
             RioEvent::TerminalDamaged(_) => "damaged",
             RioEvent::ChildExited(..) => "exited",
+            RioEvent::TmuxUpdate(..) => "tmux update",
+            RioEvent::TmuxEnded(..) => "tmux ended",
             _ => return,
         };
         let _ = self.0.send(name);
@@ -460,4 +462,137 @@ fn sync_hold_times_out_and_wakes_the_renderer() {
         "woken after {elapsed:?}, before the deadline"
     );
     assert!(!terminal.lock().synchronized_output());
+}
+
+fn tmux_state() -> State {
+    let mut state = State::default();
+    state.parser.set_tmux_control_allowed(true);
+    state
+}
+
+fn queued(state: &State) -> Vec<String> {
+    state
+        .write_list
+        .iter()
+        .map(|line| String::from_utf8_lossy(line).into_owned())
+        .collect()
+}
+
+/// The hosting terminal sees what surrounds the session and nothing of it.
+#[test]
+fn tmux_session_leaves_the_terminal_untouched_and_hands_it_back() {
+    let (mut machine, events, _) = recording_machine(
+        b"before\x1bP1000p%begin 1 1 0\r\n%end 1 1 0\r\n\
+          %output %0 \xe2\x9c\x9c not for this grid\r\n\
+          %exit\r\n\x1b\\after"
+            .to_vec(),
+        Some(ErrorKind::WouldBlock),
+    );
+    let mut state = tmux_state();
+    machine
+        .pty_read(&mut state, &mut vec![0; READ_BUFFER_SIZE])
+        .unwrap();
+
+    assert!(state.tmux.is_none());
+    let terminal = machine.terminal.lock();
+    let line: String = (0..11)
+        .map(|col| terminal.grid[Line(0)][Column(col)].c())
+        .collect();
+    assert_eq!(line, "beforeafter");
+    drop(terminal);
+    assert!(events.try_iter().any(|event| event == "tmux ended"));
+}
+
+#[test]
+fn tmux_session_starts_mid_buffer_and_spans_reads() {
+    let mut machine = machine(
+        b"\x1bP1000p%begin 1 1 0\r".to_vec(),
+        Some(ErrorKind::WouldBlock),
+    );
+    let mut state = tmux_state();
+    let mut buf = vec![0; READ_BUFFER_SIZE];
+    machine.pty_read(&mut state, &mut buf).unwrap();
+    assert!(state.tmux.is_some());
+    assert!(queued(&state).is_empty(), "no complete line yet");
+
+    machine.pty.bytes = io::Cursor::new(b"\n%end 1 1 0\r\n".to_vec());
+    machine.pty_read(&mut state, &mut buf).unwrap();
+    assert_eq!(queued(&state).len(), 1);
+    assert!(queued(&state)[0].starts_with("list-windows "));
+}
+
+/// `ssh` dying takes the client with it, with no `%exit` and the shell
+/// talking on the same PTY.
+#[test]
+fn tmux_session_lost_to_the_shell_keeps_what_the_shell_said() {
+    let mut machine = machine(
+        b"\x1bP1000p%begin 1 1 0\r\n%end 1 1 0\r\nConnection closed".to_vec(),
+        Some(ErrorKind::WouldBlock),
+    );
+    let mut state = tmux_state();
+    machine
+        .pty_read(&mut state, &mut vec![0; READ_BUFFER_SIZE])
+        .unwrap();
+    assert!(state.tmux.is_none());
+    assert_eq!(first_line(&machine, 17), "Connection closed");
+}
+
+/// The hidden tab must be back before the exit closes it.
+#[test]
+fn tmux_session_ends_before_the_child_exit_is_reported() {
+    let (mut machine, events, _) = recording_machine(
+        b"\x1bP1000p%begin 1 1 0\r\n%end 1 1 0\r\n".to_vec(),
+        Some(ErrorKind::WouldBlock),
+    );
+    machine.set_tmux_control(true);
+    let (registration, readiness) = corcovado::Registration::new2();
+    machine.pty.child = Some(registration);
+    readiness.set_readiness(Ready::readable()).unwrap();
+    machine.spawn().join().unwrap();
+
+    let events: Vec<_> = events.try_iter().collect();
+    let ended = events.iter().position(|event| *event == "tmux ended");
+    let exited = events.iter().position(|event| *event == "exited");
+    assert!(ended.is_some(), "events: {events:?}");
+    assert!(ended < exited, "events: {events:?}");
+}
+
+#[test]
+fn tmux_commands_after_the_session_never_reach_the_shell() {
+    let mut machine = machine(Vec::new(), Some(ErrorKind::WouldBlock));
+    let mut state = tmux_state();
+    machine
+        .channel()
+        .send(Msg::TmuxCommand("send-keys -t %0 -H 72 6d".into()))
+        .unwrap();
+    assert!(machine.drain_recv_channel(&mut state));
+    assert!(queued(&state).is_empty());
+}
+
+#[test]
+fn dcs_1000p_is_ignored_unless_enabled() {
+    let mut machine = machine(
+        b"\x1bP1000p%begin 1 1 0\r\n\x1b\\shown".to_vec(),
+        Some(ErrorKind::WouldBlock),
+    );
+    let mut state = State::default();
+    machine
+        .pty_read(&mut state, &mut vec![0; READ_BUFFER_SIZE])
+        .unwrap();
+    assert!(state.tmux.is_none());
+    assert_eq!(first_line(&machine, 5), "shown");
+}
+
+#[test]
+fn other_dcs_p_sequences_do_not_start_tmux() {
+    let mut machine = machine(
+        b"\x1bP999p\x1b\\shown".to_vec(),
+        Some(ErrorKind::WouldBlock),
+    );
+    let mut state = tmux_state();
+    machine
+        .pty_read(&mut state, &mut vec![0; READ_BUFFER_SIZE])
+        .unwrap();
+    assert!(state.tmux.is_none());
+    assert_eq!(first_line(&machine, 5), "shown");
 }

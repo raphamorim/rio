@@ -706,7 +706,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .current_grid_mut()
                         .get_by_route_id(route_id)
                     {
-                        item.context_mut().messenger.send_bytes(resp.into_bytes());
+                        item.context_mut().messenger.send_reply(resp.into_bytes());
                     }
                 }
             }
@@ -936,7 +936,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .context_manager
                             .get_by_route_id(route_id)
                         {
-                            item.val.messenger.send_bytes(text.into_bytes());
+                            item.val.messenger.send_reply(text.into_bytes());
                         }
                     }
                 }
@@ -962,8 +962,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .context_manager
                         .get_by_route_id(route_id)
                     {
-                        item.val.messenger.send_bytes(text.into_bytes());
+                        item.val.messenger.send_reply(text.into_bytes());
                     }
+                }
+            }
+            RioEventType::Rio(RioEvent::TmuxUpdate(route_id, snapshot)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.window.screen.tmux_update(route_id, &snapshot);
+                    route.request_redraw();
+                }
+            }
+            RioEventType::Rio(RioEvent::TmuxEnded(route_id)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.window.screen.tmux_end(route_id);
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::TextAreaSizeRequest(route_id, format)) => {
@@ -978,7 +990,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         let text = format(crate::renderer::utils::terminal_dimensions(
                             &dimension,
                         ));
-                        item.val.messenger.send_bytes(text.into_bytes());
+                        item.val.messenger.send_reply(text.into_bytes());
                     }
                 }
             }
@@ -1012,7 +1024,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     };
                     drop(terminal);
 
-                    item.val.messenger.send_bytes(format(color).into_bytes());
+                    item.val.messenger.send_reply(format(color).into_bytes());
                 }
             }
             RioEventType::Rio(RioEvent::CreateWindow) => {

@@ -246,6 +246,10 @@ pub struct Config {
         rename = "scrollback-history-limit"
     )]
     pub scrollback_history_limit: usize,
+    /// Let `tmux -CC` take over the tab it runs in, showing tmux windows as
+    /// tabs and panes as splits until the session ends.
+    #[serde(default = "default_bool_true", rename = "tmux-control-mode")]
+    pub tmux_control_mode: bool,
     #[serde(default = "effects::Effects::default")]
     pub effects: effects::Effects,
 }
@@ -751,6 +755,7 @@ impl Default for Config {
             bell: Bell::default(),
             enable_scroll_bar: true,
             scrollback_history_limit: default_scrollback_history_limit(),
+            tmux_control_mode: true,
             effects: effects::Effects::default(),
         }
     }

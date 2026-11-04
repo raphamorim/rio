@@ -14,6 +14,8 @@ use crate::event::RioEvent;
 #[cfg(feature = "pty")]
 use crate::event::{EventListener, Msg, WindowId};
 #[cfg(feature = "pty")]
+use crate::tmux::session::ControlSession;
+#[cfg(feature = "pty")]
 use corcovado::channel;
 #[cfg(all(unix, feature = "pty"))]
 use corcovado::unix::UnixReady;
@@ -128,6 +130,7 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     event_proxy: U,
     window_id: WindowId,
     route_id: usize,
+    tmux_control: bool,
 }
 
 #[cfg(feature = "pty")]
@@ -139,6 +142,9 @@ pub struct State {
     /// Deadline of the terminal's active synchronized update, refreshed
     /// whenever the terminal lock is held.
     sync_deadline: Option<Instant>,
+    /// Set while the PTY carries a tmux control mode stream, in which case
+    /// bytes go here instead of to `parser`.
+    tmux: Option<ControlSession>,
 }
 
 #[cfg(feature = "pty")]
@@ -228,7 +234,14 @@ where
             event_proxy,
             window_id,
             route_id,
+            tmux_control: false,
         })
+    }
+
+    /// Let `DCS 1000 p` start a tmux control mode session. The frontend must
+    /// handle [`RioEvent::TmuxUpdate`] and [`RioEvent::TmuxEnded`].
+    pub fn set_tmux_control(&mut self, enabled: bool) {
+        self.tmux_control = enabled;
     }
 
     /// Wake the renderer unless an earlier wakeup is still unconsumed.
@@ -302,7 +315,7 @@ where
             held_before.get_or_insert(terminal.synchronized_output());
 
             // Parse the incoming bytes.
-            state.parser.advance(&mut **terminal, &buf[..unprocessed]);
+            self.process(state, &mut **terminal, &buf[..unprocessed]);
 
             processed += unprocessed;
             unprocessed = 0;
@@ -318,7 +331,7 @@ where
         // extract all accumulated damage when it locks the terminal.
         if processed > 0 {
             if let Some(ref mut term) = terminal {
-                state.sync_deadline = term.sync_update_deadline();
+                state.sync_deadline = Self::next_sync_deadline(state, term);
                 let held = term.synchronized_output();
                 let hold_ended = held_before == Some(true) && !held;
                 if hold_ended || (!held && term.peek_damage_event().is_some()) {
@@ -328,6 +341,64 @@ where
         }
 
         result
+    }
+
+    /// Hand bytes to the VT parser or the tmux session, moving between the
+    /// two as control mode starts and ends.
+    #[inline]
+    fn process(&self, state: &mut State, terminal: &mut Crosswords<U>, mut bytes: &[u8]) {
+        while !bytes.is_empty() {
+            let Some(session) = &mut state.tmux else {
+                bytes = &bytes[state.parser.advance(terminal, bytes)..];
+                if state.parser.take_tmux_control_start() {
+                    state.tmux = Some(ControlSession::new());
+                }
+                continue;
+            };
+
+            let fed = session.feed(bytes);
+            bytes = &bytes[fed.consumed..];
+            self.flush_tmux(state);
+            if let Some(reason) = fed.ended {
+                tracing::info!("tmux control mode ended: {reason:?}");
+                self.end_tmux(state);
+                // The parser still believes it is inside the DCS. A real ST
+                // after `%exit` is harmless on top of this one.
+                state.parser.advance(terminal, b"\x1b\\");
+            }
+        }
+    }
+
+    /// Queue what the tmux session wants written and publish its state.
+    fn flush_tmux(&self, state: &mut State) {
+        let Some(session) = &mut state.tmux else {
+            return;
+        };
+        for command in session.take_commands() {
+            state.write_list.push_back(Cow::Owned(command));
+        }
+        if let Some(snapshot) = session.take_snapshot() {
+            self.event_proxy.send_event(
+                RioEvent::TmuxUpdate(self.route_id, Arc::new(snapshot)),
+                self.window_id,
+            );
+        }
+    }
+
+    fn end_tmux(&self, state: &mut State) {
+        if state.tmux.take().is_some() {
+            self.event_proxy
+                .send_event(RioEvent::TmuxEnded(self.route_id), self.window_id);
+        }
+    }
+
+    /// The soonest deadline among the terminal and any tmux panes.
+    fn next_sync_deadline(state: &State, terminal: &Crosswords<U>) -> Option<Instant> {
+        let panes = state.tmux.as_ref().and_then(ControlSession::sync_deadline);
+        match (terminal.sync_update_deadline(), panes) {
+            (Some(terminal), Some(panes)) => Some(terminal.min(panes)),
+            (terminal, panes) => terminal.or(panes),
+        }
     }
 
     /// Drain the channel.
@@ -341,6 +412,18 @@ where
                     let _ = self.pty.set_winsize(window_size.into());
                 }
                 Msg::Shutdown => return false,
+                Msg::TmuxCommand(command) => {
+                    if let Some(session) = &mut state.tmux {
+                        session.command(&command);
+                        self.flush_tmux(state);
+                    }
+                }
+                Msg::TmuxAttachPane(pane, sink) => {
+                    if let Some(session) = &mut state.tmux {
+                        session.attach_pane(pane, sink);
+                        self.flush_tmux(state);
+                    }
+                }
             }
         }
 
@@ -387,6 +470,7 @@ where
     pub fn spawn(mut self) -> JoinHandle<(Self, State)> {
         spawn_named("PTY reader", move || {
             let mut state = State::default();
+            state.parser.set_tmux_control_allowed(self.tmux_control);
             let mut buf = [0u8; READ_BUFFER_SIZE];
             let reason = self.run(&mut state, &mut buf);
             self.finish(&mut state, &mut buf, reason);
@@ -449,7 +533,10 @@ where
                     terminal.end_sync_update();
                     self.notify_damage(&mut terminal);
                 }
-                state.sync_deadline = terminal.sync_update_deadline();
+                if let Some(session) = &mut state.tmux {
+                    session.expire_sync(Instant::now());
+                }
+                state.sync_deadline = Self::next_sync_deadline(state, &terminal);
             }
 
             if events.is_empty() && self.receiver.peek().is_none() {
@@ -547,6 +634,10 @@ where
                 break;
             }
         }
+
+        // Restores the hidden session first, so that the exit below closes
+        // it like any other tab instead of finding nothing to close.
+        self.end_tmux(state);
 
         // Flush exactly once before publishing any exit notification.
         let pending_sync = {

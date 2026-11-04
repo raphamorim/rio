@@ -243,6 +243,7 @@ impl From<String> for Action {
             "movecurrenttabtoprev" => Some(Action::MoveCurrentTabToPrev),
             "movecurrenttabtonext" => Some(Action::MoveCurrentTabToNext),
             "closetab" => Some(Action::TabCloseCurrent),
+            "tmuxdetach" => Some(Action::TmuxDetach),
             "closesplitortab" => Some(Action::CloseCurrentSplitOrTab),
             "closeunfocusedtabs" => Some(Action::TabCloseUnfocused),
             "openconfigeditor" => Some(Action::ConfigEditor),
@@ -437,6 +438,9 @@ pub enum Action {
 
     /// Close tab.
     TabCloseCurrent,
+
+    /// Detach from the tmux control mode session of the focused tab.
+    TmuxDetach,
 
     CloseCurrentSplitOrTab,
 

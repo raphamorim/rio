@@ -92,6 +92,14 @@ pub enum Msg {
     Shutdown,
 
     Resize(WindowSize),
+
+    /// Run a tmux command on this PTY's control mode session. Dropped if the
+    /// session is over, so that it can never reach the shell underneath.
+    /// Must be built from ids and literals only.
+    TmuxCommand(String),
+
+    /// Route the output of a tmux pane to `sink`.
+    TmuxAttachPane(u32, Box<dyn crate::tmux::PaneSink>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -287,6 +295,13 @@ pub enum RioEvent {
     /// Selection scroll tick — auto-scroll while dragging outside viewport.
     SelectionScrollTick,
 
+    /// The tmux control mode session on the PTY of `route_id` changed shape.
+    TmuxUpdate(usize, Arc<crate::tmux::TmuxSnapshot>),
+
+    /// The tmux control mode session on the PTY of `route_id` ended, or was
+    /// lost along with the PTY.
+    TmuxEnded(usize),
+
     /// Update terminal screen colors.
     ///
     /// The first usize is the route_id, the second is the color index to change.
@@ -362,6 +377,8 @@ impl Debug for RioEvent {
             RioEvent::Exit => write!(f, "Exit"),
             RioEvent::Quit => write!(f, "Quit"),
             RioEvent::CloseTerminal(route) => write!(f, "CloseTerminal {route}"),
+            RioEvent::TmuxUpdate(route, _) => write!(f, "TmuxUpdate(route={route})"),
+            RioEvent::TmuxEnded(route) => write!(f, "TmuxEnded(route={route})"),
             RioEvent::ChildExited(route, status) => {
                 write!(f, "ChildExited(route={route}, status={status:?})")
             }

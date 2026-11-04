@@ -473,6 +473,12 @@ struct ProcessorState {
 
     /// State for APC (Application Program Command) sequences.
     apc_state: ApcState,
+
+    /// Whether `DCS 1000 p` starts tmux control mode.
+    tmux_control_allowed: bool,
+
+    /// `DCS 1000 p` was just parsed; the caller takes over the stream.
+    tmux_control_started: bool,
 }
 
 #[derive(Debug, Default)]
@@ -508,13 +514,28 @@ impl Processor {
     /// Bytes are always applied to the grid. A synchronized update only sets
     /// `SyncUpdate` on the handler so the renderer holds the last frame
     /// until it ends.
+    ///
+    /// Returns the bytes consumed. It falls short of `bytes.len()` only when
+    /// tmux control mode started, see [`Processor::take_tmux_control_start`].
     #[inline]
-    pub fn advance<H>(&mut self, handler: &mut H, bytes: &[u8])
+    pub fn advance<H>(&mut self, handler: &mut H, bytes: &[u8]) -> usize
     where
         H: Handler,
     {
         let mut performer = Performer::new(&mut self.state, handler);
-        self.parser.advance(&mut performer, bytes);
+        self.parser.advance(&mut performer, bytes)
+    }
+
+    /// Stop at `DCS 1000 p` so the caller can run tmux control mode. Off by
+    /// default, leaving the sequence ignored like any other unknown DCS.
+    pub fn set_tmux_control_allowed(&mut self, allowed: bool) {
+        self.state.tmux_control_allowed = allowed;
+    }
+
+    /// Whether the last `advance` stopped because tmux control mode started.
+    /// The bytes after the consumed ones are then the control stream.
+    pub fn take_tmux_control_start(&mut self) -> bool {
+        std::mem::take(&mut self.state.tmux_control_started)
     }
 }
 
@@ -824,11 +845,25 @@ impl<U: Handler> Perform for Performer<'_, U> {
                     _ => (),
                 }
             }
+            // tmux control mode. Only the start is seen here: what follows
+            // is not DCS data as far as the parser is concerned.
+            ('p', [])
+                if self.state.tmux_control_allowed
+                    && !ignore
+                    && params.iter().next().map(|p| p[0]) == Some(1000) =>
+            {
+                self.state.tmux_control_started = true;
+            }
             _ => debug!(
                 "[unhandled hook] params={:?}, ints: {:?}, ignore: {:?}, action: {:?}",
                 params, intermediates, ignore, action
             ),
         }
+    }
+
+    #[inline]
+    fn terminated(&self) -> bool {
+        self.state.tmux_control_started
     }
 
     fn put(&mut self, byte: u8) {
