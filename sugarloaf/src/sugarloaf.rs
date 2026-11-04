@@ -144,6 +144,27 @@ pub enum Colorspace {
     Rec2020,
 }
 
+impl Colorspace {
+    /// Encoding for the `input_colorspace` uniform the quad, image and
+    /// grid shaders read: `0` applies the sRGB -> DisplayP3 matrix, `1`
+    /// writes the input as-is, `2` applies the Rec.2020 -> DisplayP3
+    /// matrix.
+    ///
+    /// The matrices only make sense when the surface is tagged DisplayP3
+    /// (the native Metal layer). An sRGB surface (the Vulkan swapchain,
+    /// wgpu on Linux and Windows) displays sRGB input unchanged, so sRGB input
+    /// must take no step there; otherwise every colour that goes through
+    /// `prepare_output_rgb` (quads, grid cells, glyphs) lands off its
+    /// primaries, while images, which skip the sRGB matrix, stay exact.
+    pub fn shader_code(self, surface_is_p3: bool) -> u32 {
+        match self {
+            Colorspace::Srgb if surface_is_p3 => 0,
+            Colorspace::Srgb | Colorspace::DisplayP3 => 1,
+            Colorspace::Rec2020 => 2,
+        }
+    }
+}
+
 #[allow(clippy::derivable_impls)]
 impl Default for Colorspace {
     fn default() -> Colorspace {
@@ -268,16 +289,12 @@ impl Sugarloaf<'_> {
         Ok(instance)
     }
 
-    /// Encoding for `GridUniforms.input_colorspace` — same mapping
-    /// the Metal quad pipeline uses:
-    ///   0 = sRGB, 1 = DisplayP3, 2 = Rec.2020.
+    /// Encoding for `GridUniforms.input_colorspace` — the same value
+    /// this renderer's quad pipeline uses (`Colorspace::shader_code`),
+    /// so the grid and the quad fill agree on the transform.
     #[inline]
     pub fn input_colorspace(&self) -> u32 {
-        match self.colorspace {
-            Colorspace::Srgb => 0,
-            Colorspace::DisplayP3 => 1,
-            Colorspace::Rec2020 => 2,
-        }
+        self.colorspace.shader_code(self.renderer.surface_is_p3())
     }
 
     #[inline]
@@ -1255,5 +1272,25 @@ impl Sugarloaf<'_> {
         ctx.queue.submit(Some(encoder.finish()));
         ctx.queue.present(frame);
         self.reset();
+    }
+}
+
+#[cfg(test)]
+mod colorspace_tests {
+    use super::Colorspace;
+
+    #[test]
+    fn srgb_input_takes_no_step_on_an_srgb_surface() {
+        // The Vulkan swapchain and wgpu surfaces outside macOS display
+        // sRGB: no matrix.
+        assert_eq!(Colorspace::Srgb.shader_code(false), 1);
+        // The Metal layer is tagged DisplayP3: sRGB input goes through
+        // the sRGB -> P3 matrix.
+        assert_eq!(Colorspace::Srgb.shader_code(true), 0);
+        // Already-P3 and Rec.2020 input keep their codes on both.
+        assert_eq!(Colorspace::DisplayP3.shader_code(true), 1);
+        assert_eq!(Colorspace::DisplayP3.shader_code(false), 1);
+        assert_eq!(Colorspace::Rec2020.shader_code(true), 2);
+        assert_eq!(Colorspace::Rec2020.shader_code(false), 2);
     }
 }

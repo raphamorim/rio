@@ -281,11 +281,8 @@ pub struct MetalRenderer {
 #[cfg(target_os = "macos")]
 impl MetalRenderer {
     pub fn new(context: &MetalContext, colorspace: crate::sugarloaf::Colorspace) -> Self {
-        let input_colorspace = match colorspace {
-            crate::sugarloaf::Colorspace::Srgb => 0u8,
-            crate::sugarloaf::Colorspace::DisplayP3 => 1u8,
-            crate::sugarloaf::Colorspace::Rec2020 => 2u8,
-        };
+        // The CAMetalLayer is tagged DisplayP3 (`context/metal.rs`).
+        let input_colorspace = colorspace.shader_code(true) as u8;
 
         // Create Metal shader library
         let shader_source = include_str!("renderer.metal");
@@ -997,6 +994,16 @@ fn upload_background_image_texture(
 }
 
 impl Renderer {
+    /// Whether sRGB input takes the sRGB -> DisplayP3 step on this
+    /// renderer's surface. The native Metal layer is tagged DisplayP3
+    /// (`context/metal.rs`); the wgpu layer on macOS keeps the step it
+    /// had before. The Vulkan swapchain (`B8G8R8A8_UNORM` +
+    /// `SRGB_NONLINEAR`) and wgpu surfaces on Linux and Windows display
+    /// sRGB.
+    pub(crate) fn surface_is_p3(&self) -> bool {
+        cfg!(target_os = "macos")
+    }
+
     pub fn new(context: &Context, colorspace: crate::sugarloaf::Colorspace) -> Self {
         // `colorspace` only matters to the Metal path (macOS); on other
         // platforms the shader doesn't know the sRGB→P3 matrix yet so we
