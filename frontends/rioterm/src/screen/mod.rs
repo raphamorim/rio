@@ -817,6 +817,10 @@ impl Screen<'_> {
             return;
         }
 
+        if key.state == ElementState::Pressed && self.context_manager.close_if_exited() {
+            return;
+        }
+
         let mode = self.get_mode();
         let mods = self.modifiers.state();
 

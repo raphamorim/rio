@@ -147,6 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load command line options.
     let args = cli::Cli::parse();
+    let overrides = args.window_options.terminal_options.overrides();
 
     let write_config_path = args.window_options.terminal_options.write_config.clone();
     if let Some(config_path) = write_config_path {
@@ -220,7 +221,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
         }
 
-        config.title.placeholder = args.window_options.terminal_options.title_placeholder;
+        overrides.apply(&mut config);
     }
 
     #[cfg(target_os = "linux")]
@@ -244,6 +245,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config_error,
         &window_event_loop,
         app_id,
+        overrides,
     );
     let _ = application.run(window_event_loop);
 

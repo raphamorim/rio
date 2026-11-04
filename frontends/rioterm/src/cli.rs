@@ -43,12 +43,29 @@ pub struct TerminalOptions {
     #[clap(long, name = "title-placeholder")]
     pub title_placeholder: Option<String>,
 
+    /// Set a fixed window title, ignoring titles set by the shell
+    #[clap(long)]
+    pub title: Option<String>,
+
+    /// Keep the window open after the command exits, until a key is pressed
+    #[clap(long)]
+    pub hold: bool,
+
     /// Set the Wayland app_id or X11 WM_CLASS (Linux/BSD only)
     #[clap(long)]
     pub app_id: Option<String>,
 }
 
 impl TerminalOptions {
+    /// The title and hold flags, which a config reload must keep.
+    pub fn overrides(&self) -> Overrides {
+        Overrides {
+            title: self.title.clone(),
+            title_placeholder: self.title_placeholder.clone(),
+            hold: self.hold,
+        }
+    }
+
     /// Shell override passed through the CLI.
     pub fn command(&self) -> Option<Shell> {
         let (program, args) = self.command.split_first()?;
@@ -77,4 +94,77 @@ impl TerminalOptions {
 
     //     pty_config.hold |= self.hold;
     // }
+}
+
+/// Launch flags applied on top of the config file, at startup and on reload.
+#[derive(Clone, Debug, Default)]
+pub struct Overrides {
+    title: Option<String>,
+    title_placeholder: Option<String>,
+    hold: bool,
+}
+
+impl Overrides {
+    pub fn apply(&self, config: &mut rio_backend::config::Config) {
+        if let Some(title) = &self.title {
+            config.title.placeholder = Some(title.clone());
+            config.title.content = title.clone();
+        } else if let Some(placeholder) = &self.title_placeholder {
+            config.title.placeholder = Some(placeholder.clone());
+        }
+        if self.hold {
+            config.hold = true;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rio_backend::config::Config;
+
+    fn options(args: &[&str]) -> TerminalOptions {
+        let mut argv = vec!["rio"];
+        argv.extend_from_slice(args);
+        Cli::parse_from(argv).window_options.terminal_options
+    }
+
+    #[test]
+    fn title_pins_the_window_title() {
+        let mut config = Config::default();
+        options(&["--title=btop", "--title-placeholder=x"])
+            .overrides()
+            .apply(&mut config);
+        assert_eq!(config.title.content, "btop");
+        assert_eq!(config.title.placeholder.as_deref(), Some("btop"));
+    }
+
+    #[test]
+    fn title_placeholder_keeps_the_title_template() {
+        let mut config = Config::default();
+        let content = config.title.content.clone();
+        options(&["--title-placeholder=x"])
+            .overrides()
+            .apply(&mut config);
+        assert_eq!(config.title.content, content);
+        assert_eq!(config.title.placeholder.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn no_flags_keep_the_configured_title() {
+        let mut config = Config::default();
+        config.title.placeholder = Some(String::from("Rio"));
+        options(&[]).overrides().apply(&mut config);
+        assert_eq!(config.title.placeholder.as_deref(), Some("Rio"));
+        assert!(!config.hold);
+    }
+
+    #[test]
+    fn hold_flag_sets_hold() {
+        let mut config = Config::default();
+        options(&["--hold", "-e", "true"])
+            .overrides()
+            .apply(&mut config);
+        assert!(config.hold);
+    }
 }

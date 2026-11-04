@@ -7,6 +7,7 @@ use crate::event::sync::FairMutex;
 use crate::event::{Msg, RioEvent};
 pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
+use crate::performer::handler::Handler;
 use crate::performer::{self, Machine};
 use renderable::Cursor;
 use renderable::RenderableContent;
@@ -64,6 +65,8 @@ pub struct Context<T: EventListener> {
     /// `{{ program }}` and the empty-title strip fallback without ever
     /// inspecting the foreground process.
     pub spawned_program: String,
+    /// The command exited and the pane is held open until a key press.
+    pub exited: bool,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
 
@@ -201,6 +204,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         title: ContextTitle::default(),
         title_dirty: false,
         spawned_program: String::new(),
+        exited: false,
         _io_thread: None,
     }
 }
@@ -397,6 +401,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title: ContextTitle::default(),
             title_dirty: false,
             spawned_program: spawned_program_name(config),
+            exited: false,
             _io_thread: io_thread,
         };
         context.title = ContextTitle {
@@ -522,6 +527,38 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             window_id,
             config,
         })
+    }
+
+    /// Holds the exited pane open with a note instead of closing it.
+    /// Returns false when the pane is gone or was already held, so the
+    /// close goes ahead.
+    pub fn hold_exited(&mut self, route_id: usize) -> bool {
+        let Some(item) = self.get_by_route_id(route_id) else {
+            return false;
+        };
+        let context = item.context_mut();
+        if context.exited {
+            return false;
+        }
+        context.exited = true;
+        {
+            let mut terminal = context.terminal.lock();
+            terminal.carriage_return();
+            terminal.linefeed();
+            terminal.input_str("Process exited. Press any key to close the terminal.");
+        }
+        context.renderable_content.pending_update.set_dirty();
+        true
+    }
+
+    /// Closes the focused pane if it is held after its command exited.
+    pub fn close_if_exited(&mut self) -> bool {
+        if !self.current().exited {
+            return false;
+        }
+        self.event_proxy
+            .send_event(RioEvent::CloseTerminal(self.current_route), self.window_id);
+        true
     }
 
     #[inline]
@@ -1612,6 +1649,41 @@ pub mod test {
         assert!(cm.bell(2));
         assert!(cm.clear_current_bell());
         assert!(!cm.bell(2));
+    }
+
+    #[test]
+    fn hold_keeps_exited_pane_until_closed() {
+        use rio_backend::crosswords::pos::{Column, Line, Pos};
+        use rio_backend::crosswords::CrosswordsSize;
+
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
+                .unwrap();
+        let route = cm.current().route_id;
+        cm.current()
+            .terminal
+            .lock()
+            .resize(CrosswordsSize::new(80, 4));
+        assert!(!cm.close_if_exited());
+
+        assert!(cm.hold_exited(route));
+        assert!(cm.current().exited);
+        let text = {
+            let terminal = cm.current().terminal.lock();
+            let end = Pos::new(
+                Line(terminal.screen_lines() as i32 - 1),
+                Column(terminal.columns() - 1),
+            );
+            terminal.bounds_to_string(Pos::new(Line(0), Column(0)), end)
+        };
+        assert!(
+            text.contains("Process exited. Press any key to close the terminal."),
+            "{text:?}"
+        );
+
+        assert!(cm.close_if_exited());
+        assert!(!cm.hold_exited(route));
+        assert!(!cm.hold_exited(usize::MAX));
     }
 
     #[test]

@@ -218,6 +218,9 @@ pub struct Config {
     pub ignore_selection_fg_color: bool,
     #[serde(default = "default_bool_true", rename = "confirm-before-quit")]
     pub confirm_before_quit: bool,
+    /// Keep a pane open after its command exits, until a key is pressed.
+    #[serde(default = "bool::default")]
+    pub hold: bool,
     /// Unicode grapheme clusters as the unit of cell layout (presets
     /// DEC private mode 2027). A
     /// program's DECSET/DECRST still wins at runtime.
@@ -743,6 +746,7 @@ impl Default for Config {
             working_dir: default_working_dir(),
             ignore_selection_fg_color: false,
             confirm_before_quit: true,
+            hold: false,
             grapheme_clustering: true,
             copy_on_select: false,
             hide_cursor_when_typing: false,

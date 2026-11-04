@@ -33,6 +33,7 @@ use std::time::{Duration, Instant};
 
 pub struct Application<'a> {
     config: rio_backend::config::Config,
+    overrides: crate::cli::Overrides,
     /// The title template shows `{{columns}}`/`{{lines}}`, so a resize
     /// must re-render titles (the only title data with no PTY event;
     /// everything else arrives via OSC 0/2 and OSC 7).
@@ -54,6 +55,7 @@ impl Application<'_> {
         config_error: Option<rio_backend::config::ConfigError>,
         event_loop: &EventLoop<EventPayload>,
         app_id: Option<String>,
+        overrides: crate::cli::Overrides,
     ) -> Application<'app> {
         // SAFETY: Since this takes a pointer to the winit event loop, it MUST be dropped first,
         // which is done in `exiting`.
@@ -82,6 +84,7 @@ impl Application<'_> {
         Application {
             title_tracks_size: title_tracks_size(&config),
             config,
+            overrides,
             event_proxy,
             router,
             scheduler,
@@ -585,11 +588,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::UpdateConfig) => {
-                let (config, config_error) = match rio_backend::config::Config::try_load()
-                {
-                    Ok(config) => (config, None),
-                    Err(error) => (rio_backend::config::Config::default(), Some(error)),
-                };
+                let (mut config, config_error) =
+                    match rio_backend::config::Config::try_load() {
+                        Ok(config) => (config, None),
+                        Err(error) => {
+                            (rio_backend::config::Config::default(), Some(error))
+                        }
+                    };
+                self.overrides.apply(&mut config);
 
                 let has_font_updates = self.config.fonts != config.fonts;
                 let has_binding_updates = self.config.bindings != config.bindings;
@@ -712,6 +718,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::CloseTerminal(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    if self.config.hold
+                        && route.window.screen.context_manager.hold_exited(route_id)
+                    {
+                        route.request_redraw();
+                        return;
+                    }
+
                     route
                         .window
                         .screen
