@@ -817,10 +817,6 @@ impl Screen<'_> {
             return;
         }
 
-        if key.state == ElementState::Pressed && self.context_manager.close_if_exited() {
-            return;
-        }
-
         let mode = self.get_mode();
         let mods = self.modifiers.state();
 
@@ -972,6 +968,10 @@ impl Screen<'_> {
         };
 
         if !bytes.is_empty() {
+            if self.context_manager.close_if_exited() {
+                return;
+            }
+
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 

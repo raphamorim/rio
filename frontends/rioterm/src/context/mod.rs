@@ -1,7 +1,9 @@
 pub mod renderable;
 pub mod title;
 
+use crate::ansi::mode::{NamedPrivateMode, PrivateMode};
 use crate::ansi::CursorShape;
+use crate::ansi::{KeyboardModes, KeyboardModesApplyBehavior};
 use crate::context::title::{update_title, ContextTitle};
 use crate::event::sync::FairMutex;
 use crate::event::{Msg, RioEvent};
@@ -546,6 +548,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             terminal.carriage_return();
             terminal.linefeed();
             terminal.input_str("Process exited. Press any key to close the terminal.");
+            terminal.unset_private_mode(PrivateMode::Named(NamedPrivateMode::ShowCursor));
+            Handler::set_keyboard_mode(
+                &mut *terminal,
+                KeyboardModes::empty(),
+                KeyboardModesApplyBehavior::Replace,
+            );
         }
         context.renderable_content.pending_update.set_dirty();
         true
@@ -1654,20 +1662,28 @@ pub mod test {
     #[test]
     fn hold_keeps_exited_pane_until_closed() {
         use rio_backend::crosswords::pos::{Column, Line, Pos};
-        use rio_backend::crosswords::CrosswordsSize;
+        use rio_backend::crosswords::{CrosswordsSize, Mode};
 
         let mut cm =
             ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
                 .unwrap();
         let route = cm.current().route_id;
-        cm.current()
-            .terminal
-            .lock()
-            .resize(CrosswordsSize::new(80, 4));
+        {
+            let mut terminal = cm.current().terminal.lock();
+            terminal.resize(CrosswordsSize::new(80, 4));
+            Handler::set_keyboard_mode(
+                &mut *terminal,
+                KeyboardModes::DISAMBIGUATE_ESC_CODES,
+                KeyboardModesApplyBehavior::Replace,
+            );
+        }
         assert!(!cm.close_if_exited());
 
         assert!(cm.hold_exited(route));
         assert!(cm.current().exited);
+        let mode = cm.current().terminal.lock().mode();
+        assert!(!mode.contains(Mode::SHOW_CURSOR));
+        assert!(!mode.intersects(Mode::KITTY_KEYBOARD_PROTOCOL));
         let text = {
             let terminal = cm.current().terminal.lock();
             let end = Pos::new(
