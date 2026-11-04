@@ -47,8 +47,8 @@ impl Context<'_> {
             }
             #[cfg(target_os = "linux")]
             SugarloafBackend::Vulkan => {
-                if vulkan::available() {
-                    ContextType::Vulkan(vulkan::VulkanContext::new(sugarloaf_window))
+                if let Some(context) = vulkan::VulkanContext::try_new(&sugarloaf_window) {
+                    ContextType::Vulkan(context)
                 } else {
                     tracing::warn!("no usable Vulkan driver, using the CPU renderer");
                     ContextType::Cpu(cpu::CpuContext::new(sugarloaf_window))
