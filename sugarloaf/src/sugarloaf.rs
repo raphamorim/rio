@@ -135,6 +135,11 @@ pub struct SugarloafRenderer {
     /// `Opaque`, while Vulkan exposes `PreMultiplied`, so which adapter
     /// wgpu happens to pick decides whether transparency works at all.
     pub prefer_alpha_capable_adapter: bool,
+    /// Windows-only: present through a DX12 DirectComposition visual.
+    /// Requires the window to be created with
+    /// `WS_EX_NOREDIRECTIONBITMAP`; set by the frontend only when it
+    /// configured that window style.
+    pub windows_dcomp: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -193,6 +198,7 @@ impl Default for SugarloafRenderer {
             font_features: None,
             colorspace: Colorspace::default(),
             prefer_alpha_capable_adapter: false,
+            windows_dcomp: false,
         }
     }
 }

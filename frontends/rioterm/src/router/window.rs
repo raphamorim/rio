@@ -92,12 +92,25 @@ pub fn create_window_builder(
                 window_builder.with_undecorated_shadow(use_undecorated_shadow);
         }
 
-        if let Some(use_no_redirection_bitmap) =
-            config.window.windows_use_no_redirection_bitmap
-        {
+        // The GPU transparency path presents through a DirectComposition
+        // visual in a DX12 swap chain, so the window must be created
+        // without a redirection surface. Use the renderer's single
+        // transparency predicate so the style and the selected backend
+        // cannot disagree: a `blur = true` backdrop is not by itself a
+        // translucent window (the DWM acrylic backdrop only shows through
+        // surface alpha), and flipping this style on for it would leave an
+        // HWND swap chain with no redirection surface to present into.
+        // The CPU renderer presents through the normal redirection
+        // surface, so forcing it off there would make the window blank.
+        let gpu_transparent =
+            !config.renderer.use_cpu && !crate::screen::window_should_be_opaque(config);
+        let use_no_redirection_bitmap = config
+            .window
+            .windows_use_no_redirection_bitmap
+            .unwrap_or(gpu_transparent);
+        if use_no_redirection_bitmap {
             // This sets WS_EX_NOREDIRECTIONBITMAP.
-            window_builder =
-                window_builder.with_no_redirection_bitmap(use_no_redirection_bitmap);
+            window_builder = window_builder.with_no_redirection_bitmap(true);
         }
     }
 
