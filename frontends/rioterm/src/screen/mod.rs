@@ -1078,7 +1078,7 @@ impl Screen<'_> {
                 (BindingKey::Scancode(_), _) => BindingKey::Scancode(key.physical_key),
                 (_, code) => BindingKey::Keycode {
                     key: code,
-                    location: key.location.into(),
+                    location: key.location,
                 },
             };
 
