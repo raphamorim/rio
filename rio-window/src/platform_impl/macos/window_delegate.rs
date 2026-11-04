@@ -29,7 +29,7 @@ use super::cursor::cursor_from_icon;
 use super::display_link::{DisplayLink, DisplayLinkSupport};
 use super::monitor::{self, flip_window_screen_coordinates, get_display_id};
 use super::view::WinitView;
-use super::window::WinitWindow;
+use super::window::{WinitWindow, WinitWindowState};
 use super::{ffi, Fullscreen, MonitorHandle, OsError, WindowId};
 use crate::dpi::{
     LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size,
@@ -243,6 +243,7 @@ declare_class!(
             // TODO: center the cursor if the window had mouse grab when it
             // lost focus
             self.queue_event(WindowEvent::Focused(true));
+            self.update_integrated_titlebar_background(true);
             // Reapply traffic light positioning when window becomes active
             self.move_traffic_light();
         }
@@ -260,6 +261,7 @@ declare_class!(
             self.view().reset_modifiers();
 
             self.queue_event(WindowEvent::Focused(false));
+            self.update_integrated_titlebar_background(false);
         }
 
         /// Invoked when before enter fullscreen
@@ -596,9 +598,16 @@ fn new_window(
             masks |= NSWindowStyleMask::FullSizeContentView;
         }
 
+        let integrate_native_tabs = attrs.platform_specific.unified_titlebar
+            && attrs.platform_specific.tabbing_identifier.is_some()
+            && super::glass::GlassEffect::class_available();
         let window: Option<Retained<WinitWindow>> = unsafe {
             msg_send_id![
-                super(mtm.alloc().set_ivars(())),
+                super(mtm.alloc().set_ivars(WinitWindowState {
+                    integrate_native_tabs,
+                    native_tab_constraints: RefCell::new(Vec::new()),
+                    integrated_titlebar_glass: RefCell::new(None),
+                })),
                 initWithContentRect: frame,
                 styleMask: masks,
                 backing: NSBackingStoreType::NSBackingStoreBuffered,
@@ -652,7 +661,13 @@ fn new_window(
                 // The toolbar style is ignored if there is no toolbar, so it is
                 // necessary to add one.
                 window.setToolbar(Some(&NSToolbar::new(mtm)));
-                window.setToolbarStyle(NSWindowToolbarStyle::Unified);
+                window.setToolbarStyle(if integrate_native_tabs {
+                    window
+                        .setTitleVisibility(NSWindowTitleVisibility::NSWindowTitleHidden);
+                    NSWindowToolbarStyle::UnifiedCompact
+                } else {
+                    NSWindowToolbarStyle::Unified
+                });
             }
         }
 
@@ -718,6 +733,17 @@ fn new_window(
 }
 
 impl WindowDelegate {
+    fn update_integrated_titlebar_background(&self, active: bool) {
+        if !self.window().uses_integrated_native_tabs() {
+            return;
+        }
+
+        self.window().set_integrated_titlebar_background(
+            &self.ivars().background_color.borrow(),
+            active,
+        );
+    }
+
     pub(super) fn new(
         app_delegate: &ApplicationDelegate,
         attrs: WindowAttributes,
@@ -1094,10 +1120,20 @@ impl WindowDelegate {
             // doesn't paint past them. `_cornerRadius` is a private
             // selector — gated on `respondsToSelector:` so it
             // degrades gracefully if Apple ever removes / renames it.
-            if let Some(radius) = self.window_corner_radius() {
+            if self.window().uses_integrated_native_tabs() {
+                // The content view starts below the unified titlebar. Giving it
+                // the window's full radius creates a second pair of rounded
+                // corners at that internal boundary.
+                glass.set_corner_radius(0.0);
+            } else if let Some(radius) = self.window_corner_radius() {
                 glass.set_corner_radius(radius);
             }
         }
+        self.window().install_or_update_integrated_titlebar_glass(
+            style,
+            &self.ivars().background_color.borrow(),
+            self.ivars().glass_opacity.get(),
+        );
     }
 
     /// Query the host `NSWindow`'s rounded-corner radius via the
@@ -1133,7 +1169,14 @@ impl WindowDelegate {
         // borrow is held across the AppKit `setContentView` call
         // below — same re-entrancy concern as `install_or_update_glass`.
         let glass = self.ivars().glass_effect.borrow_mut().take();
-        let Some(glass) = glass else { return };
+        self.window().uninstall_integrated_titlebar_glass();
+        let Some(glass) = glass else {
+            self.window().set_integrated_titlebar_background(
+                &self.ivars().background_color.borrow(),
+                self.window().isKeyWindow(),
+            );
+            return;
+        };
 
         let window = self.window();
         if let Some(view) = glass.content_view() {
@@ -1144,6 +1187,10 @@ impl WindowDelegate {
         }
         // glass drops here; AppKit releases the NSGlassEffectView.
         drop(glass);
+        self.window().set_integrated_titlebar_background(
+            &self.ivars().background_color.borrow(),
+            self.window().isKeyWindow(),
+        );
     }
 
     pub fn set_visible(&self, visible: bool) {
@@ -2192,6 +2239,14 @@ impl WindowExtMacOS for WindowDelegate {
         let mut background_color = self.ivars().background_color.borrow_mut();
         *background_color = color_value.clone();
         self.window().setBackgroundColor(Some(&color_value));
+        self.window().set_integrated_titlebar_background(
+            &color_value,
+            self.window().isKeyWindow(),
+        );
+        self.window().update_integrated_titlebar_glass_tint(
+            &color_value,
+            self.ivars().glass_opacity.get(),
+        );
     }
 
     #[inline]
@@ -2316,6 +2371,10 @@ impl WindowExtMacOS for WindowDelegate {
                 clamped,
             );
         }
+        self.window().update_integrated_titlebar_glass_tint(
+            &self.ivars().background_color.borrow(),
+            clamped,
+        );
     }
 }
 
