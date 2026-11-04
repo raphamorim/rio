@@ -1169,6 +1169,27 @@ fn create_instance(
         .expect("vkCreateInstance failed — is a Vulkan 1.3 driver installed?")
 }
 
+/// True if a Vulkan 1.3 instance can be created on this machine. Lets
+/// `Context::new` fall back to the CPU rasterizer on a box with no driver
+/// instead of panicking at launch.
+pub fn available() -> bool {
+    let Ok(entry) = (unsafe { ash::Entry::load() }) else {
+        return false;
+    };
+    let app_info = vk::ApplicationInfo::default().api_version(vk::API_VERSION_1_3);
+    let create_info = vk::InstanceCreateInfo::default().application_info(&app_info);
+    match unsafe { entry.create_instance(&create_info, None) } {
+        Ok(instance) => {
+            let has_device = unsafe { instance.enumerate_physical_devices() }
+                .map(|devices| !devices.is_empty())
+                .unwrap_or(false);
+            unsafe { instance.destroy_instance(None) };
+            has_device
+        }
+        Err(_) => false,
+    }
+}
+
 /// True if the user opted into validation via `RIO_VULKAN_VALIDATION=1`.
 /// We always read the env var (debug + release) so users can flip it
 /// on for one run without recompiling.
