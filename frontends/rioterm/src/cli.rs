@@ -57,9 +57,12 @@ pub struct TerminalOptions {
 }
 
 impl TerminalOptions {
-    /// The title and hold flags, which a config reload must keep.
+    /// The flags a config reload must keep. The working directory is
+    /// resolved by the caller.
     pub fn overrides(&self) -> Overrides {
         Overrides {
+            shell: self.command(),
+            working_dir: None,
             title: self.title.clone(),
             title_placeholder: self.title_placeholder.clone(),
             hold: self.hold,
@@ -78,27 +81,14 @@ impl TerminalOptions {
             args: args.to_vec(),
         })
     }
-
-    // pub fn override_pty_config(&self, pty_config: &mut PtyConfig) {
-    //     if let Some(working_directory) = &self.working_directory {
-    //         if working_directory.is_dir() {
-    //             pty_config.working_directory = Some(working_directory.to_owned());
-    //         } else {
-    //             error!("Invalid working directory: {:?}", working_directory);
-    //         }
-    //     }
-
-    //     if let Some(command) = self.command() {
-    //         pty_config.shell = Some(command);
-    //     }
-
-    //     pty_config.hold |= self.hold;
-    // }
 }
 
 /// Launch flags applied on top of the config file, at startup and on reload.
 #[derive(Clone, Debug, Default)]
 pub struct Overrides {
+    shell: Option<Shell>,
+    /// The resolved `--working-dir`, or `Some(None)` when it was invalid.
+    pub working_dir: Option<Option<String>>,
     title: Option<String>,
     title_placeholder: Option<String>,
     hold: bool,
@@ -106,6 +96,13 @@ pub struct Overrides {
 
 impl Overrides {
     pub fn apply(&self, config: &mut rio_backend::config::Config) {
+        if let Some(shell) = &self.shell {
+            config.shell = shell.clone();
+            config.use_fork = false;
+        }
+        if let Some(working_dir) = &self.working_dir {
+            config.working_dir = working_dir.clone();
+        }
         if let Some(title) = &self.title {
             config.title.placeholder = Some(title.clone());
             config.title.content = title.clone();
@@ -157,6 +154,15 @@ mod tests {
         options(&[]).overrides().apply(&mut config);
         assert_eq!(config.title.placeholder.as_deref(), Some("Rio"));
         assert!(!config.hold);
+    }
+
+    #[test]
+    fn command_survives_reapplying() {
+        let overrides = options(&["-e", "htop"]).overrides();
+        let mut config = Config::default();
+        overrides.apply(&mut config);
+        assert_eq!(config.shell.program.as_deref(), Some("htop"));
+        assert!(!config.use_fork);
     }
 
     #[test]

@@ -147,7 +147,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load command line options.
     let args = cli::Cli::parse();
-    let overrides = args.window_options.terminal_options.overrides();
+    let mut overrides = args.window_options.terminal_options.overrides();
 
     let write_config_path = args.window_options.terminal_options.write_config.clone();
     if let Some(config_path) = write_config_path {
@@ -183,11 +183,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("unable to configure the logger: {e:?}");
         }
 
-        if let Some(command) = args.window_options.terminal_options.command() {
-            config.shell = command;
-            config.use_fork = false;
-        }
-
         if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
             // Use dunce::canonicalize on Windows to avoid UNC paths (\\?\)
             // which break many tools like Neovim and Bun
@@ -196,8 +191,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(not(target_os = "windows"))]
             let canonicalize_fn = std::fs::canonicalize;
 
-            config.working_dir = match canonicalize_fn(&working_dir_cli).and_then(
-                |path| {
+            overrides.working_dir = Some(
+                match canonicalize_fn(&working_dir_cli).and_then(|path| {
                     if path.is_dir() {
                         path.into_os_string().into_string().map_err(|_| {
                             std::io::Error::new(
@@ -211,14 +206,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "Path is not a directory",
                         ))
                     }
+                }) {
+                    Ok(canonical_path) => Some(canonical_path),
+                    Err(e) => {
+                        tracing::warn!("Failed to set working directory '{}': {}. Using default instead.", working_dir_cli, e);
+                        None
+                    }
                 },
-            ) {
-                Ok(canonical_path) => Some(canonical_path),
-                Err(e) => {
-                    tracing::warn!("Failed to set working directory '{}': {}. Using default instead.", working_dir_cli, e);
-                    None
-                }
-            };
+            );
         }
 
         overrides.apply(&mut config);
