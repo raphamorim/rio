@@ -76,7 +76,7 @@ pub fn update_title<T: rio_backend::event::EventListener>(
     context: &Context<T>,
     prefetched_title: Option<&str>,
 ) -> String {
-    if template.is_empty() {
+    if !template.contains("{{") {
         return template.to_string();
     }
 
@@ -238,6 +238,10 @@ pub mod test {
             context_dimension,
         );
         assert_eq!(update_title("", &context, None), String::from(""));
+        assert_eq!(
+            update_title("my title, columns", &context, Some("shell")),
+            String::from("my title, columns")
+        );
         assert_eq!(
             update_title("{{columns}}", &context, None),
             String::from("64")
