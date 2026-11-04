@@ -11,6 +11,10 @@ GenericName=Terminal
 Comment=A hardware-accelerated GPU terminal emulator powered by WebGPU
 StartupWMClass=Rio
 Actions=New;
+X-TerminalArgExec=-e
+X-TerminalArgAppId=--app-id=
+X-TerminalArgTitle=--title-placeholder=
+X-TerminalArgDir=--working-dir=
 
 [Desktop Action New]
 Name=New Terminal
