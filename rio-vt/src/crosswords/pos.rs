@@ -54,6 +54,9 @@ pub struct Cursor<T> {
 pub struct CursorState {
     pub pos: Pos,
     pub content: CursorShape,
+    /// The cursor sits on a double-width cell (`pos` is already moved
+    /// back from the spacer to the wide cell), so it spans two columns.
+    pub wide: bool,
 }
 
 impl CursorState {
@@ -61,12 +64,14 @@ impl CursorState {
         CursorState {
             pos: Pos::default(),
             content: CursorShape::from_char(cursor),
+            wide: false,
         }
     }
     pub fn new_from_self(&self) -> CursorState {
         CursorState {
             pos: Pos::default(),
             content: self.content,
+            wide: false,
         }
     }
     pub fn is_visible(&self) -> bool {

@@ -32,7 +32,8 @@ layout(set = 0, binding = 0, std140) uniform Uniforms {
     vec2 cell_size;
     uvec2 grid_size;
     uvec2 cursor_pos;
-    uvec2 _pad_cursor;
+    uint cursor_wide;
+    uint _pad_cursor;
     float min_contrast;
     uint flags;
     uint padding_extend;
@@ -124,7 +125,9 @@ void main() {
     // Skip when cursor_color.a == 0 — that's the hollow / unfocused
     // path where the underlying glyph colour should stay intact.
     bool is_cursor_pos =
-        (in_grid_pos.x == uniforms.cursor_pos.x) &&
+        (in_grid_pos.x == uniforms.cursor_pos.x
+         || (uniforms.cursor_wide != 0u
+             && in_grid_pos.x == uniforms.cursor_pos.x + 1u)) &&
         (in_grid_pos.y == uniforms.cursor_pos.y);
     if ((in_bools & BOOL_IS_CURSOR_GLYPH) == 0u
         && is_cursor_pos

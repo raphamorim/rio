@@ -390,6 +390,7 @@ impl CpuGridRenderer {
         let buf_h_i = buf_h as i32;
         let cursor_x = uniforms.cursor_pos[0];
         let cursor_y = uniforms.cursor_pos[1];
+        let cursor_x_end = cursor_x.saturating_add(u32::from(uniforms.cursor_wide != 0));
         let cursor_bg_active = uniforms.cursor_bg_color[3] > 0.0;
         let cursor_bg = normalize_color(uniforms.cursor_bg_color);
 
@@ -400,7 +401,10 @@ impl CpuGridRenderer {
             let row_off = row * buf_cols;
             for col in 0..col_count {
                 let mut rgba = self.bg_cells[row_off + col].rgba;
-                if cursor_bg_active && cursor_x == col as u32 && cursor_y == row as u32 {
+                if cursor_bg_active
+                    && (cursor_x..=cursor_x_end).contains(&(col as u32))
+                    && cursor_y == row as u32
+                {
                     rgba = cursor_bg;
                 }
                 if rgba[3] == 0 {
@@ -443,6 +447,7 @@ impl CpuGridRenderer {
         let buf_h_i = buf_h as i32;
         let cursor_x = uniforms.cursor_pos[0];
         let cursor_y = uniforms.cursor_pos[1];
+        let cursor_x_end = cursor_x.saturating_add(u32::from(uniforms.cursor_wide != 0));
         let cursor_fg_active = uniforms.cursor_color[3] > 0.0;
         let cursor_fg = normalize_color(uniforms.cursor_color);
 
@@ -467,7 +472,7 @@ impl CpuGridRenderer {
                 let mut color = glyph.color;
                 if cursor_fg_active
                     && (glyph.bools & CellText::BOOL_IS_CURSOR_GLYPH) == 0
-                    && cursor_x == glyph.grid_pos[0] as u32
+                    && (cursor_x..=cursor_x_end).contains(&(glyph.grid_pos[0] as u32))
                     && cursor_y == glyph.grid_pos[1] as u32
                 {
                     color = cursor_fg;
@@ -691,5 +696,96 @@ fn blit_color(
             let idx = buf_row + (dst_x as usize);
             buf[idx] = blend_over(src, buf[idx]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CELL: f32 = 4.0;
+
+    fn uniforms(cursor_col: u32, cursor_wide: u32) -> GridUniforms {
+        GridUniforms {
+            cursor_color: [0.0, 0.0, 1.0, 1.0],
+            cursor_bg_color: [1.0, 1.0, 1.0, 1.0],
+            cell_size: [CELL, CELL],
+            grid_size: [4, 1],
+            cursor_pos: [cursor_col, 0],
+            cursor_wide,
+            ..bytemuck::Zeroable::zeroed()
+        }
+    }
+
+    /// Pixel at the center of cell `col` on row 0.
+    fn at(buf: &[u32], col: usize) -> u32 {
+        let w = (4.0 * CELL) as usize;
+        let c = (CELL / 2.0) as usize;
+        buf[c * w + col * CELL as usize + c]
+    }
+
+    fn render_bg(u: &GridUniforms) -> Vec<u32> {
+        let r = CpuGridRenderer::new(4, 1);
+        let mut buf = vec![0u32; (4.0 * CELL * CELL) as usize];
+        r.render_bg(&mut buf, (4.0 * CELL) as u32, CELL as u32, u);
+        buf
+    }
+
+    #[test]
+    fn wide_block_cursor_tints_both_cells() {
+        let narrow = render_bg(&uniforms(1, 0));
+        assert_ne!(at(&narrow, 1), 0);
+        assert_eq!(at(&narrow, 2), 0);
+
+        let wide = render_bg(&uniforms(1, 1));
+        assert_eq!(at(&wide, 0), 0);
+        assert_eq!(at(&wide, 1), at(&narrow, 1));
+        assert_eq!(at(&wide, 2), at(&narrow, 1));
+        assert_eq!(at(&wide, 3), 0);
+    }
+
+    #[test]
+    fn wide_block_cursor_swaps_fg_in_second_cell() {
+        let mut r = CpuGridRenderer::new(4, 1);
+        let mask = [0xFFu8; (CELL * CELL) as usize];
+        let slot = r
+            .insert_glyph(
+                GlyphKey {
+                    font_id: 1,
+                    glyph_id: 1,
+                    size_bucket: 0,
+                },
+                RasterizedGlyph {
+                    width: CELL as u16,
+                    height: CELL as u16,
+                    bearing_x: 0,
+                    bearing_y: CELL as i16,
+                    bytes: &mask,
+                },
+            )
+            .unwrap();
+        // A full-cell red glyph in the cell right of the cursor.
+        let glyph = CellText {
+            glyph_pos: [slot.x as u32, slot.y as u32],
+            glyph_size: [slot.w as u32, slot.h as u32],
+            bearings: [slot.bearing_x, slot.bearing_y],
+            grid_pos: [2, 0],
+            color: [255, 0, 0, 255],
+            atlas: CellText::ATLAS_GRAYSCALE,
+            bools: 0,
+            page: slot.page,
+            _pad: 0,
+        };
+        r.write_row(0, &[], &[glyph]);
+        let draw = |u: &GridUniforms| {
+            let mut buf = vec![0u32; (4.0 * CELL * CELL) as usize];
+            r.render_text(&mut buf, (4.0 * CELL) as u32, CELL as u32, u);
+            at(&buf, 2)
+        };
+        let untouched = draw(&uniforms(1, 0));
+        let swapped = draw(&uniforms(1, 1));
+        assert_ne!(untouched, swapped);
+        // Same as the glyph sitting directly under a one-cell cursor.
+        assert_eq!(swapped, draw(&uniforms(2, 0)));
     }
 }

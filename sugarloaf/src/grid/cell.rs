@@ -139,8 +139,11 @@ pub struct GridUniforms {
     /// cell-text fragment shader. When no cursor is active, set to
     /// `[u32::MAX, u32::MAX]`.
     pub cursor_pos: [u32; 2],
-    /// Keep the cursor_pos pair 16-aligned with the scalar block below.
-    pub _pad_cursor: [u32; 2],
+    /// Non-zero when the cursor covers a double-width cell: the bg tint
+    /// and the text fg swap then also apply to `cursor_pos.x + 1`.
+    pub cursor_wide: u32,
+    /// Keep the scalar block below 16-aligned.
+    pub _pad_cursor: u32,
     // --- 16-byte block of scalars at offset 144 ---
     /// Minimum WCAG contrast ratio to enforce against bg. `0.0` disables.
     pub min_contrast: f32,
@@ -177,4 +180,9 @@ impl GridUniforms {
 const _: () = {
     // Keep the uniform block a multiple of 16 bytes (WGSL / std140).
     assert!(std::mem::size_of::<GridUniforms>().is_multiple_of(16));
+    // The shaders (grid.metal, grid.wgsl, grid_*.glsl) hard-code these.
+    assert!(std::mem::size_of::<GridUniforms>() == 160);
+    assert!(std::mem::offset_of!(GridUniforms, cursor_pos) == 128);
+    assert!(std::mem::offset_of!(GridUniforms, cursor_wide) == 136);
+    assert!(std::mem::offset_of!(GridUniforms, min_contrast) == 144);
 };

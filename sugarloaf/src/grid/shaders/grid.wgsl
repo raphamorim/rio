@@ -28,7 +28,8 @@ struct Uniforms {
     cell_size:        vec2<f32>,     //       112
     grid_size:        vec2<u32>,     //       120
     cursor_pos:       vec2<u32>,     //       128
-    _pad_cursor:      vec2<u32>,     //       136
+    cursor_wide:      u32,           //       136
+    _pad_cursor:      u32,           //       140
     min_contrast:     f32,           //       144
     flags:            u32,           //       148
     padding_extend:   u32,           //       152
@@ -167,7 +168,9 @@ fn grid_bg_fragment(in: VsOut) -> @location(0) vec4<f32> {
  // padding-extended fragments so an edge cursor doesn't bleed
  // into the window margin).
     if (uniforms.cursor_bg_color.a > 0.0
-        && orig_grid_pos.x == i32(uniforms.cursor_pos.x)
+        && (orig_grid_pos.x == i32(uniforms.cursor_pos.x)
+            || (uniforms.cursor_wide != 0u
+                && orig_grid_pos.x == i32(uniforms.cursor_pos.x) + 1))
         && orig_grid_pos.y == i32(uniforms.cursor_pos.y)) {
         let rgb = grid_prepare_output_rgb(
             uniforms.cursor_bg_color.rgb,
@@ -281,7 +284,9 @@ fn grid_text_vertex(
 
  // Cursor-pos fg swap. Skip when cursor_color.a == 0 — that's the
  // hollow / unfocused path where text colour stays untouched.
-    let is_cursor_pos = in.grid_pos.x == uniforms.cursor_pos.x
+    let is_cursor_pos = (in.grid_pos.x == uniforms.cursor_pos.x
+                         || (uniforms.cursor_wide != 0u
+                             && in.grid_pos.x == uniforms.cursor_pos.x + 1u))
                      && in.grid_pos.y == uniforms.cursor_pos.y;
     if ((in.bools & BOOL_IS_CURSOR_GLYPH) == 0u
         && is_cursor_pos

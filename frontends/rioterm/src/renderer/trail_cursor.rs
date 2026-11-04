@@ -116,14 +116,14 @@ pub struct TrailCursor {
 fn target_rect(
     x: f32,
     y: f32,
-    cell_width: f32,
+    cursor_width: f32,
     cell_height: f32,
     shape: CursorShape,
 ) -> Option<[[f32; 2]; 4]> {
     let t = rio_grid::cursor_thickness(cell_height.max(1.0) as u32);
     let thickness = t as f32;
     let (x0, y0, w, h) = match shape {
-        CursorShape::Block => (x, y, cell_width, cell_height),
+        CursorShape::Block => (x, y, cursor_width, cell_height),
         // The bar is centered on the LEFT edge of the cursor cell
         // (sprite bearing `-((t + 1) / 2)`), straddling the boundary.
         CursorShape::Beam => (x - t.div_ceil(2) as f32, y, thickness, cell_height),
@@ -134,7 +134,7 @@ fn target_rect(
             (
                 x,
                 y + cell_height - thickness - gap as f32,
-                cell_width,
+                cursor_width,
                 thickness,
             )
         }
@@ -189,6 +189,7 @@ impl TrailCursor {
         cell_width: f32,
         cell_height: f32,
         shape: CursorShape,
+        wide: bool,
         visible: bool,
         route_id: usize,
     ) -> bool {
@@ -197,7 +198,10 @@ impl TrailCursor {
         self.last_tick = now;
         let visible = visible && shape != CursorShape::Hidden;
 
-        let rect = target_rect(cursor_x, cursor_y, cell_width, cell_height, shape);
+        // A cursor on a double-width cell spans two columns, like the
+        // grid's block / underline sprite it converges onto.
+        let cursor_width = if wide { cell_width * 2.0 } else { cell_width };
+        let rect = target_rect(cursor_x, cursor_y, cursor_width, cell_height, shape);
         let fresh_target = rect.is_some();
         if let Some(rect) = rect {
             self.target = rect;
@@ -697,6 +701,24 @@ mod tests {
         t.snap();
         assert!(!t.tick(0.016, true, true, 1, CELL_W, CELL_H));
         assert!(max_corner_error(&t) <= SETTLE_EPSILON_PX);
+    }
+
+    /// On a double-width cell the block and underline targets span two
+    /// cells, matching the grid's sprite; the beam stays one stroke.
+    #[test]
+    fn wide_cursor_targets_two_cells() {
+        let mut t = TrailCursor::new(TrailSettings::default());
+        for (shape, width) in [
+            (CursorShape::Block, 2.0 * CELL_W),
+            (CursorShape::Underline, 2.0 * CELL_W),
+            (
+                CursorShape::Beam,
+                rio_grid::cursor_thickness(CELL_H as u32) as f32,
+            ),
+        ] {
+            t.update(30.0, 40.0, CELL_W, CELL_H, shape, true, true, 1);
+            assert_eq!(t.target[1][0] - t.target[0][0], width, "{shape:?}");
+        }
     }
 
     /// Thin shapes must converge onto the cursor the grid actually
