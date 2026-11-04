@@ -1019,16 +1019,99 @@ impl Screen<'_> {
             self.tmux_key_warning = false;
             self.renderer.assistant.clear();
         }
-        if let KeyPress::Unsupported(command) = press {
-            self.tmux_key_warning = true;
-            self.renderer.assistant.set_error(RioError {
-                report: RioErrorType::TmuxBindingUnsupported(command),
-                level: RioErrorLevel::Warning,
-            });
+        match press {
+            KeyPress::Unsupported(command) => self.tmux_binding_unsupported(command),
+            KeyPress::Prompt(prompt) => {
+                if let Some((id, formats)) =
+                    self.renderer.command_palette.open_tmux_prompt(*prompt)
+                {
+                    self.context_manager.tmux_expand_prompt(id, formats);
+                }
+            }
+            _ => (),
         }
         self.refresh_titles();
         self.mark_dirty();
         true
+    }
+
+    fn tmux_binding_unsupported(&mut self, command: String) {
+        self.tmux_key_warning = true;
+        self.renderer.assistant.set_error(RioError {
+            report: RioErrorType::TmuxBindingUnsupported(command),
+            level: RioErrorLevel::Warning,
+        });
+    }
+
+    /// Show what tmux said about a prompt's commands, within reason: a
+    /// `list-keys` is a few hundred lines.
+    fn tmux_show_reply(&mut self, reply: &str) {
+        const MAX_LINES: usize = 12;
+
+        let mut text = reply.lines().take(MAX_LINES).collect::<Vec<_>>().join("\n");
+        if reply.lines().count() > MAX_LINES {
+            text.push_str("\n...");
+        }
+        self.tmux_key_warning = true;
+        self.renderer.assistant.set_error(RioError {
+            report: RioErrorType::TmuxMessage(text),
+            level: RioErrorLevel::Warning,
+        });
+    }
+
+    /// A key press for the question from tmux on the command palette.
+    pub fn tmux_prompt_key(&mut self, key: &rio_window::event::KeyEvent) {
+        use rio_backend::tmux::prompt::PromptKind;
+        use rio_window::keyboard::{Key, NamedKey};
+
+        let Some(prompt) = self.renderer.command_palette.tmux_prompt() else {
+            return;
+        };
+        let kind = prompt.kind();
+        let commands = prompt.commands().to_owned();
+        let palette = &mut self.renderer.command_palette;
+
+        match (&key.logical_key, kind) {
+            (Key::Named(NamedKey::Escape), _) => palette.set_enabled(false),
+            (Key::Named(NamedKey::Enter), PromptKind::Text) => {
+                if let Some(commands) = palette.answer_tmux_prompt() {
+                    self.tmux_run_prompt(commands);
+                }
+            }
+            (Key::Named(NamedKey::Backspace), PromptKind::Text) => {
+                let mut query = std::mem::take(&mut palette.query);
+                query.pop();
+                palette.set_query(query);
+            }
+            (_, PromptKind::Text) => {
+                if let Some(text) = key.text.as_ref() {
+                    palette.append_query(text.as_str());
+                }
+            }
+            (Key::Named(NamedKey::Enter), PromptKind::Confirm { enter, .. }) => {
+                palette.set_enabled(false);
+                if enter {
+                    self.tmux_run_prompt(commands);
+                }
+            }
+            (_, PromptKind::Confirm { key: yes, .. }) => {
+                // Modifiers and such aren't an answer either way.
+                let Some(text) = key.text.as_ref() else {
+                    return;
+                };
+                palette.set_enabled(false);
+                if text.as_str().chars().eq([yes]) {
+                    self.tmux_run_prompt(commands);
+                }
+            }
+        }
+        self.mark_dirty();
+    }
+
+    fn tmux_run_prompt(&mut self, commands: String) {
+        if let Err(command) = self.context_manager.tmux_run_prompt(commands) {
+            self.tmux_binding_unsupported(command);
+        }
     }
 
     /// Check whether we should try to build escape sequence for the [`KeyEvent`].
@@ -1803,6 +1886,12 @@ impl Screen<'_> {
         self.clear_selection();
         self.context_manager
             .tmux_update(host_route, snapshot, &mut self.sugarloaf);
+        if let Some((id, formats)) = &snapshot.prompt_formats {
+            self.renderer.command_palette.set_tmux_formats(*id, formats);
+        }
+        if let Some(reply) = &snapshot.prompt_reply {
+            self.tmux_show_reply(reply);
+        }
         self.tmux_refresh_chrome();
     }
 
@@ -1811,6 +1900,9 @@ impl Screen<'_> {
         self.clear_selection();
         self.context_manager
             .tmux_end(host_route, &mut self.sugarloaf);
+        if self.renderer.command_palette.tmux_prompt().is_some() {
+            self.renderer.command_palette.set_enabled(false);
+        }
         self.tmux_refresh_chrome();
     }
 

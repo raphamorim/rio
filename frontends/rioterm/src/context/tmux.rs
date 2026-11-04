@@ -22,7 +22,7 @@ use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::Crosswords;
 use rio_backend::event::{EventListener, TerminalDamage, WindowId};
 use rio_backend::sugarloaf::Sugarloaf;
-use rio_backend::tmux::keys::{KeyPress, PrefixState, TmuxKeys};
+use rio_backend::tmux::keys::{unsupported_command, KeyPress, PrefixState, TmuxKeys};
 use rio_backend::tmux::session::TerminalSink;
 use rio_backend::tmux::{TmuxSnapshot, TmuxWindow};
 use std::sync::atomic::Ordering;
@@ -475,6 +475,27 @@ impl<T: EventListener + Clone + Send + 'static> ContextManager<T> {
             let _ = takeover.channel.send(Msg::TmuxBinding(commands.clone()));
         }
         press
+    }
+
+    /// Have the focused tab's session expand the formats of a prompt.
+    pub fn tmux_expand_prompt(&self, id: u64, formats: Vec<String>) {
+        if let Some(takeover) = self.focused_takeover() {
+            let _ = takeover.channel.send(Msg::TmuxPromptFormats(id, formats));
+        }
+    }
+
+    /// Run a prompt's commands on the focused tab's session. Fails with the
+    /// name of a command that can't work on a control client.
+    pub fn tmux_run_prompt(&self, commands: String) -> Result<(), String> {
+        if let Some(command) = unsupported_command(&commands) {
+            return Err(command);
+        }
+        if let Some(takeover) = self.focused_takeover() {
+            if !commands.trim().is_empty() {
+                let _ = takeover.channel.send(Msg::TmuxPromptCommands(commands));
+            }
+        }
+        Ok(())
     }
 
     /// The prefix, while the focused tab's session waits for the key after it.

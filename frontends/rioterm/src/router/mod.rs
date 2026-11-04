@@ -291,6 +291,21 @@ impl Route<'_> {
             }
 
             Modal::CommandPalette => {
+                if self
+                    .window
+                    .screen
+                    .renderer
+                    .command_palette
+                    .tmux_prompt()
+                    .is_some()
+                {
+                    if key_event.state == ElementState::Pressed {
+                        self.window.screen.tmux_prompt_key(key_event);
+                        self.request_overlay_redraw();
+                    }
+                    return true;
+                }
+
                 if key_event.state == ElementState::Pressed {
                     match &key_event.logical_key {
                         Key::Named(NamedKey::Escape) => {

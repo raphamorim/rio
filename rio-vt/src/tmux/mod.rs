@@ -16,6 +16,7 @@
 
 pub mod keys;
 pub mod layout;
+pub mod prompt;
 pub mod protocol;
 #[cfg(feature = "pty")]
 pub mod session;
@@ -45,6 +46,10 @@ pub struct TmuxSnapshot {
     pub windows: Vec<TmuxWindow>,
     pub active_window: Option<u32>,
     pub keys: Arc<TmuxKeys>,
+    /// Expanded formats asked for by a prompt, under the id it asked with.
+    pub prompt_formats: Option<(u64, Vec<String>)>,
+    /// What came of the commands of a prompt, for the user to read.
+    pub prompt_reply: Option<String>,
 }
 
 /// Destination for one pane's output. Implemented by

@@ -101,6 +101,12 @@ pub enum Msg {
     /// Run a binding the tmux session reported.
     TmuxBinding(String),
 
+    /// Expand the formats of a prompt, answering under the given id.
+    TmuxPromptFormats(u64, Vec<String>),
+
+    /// Run commands the user gave at a prompt.
+    TmuxPromptCommands(String),
+
     /// Route the output of a tmux pane to `sink`.
     TmuxAttachPane(u32, Box<dyn crate::tmux::PaneSink>),
 }

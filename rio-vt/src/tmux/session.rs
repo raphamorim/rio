@@ -3,6 +3,7 @@
 
 use super::keys::{TmuxKeys, KEY_OPTIONS, LIST_PREFIX_KEYS};
 use super::layout::LayoutNode;
+use super::prompt::quote;
 use super::protocol::{id_of, parse_line, Notification};
 use super::{PaneSink, TmuxSnapshot, TmuxWindow};
 use crate::crosswords::grid::Dimensions;
@@ -67,6 +68,13 @@ enum Expect {
     /// with a block each, stopping early if one fails, so unlike every other
     /// command there's no telling how many replies it gets.
     BindingEnd(String),
+    /// The same for commands from a prompt, whose replies are for the user.
+    PromptEnd(String),
+    /// A format of the prompt with this id, `last` of those asked for.
+    PromptFormat {
+        id: u64,
+        last: bool,
+    },
 }
 
 struct Block {
@@ -179,6 +187,13 @@ pub struct ControlSession {
     dirty: bool,
     keys: Arc<TmuxKeys>,
     bindings_run: u64,
+    /// Replies so far to the commands of a prompt.
+    prompt_reply_lines: Vec<Vec<u8>>,
+    /// Replies so far to a prompt's formats.
+    prompt_format_replies: Vec<String>,
+    /// For the next snapshot.
+    prompt_formats: Option<(u64, Vec<String>)>,
+    prompt_reply: Option<String>,
 }
 
 impl ControlSession {
@@ -260,6 +275,42 @@ impl ControlSession {
         }
     }
 
+    /// Run commands the user gave at a prompt, and report what tmux says
+    /// about them in the next snapshot. It's the user's line, so unlike
+    /// with [`Self::command`] anything goes, as long as it stays one line.
+    pub fn run_prompt(&mut self, commands: &str) {
+        let line: String = commands
+            .chars()
+            .map(|c| if matches!(c, '\r' | '\n') { ' ' } else { c })
+            .collect();
+        self.commands.push(format!("{line}\n").into_bytes());
+
+        self.bindings_run += 1;
+        let marker = format!("rio-binding-end-{}", self.bindings_run);
+        self.send(
+            &format!("display-message -p '{marker}'"),
+            Expect::PromptEnd(marker),
+        );
+
+        if line.contains("source-file") {
+            self.request_keys();
+        }
+    }
+
+    /// Have tmux expand the formats of a prompt, for the next snapshot.
+    pub fn expand_prompt_formats(&mut self, id: u64, formats: &[String]) {
+        self.prompt_format_replies.clear();
+        for (index, format) in formats.iter().enumerate() {
+            self.send(
+                &format!("display-message -p {}", quote(format)),
+                Expect::PromptFormat {
+                    id,
+                    last: index + 1 == formats.len(),
+                },
+            );
+        }
+    }
+
     /// Start routing a pane's output to `sink`, replaying its current
     /// content first.
     pub fn attach_pane(&mut self, id: u32, mut sink: Box<dyn PaneSink>) {
@@ -310,6 +361,8 @@ impl ControlSession {
             windows: self.windows.clone(),
             active_window: self.active_window,
             keys: Arc::clone(&self.keys),
+            prompt_formats: self.prompt_formats.take(),
+            prompt_reply: self.prompt_reply.take(),
         })
     }
 
@@ -450,8 +503,13 @@ impl ControlSession {
             return;
         }
 
-        if let Some(Expect::BindingEnd(marker)) = self.expected.front() {
+        if let Some(Expect::BindingEnd(marker) | Expect::PromptEnd(marker)) =
+            self.expected.front()
+        {
             if block.lines.first().map(Vec::as_slice) != Some(marker.as_bytes()) {
+                if matches!(self.expected.front(), Some(Expect::PromptEnd(_))) {
+                    self.prompt_reply_lines.extend(block.lines);
+                }
                 return;
             }
         }
@@ -507,6 +565,29 @@ impl ControlSession {
                     _ => {
                         self.panes.remove(&id);
                     }
+                }
+            }
+            Some(Expect::PromptEnd(_)) => {
+                let lines = std::mem::take(&mut self.prompt_reply_lines);
+                if !lines.is_empty() {
+                    let lines: Vec<_> = lines
+                        .iter()
+                        .map(|line| String::from_utf8_lossy(line))
+                        .collect();
+                    self.prompt_reply = Some(lines.join("\n"));
+                    self.dirty = true;
+                }
+            }
+            Some(Expect::PromptFormat { id, last }) => {
+                let text = block.lines.first().filter(|_| success);
+                self.prompt_format_replies.push(
+                    text.map(|line| String::from_utf8_lossy(line).into_owned())
+                        .unwrap_or_default(),
+                );
+                if last {
+                    let texts = std::mem::take(&mut self.prompt_format_replies);
+                    self.prompt_formats = Some((id, texts));
+                    self.dirty = true;
                 }
             }
             Some(Expect::Nothing | Expect::BindingEnd(_)) | None => (),
@@ -810,6 +891,128 @@ mod tests {
                 consumed: bytes.len(),
                 ended: None
             }
+        );
+    }
+
+    #[test]
+    fn prompt_commands_report_their_output() {
+        let mut session = synced_session();
+        session.take_snapshot();
+        session.take_commands();
+
+        session.run_prompt("list-windows ; list-panes");
+        assert_eq!(
+            sent(&mut session),
+            [
+                "list-windows ; list-panes",
+                "display-message -p 'rio-binding-end-1'"
+            ]
+        );
+        feed(
+            &mut session,
+            b"%begin 3 1 1\r\n0: bash\r\n%end 3 1 1\r\n\
+              %begin 3 2 1\r\n0: pane\r\n%end 3 2 1\r\n\
+              %begin 3 3 1\r\nrio-binding-end-1\r\n%end 3 3 1\r\n",
+        );
+
+        let snapshot = session.take_snapshot().unwrap();
+        assert_eq!(snapshot.prompt_reply.as_deref(), Some("0: bash\n0: pane"));
+        assert!(session.take_snapshot().is_none());
+    }
+
+    #[test]
+    fn prompt_commands_report_their_errors() {
+        let mut session = synced_session();
+        session.take_snapshot();
+        session.take_commands();
+
+        session.run_prompt("nonsense");
+        feed(
+            &mut session,
+            b"%begin 3 1 1\r\nunknown command: nonsense\r\n%error 3 1 1\r\n\
+              %begin 3 2 1\r\nrio-binding-end-1\r\n%end 3 2 1\r\n",
+        );
+
+        assert_eq!(
+            session.take_snapshot().unwrap().prompt_reply.as_deref(),
+            Some("unknown command: nonsense")
+        );
+    }
+
+    #[test]
+    fn prompt_commands_with_nothing_to_say_stay_quiet() {
+        let mut session = synced_session();
+        session.take_snapshot();
+        session.take_commands();
+
+        session.run_prompt("split-window");
+        feed(
+            &mut session,
+            b"%begin 3 1 1\r\n%end 3 1 1\r\n\
+              %begin 3 2 1\r\nrio-binding-end-1\r\n%end 3 2 1\r\n",
+        );
+
+        assert!(session.take_snapshot().is_none());
+    }
+
+    #[test]
+    fn prompt_commands_stay_on_one_line() {
+        let mut session = synced_session();
+        session.take_commands();
+
+        session.run_prompt("rename-window a\nkill-server\r");
+        assert_eq!(commands(&mut session)[0], "rename-window a kill-server \n");
+    }
+
+    #[test]
+    fn prompt_commands_that_reload_the_config_refetch_the_keys() {
+        let mut session = synced_session();
+        session.take_commands();
+
+        session.run_prompt("source-file ~/.tmux.conf");
+        assert!(sent(&mut session).contains(&String::from(LIST_PREFIX_KEYS)));
+    }
+
+    #[test]
+    fn prompt_formats_come_back_together_and_in_order() {
+        let mut session = synced_session();
+        session.take_snapshot();
+        session.take_commands();
+
+        session.expand_prompt_formats(7, &["#S".into(), "it's #W".into()]);
+        assert_eq!(
+            sent(&mut session),
+            [
+                "display-message -p '#S'",
+                r"display-message -p 'it'\''s #W'"
+            ]
+        );
+
+        feed(&mut session, b"%begin 3 1 1\r\nmain\r\n%end 3 1 1\r\n");
+        assert!(session.take_snapshot().is_none());
+
+        feed(&mut session, b"%begin 3 2 1\r\nit's bash\r\n%end 3 2 1\r\n");
+        assert_eq!(
+            session.take_snapshot().unwrap().prompt_formats,
+            Some((7, vec!["main".into(), "it's bash".into()]))
+        );
+    }
+
+    #[test]
+    fn failed_prompt_formats_leave_a_gap() {
+        let mut session = synced_session();
+        session.take_snapshot();
+        session.take_commands();
+
+        session.expand_prompt_formats(1, &["#S".into(), "#W".into()]);
+        feed(
+            &mut session,
+            b"%begin 3 1 1\r\nno\r\n%error 3 1 1\r\n\
+              %begin 3 2 1\r\nbash\r\n%end 3 2 1\r\n",
+        );
+        assert_eq!(
+            session.take_snapshot().unwrap().prompt_formats,
+            Some((1, vec![String::new(), "bash".into()]))
         );
     }
 

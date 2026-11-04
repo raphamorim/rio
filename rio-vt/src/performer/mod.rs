@@ -424,6 +424,18 @@ where
                         self.flush_tmux(state);
                     }
                 }
+                Msg::TmuxPromptFormats(id, formats) => {
+                    if let Some(session) = &mut state.tmux {
+                        session.expand_prompt_formats(id, &formats);
+                        self.flush_tmux(state);
+                    }
+                }
+                Msg::TmuxPromptCommands(commands) => {
+                    if let Some(session) = &mut state.tmux {
+                        session.run_prompt(&commands);
+                        self.flush_tmux(state);
+                    }
+                }
                 Msg::TmuxAttachPane(pane, sink) => {
                     if let Some(session) = &mut state.tmux {
                         session.attach_pane(pane, sink);

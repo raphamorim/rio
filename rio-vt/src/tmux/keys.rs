@@ -3,9 +3,11 @@
 //! A control client's input is commands, so tmux never sees keystrokes from
 //! it and its key tables don't run: `send-keys` goes straight to the pane.
 //! The frontend plays that part instead, working from the bindings tmux
-//! reports. Only bindings that make sense without a tmux display can run:
-//! prompts, menus and modes draw on a terminal a control client doesn't have.
+//! reports. Prompts are for the frontend to ask, see [`super::prompt`]. Other
+//! bindings only run if they make sense without a tmux display: menus and
+//! modes draw on a terminal a control client doesn't have.
 
+use super::prompt::TmuxPrompt;
 use crate::time::Instant;
 use rustc_hash::FxHashMap;
 use std::time::Duration;
@@ -37,6 +39,19 @@ const NEEDS_DISPLAY: &[&str] = &[
     "suspend-client",
 ];
 
+/// Short names for [`NEEDS_DISPLAY`], which can be typed at a prompt.
+const NEEDS_DISPLAY_ALIASES: &[(&str, &str)] = &[
+    ("confirm", "confirm-before"),
+    ("displayp", "display-panes"),
+    ("findw", "find-window"),
+    ("lock", "lock-server"),
+    ("lockc", "lock-client"),
+    ("locks", "lock-session"),
+    ("menu", "display-menu"),
+    ("popup", "display-popup"),
+    ("suspendc", "suspend-client"),
+];
+
 /// Nothing but something to read. Harmless next to other commands, as in
 /// `source-file ... ; display-message Reloaded`, but pointless on their own.
 const OUTPUT_ONLY: &[&str] = &[
@@ -57,6 +72,8 @@ struct Binding {
 enum BindingAction {
     /// One line of commands, ready to send.
     Run(String),
+    /// Something to ask first.
+    Prompt(Box<TmuxPrompt>),
     /// The name of the command that can't work here.
     Unsupported(String),
 }
@@ -104,6 +121,9 @@ pub enum KeyPress {
     Consumed,
     /// Taken: run these commands with `ControlSession::run_binding`.
     Run(String),
+    /// Taken: ask this, then run the outcome with
+    /// `ControlSession::run_prompt`.
+    Prompt(Box<TmuxPrompt>),
     /// Taken, but bound to a command that can't work on a control client.
     Unsupported(String),
 }
@@ -185,6 +205,7 @@ impl TmuxKeys {
                 }
                 KeyPress::Run(commands.clone())
             }
+            BindingAction::Prompt(prompt) => KeyPress::Prompt(prompt.clone()),
             BindingAction::Unsupported(command) => KeyPress::Unsupported(command.clone()),
         }
     }
@@ -223,6 +244,12 @@ fn classify(commands: &[&str]) -> Option<BindingAction> {
         .filter_map(|command| command.split_whitespace().next())
         .collect();
 
+    if let ([command], ["command-prompt" | "confirm-before"]) = (commands, &names[..]) {
+        return Some(match TmuxPrompt::parse(command) {
+            Ok(prompt) => BindingAction::Prompt(Box::new(prompt)),
+            Err(name) => BindingAction::Unsupported(name),
+        });
+    }
     if let Some(name) = names.iter().find(|name| NEEDS_DISPLAY.contains(name)) {
         return Some(BindingAction::Unsupported(name.to_string()));
     }
@@ -235,8 +262,39 @@ fn classify(commands: &[&str]) -> Option<BindingAction> {
     }
 }
 
+/// The first command in a line of commands that can't work on a control
+/// client, the way they would be typed at a prompt.
+pub fn unsupported_command(line: &str) -> Option<String> {
+    let mut rest = line;
+    loop {
+        let end = scan(rest, |index, byte, _| (byte == b';').then_some(index));
+        let command = &rest[..end.unwrap_or(rest.len())];
+        let name = command.split_whitespace().next().and_then(needs_display);
+        if let Some(name) = name {
+            return Some(name.to_string());
+        }
+        rest = &rest[end? + 1..];
+    }
+}
+
+/// The command `name` stands for, if it needs a display. tmux also takes
+/// the start of a name, as long as it's the only command starting that way;
+/// four letters is enough to tell these apart from what can run, and
+/// `display` is an alias of `display-message`.
+fn needs_display(name: &str) -> Option<&'static str> {
+    let exact = NEEDS_DISPLAY.iter().find(|command| **command == name);
+    let alias = NEEDS_DISPLAY_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == name)
+        .map(|(_, command)| command);
+    let start = NEEDS_DISPLAY.iter().find(|command| {
+        name.len() >= 4 && name != "display" && command.starts_with(name)
+    });
+    exact.or(alias).or(start).copied()
+}
+
 /// The next whitespace separated token, honouring quotes.
-fn next_token(text: &str) -> Option<(&str, &str)> {
+pub(super) fn next_token(text: &str) -> Option<(&str, &str)> {
     let text = text.trim_start();
     if text.is_empty() {
         return None;
@@ -307,6 +365,64 @@ fn scan(text: &str, found: impl Fn(usize, u8, &[u8]) -> Option<usize>) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prompts_are_for_the_frontend_to_ask() {
+        let mut keys = TmuxKeys::default();
+        keys.parse_options("C-b None 500");
+        keys.parse_bindings(
+            [
+                r#"bind-key -T prefix : command-prompt"#,
+                r##"bind-key -T prefix x confirm-before -p "kill-pane #P? (y/n)" kill-pane"##,
+                r#"bind-key -T prefix f command-prompt "find-window -Z -- '%%'""#,
+                r#"bind-key -T prefix m command-prompt \; display-message hello"#,
+            ]
+            .into_iter(),
+        );
+        let press = |key| {
+            let mut state = PrefixState::default();
+            keys.press(&mut state, "C-b", false, Instant::now());
+            keys.press(&mut state, key, false, Instant::now())
+        };
+
+        assert!(matches!(press(":"), KeyPress::Prompt(_)));
+        assert!(matches!(press("x"), KeyPress::Prompt(_)));
+        assert_eq!(
+            press("f"),
+            KeyPress::Unsupported(String::from("find-window"))
+        );
+        assert_eq!(
+            press("m"),
+            KeyPress::Unsupported(String::from("command-prompt"))
+        );
+    }
+
+    #[test]
+    fn typed_commands_are_checked_one_by_one() {
+        assert_eq!(unsupported_command("split-window -h"), None);
+        assert_eq!(unsupported_command(""), None);
+        assert_eq!(unsupported_command("display hello"), None);
+        assert_eq!(unsupported_command("neww ; splitw"), None);
+        assert_eq!(
+            unsupported_command("neww ; copy-mode"),
+            Some(String::from("copy-mode"))
+        );
+        assert_eq!(
+            unsupported_command("neww;copy-mode"),
+            Some(String::from("copy-mode"))
+        );
+        assert_eq!(
+            unsupported_command("popup -E top"),
+            Some(String::from("display-popup"))
+        );
+        assert_eq!(unsupported_command("copy"), Some(String::from("copy-mode")));
+    }
+
+    #[test]
+    fn quoted_and_escaped_separators_are_not_commands() {
+        assert_eq!(unsupported_command("rename-window 'a ; copy-mode'"), None);
+        assert_eq!(unsupported_command(r"bind x neww \; copy-mode"), None);
+    }
 
     /// Lines as real tmux 3.2a lists them.
     const LISTING: &[&str] = &[
@@ -515,13 +631,7 @@ mod tests {
 
     #[test]
     fn commands_needing_a_display_are_refused() {
-        for (key, command) in [
-            ("[", "copy-mode"),
-            (",", "command-prompt"),
-            ("&", "confirm-before"),
-        ] {
-            assert_eq!(chord(key), KeyPress::Unsupported(command.to_string()));
-        }
+        assert_eq!(chord("["), KeyPress::Unsupported("copy-mode".to_string()));
     }
 
     #[test]
