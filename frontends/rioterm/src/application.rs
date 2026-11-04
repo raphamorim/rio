@@ -1342,6 +1342,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
                         route.window.screen.renderer.scrollbar.end_drag();
                         route.window.screen.resize_state = None;
+                        route.window.screen.tmux_divider_drag = None;
                     }
                     return;
                 }
@@ -1404,6 +1405,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                         crate::layout::BorderDirection::Vertical => mx,
                                         crate::layout::BorderDirection::Horizontal => my,
                                     };
+                                    if grid.tmux.is_some() {
+                                        route.window.screen.tmux_divider_drag =
+                                            grid.tmux_divider_drag(&border, start_pos);
+                                        return;
+                                    }
                                     let size_a = grid.get_panel_size(
                                         border.left_or_top,
                                         border.direction,
@@ -1593,8 +1599,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        if route.window.screen.resize_state.is_some() {
+                        if route.window.screen.resize_state.is_some()
+                            || route.window.screen.tmux_divider_drag.is_some()
+                        {
                             route.window.screen.resize_state = None;
+                            route.window.screen.tmux_divider_drag = None;
                             route.window.winit_window.set_cursor(CursorIcon::Default);
                             return;
                         }
@@ -1837,6 +1846,29 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.screen.handle_scrollbar_drag(mouse_y);
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     route.request_redraw();
+                    return;
+                }
+
+                // Handle a tmux divider drag. The divider moves when tmux
+                // answers with a new layout.
+                if let Some(mut drag) = route.window.screen.tmux_divider_drag {
+                    let (pos, cursor) = match drag.direction {
+                        crate::layout::BorderDirection::Vertical => {
+                            (x as f32, CursorIcon::ColResize)
+                        }
+                        crate::layout::BorderDirection::Horizontal => {
+                            (y as f32, CursorIcon::RowResize)
+                        }
+                    };
+                    if let Some(cells) = drag.drag_to(pos) {
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .tmux_resize_pane(&drag, cells);
+                    }
+                    route.window.screen.tmux_divider_drag = Some(drag);
+                    route.window.winit_window.set_cursor(cursor);
                     return;
                 }
 

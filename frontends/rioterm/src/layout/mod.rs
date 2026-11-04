@@ -36,6 +36,35 @@ pub struct PanelBorder {
     pub right_or_bottom: NodeId,
 }
 
+/// A divider of a tmux tab being dragged. tmux moves it, so this holds on to
+/// a pane rather than to panel nodes, which every new layout replaces.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TmuxDividerDrag {
+    pub direction: BorderDirection,
+    /// The pane before the divider, sized to move it.
+    pub pane: u32,
+    /// Mouse position at drag start (physical pixels)
+    start_pos: f32,
+    /// Cell size along the drag (physical pixels)
+    cell_size: f32,
+    start_cells: usize,
+    cells: usize,
+}
+
+impl TmuxDividerDrag {
+    /// Follow the mouse to `pos`. Returns the size to ask of tmux when that
+    /// is a different whole number of cells than last time.
+    pub fn drag_to(&mut self, pos: f32) -> Option<usize> {
+        let moved = ((pos - self.start_pos) / self.cell_size).round() as isize;
+        let cells = (self.start_cells as isize + moved).max(1) as usize;
+        if cells == self.cells {
+            return None;
+        }
+        self.cells = cells;
+        Some(cells)
+    }
+}
+
 /// Active resize drag state
 #[derive(Debug, Clone, Copy)]
 pub struct ResizeState {
@@ -364,10 +393,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// Find a draggable border near the given mouse position (physical pixels).
     /// Returns None if no border is within the hit threshold.
     pub fn find_border_at_position(&self, x: f32, y: f32) -> Option<PanelBorder> {
-        if self.tmux.is_some() {
-            return None;
-        }
-
         if self.inner.len() <= 1 {
             return None;
         }
@@ -389,16 +414,70 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         && adj_x <= span[1]
                 }
             };
-            if hit {
-                Some(PanelBorder {
-                    direction: dir,
-                    left_or_top: child_a,
-                    right_or_bottom: child_b,
-                })
-            } else {
-                None
+            if !hit {
+                return None;
             }
+            let border = PanelBorder {
+                direction: dir,
+                left_or_top: child_a,
+                right_or_bottom: child_b,
+            };
+            (self.tmux.is_none() || self.tmux_divider_drag(&border, 0.0).is_some())
+                .then_some(border)
         })
+    }
+
+    /// Start dragging a divider of a tmux tab, with the mouse at `start_pos`.
+    /// None if the tab isn't one, or no pane can move this divider.
+    pub fn tmux_divider_drag(
+        &self,
+        border: &PanelBorder,
+        start_pos: f32,
+    ) -> Option<TmuxDividerDrag> {
+        let layout = &self.tmux.as_ref()?.layout;
+        let root = *self.tree.children(self.root_node).ok()?.first()?;
+        let before = self.tmux_node(root, layout, border.left_or_top)?;
+
+        let cell = self.current().dimension.cell;
+        let row = border.direction == BorderDirection::Vertical;
+        let (start_cells, cell_size) = if row {
+            (before.columns, cell.cell_width as f32)
+        } else {
+            (before.lines, cell.cell_height as f32)
+        };
+        if cell_size <= 0.0 {
+            return None;
+        }
+
+        Some(TmuxDividerDrag {
+            direction: border.direction,
+            pane: before.divider_pane(row)?,
+            start_pos,
+            cell_size,
+            start_cells,
+            cells: start_cells,
+        })
+    }
+
+    /// The part of `layout`, built as `node`, that became panel node `target`.
+    fn tmux_node<'a>(
+        &self,
+        node: NodeId,
+        layout: &'a LayoutNode,
+        target: NodeId,
+    ) -> Option<&'a LayoutNode> {
+        if node == target {
+            return Some(layout);
+        }
+        let (LayoutKind::Row(children) | LayoutKind::Column(children)) = &layout.kind
+        else {
+            return None;
+        };
+        let nodes = self.tree.children(node).ok()?;
+        nodes
+            .into_iter()
+            .zip(children)
+            .find_map(|(node, child)| self.tmux_node(node, child, target))
     }
 
     /// Get the current size of a node along the relevant axis for a border direction.

@@ -770,9 +770,63 @@ mod tmux {
     }
 
     #[test]
-    fn tmux_tabs_have_no_draggable_borders() {
-        let layout =
-            LayoutNode::parse("0000,100x30,0,0{50x30,0,0,0,49x30,51,0,1}").unwrap();
+    fn dividers_are_dragged_through_the_pane_before_them() {
+        let grid = tmux_grid("0000,100x30,0,0{50x30,0,0,0,49x30,51,0,1}");
+        let drag = grid.tmux_divider_drag(&top_divider(&grid), 0.0).unwrap();
+        assert_eq!(drag.pane, 0);
+        assert_eq!(drag.direction, BorderDirection::Vertical);
+    }
+
+    #[test]
+    fn a_column_before_a_divider_is_sized_through_one_of_its_panes() {
+        let grid = tmux_grid(
+            "0000,100x30,0,0{50x30,0,0[50x15,0,0,3,50x14,0,16,4],49x30,51,0,1}",
+        );
+        let drag = grid.tmux_divider_drag(&top_divider(&grid), 0.0).unwrap();
+        assert_eq!(drag.pane, 3);
+    }
+
+    #[test]
+    fn dividers_no_pane_can_move_are_not_draggable() {
+        // Every pane left of the divider sits in a nested row, which is what
+        // `resize-pane` would resize instead.
+        let grid = tmux_grid(
+            "0000,100x30,0,0{50x30,0,0[50x15,0,0{25x15,0,0,3,24x15,26,0,4},\
+             50x14,0,16{25x14,0,16,5,24x14,26,16,6}],49x30,51,0,1}",
+        );
+        assert!(grid.tmux_divider_drag(&top_divider(&grid), 0.0).is_none());
+    }
+
+    #[test]
+    fn dragging_asks_for_whole_cells_once_each() {
+        let grid = tmux_grid("0000,100x30,0,0{50x30,0,0,0,49x30,51,0,1}");
+        let mut drag = grid.tmux_divider_drag(&top_divider(&grid), 500.0).unwrap();
+        let cell = grid.current().dimension.cell.cell_width as f32;
+
+        assert_eq!(drag.drag_to(500.0), None);
+        assert_eq!(drag.drag_to(500.0 + cell), Some(51));
+        assert_eq!(drag.drag_to(500.0 + cell * 1.2), None);
+        assert_eq!(drag.drag_to(500.0 - cell * 2.0), Some(48));
+        assert_eq!(drag.drag_to(-100_000.0), Some(1));
+        assert_eq!(drag.drag_to(-200_000.0), None);
+    }
+
+    #[test]
+    fn hovering_finds_a_tmux_divider() {
+        let grid = tmux_grid("0000,100x30,0,0{50x30,0,0,0,49x30,51,0,1}");
+        let right = grid
+            .contexts()
+            .values()
+            .find(|item| item.val.messenger.tmux_pane() == Some(1))
+            .unwrap()
+            .layout_rect;
+        let x = right[0] - grid.panel_config.column_gap * grid.scale / 2.0;
+        let border = grid.find_border_at_position(x, 10.0).unwrap();
+        assert_eq!(border.direction, BorderDirection::Vertical);
+    }
+
+    fn tmux_grid(layout: &str) -> ContextGrid<VoidListener> {
+        let layout = LayoutNode::parse(layout).unwrap();
         let mut grid = grid(100, 30, Panel::default());
         grid.set_tmux_layout(&layout, Some(0), &mut pane);
         grid.tmux = Some(TmuxGridState {
@@ -782,11 +836,17 @@ mod tmux {
             active_pane: Some(0),
         });
         grid.calculate_positions();
-        let x = grid
-            .contexts()
-            .values()
-            .map(|i| i.layout_rect[2])
-            .fold(0.0, f32::max);
-        assert!(grid.find_border_at_position(x / 2.0, 10.0).is_none());
+        grid
+    }
+
+    /// The divider between the first two children of the layout's top node.
+    fn top_divider(grid: &ContextGrid<VoidListener>) -> PanelBorder {
+        let top = grid.tree.children(grid.root_node).unwrap()[0];
+        let children = grid.tree.children(top).unwrap();
+        PanelBorder {
+            direction: BorderDirection::Vertical,
+            left_or_top: children[0],
+            right_or_bottom: children[1],
+        }
     }
 }

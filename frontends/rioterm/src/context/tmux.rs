@@ -16,7 +16,7 @@ use super::{
 use crate::ansi::CursorShape;
 use crate::event::sync::FairMutex;
 use crate::event::Msg;
-use crate::layout::{ContextDimension, TmuxGridState};
+use crate::layout::{BorderDirection, ContextDimension, TmuxDividerDrag, TmuxGridState};
 use crate::messenger::Messenger;
 use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::Crosswords;
@@ -423,6 +423,16 @@ impl<T: EventListener + Clone + Send + 'static> ContextManager<T> {
     pub(super) fn tmux_split(&self, split_down: bool) -> bool {
         let flag = if split_down { 'v' } else { 'h' };
         self.tmux_command(|_, pane| format!("split-window -{flag} -t %{pane}"))
+    }
+
+    /// Move a divider by giving the pane before it a new size in cells.
+    pub fn tmux_resize_pane(&self, drag: &TmuxDividerDrag, cells: usize) {
+        let flag = match drag.direction {
+            BorderDirection::Vertical => 'x',
+            BorderDirection::Horizontal => 'y',
+        };
+        let pane = drag.pane;
+        self.tmux_command(|_, _| format!("resize-pane -t %{pane} -{flag} {cells}"));
     }
 
     pub(super) fn tmux_kill_pane(&self) -> bool {

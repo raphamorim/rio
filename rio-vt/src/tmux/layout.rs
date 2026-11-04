@@ -41,6 +41,22 @@ impl LayoutNode {
         panes
     }
 
+    /// A pane through which `resize-pane` moves the divider after this node,
+    /// a child of a row if `in_row` and of a column otherwise.
+    ///
+    /// tmux resizes along the pane's nearest ancestor of that kind, so a pane
+    /// nested in another row or column would move a divider of its own.
+    pub fn divider_pane(&self, in_row: bool) -> Option<u32> {
+        match &self.kind {
+            LayoutKind::Pane(id) => Some(*id),
+            LayoutKind::Row(_) if in_row => None,
+            LayoutKind::Column(_) if !in_row => None,
+            LayoutKind::Row(children) | LayoutKind::Column(children) => {
+                children.iter().find_map(|c| c.divider_pane(in_row))
+            }
+        }
+    }
+
     fn collect_panes(&self, panes: &mut Vec<(u32, usize, usize)>) {
         match &self.kind {
             LayoutKind::Pane(id) => panes.push((*id, self.columns, self.lines)),
@@ -122,6 +138,22 @@ impl Parser<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn divider_panes_avoid_nested_nodes_of_the_same_kind() {
+        let column = LayoutNode::parse(
+            "0000,50x30,0,0[50x15,0,0{25x15,0,0,3,24x15,26,0,4},50x14,0,16,5]",
+        )
+        .unwrap();
+        assert_eq!(column.divider_pane(true), Some(5));
+        assert_eq!(column.divider_pane(false), None);
+
+        let rows = LayoutNode::parse(
+            "0000,50x30,0,0[50x15,0,0{25x15,0,0,3,24x15,26,0,4},50x14,0,16{25x14,0,16,5,24x14,26,16,6}]",
+        )
+        .unwrap();
+        assert_eq!(rows.divider_pane(true), None);
+    }
 
     #[test]
     fn single_pane() {
