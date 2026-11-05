@@ -17,6 +17,7 @@ use rio_backend::config::layout::Margin;
 use rio_backend::config::Shell;
 use smallvec::{smallvec, SmallVec};
 
+use rio_backend::crosswords::pos::{CharsetIndex, StandardCharset};
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
@@ -543,8 +544,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             return false;
         }
         context.exited = true;
-        {
+        let left_vi_mode = {
             let mut terminal = context.terminal.lock();
+            let in_vi_mode = terminal.mode().contains(rio_backend::crosswords::Mode::VI);
+            if in_vi_mode {
+                terminal.toggle_vi_mode();
+            }
+            terminal.terminal_attribute(rio_backend::crosswords::attr::Attr::Reset);
+            terminal.configure_charset(CharsetIndex::G0, StandardCharset::Ascii);
+            terminal.set_active_charset(CharsetIndex::G0);
             terminal.carriage_return();
             terminal.linefeed();
             terminal.input_str("Process exited. Press any key to close the terminal.");
@@ -563,6 +571,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 KeyboardModes::empty(),
                 KeyboardModesApplyBehavior::Replace,
             );
+            in_vi_mode
+        };
+        if left_vi_mode {
+            context
+                .renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
         }
         context.renderable_content.pending_update.set_dirty();
         true
@@ -1688,6 +1703,7 @@ pub mod test {
             terminal.set_private_mode(PrivateMode::Named(
                 NamedPrivateMode::ReportAllMouseMotion,
             ));
+            terminal.toggle_vi_mode();
         }
         assert!(!cm.close_if_exited());
 
@@ -1697,6 +1713,7 @@ pub mod test {
         assert!(!mode.contains(Mode::SHOW_CURSOR));
         assert!(!mode.intersects(Mode::KITTY_KEYBOARD_PROTOCOL));
         assert!(!mode.intersects(Mode::MOUSE_MODE));
+        assert!(!mode.contains(Mode::VI));
         let text = {
             let terminal = cm.current().terminal.lock();
             let end = Pos::new(

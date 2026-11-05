@@ -3717,7 +3717,7 @@ impl Screen<'_> {
             return;
         }
 
-        if text.is_empty() || self.context_manager.close_if_exited() {
+        if !text.is_empty() && self.context_manager.close_if_exited() {
             return;
         }
 
