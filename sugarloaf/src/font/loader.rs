@@ -10,6 +10,11 @@ use font_kit::source::SystemSource;
 pub struct ID {
     #[cfg(not(target_arch = "wasm32"))]
     handle: Option<font_kit::handle::Handle>,
+    /// Weight `Database::query` matched for this handle. Reopening the
+    /// file only yields its default instance, so this pins the `wght`
+    /// axis to the matched one (see `FontData::from_data`).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) matched_wght: Option<f32>,
     // TODO: Fix wasm32
     #[cfg(target_arch = "wasm32")]
     _dummy: u32,
@@ -17,9 +22,10 @@ pub struct ID {
 
 impl ID {
     #[cfg(not(target_arch = "wasm32"))]
-    fn from_handle(handle: font_kit::handle::Handle) -> Self {
+    fn from_handle(handle: font_kit::handle::Handle, matched_wght: Option<f32>) -> Self {
         Self {
             handle: Some(handle),
+            matched_wght,
         }
     }
 
@@ -197,20 +203,57 @@ fn family_candidates(
     for handle in family_handle.fonts() {
         if let Ok(font) = handle.load() {
             let props = font.properties();
+            let mut weight = Weight(props.weight.0 as u16);
+            // fontconfig encodes a variable font's 1-based named-instance
+            // id in `FC_INDEX >> 16` but keeps the pattern weight at the
+            // file default; recover the real weight from `fvar`.
+            if let font_kit::handle::Handle::Path { path, font_index } = handle.clone() {
+                let instance_id = font_index >> 16;
+                if instance_id >= 1 {
+                    if let Some(w) = read_font_file(family_name, &path).and_then(|data| {
+                        named_instance_wght(&data, font_index & 0xFFFF, instance_id - 1)
+                    }) {
+                        weight = Weight(w.round().clamp(0.0, u16::MAX as f32) as u16);
+                    }
+                }
+            }
             tracing::debug!(
                 "found candidate: weight={}, stretch={:?}, style={:?}",
-                props.weight.0,
+                weight.0,
                 props.stretch,
                 props.style
             );
             candidates.push(FontCandidate {
                 handle: handle.clone(),
-                weight: Weight(props.weight.0 as u16),
+                weight,
                 stretch: Stretch::from_font_kit(props.stretch),
                 style: Style::from_font_kit(props.style),
             });
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_font_file(family_name: &str, path: &std::path::Path) -> Option<Vec<u8>> {
+    std::fs::read(path)
+        .inspect_err(|err| {
+            tracing::debug!("cannot read '{family_name}' at {}: {err}", path.display())
+        })
+        .ok()
+}
+
+/// `wght` coordinate of a variable font's `instance_index`-th (zero-based
+/// `fvar` order) named instance; `None` for static fonts or bad indices.
+#[cfg(not(target_arch = "wasm32"))]
+fn named_instance_wght(data: &[u8], face_index: u32, instance_index: u32) -> Option<f32> {
+    const WGHT: skrifa::Tag = skrifa::Tag::new(b"wght");
+    let font = skrifa::FontRef::from_index(data, face_index).ok()?;
+    let axes = skrifa::AxisCollection::new(&font);
+    let instance =
+        skrifa::NamedInstanceCollection::new(&font).get(instance_index as usize)?;
+    axes.iter()
+        .zip(instance.user_coords())
+        .find_map(|(axis, coord)| (axis.tag() == WGHT).then_some(coord))
 }
 
 /// CSS-spec compliant font matching algorithm
@@ -476,7 +519,12 @@ impl Database {
             // Step 3: apply CSS-spec matching algorithm to select the best face
             if let Some(index) = find_best_match(&candidates, query) {
                 tracing::debug!("Best match selected at index {}", index);
-                return Some(ID::from_handle(candidates[index].handle.clone()));
+                // The matched weight identifies the named instance that
+                // reopening the base face cannot reproduce; carry it out.
+                return Some(ID::from_handle(
+                    candidates[index].handle.clone(),
+                    Some(candidates[index].weight.0 as f32),
+                ));
             } else {
                 tracing::debug!("No best match found from candidates");
             }
@@ -682,4 +730,35 @@ fn find_font_path_from_data(data: &[u8]) -> Option<PathBuf> {
         target_name
     );
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bundled Cascadia Code: `wght` 200..700 (default 400), six named
+    /// instances — ExtraLight, Light, SemiLight, Regular, SemiBold, Bold.
+    const CASCADIA_VF: &[u8] =
+        include_bytes!("./resources/CascadiaCode/CascadiaCodeNF.ttf");
+
+    #[test]
+    fn named_instance_wght_resolves_fvar() {
+        assert_eq!(named_instance_wght(CASCADIA_VF, 0, 0), Some(200.0));
+        assert_eq!(named_instance_wght(CASCADIA_VF, 0, 3), Some(400.0));
+        assert_eq!(named_instance_wght(CASCADIA_VF, 0, 5), Some(700.0));
+        // Out-of-range instances must not invent a weight.
+        assert_eq!(named_instance_wght(CASCADIA_VF, 0, 6), None);
+    }
+
+    #[test]
+    fn fontconfig_instance_index_maps_to_fvar_instance() {
+        // `family_candidates` decodes `FC_INDEX = (fvar index + 1) << 16`.
+        for fvar_index in 0..6u32 {
+            let fc_index = (fvar_index + 1) << 16;
+            assert_eq!(
+                named_instance_wght(CASCADIA_VF, fc_index & 0xFFFF, (fc_index >> 16) - 1),
+                named_instance_wght(CASCADIA_VF, 0, fvar_index),
+            );
+        }
+    }
 }
