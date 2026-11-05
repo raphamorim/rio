@@ -57,12 +57,11 @@ pub struct TerminalOptions {
 }
 
 impl TerminalOptions {
-    /// The flags a config reload must keep. The working directory is
-    /// resolved by the caller.
+    /// The flags a config reload must keep.
     pub fn overrides(&self) -> Overrides {
         Overrides {
             shell: self.command(),
-            working_dir: None,
+            working_dir: self.working_dir.as_deref().map(resolve_working_dir),
             title: self.title.clone(),
             title_placeholder: self.title_placeholder.clone(),
             hold: self.hold,
@@ -88,14 +87,49 @@ impl TerminalOptions {
 pub struct Overrides {
     shell: Option<Shell>,
     /// The resolved `--working-dir`, or `Some(None)` when it was invalid.
-    pub working_dir: Option<Option<String>>,
+    working_dir: Option<Option<String>>,
     title: Option<String>,
     title_placeholder: Option<String>,
     hold: bool,
 }
 
+/// Canonicalizes `--working-dir`, or warns and returns None when it is
+/// not a directory.
+fn resolve_working_dir(path: &str) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    let canonical = dunce::canonicalize(path);
+    #[cfg(not(target_os = "windows"))]
+    let canonical = std::fs::canonicalize(path);
+
+    let resolved = canonical.and_then(|path| {
+        if !path.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotADirectory,
+                "Path is not a directory",
+            ));
+        }
+        path.into_os_string().into_string().map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "Invalid UTF-8 in path")
+        })
+    });
+
+    match resolved {
+        Ok(path) => Some(path),
+        Err(e) => {
+            tracing::warn!(
+                "Failed to set working directory '{path}': {e}. Using default instead."
+            );
+            None
+        }
+    }
+}
+
 impl Overrides {
+    /// Applies the platform blocks, then the launch flags, to a freshly
+    /// loaded config.
     pub fn apply(&self, config: &mut rio_backend::config::Config) {
+        config.overwrite_based_on_platform();
+
         if let Some(shell) = &self.shell {
             config.shell = shell.clone();
             config.use_fork = false;
@@ -111,6 +145,11 @@ impl Overrides {
         }
         if self.hold {
             config.hold = true;
+        }
+
+        #[cfg(target_os = "linux")]
+        if std::path::Path::new("/.flatpak-info").exists() {
+            config.use_fork = false;
         }
     }
 }

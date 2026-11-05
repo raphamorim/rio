@@ -147,7 +147,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load command line options.
     let args = cli::Cli::parse();
-    let mut overrides = args.window_options.terminal_options.overrides();
 
     let write_config_path = args.window_options.terminal_options.write_config.clone();
     if let Some(config_path) = write_config_path {
@@ -161,72 +160,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(err) => (rio_backend::config::Config::default(), Some(err)),
     };
 
-    // Read platform property and overwrite values per OS
-    //
-    // [shell]
-    // # default (in this case will be used on MacOS/Linux)
-    // program = "/bin/fish"
-    // args = ["--login"]
-    //
-    // [platform]
-    // # Microsoft Windows overwrite
-    // windows.shell.program = "pwsh"
-    // windows.shell.args = ["-l"]
-    config.overwrite_based_on_platform();
-
-    {
-        let log_to_file = args.window_options.terminal_options.enable_log_file;
-        if let Err(e) = setup_logs_by_filter_level(
-            &config.developer.log_level,
-            log_to_file || config.developer.enable_log_file,
-        ) {
-            eprintln!("unable to configure the logger: {e:?}");
-        }
-
-        if let Some(working_dir_cli) = args.window_options.terminal_options.working_dir {
-            // Use dunce::canonicalize on Windows to avoid UNC paths (\\?\)
-            // which break many tools like Neovim and Bun
-            #[cfg(target_os = "windows")]
-            let canonicalize_fn = dunce::canonicalize;
-            #[cfg(not(target_os = "windows"))]
-            let canonicalize_fn = std::fs::canonicalize;
-
-            overrides.working_dir = Some(
-                match canonicalize_fn(&working_dir_cli).and_then(|path| {
-                    if path.is_dir() {
-                        path.into_os_string().into_string().map_err(|_| {
-                            std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                "Invalid UTF-8 in path",
-                            )
-                        })
-                    } else {
-                        Err(std::io::Error::new(
-                            std::io::ErrorKind::NotADirectory,
-                            "Path is not a directory",
-                        ))
-                    }
-                }) {
-                    Ok(canonical_path) => Some(canonical_path),
-                    Err(e) => {
-                        tracing::warn!("Failed to set working directory '{}': {}. Using default instead.", working_dir_cli, e);
-                        None
-                    }
-                },
-            );
-        }
-
-        overrides.apply(&mut config);
+    let log_to_file = args.window_options.terminal_options.enable_log_file;
+    if let Err(e) = setup_logs_by_filter_level(
+        &config.developer.log_level,
+        log_to_file || config.developer.enable_log_file,
+    ) {
+        eprintln!("unable to configure the logger: {e:?}");
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        // If running inside a flatpak sandbox.
-        // Rio will never use use_fork configuration as true
-        if std::path::PathBuf::from("/.flatpak-info").exists() {
-            config.use_fork = false;
-        }
-    }
+    let overrides = args.window_options.terminal_options.overrides();
+    overrides.apply(&mut config);
 
     setup_environment_variables(&config);
 
