@@ -61,6 +61,13 @@ fn shorten_path(absolute: &str) -> String {
     }
 }
 
+/// Whether the title has `{{ }}` variables to render; anything else is
+/// shown as-is.
+#[inline]
+pub fn is_template(title: &str) -> bool {
+    title.contains("{{")
+}
+
 #[inline]
 /// Render the title template. Every variable is event-known, so this
 /// NEVER inspects the foreground process: `{{ title }}` is OSC 0/2,
@@ -76,7 +83,7 @@ pub fn update_title<T: rio_backend::event::EventListener>(
     context: &Context<T>,
     prefetched_title: Option<&str>,
 ) -> String {
-    if !template.contains("{{") {
+    if !is_template(template) {
         return template.to_string();
     }
 

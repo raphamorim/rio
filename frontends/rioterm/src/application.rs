@@ -195,7 +195,7 @@ impl Application<'_> {
 /// input with no PTY event attached (resizes are locally known).
 fn title_tracks_size(config: &rio_backend::config::Config) -> bool {
     let template = config.title.content.to_lowercase();
-    template.contains("{{")
+    crate::context::title::is_template(&template)
         && (template.contains("columns") || template.contains("lines"))
 }
 
