@@ -107,6 +107,9 @@ pub enum Msg {
     /// Run commands the user gave at a prompt.
     TmuxPromptCommands(String),
 
+    /// A tmux pane's terminal answered a query from the program in it.
+    TmuxPaneReply(u32, Vec<u8>),
+
     /// Route the output of a tmux pane to `sink`.
     TmuxAttachPane(u32, Box<dyn crate::tmux::PaneSink>),
 }

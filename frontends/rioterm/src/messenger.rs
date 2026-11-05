@@ -36,13 +36,16 @@ impl Messenger {
     /// Send the terminal's answer to something the application asked, such
     /// as a device attributes query.
     ///
-    /// A tmux pane stays silent: `%output` shows us those queries, but tmux
-    /// already answered them, and a second answer would arrive at the
-    /// application as typed input.
+    /// A tmux pane's answer goes by way of the session, which knows what
+    /// tmux already answered: `%output` shows us those queries too, and a
+    /// second answer would arrive at the application as typed input.
     #[inline]
     pub fn send_reply(&mut self, bytes: Vec<u8>) {
-        if self.tmux_pane.is_none() {
-            self.send_write(bytes);
+        match self.tmux_pane {
+            Some(pane) => {
+                let _ = self.channel.send(Msg::TmuxPaneReply(pane, bytes));
+            }
+            None => self.send_write(bytes),
         }
     }
 
@@ -111,10 +114,13 @@ mod tests {
     }
 
     #[test]
-    fn pane_does_not_answer_what_tmux_already_answered() {
+    fn pane_replies_go_by_way_of_the_session() {
         let (_, mut pane, receiver) = messengers();
         pane.send_reply(b"\x1b[?6c".to_vec());
-        assert!(receiver.try_recv().is_err());
+        match receiver.try_recv() {
+            Ok(Msg::TmuxPaneReply(3, reply)) => assert_eq!(reply, b"\x1b[?6c"),
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]

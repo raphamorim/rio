@@ -5,7 +5,8 @@ use super::keys::{TmuxKeys, KEY_OPTIONS, LIST_PREFIX_KEYS};
 use super::layout::LayoutNode;
 use super::prompt::quote;
 use super::protocol::{id_of, parse_line, Notification};
-use super::{PaneSink, TmuxSnapshot, TmuxWindow};
+use super::replies::forwards_reply;
+use super::{send_keys_commands, PaneSink, TmuxSnapshot, TmuxWindow};
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::Crosswords;
 use crate::event::sync::FairMutex;
@@ -294,6 +295,16 @@ impl ControlSession {
 
         if line.contains("source-file") {
             self.request_keys();
+        }
+    }
+
+    /// Pass on a reply from a pane's terminal, unless tmux answers that
+    /// query itself.
+    pub fn pane_reply(&mut self, pane: u32, reply: &[u8]) {
+        if forwards_reply(reply, self.keys.before_3_3()) {
+            for command in send_keys_commands(pane, reply) {
+                self.command(&command);
+            }
         }
     }
 
@@ -891,6 +902,57 @@ mod tests {
                 consumed: bytes.len(),
                 ended: None
             }
+        );
+    }
+
+    #[test]
+    fn pane_replies_tmux_leaves_alone_go_to_the_pane() {
+        let mut session = synced_session();
+        session.take_commands();
+
+        session.pane_reply(3, b"\x1b[?0u");
+        assert_eq!(sent(&mut session), ["send-keys -t %3 -H 1b 5b 3f 30 75"]);
+    }
+
+    #[test]
+    fn pane_replies_tmux_answers_are_dropped() {
+        let mut session = synced_session();
+        session.take_commands();
+
+        session.pane_reply(3, b"\x1b[?62;4c");
+        assert!(session.take_commands().is_empty());
+    }
+
+    #[test]
+    fn pane_replies_depend_on_the_tmux_version() {
+        let mut session = synced_session();
+        session.take_commands();
+
+        session.pane_reply(3, b"\x1b[6;32;16t");
+        assert!(session.take_commands().is_empty());
+
+        Arc::make_mut(&mut session.keys).parse_options("C-b None 500 3.2a");
+        session.pane_reply(3, b"\x1b[6;32;16t");
+        assert_eq!(session.take_commands().len(), 1);
+    }
+
+    #[test]
+    fn replies_keep_later_command_replies_in_step() {
+        let mut session = synced_session();
+        session.take_snapshot();
+        session.take_commands();
+
+        session.pane_reply(3, b"\x1b[?0u");
+        session.run_prompt("list-windows");
+        feed(
+            &mut session,
+            b"%begin 3 1 1\r\n%end 3 1 1\r\n\
+              %begin 3 2 1\r\nbash\r\n%end 3 2 1\r\n\
+              %begin 3 3 1\r\nrio-binding-end-1\r\n%end 3 3 1\r\n",
+        );
+        assert_eq!(
+            session.take_snapshot().unwrap().prompt_reply.as_deref(),
+            Some("bash")
         );
     }
 

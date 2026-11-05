@@ -18,6 +18,7 @@ pub mod keys;
 pub mod layout;
 pub mod prompt;
 pub mod protocol;
+pub mod replies;
 #[cfg(feature = "pty")]
 pub mod session;
 

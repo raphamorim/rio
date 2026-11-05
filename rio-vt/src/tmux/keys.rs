@@ -12,9 +12,11 @@ use crate::time::Instant;
 use rustc_hash::FxHashMap;
 use std::time::Duration;
 
-/// Asks for the prefixes and repeat time, in the order `parse_options` reads
-/// them. Formats follow session options the way the keys themselves do.
-pub const KEY_OPTIONS: &str = "display-message -p '#{prefix} #{prefix2} #{repeat-time}'";
+/// Asks for the prefixes, repeat time and tmux version, in the order
+/// `parse_options` reads them. Formats follow session options the way the
+/// keys themselves do.
+pub const KEY_OPTIONS: &str =
+    "display-message -p '#{prefix} #{prefix2} #{repeat-time} #{version}'";
 
 pub const LIST_PREFIX_KEYS: &str = "list-keys -T prefix";
 
@@ -85,6 +87,7 @@ pub struct TmuxKeys {
     prefix2: Option<String>,
     repeat_time: Duration,
     bindings: FxHashMap<String, Binding>,
+    before_3_3: bool,
 }
 
 impl Default for TmuxKeys {
@@ -94,6 +97,7 @@ impl Default for TmuxKeys {
             prefix2: None,
             repeat_time: Duration::from_millis(500),
             bindings: FxHashMap::default(),
+            before_3_3: false,
         }
     }
 }
@@ -143,6 +147,12 @@ impl TmuxKeys {
         if let Some(time) = fields.next().and_then(|time| time.parse().ok()) {
             self.repeat_time = Duration::from_millis(time);
         }
+        self.before_3_3 = fields.next().is_some_and(is_before_3_3);
+    }
+
+    /// Whether tmux is known to be older than 3.3.
+    pub fn before_3_3(&self) -> bool {
+        self.before_3_3
     }
 
     /// Read a [`LIST_PREFIX_KEYS`] reply.
@@ -209,6 +219,17 @@ impl TmuxKeys {
             BindingAction::Unsupported(command) => KeyPress::Unsupported(command.clone()),
         }
     }
+}
+
+/// Read a version like `3.2a`. Builds like `next-3.7` count as recent.
+fn is_before_3_3(version: &str) -> bool {
+    let mut parts = version.split('.');
+    let major = parts.next().and_then(|major| major.parse::<u32>().ok());
+    let minor = parts.next().and_then(|minor| {
+        let digits = minor.find(|c: char| !c.is_ascii_digit());
+        minor[..digits.unwrap_or(minor.len())].parse::<u32>().ok()
+    });
+    matches!((major, minor), (Some(major), Some(minor)) if (major, minor) < (3, 3))
 }
 
 fn parse_binding(line: &str) -> Option<(String, Binding)> {
@@ -365,6 +386,27 @@ fn scan(text: &str, found: impl Fn(usize, u8, &[u8]) -> Option<usize>) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn versions_are_compared_by_number() {
+        for version in ["3.2a", "3.2", "2.9a", "1.8"] {
+            assert!(is_before_3_3(version), "{version}");
+        }
+        for version in ["3.3", "3.3a", "3.4", "3.6", "3.10", "4.0", "next-3.7", ""] {
+            assert!(!is_before_3_3(version), "{version}");
+        }
+    }
+
+    #[test]
+    fn the_version_comes_with_the_options() {
+        let mut keys = TmuxKeys::default();
+        keys.parse_options("C-b None 500 3.2a");
+        assert!(keys.before_3_3());
+        keys.parse_options("C-b None 500 3.6");
+        assert!(!keys.before_3_3());
+        keys.parse_options("C-b None 500");
+        assert!(!keys.before_3_3());
+    }
 
     #[test]
     fn prompts_are_for_the_frontend_to_ask() {
