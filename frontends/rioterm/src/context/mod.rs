@@ -548,7 +548,16 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             terminal.carriage_return();
             terminal.linefeed();
             terminal.input_str("Process exited. Press any key to close the terminal.");
-            terminal.unset_private_mode(PrivateMode::Named(NamedPrivateMode::ShowCursor));
+            for mode in [
+                NamedPrivateMode::ShowCursor,
+                NamedPrivateMode::ReportX10MouseClicks,
+                NamedPrivateMode::ReportMouseClicks,
+                NamedPrivateMode::ReportCellMouseMotion,
+                NamedPrivateMode::ReportAllMouseMotion,
+                NamedPrivateMode::ReportFocusInOut,
+            ] {
+                terminal.unset_private_mode(PrivateMode::Named(mode));
+            }
             Handler::set_keyboard_mode(
                 &mut *terminal,
                 KeyboardModes::empty(),
@@ -1676,6 +1685,9 @@ pub mod test {
                 KeyboardModes::DISAMBIGUATE_ESC_CODES,
                 KeyboardModesApplyBehavior::Replace,
             );
+            terminal.set_private_mode(PrivateMode::Named(
+                NamedPrivateMode::ReportAllMouseMotion,
+            ));
         }
         assert!(!cm.close_if_exited());
 
@@ -1684,6 +1696,7 @@ pub mod test {
         let mode = cm.current().terminal.lock().mode();
         assert!(!mode.contains(Mode::SHOW_CURSOR));
         assert!(!mode.intersects(Mode::KITTY_KEYBOARD_PROTOCOL));
+        assert!(!mode.intersects(Mode::MOUSE_MODE));
         let text = {
             let terminal = cm.current().terminal.lock();
             let end = Pos::new(

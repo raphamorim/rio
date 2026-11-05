@@ -3714,7 +3714,14 @@ impl Screen<'_> {
             for c in text.chars() {
                 self.search_input(c);
             }
-        } else if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
+            return;
+        }
+
+        if text.is_empty() || self.context_manager.close_if_exited() {
+            return;
+        }
+
+        if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
