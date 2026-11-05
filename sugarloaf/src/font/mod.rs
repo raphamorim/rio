@@ -1178,10 +1178,10 @@ pub struct FontData {
     pub should_embolden: bool,
     pub should_italicize: bool,
     /// `wght` axis value to apply when this `FontData` is backed by a
-    /// variable font (currently set only for the bundled Cascadia Code
-    /// fallback faces). On macOS the value is baked into `handle` via
-    /// `CTFontCreateCopyWithAttributes`; on Linux/Windows it's applied
-    /// to swash's shaper/scaler at render time.
+    /// variable font: set by the bundled Cascadia fallbacks, an explicit
+    /// `fonts.*.weight`, or a matched named instance (see
+    /// [`Self::from_data`]). Applied to swash at render time; baked into
+    /// `handle` on macOS.
     pub wght_variation: Option<f32>,
     pub is_emoji: bool,
     // Cached metrics per font size (per-font caching)
@@ -1354,6 +1354,12 @@ impl FontData {
 
     /// `face_index` addresses a face inside a TTC/OTC collection;
     /// parsing index 0 would load whichever face sits first.
+    ///
+    /// Bits 16.. of `face_index` may instead encode a variable font's
+    /// named instance (fontconfig convention): the base face is reopened
+    /// and the instance materialized by pinning `wght` to `matched_wght`
+    /// — the weight `loader::Database::query` selected — whenever it
+    /// differs from the face default. An explicit `fonts.*.weight` wins.
     #[inline]
     pub fn from_data(
         data: SharedData,
@@ -1362,19 +1368,28 @@ impl FontData {
         slot: Slot,
         font_spec: &SugarloafFont,
         face_index: u32,
+        matched_wght: Option<f32>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        // High bits are a named-instance id, not a collection index.
+        let face_index = face_index & 0xFFFF;
         let font = FontRef::from_index(&data, face_index as usize)
             .ok_or_else(|| format!("Failed to load font from path: {:?}", path))?;
         let (offset, key) = (font.offset, font.key);
 
         let attributes = font.attributes();
         let style = attributes.style();
+        // Only a variable face can disagree with the matched weight;
+        // static fonts report it exactly and stay untouched.
+        let base_weight = attributes.weight();
+        let instance_wght = matched_wght
+            .filter(|_| font.table(tag_from_bytes(b"fvar")).is_some())
+            .filter(|w| (base_weight.0 as f32 - w).abs() > 0.5);
         // An explicit user weight pins the `wght` axis and overrides the
         // face's reported weight so lookup and synthesis match intent.
-        let weight = match font_spec.weight {
-            Some(w) => Weight(w),
-            None => attributes.weight(),
-        };
+        let wght_variation = font_spec.weight.map(f32::from).or(instance_wght);
+        let weight = wght_variation
+            .map(|w| Weight(w.round().clamp(0.0, u16::MAX as f32) as u16))
+            .unwrap_or(base_weight);
 
         // Semibold threshold: families shipping bold at 600 must not
         // get faux-bold stacked on the real bold face.
@@ -1397,7 +1412,7 @@ impl FontData {
             offset,
             should_italicize,
             should_embolden,
-            wght_variation: font_spec.weight.map(f32::from),
+            wght_variation,
             key,
             synth,
             style,
@@ -1660,6 +1675,8 @@ impl FontData {
         path: PathBuf,
         face_index: u32,
     ) -> Result<Self, Box<dyn std::error::Error>> {
+        // Same instance-encoded index as the family-query path.
+        let face_index = face_index & 0xFFFF;
         let data = load_from_font_source(&path).ok_or_else(|| {
             format!("failed to load discovered font: {}", path.display())
         })?;
@@ -2236,6 +2253,7 @@ fn find_font(
 
         match db.query(&query) {
             Some(id) => {
+                let matched_wght = id.matched_wght;
                 match db.face_source(id) {
                     Some((crate::font::loader::Source::File(ref path), index)) => {
                         // File source - load from path
@@ -2249,6 +2267,7 @@ fn find_font(
                                 slot,
                                 &font_spec,
                                 index,
+                                matched_wght,
                             ) {
                                 Ok(d) => {
                                     tracing::info!(
@@ -2281,6 +2300,7 @@ fn find_font(
                             slot,
                             &font_spec,
                             index,
+                            matched_wght,
                         ) {
                             Ok(d) => {
                                 tracing::info!("Font '{}' loaded from memory", family);
@@ -2599,6 +2619,87 @@ mod alias_tests {
         let from_regular = lib.get_font_metrics(&0, 14.0).expect("regular metrics");
         let from_alias = lib.get_font_metrics(&1, 14.0).expect("alias metrics");
         assert_eq!(from_regular, from_alias);
+    }
+
+    /// Regression: fontconfig's named-instance index (instance id in
+    /// bits 16..) is out of range as a collection index — loading must
+    /// reopen the base face and pin `wght`, not fail to the bundled face.
+    #[test]
+    fn variable_font_named_instance_index_loads_base_and_pins_wght() {
+        let data = SharedData::new(constants::FONT_CASCADIA_CODE_NF.to_vec());
+        let spec = SugarloafFont::default();
+        let fc_bold_index = 6 << 16; // instance id 6 == Bold (wght 700)
+        let font = FontData::from_data(
+            data,
+            PathBuf::from("CascadiaCodeNF.ttf"),
+            false,
+            Slot::Bold,
+            &spec,
+            fc_bold_index,
+            Some(700.0),
+        )
+        .expect("named-instance index must load the base face");
+        assert_eq!(font.wght_variation, Some(700.0));
+        assert!(font.is_bold());
+        assert!(
+            !font.should_embolden,
+            "real instance outlines, not faux bold"
+        );
+    }
+
+    /// DirectWrite keeps instances at the base index but reports
+    /// per-instance weights; that weight must pin the axis too.
+    #[test]
+    fn matched_instance_weight_pins_variable_font() {
+        let data = SharedData::new(constants::FONT_CASCADIA_CODE_NF.to_vec());
+        let spec = SugarloafFont::default();
+        let font = FontData::from_data(
+            data,
+            PathBuf::from("CascadiaCodeNF.ttf"),
+            false,
+            Slot::Bold,
+            &spec,
+            0,
+            Some(700.0),
+        )
+        .expect("load");
+        assert_eq!(font.wght_variation, Some(700.0));
+        assert!(font.is_bold());
+        assert!(!font.should_embolden);
+    }
+
+    /// A match equal to the face default needs no pin; an explicit
+    /// user `weight` outranks the matched instance.
+    #[test]
+    fn default_match_does_not_pin_and_explicit_weight_wins() {
+        let spec = SugarloafFont::default();
+        let font = FontData::from_data(
+            SharedData::new(constants::FONT_CASCADIA_CODE_NF.to_vec()),
+            PathBuf::from("CascadiaCodeNF.ttf"),
+            false,
+            Slot::Regular,
+            &spec,
+            0,
+            Some(400.0),
+        )
+        .expect("load");
+        assert_eq!(font.wght_variation, None, "default instance needs no pin");
+
+        let pinned = SugarloafFont {
+            weight: Some(500),
+            ..SugarloafFont::default()
+        };
+        let font = FontData::from_data(
+            SharedData::new(constants::FONT_CASCADIA_CODE_NF.to_vec()),
+            PathBuf::from("CascadiaCodeNF.ttf"),
+            false,
+            Slot::Bold,
+            &pinned,
+            6 << 16,
+            Some(700.0),
+        )
+        .expect("load");
+        assert_eq!(font.wght_variation, Some(500.0), "explicit weight wins");
     }
 }
 
