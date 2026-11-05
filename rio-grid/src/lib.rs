@@ -1395,9 +1395,9 @@ pub struct GridGlyphRasterizer {
         bool,
         std::sync::Arc<Vec<rio_backend::sugarloaf::swash::Setting<u16>>>,
     )>,
-    /// Per-font `wght` axis pin, mirrored from `FontData.wght_variation`.
+    /// Per-font axis pins, mirrored from `FontData.variations`.
     #[cfg(not(target_os = "macos"))]
-    wght_cache: FxHashMap<u32, Option<f32>>,
+    variations_cache: FxHashMap<u32, Vec<(u32, f32)>>,
 
     // non-macOS: swash wants UTF-8, so keep a `String` scratch.
     #[cfg(not(target_os = "macos"))]
@@ -1443,7 +1443,7 @@ impl GridGlyphRasterizer {
             handle_cache: FxHashMap::default(),
             lib_settings: None,
             #[cfg(not(target_os = "macos"))]
-            wght_cache: FxHashMap::default(),
+            variations_cache: FxHashMap::default(),
             #[cfg(not(target_os = "macos"))]
             shape_ctx: rio_backend::sugarloaf::swash::shape::ShapeContext::new(),
             #[cfg(not(target_os = "macos"))]
@@ -1468,7 +1468,7 @@ impl GridGlyphRasterizer {
         self.handle_cache.clear();
         #[cfg(not(target_os = "macos"))]
         {
-            self.wght_cache.clear();
+            self.variations_cache.clear();
             self.font_data_cache.clear();
         }
     }
@@ -1931,11 +1931,18 @@ fn shape_run_swash(
     use rio_backend::sugarloaf::swash::{FontRef, Setting};
 
     let (_, features) = rasterizer.library_settings(font_library);
-    let wght = *rasterizer.wght_cache.entry(font_id).or_insert_with(|| {
-        let lib = font_library.inner.read();
-        lib.try_get(&(font_id as usize))
-            .and_then(|f| f.wght_variation)
-    });
+    let settings: smallvec::SmallVec<[Setting<f32>; 4]> = rasterizer
+        .variations_cache
+        .entry(font_id)
+        .or_insert_with(|| {
+            let lib = font_library.inner.read();
+            lib.try_get(&(font_id as usize))
+                .map(|f| f.variations.clone())
+                .unwrap_or_default()
+        })
+        .iter()
+        .map(|&(tag, value)| Setting { tag, value })
+        .collect();
 
     let font_entry = rasterizer
         .font_data_cache
@@ -1962,17 +1969,12 @@ fn shape_run_swash(
         None => 0,
     };
 
-    const WGHT_TAG: u32 = u32::from_be_bytes(*b"wght");
-    let wght_var = wght.map(|v| Setting {
-        tag: WGHT_TAG,
-        value: v,
-    });
     let mut shaper = rasterizer
         .shape_ctx
         .builder(font_ref)
         .size(size_u16 as f32)
         .features(features.iter().copied())
-        .variations(wght_var.iter().copied())
+        .variations(settings.iter().copied())
         .build();
     shaper.add_str(&rasterizer.run_str_scratch);
     let mut glyphs: Vec<ShapedGlyph> = Vec::new();
@@ -3610,28 +3612,27 @@ fn rasterize_glyph_native(
     };
 
     // Shaping runs before rasterization, so `lib_settings` and
-    // `wght_cache` are already populated for this font.
+    // `variations_cache` are already populated for this font.
     let hinting = rasterizer
         .lib_settings
         .as_ref()
         .map(|s| s.0)
         .unwrap_or(true);
-    const WGHT_TAG: u32 = u32::from_be_bytes(*b"wght");
-    let wght_var = rasterizer
-        .wght_cache
+    let settings: smallvec::SmallVec<[Setting<f32>; 4]> = rasterizer
+        .variations_cache
         .get(&font_id)
-        .copied()
-        .flatten()
-        .map(|v| Setting {
-            tag: WGHT_TAG,
-            value: v,
-        });
+        .map(|pins| {
+            pins.iter()
+                .map(|&(tag, value)| Setting { tag, value })
+                .collect()
+        })
+        .unwrap_or_default();
     let mut scaler = rasterizer
         .scale_ctx
         .builder(font_ref)
         .hint(hinting)
         .size(size_u16 as f32)
-        .variations(wght_var.iter().copied())
+        .variations(settings.iter().copied())
         .build();
 
     let sources: &[Source] = match rio_backend::sugarloaf::font::select_color_bitmap(
