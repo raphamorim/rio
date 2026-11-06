@@ -896,6 +896,13 @@ impl Text {
 
     //  wgpu GPU backend
 
+    /// Drop the wgpu pipeline and atlases (their device is gone); the
+    /// next `init_wgpu` rebuilds them on the current device.
+    #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
+    pub fn release_wgpu(&mut self) {
+        self.wgpu = None;
+    }
+
     #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
     pub fn init_wgpu(
         &mut self,

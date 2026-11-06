@@ -20,6 +20,9 @@ use raw_window_handle::{
 };
 use state::SugarState;
 
+#[cfg(feature = "wgpu")]
+const MAX_WGPU_FRAME_RETRIES: u8 = 3;
+
 pub struct Sugarloaf<'a> {
     // NOTE: field order is load-bearing for the Vulkan backend. Rust
     // drops struct fields in declaration order, and any field that
@@ -41,6 +44,15 @@ pub struct Sugarloaf<'a> {
     /// One-shot notice that active filters defeat `window.opacity`.
     #[cfg(feature = "wgpu")]
     warned_filters_opacity: bool,
+    /// Last filter list, replayed onto a rebuilt device.
+    #[cfg(feature = "wgpu")]
+    filters: Vec<Filter>,
+    /// Back-to-back frames the wgpu path skipped while asking for a
+    /// retry. Capped so a surface that keeps failing (a minimized
+    /// window can report `Outdated` forever) does not turn into a
+    /// redraw loop; window events and new output still trigger frames.
+    #[cfg(feature = "wgpu")]
+    frame_retries: u8,
     /// Pixel data for standalone image textures, keyed by image key
     /// (`graphics::kitty_image_key` / `graphics::atlas_image_key`).
     pub image_data: rustc_hash::FxHashMap<u64, GraphicDataEntry>,
@@ -258,6 +270,10 @@ impl Sugarloaf<'_> {
             filters_brush: None,
             #[cfg(feature = "wgpu")]
             warned_filters_opacity: false,
+            #[cfg(feature = "wgpu")]
+            filters: Vec::new(),
+            #[cfg(feature = "wgpu")]
+            frame_retries: 0,
             image_data: rustc_hash::FxHashMap::default(),
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
             font_cache,
@@ -450,6 +466,7 @@ impl Sugarloaf<'_> {
     /// requests entirely.
     #[cfg(feature = "wgpu")]
     pub fn update_filters(&mut self, filters: &[Filter]) {
+        filters.clone_into(&mut self.filters);
         if filters.is_empty() {
             self.filters_brush = None;
         } else {
@@ -462,6 +479,46 @@ impl Sugarloaf<'_> {
                 }
             }
         }
+    }
+
+    /// Whether the wgpu device was lost (driver reset, GPU removal).
+    /// Every GPU resource created from `ctx` is dead until
+    /// [`Self::recover_lost_device`] succeeds, including the ones the
+    /// embedder owns, such as grid renderers.
+    #[cfg(feature = "wgpu")]
+    pub fn is_device_lost(&self) -> bool {
+        matches!(
+            &self.ctx.inner,
+            crate::context::ContextType::Wgpu(ctx) if ctx.is_device_lost()
+        )
+    }
+
+    /// Rebuild the wgpu device and every GPU resource sugarloaf owns.
+    /// Returns whether rendering can resume. On failure the device
+    /// stays flagged lost, so the next frame tries again.
+    #[cfg(feature = "wgpu")]
+    pub fn recover_lost_device(&mut self) -> bool {
+        let crate::context::ContextType::Wgpu(ctx) = &mut self.ctx.inner else {
+            return true;
+        };
+        if let Err(err) = ctx.recreate_device() {
+            tracing::error!("cannot recover the lost wgpu device yet: {err}");
+            return false;
+        }
+
+        self.renderer = Renderer::new(&self.ctx, self.colorspace);
+        #[cfg(not(target_os = "macos"))]
+        self.text.release_wgpu();
+        self.filters_brush = None;
+        let filters = std::mem::take(&mut self.filters);
+        self.update_filters(&filters);
+        if let Some(image) = self.background_image.take() {
+            if let Err(err) = self.set_background_image(&image) {
+                tracing::warn!("background image not restored after device loss: {err}");
+            }
+        }
+        self.frame_retries = 0;
+        true
     }
 
     #[inline]
@@ -1138,14 +1195,20 @@ impl Sugarloaf<'_> {
             _ => return,
         };
 
-        let frame = match ctx.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-            _ => {
-                self.reset();
+        let frame = match ctx.acquire_frame() {
+            crate::context::webgpu::FrameAcquisition::Ready(frame) => frame,
+            crate::context::webgpu::FrameAcquisition::Skipped { retry } => {
+                // Overlays already queued this frame's batches; drop
+                // them so the next frame does not draw them twice.
+                self.discard_frame();
+                if retry && self.frame_retries < MAX_WGPU_FRAME_RETRIES {
+                    self.frame_retries += 1;
+                    self.renderer.frame_dropped = true;
+                }
                 return;
             }
         };
+        self.frame_retries = 0;
         let mut encoder = ctx
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
