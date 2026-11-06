@@ -6,6 +6,9 @@ use super::layout::LayoutNode;
 use super::prompt::quote;
 use super::protocol::{id_of, parse_line, Notification};
 use super::replies::forwards_reply;
+use super::status::{
+    StatusBar, TmuxStatus, BAR_SUBSCRIPTION, LINE_SUBSCRIPTION, SUBSCRIBE,
+};
 use super::{send_keys_commands, PaneSink, TmuxSnapshot, TmuxWindow};
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::Crosswords;
@@ -195,6 +198,9 @@ pub struct ControlSession {
     /// For the next snapshot.
     prompt_formats: Option<(u64, Vec<String>)>,
     prompt_reply: Option<String>,
+    status_bar: Option<StatusBar>,
+    status_line: Option<String>,
+    status_dirty: bool,
 }
 
 impl ControlSession {
@@ -377,6 +383,20 @@ impl ControlSession {
         })
     }
 
+    /// The status line, if it changed since the last call. On its own
+    /// rather than in the snapshot since it can change every second, and
+    /// a snapshot is a lot of work for the frontend. Follows the snapshots
+    /// so that the frontend has a session to put it on.
+    pub fn take_status(&mut self) -> Option<TmuxStatus> {
+        if !self.status_dirty || !self.synced || self.dirty {
+            return None;
+        }
+        let bar = self.status_bar?;
+        let line = self.status_line.as_ref()?;
+        self.status_dirty = false;
+        Some(TmuxStatus::parse(bar, line))
+    }
+
     /// The earliest synchronized update deadline among the panes.
     pub fn sync_deadline(&self) -> Option<Instant> {
         self.panes
@@ -496,6 +516,15 @@ impl ControlSession {
                     self.dirty = true;
                 }
             }
+            Notification::SubscriptionChanged { name, value } => {
+                if name == LINE_SUBSCRIPTION {
+                    self.status_line = Some(value);
+                    self.status_dirty = true;
+                } else if name == BAR_SUBSCRIPTION {
+                    self.status_bar = Some(StatusBar::parse(&value));
+                    self.status_dirty = true;
+                }
+            }
             Notification::Exit(reason) => return Some(EndReason::Exit(reason)),
             Notification::Other => (),
         }
@@ -533,6 +562,9 @@ impl ControlSession {
                     self.apply_window_list(&block.lines);
                     if first {
                         self.request_keys();
+                        for command in SUBSCRIBE {
+                            self.command(command);
+                        }
                     }
                 }
             }
@@ -841,6 +873,10 @@ mod tests {
         %begin 1793790355 264 1\r\n\
         bind-key -T prefix c new-window\r\n\
         %end 1793790355 264 1\r\n\
+        %begin 1793790355 265 1\r\n\
+        %end 1793790355 265 1\r\n\
+        %begin 1793790355 266 1\r\n\
+        %end 1793790355 266 1\r\n\
         %layout-change @0 a87d,100x30,0,0,0 a87d,100x30,0,0,0 *\r\n\
         %window-pane-changed @0 %1\r\n\
         %layout-change @0 6b8b,100x30,0,0{50x30,0,0,0,49x30,51,0,1} \
@@ -903,6 +939,68 @@ mod tests {
                 ended: None
             }
         );
+    }
+
+    #[test]
+    fn the_status_line_takes_both_subscriptions() {
+        let mut session = synced_session();
+        session.take_snapshot();
+
+        feed(
+            &mut session,
+            b"%subscription-changed rio-status-line $0 - - - : [s] : x\r\n",
+        );
+        assert_eq!(session.take_status(), None);
+
+        feed(
+            &mut session,
+            b"%subscription-changed rio-status-bar $0 - - - : on top fg=red\r\n",
+        );
+        let status = session.take_status().unwrap();
+        assert!(status.bar.top);
+        assert_eq!(status.left[0].text, "[s] : x");
+        assert_eq!(session.take_status(), None);
+
+        feed(
+            &mut session,
+            b"%subscription-changed rio-status-line $0 - - - : later\r\n",
+        );
+        assert_eq!(session.take_status().unwrap().left[0].text, "later");
+    }
+
+    #[test]
+    fn the_status_line_waits_for_the_session_to_reach_the_frontend() {
+        let mut session = synced_session();
+        feed(
+            &mut session,
+            b"%subscription-changed rio-status-bar $0 - - - : on bottom default\r\n\
+              %subscription-changed rio-status-line $0 - - - : text\r\n",
+        );
+        assert_eq!(session.take_status(), None);
+        session.take_snapshot();
+        assert!(session.take_status().is_some());
+    }
+
+    #[test]
+    fn a_status_line_change_needs_no_snapshot() {
+        let mut session = synced_session();
+        session.take_snapshot();
+        feed(
+            &mut session,
+            b"%subscription-changed rio-status-line $0 - - - : text\r\n",
+        );
+        assert!(session.take_snapshot().is_none());
+    }
+
+    #[test]
+    fn other_subscriptions_are_ignored() {
+        let mut session = synced_session();
+        session.take_snapshot();
+        feed(
+            &mut session,
+            b"%subscription-changed someone-else $0 - - - : text\r\n",
+        );
+        assert_eq!(session.take_status(), None);
     }
 
     #[test]
@@ -1099,7 +1197,9 @@ mod tests {
         feed(
             &mut session,
             b"%begin 2 3 1\r\nC-b None 500\r\n%end 2 3 1\r\n\
-              %begin 2 4 1\r\n%end 2 4 1\r\n",
+              %begin 2 4 1\r\n%end 2 4 1\r\n\
+              %begin 2 5 1\r\n%end 2 5 1\r\n\
+              %begin 2 6 1\r\n%end 2 6 1\r\n",
         );
         session
     }
@@ -1376,7 +1476,10 @@ mod tests {
     #[test]
     fn keys_are_requested_once_the_windows_are_known() {
         let mut session = session_with_key_requests();
-        assert_eq!(sent(&mut session), [KEY_OPTIONS, LIST_PREFIX_KEYS]);
+        assert_eq!(
+            sent(&mut session),
+            [KEY_OPTIONS, LIST_PREFIX_KEYS, SUBSCRIBE[0], SUBSCRIBE[1]]
+        );
     }
 
     #[test]

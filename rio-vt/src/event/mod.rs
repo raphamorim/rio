@@ -310,6 +310,9 @@ pub enum RioEvent {
     /// The tmux control mode session on the PTY of `route_id` changed shape.
     TmuxUpdate(usize, Arc<crate::tmux::TmuxSnapshot>),
 
+    /// The status line of the tmux session on the PTY of `route_id` changed.
+    TmuxStatus(usize, Arc<crate::tmux::status::TmuxStatus>),
+
     /// The tmux control mode session on the PTY of `route_id` ended, or was
     /// lost along with the PTY.
     TmuxEnded(usize),
@@ -390,6 +393,7 @@ impl Debug for RioEvent {
             RioEvent::Quit => write!(f, "Quit"),
             RioEvent::CloseTerminal(route) => write!(f, "CloseTerminal {route}"),
             RioEvent::TmuxUpdate(route, _) => write!(f, "TmuxUpdate(route={route})"),
+            RioEvent::TmuxStatus(route, _) => write!(f, "TmuxStatus(route={route})"),
             RioEvent::TmuxEnded(route) => write!(f, "TmuxEnded(route={route})"),
             RioEvent::ChildExited(route, status) => {
                 write!(f, "ChildExited(route={route}, status={status:?})")

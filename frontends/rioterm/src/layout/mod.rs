@@ -151,6 +151,9 @@ pub struct ContextGrid<T: EventListener> {
     pub height: f32,
     pub current: NodeId,
     pub scaled_margin: Margin,
+    /// The part of `scaled_margin` that holds tmux's status line, `(top,
+    /// bottom)`. Unlike the rest it's this tab's own.
+    pub status_room: (f32, f32),
     // custom_title has priority over the active panel's computed title.
     pub custom_title: Option<String>,
     // custom_color is the tab's background override (tab color picker).
@@ -272,6 +275,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             inner,
             current: panel_node,
             scaled_margin,
+            status_room: (0.0, 0.0),
             custom_title: None,
             custom_color: None,
             bell: false,
@@ -1488,8 +1492,38 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn update_scaled_margin(&mut self, scaled_margin: Margin) {
-        self.scaled_margin = scaled_margin;
+    /// The margin every tab shares, without the room for a status line.
+    pub fn base_margin(&self) -> Margin {
+        let margin = self.scaled_margin;
+        let (top, bottom) = self.status_room;
+        Margin::new(
+            margin.top - top,
+            margin.right,
+            margin.bottom - bottom,
+            margin.left,
+        )
+    }
+
+    /// Make room for tmux's status line. Returns whether that changed.
+    pub fn set_status_room(&mut self, top: f32, bottom: f32) -> bool {
+        if self.status_room == (top, bottom) {
+            return false;
+        }
+        let margin = self.base_margin();
+        self.status_room = (top, bottom);
+        self.update_scaled_margin(margin);
+        true
+    }
+
+    /// Set the margin every tab shares: see [`Self::base_margin`].
+    pub fn update_scaled_margin(&mut self, base_margin: Margin) {
+        let (top, bottom) = self.status_room;
+        self.scaled_margin = Margin::new(
+            base_margin.top + top,
+            base_margin.right,
+            base_margin.bottom + bottom,
+            base_margin.left,
+        );
         // Keep the taffy root size in sync with the new margins,
         // otherwise panels keep stale sizes until the next window
         // resize recomputes the available space.

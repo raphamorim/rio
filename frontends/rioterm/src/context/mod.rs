@@ -1467,7 +1467,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             ) {
                 Ok(new_context) => {
                     let previous_scaled_margin =
-                        self.contexts[self.current_index].scaled_margin;
+                        self.contexts[self.current_index].base_margin();
                     self.contexts.push(ContextGrid::new(
                         new_context,
                         previous_scaled_margin,

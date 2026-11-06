@@ -972,6 +972,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.request_redraw();
                 }
             }
+            RioEventType::Rio(RioEvent::TmuxStatus(route_id, status)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.window.screen.tmux_status(route_id, status);
+                    route.request_redraw();
+                }
+            }
             RioEventType::Rio(RioEvent::TmuxEnded(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route.window.screen.tmux_end(route_id);

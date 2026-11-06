@@ -722,7 +722,7 @@ impl Screen<'_> {
 
         for context_grid in self.context_manager.contexts_mut() {
             let old_scale = context_grid.current().dimension.dimension.scale.max(1.0);
-            let scaled_margin = context_grid.scaled_margin;
+            let scaled_margin = context_grid.base_margin();
             let unscaled_margin = Margin::new(
                 scaled_margin.top / old_scale,
                 scaled_margin.right / old_scale,
@@ -786,6 +786,7 @@ impl Screen<'_> {
                 let _ = ctx.messenger.send_resize(winsize);
             }
         }
+        self.context_manager.tmux_sync_status(&mut self.sugarloaf);
         self.context_manager.tmux_sync_size();
     }
 
@@ -1895,6 +1896,18 @@ impl Screen<'_> {
         self.tmux_refresh_chrome();
     }
 
+    /// The status line of a tmux session changed.
+    pub fn tmux_status(
+        &mut self,
+        host_route: usize,
+        status: std::sync::Arc<rio_backend::tmux::status::TmuxStatus>,
+    ) {
+        self.context_manager.tmux_set_status(host_route, status);
+        self.context_manager.tmux_sync_status(&mut self.sugarloaf);
+        self.context_manager.tmux_sync_size();
+        self.mark_dirty();
+    }
+
     /// A tmux session ended: the tab it took over is back.
     pub fn tmux_end(&mut self, host_route: usize) {
         self.clear_selection();
@@ -1910,6 +1923,7 @@ impl Screen<'_> {
         let num_tabs = self.ctx().len();
         self.resize_top_or_bottom_line(num_tabs);
         // A tab bar that just appeared takes room from the panes.
+        self.context_manager.tmux_sync_status(&mut self.sugarloaf);
         self.context_manager.tmux_sync_size();
         self.refresh_titles();
         self.mark_dirty();
@@ -1970,7 +1984,7 @@ impl Screen<'_> {
         // Compare against the grid's scaled margin, the value the
         // layout actually uses. The per panel dimension margin is
         // zeroed by the taffy pass so it cannot be used as a guard.
-        let current_margin = self.context_manager.current_grid().scaled_margin;
+        let current_margin = self.context_manager.current_grid().base_margin();
         if current_margin.top == scaled_top && current_margin.bottom == scaled_bottom {
             return;
         }

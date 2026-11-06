@@ -36,6 +36,10 @@ pub enum Notification {
         session: u32,
         window: u32,
     },
+    SubscriptionChanged {
+        name: String,
+        value: String,
+    },
     Exit(Option<String>),
     /// A well-formed notification nothing here acts on.
     Other,
@@ -128,6 +132,16 @@ pub fn parse_line(line: &[u8]) -> Option<Notification> {
             Notification::SessionWindowChanged {
                 session: id_of(session, b'$')?,
                 window: id_of(window, b'@')?,
+            }
+        }
+        // `%subscription-changed <name> $<session> <window> <index> <pane> :
+        // <value>`, where only the value can hold anything.
+        b"%subscription-changed" => {
+            let (name, rest) = split_word(rest);
+            let colon = rest.windows(3).position(|bytes| bytes == b" : ")?;
+            Notification::SubscriptionChanged {
+                name: String::from_utf8_lossy(name).into_owned(),
+                value: String::from_utf8_lossy(&rest[colon + 3..]).into_owned(),
             }
         }
         b"%exit" => Notification::Exit(

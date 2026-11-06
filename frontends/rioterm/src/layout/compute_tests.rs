@@ -707,6 +707,29 @@ mod tmux {
     }
 
     #[test]
+    fn a_status_line_takes_a_row_from_tmux() {
+        let mut grid = grid(100, 30, Panel::default());
+        let cell = grid.current().dimension.cell.cell_height as f32;
+        let margin = grid.base_margin();
+
+        assert!(grid.set_status_room(0.0, cell));
+        assert!(!grid.set_status_room(0.0, cell));
+        assert_eq!(grid.tmux_client_size(), (99, 28));
+        assert_eq!(grid.base_margin().bottom, margin.bottom);
+
+        // The shared margin can change underneath it.
+        let mut changed = margin;
+        changed.bottom += 1.0;
+        grid.update_scaled_margin(changed);
+        assert_eq!(grid.scaled_margin.bottom, changed.bottom + cell);
+
+        grid.update_scaled_margin(margin);
+        assert!(grid.set_status_room(0.0, 0.0));
+        assert_eq!(grid.scaled_margin.bottom, margin.bottom);
+        assert_eq!(grid.tmux_client_size(), (99, 29));
+    }
+
+    #[test]
     fn panels_are_large_enough_for_their_tmux_size() {
         let mut grid = grid(100, 30, Panel::default());
         // The default panel margin costs a cell of each axis.

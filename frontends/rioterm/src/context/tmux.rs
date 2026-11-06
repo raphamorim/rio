@@ -24,6 +24,7 @@ use rio_backend::event::{EventListener, TerminalDamage, WindowId};
 use rio_backend::sugarloaf::Sugarloaf;
 use rio_backend::tmux::keys::{unsupported_command, KeyPress, PrefixState, TmuxKeys};
 use rio_backend::tmux::session::TerminalSink;
+use rio_backend::tmux::status::TmuxStatus;
 use rio_backend::tmux::{TmuxSnapshot, TmuxWindow};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -41,6 +42,7 @@ pub struct TmuxTakeover<T: EventListener> {
     size: Option<(usize, usize)>,
     keys: Arc<TmuxKeys>,
     prefix: PrefixState,
+    status: Option<Arc<TmuxStatus>>,
 }
 
 /// What a tmux tab's panes are built from.
@@ -211,6 +213,7 @@ impl<T: EventListener + Clone + Send + 'static> ContextManager<T> {
                 size: None,
                 keys: Arc::clone(&snapshot.keys),
                 prefix: PrefixState::default(),
+                status: None,
             });
         }
 
@@ -244,7 +247,8 @@ impl<T: EventListener + Clone + Send + 'static> ContextManager<T> {
             blinking: reference.current().renderable_content.has_blinking_enabled,
             dimension: reference.grid_dimension(),
         };
-        let scaled_margin = reference.scaled_margin;
+        let scaled_margin = reference.base_margin();
+        let status_room = reference.status_room;
 
         let mut ordered = Vec::with_capacity(snapshot.windows.len());
         for window in &snapshot.windows {
@@ -259,7 +263,13 @@ impl<T: EventListener + Clone + Send + 'static> ContextManager<T> {
                     }
                     Some(grid)
                 }
-                None => factory.create_grid(host_route, window, scaled_margin, sugarloaf),
+                None => factory
+                    .create_grid(host_route, window, scaled_margin, sugarloaf)
+                    .map(|mut grid| {
+                        grid.set_status_room(status_room.0, status_room.1);
+                        grid.update_dimensions(sugarloaf);
+                        grid
+                    }),
             };
             ordered.extend(grid);
         }
@@ -312,7 +322,7 @@ impl<T: EventListener + Clone + Send + 'static> ContextManager<T> {
         // The window may have changed while the tab was away.
         if let Some(reference) = tabs.first().map(|index| &self.contexts[*index]) {
             let (width, height) = (reference.width, reference.height);
-            host_grid.update_scaled_margin(reference.scaled_margin);
+            host_grid.update_scaled_margin(reference.base_margin());
             host_grid.update_scale(sugarloaf.scale_factor());
             host_grid.update_line_height(reference.current().dimension.line_height);
             host_grid.resize(width, height, sugarloaf);
@@ -338,6 +348,46 @@ impl<T: EventListener + Clone + Send + 'static> ContextManager<T> {
         };
         self.sync_current_route();
         self.keep_only_active_context_visible(sugarloaf);
+    }
+
+    /// Take in a new status line for the session on `host_route`.
+    pub fn tmux_set_status(&mut self, host_route: usize, status: Arc<TmuxStatus>) {
+        if let Some(takeover) = self.tmux.iter_mut().find(|t| t.host_route == host_route)
+        {
+            takeover.status = Some(status);
+        }
+    }
+
+    /// The status line to show for the current tab.
+    pub fn tmux_status(&self) -> Option<Arc<TmuxStatus>> {
+        self.focused_takeover()?
+            .status
+            .as_ref()
+            .filter(|status| status.bar.visible)
+            .cloned()
+    }
+
+    /// Give a session's tabs room for its status line: a row of their cells,
+    /// which `tmux_sync_size` then keeps out of what tmux is offered.
+    pub fn tmux_sync_status(&mut self, sugarloaf: &mut Sugarloaf) {
+        for takeover in &self.tmux {
+            let bar = takeover.status.as_ref().map(|status| status.bar);
+            for grid in self
+                .contexts
+                .iter_mut()
+                .filter(|grid| grid.tmux_host() == Some(takeover.host_route))
+            {
+                let row = grid.current().dimension.cell.cell_height as f32;
+                let (top, bottom) = match bar {
+                    Some(bar) if bar.visible && bar.top => (row, 0.0),
+                    Some(bar) if bar.visible => (0.0, row),
+                    _ => (0.0, 0.0),
+                };
+                if grid.set_status_room(top, bottom) {
+                    grid.update_dimensions(sugarloaf);
+                }
+            }
+        }
     }
 
     /// Tell tmux how much room there is, in cells. It answers with layouts

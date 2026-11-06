@@ -14,6 +14,7 @@ pub mod helpers;
 pub mod island;
 pub mod scrollbar;
 pub mod search;
+pub mod tmux_status;
 pub mod trail_cursor;
 pub mod utils;
 
@@ -32,6 +33,7 @@ use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::EventProxy;
 use rio_backend::sugarloaf::text::DrawOpts;
 use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::tmux::status::StatusColor;
 
 // Hint tooltip: browser-style status pill showing where the hovered
 // link goes. Shares the overlay draw order with search / palette.
@@ -764,6 +766,39 @@ impl Renderer {
                 (window_size.width, window_size.height, scale_factor),
                 context_manager,
                 island_bg,
+            );
+        }
+
+        if let Some(status) = context_manager.tmux_status() {
+            let grid = context_manager.current_grid();
+            let margin = grid.get_scaled_margin();
+            let (top_room, bottom_room) = grid.status_room;
+            let (y, height) = if status.bar.top {
+                (margin.top - top_room, top_room)
+            } else {
+                (window_size.height - margin.bottom, bottom_room)
+            };
+            let font_size = grid.current().dimension.font_size;
+            tmux_status::render(
+                sugarloaf,
+                &status,
+                tmux_status::Area {
+                    y: y / scale_factor,
+                    width: window_size.width / scale_factor,
+                    height: height / scale_factor,
+                    font_size,
+                },
+                |color, foreground| match color {
+                    StatusColor::Default if foreground => self.named_colors.foreground,
+                    StatusColor::Default => self.named_colors.background.0,
+                    StatusColor::Indexed(index) => self.colors[index as usize],
+                    StatusColor::Rgb(red, green, blue) => [
+                        red as f32 / 255.0,
+                        green as f32 / 255.0,
+                        blue as f32 / 255.0,
+                        1.0,
+                    ],
+                },
             );
         }
 

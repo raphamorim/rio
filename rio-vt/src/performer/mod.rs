@@ -383,6 +383,12 @@ where
                 self.window_id,
             );
         }
+        if let Some(status) = session.take_status() {
+            self.event_proxy.send_event(
+                RioEvent::TmuxStatus(self.route_id, Arc::new(status)),
+                self.window_id,
+            );
+        }
     }
 
     fn end_tmux(&self, state: &mut State) {

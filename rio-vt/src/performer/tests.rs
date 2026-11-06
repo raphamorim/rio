@@ -350,6 +350,7 @@ impl EventListener for EventRecorder {
             RioEvent::TerminalDamaged(_) => "damaged",
             RioEvent::ChildExited(..) => "exited",
             RioEvent::TmuxUpdate(..) => "tmux update",
+            RioEvent::TmuxStatus(..) => "tmux status",
             RioEvent::TmuxEnded(..) => "tmux ended",
             _ => return,
         };

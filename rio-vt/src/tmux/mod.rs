@@ -21,6 +21,7 @@ pub mod protocol;
 pub mod replies;
 #[cfg(feature = "pty")]
 pub mod session;
+pub mod status;
 
 use crate::time::Instant;
 use keys::TmuxKeys;
