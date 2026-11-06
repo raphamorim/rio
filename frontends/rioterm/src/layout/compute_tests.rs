@@ -647,3 +647,229 @@ fn test_split_inside_resized_panel_preserves_proportions() {
         "Bottom (bottom half) should be ~400px tall, got {bottom_h}"
     );
 }
+
+mod tmux {
+    use super::super::*;
+    use crate::context::create_mock_context;
+    use crate::event::VoidListener;
+    use rio_backend::event::WindowId;
+
+    const CELL: u32 = 10;
+
+    fn dimension(columns: u32, lines: u32) -> ContextDimension {
+        let text = TextDimensions {
+            width: CELL as f32,
+            height: CELL as f32,
+            scale: 1.0,
+        };
+        ContextDimension::build(
+            (columns * CELL) as f32,
+            (lines * CELL) as f32,
+            text,
+            super::cell_for(text),
+            1.0,
+            14.0,
+            Margin::all(0.0),
+        )
+    }
+
+    fn pane(id: u32, columns: usize, lines: usize) -> Context<VoidListener> {
+        let mut context = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            id as usize,
+            dimension(columns as u32, lines as u32),
+        );
+        context.messenger = crate::messenger::Messenger::for_tmux_pane(
+            context.messenger.channel.clone(),
+            id,
+        );
+        context
+    }
+
+    fn grid(columns: u32, lines: u32, panel: Panel) -> ContextGrid<VoidListener> {
+        let mut context = pane(0, columns as usize, lines as usize);
+        context.dimension = dimension(columns, lines);
+        ContextGrid::new(context, Margin::all(0.0), [0.0; 4], [0.0; 4], panel)
+    }
+
+    use rio_backend::config::layout::Panel;
+
+    fn rects(grid: &mut ContextGrid<VoidListener>) -> Vec<(u32, [f32; 4])> {
+        grid.calculate_positions();
+        let mut rects: Vec<_> = grid
+            .contexts()
+            .values()
+            .map(|item| (item.val.messenger.tmux_pane().unwrap(), item.layout_rect))
+            .collect();
+        rects.sort_by_key(|(pane, _)| *pane);
+        rects
+    }
+
+    #[test]
+    fn a_status_line_takes_a_row_from_tmux() {
+        let mut grid = grid(100, 30, Panel::default());
+        let cell = grid.current().dimension.cell.cell_height as f32;
+        let margin = grid.base_margin();
+
+        assert!(grid.set_status_room(0.0, cell));
+        assert!(!grid.set_status_room(0.0, cell));
+        assert_eq!(grid.tmux_client_size(), (99, 28));
+        assert_eq!(grid.base_margin().bottom, margin.bottom);
+
+        // The shared margin can change underneath it.
+        let mut changed = margin;
+        changed.bottom += 1.0;
+        grid.update_scaled_margin(changed);
+        assert_eq!(grid.scaled_margin.bottom, changed.bottom + cell);
+
+        grid.update_scaled_margin(margin);
+        assert!(grid.set_status_room(0.0, 0.0));
+        assert_eq!(grid.scaled_margin.bottom, margin.bottom);
+        assert_eq!(grid.tmux_client_size(), (99, 29));
+    }
+
+    #[test]
+    fn panels_are_large_enough_for_their_tmux_size() {
+        let mut grid = grid(100, 30, Panel::default());
+        // The default panel margin costs a cell of each axis.
+        assert_eq!(grid.tmux_client_size(), (99, 29));
+
+        let layout = LayoutNode::parse(
+            "0000,99x29,0,0[99x15,0,0,0,99x13,0,16{94x13,0,16,1,4x13,95,16,2}]",
+        )
+        .unwrap();
+        let removed = grid.set_tmux_layout(&layout, Some(1), &mut pane);
+        assert!(removed.is_empty());
+
+        let rects = rects(&mut grid);
+        assert_eq!(rects.len(), 3);
+        for ((_, rect), (_, columns, lines)) in rects.iter().zip(layout.panes()) {
+            assert!(rect[2] >= (columns as u32 * CELL) as f32, "{rect:?}");
+            assert!(rect[3] >= (lines as u32 * CELL) as f32, "{rect:?}");
+        }
+        // Side by side below the full-width pane, in tmux's proportions.
+        assert!(rects[1].1[1] > rects[0].1[1]);
+        assert_eq!(rects[1].1[1], rects[2].1[1]);
+        assert!(rects[2].1[0] > rects[1].1[0]);
+        assert!(rects[1].1[2] > rects[2].1[2] * 2.0);
+        // Nothing runs off the tab.
+        assert!(rects[2].1[0] + rects[2].1[2] <= 1000.0);
+    }
+
+    #[test]
+    fn active_pane_becomes_the_current_panel() {
+        let layout =
+            LayoutNode::parse("0000,100x30,0,0{50x30,0,0,0,49x30,51,0,1}").unwrap();
+        let mut grid = grid(100, 30, Panel::default());
+        grid.set_tmux_layout(&layout, Some(1), &mut pane);
+        assert_eq!(grid.current().messenger.tmux_pane(), Some(1));
+    }
+
+    #[test]
+    fn surviving_panes_keep_their_context() {
+        let split =
+            LayoutNode::parse("0000,100x30,0,0{50x30,0,0,0,49x30,51,0,1}").unwrap();
+        let single = LayoutNode::parse("0000,100x30,0,0,1").unwrap();
+        let mut grid = grid(100, 30, Panel::default());
+        grid.set_tmux_layout(&split, Some(0), &mut pane);
+        let route = grid
+            .contexts()
+            .values()
+            .find(|item| item.val.messenger.tmux_pane() == Some(1))
+            .unwrap()
+            .val
+            .route_id;
+
+        let removed = grid.set_tmux_layout(&single, Some(1), &mut |_, _, _| {
+            panic!("pane 1 exists already")
+        });
+
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].val.messenger.tmux_pane(), Some(0));
+        assert_eq!(grid.len(), 1);
+        assert_eq!(grid.current().route_id, route);
+        assert_eq!(grid.current().tmux_size, Some((100, 30)));
+    }
+
+    #[test]
+    fn dividers_are_dragged_through_the_pane_before_them() {
+        let grid = tmux_grid("0000,100x30,0,0{50x30,0,0,0,49x30,51,0,1}");
+        let drag = grid.tmux_divider_drag(&top_divider(&grid), 0.0).unwrap();
+        assert_eq!(drag.pane, 0);
+        assert_eq!(drag.direction, BorderDirection::Vertical);
+    }
+
+    #[test]
+    fn a_column_before_a_divider_is_sized_through_one_of_its_panes() {
+        let grid = tmux_grid(
+            "0000,100x30,0,0{50x30,0,0[50x15,0,0,3,50x14,0,16,4],49x30,51,0,1}",
+        );
+        let drag = grid.tmux_divider_drag(&top_divider(&grid), 0.0).unwrap();
+        assert_eq!(drag.pane, 3);
+    }
+
+    #[test]
+    fn dividers_no_pane_can_move_are_not_draggable() {
+        // Every pane left of the divider sits in a nested row, which is what
+        // `resize-pane` would resize instead.
+        let grid = tmux_grid(
+            "0000,100x30,0,0{50x30,0,0[50x15,0,0{25x15,0,0,3,24x15,26,0,4},\
+             50x14,0,16{25x14,0,16,5,24x14,26,16,6}],49x30,51,0,1}",
+        );
+        assert!(grid.tmux_divider_drag(&top_divider(&grid), 0.0).is_none());
+    }
+
+    #[test]
+    fn dragging_asks_for_whole_cells_once_each() {
+        let grid = tmux_grid("0000,100x30,0,0{50x30,0,0,0,49x30,51,0,1}");
+        let mut drag = grid.tmux_divider_drag(&top_divider(&grid), 500.0).unwrap();
+        let cell = grid.current().dimension.cell.cell_width as f32;
+
+        assert_eq!(drag.drag_to(500.0), None);
+        assert_eq!(drag.drag_to(500.0 + cell), Some(51));
+        assert_eq!(drag.drag_to(500.0 + cell * 1.2), None);
+        assert_eq!(drag.drag_to(500.0 - cell * 2.0), Some(48));
+        assert_eq!(drag.drag_to(-100_000.0), Some(1));
+        assert_eq!(drag.drag_to(-200_000.0), None);
+    }
+
+    #[test]
+    fn hovering_finds_a_tmux_divider() {
+        let grid = tmux_grid("0000,100x30,0,0{50x30,0,0,0,49x30,51,0,1}");
+        let right = grid
+            .contexts()
+            .values()
+            .find(|item| item.val.messenger.tmux_pane() == Some(1))
+            .unwrap()
+            .layout_rect;
+        let x = right[0] - grid.panel_config.column_gap * grid.scale / 2.0;
+        let border = grid.find_border_at_position(x, 10.0).unwrap();
+        assert_eq!(border.direction, BorderDirection::Vertical);
+    }
+
+    fn tmux_grid(layout: &str) -> ContextGrid<VoidListener> {
+        let layout = LayoutNode::parse(layout).unwrap();
+        let mut grid = grid(100, 30, Panel::default());
+        grid.set_tmux_layout(&layout, Some(0), &mut pane);
+        grid.tmux = Some(TmuxGridState {
+            host_route: 0,
+            window: 0,
+            layout,
+            active_pane: Some(0),
+        });
+        grid.calculate_positions();
+        grid
+    }
+
+    /// The divider between the first two children of the layout's top node.
+    fn top_divider(grid: &ContextGrid<VoidListener>) -> PanelBorder {
+        let top = grid.tree.children(grid.root_node).unwrap()[0];
+        let children = grid.tree.children(top).unwrap();
+        PanelBorder {
+            direction: BorderDirection::Vertical,
+            left_or_top: children[0],
+            right_or_bottom: children[1],
+        }
+    }
+}

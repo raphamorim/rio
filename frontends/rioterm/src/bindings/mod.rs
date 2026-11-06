@@ -12,7 +12,7 @@ use rio_backend::config::keyboard::Keyboard as ConfigKeyboard;
 use rio_window::event::MouseButton;
 use rio_window::keyboard::Key::*;
 use rio_window::keyboard::NamedKey::*;
-use rio_window::keyboard::{Key, KeyLocation, ModifiersState, PhysicalKey};
+use rio_window::keyboard::{Key, KeyLocation, ModifiersState, NamedKey, PhysicalKey};
 use std::fmt::Debug;
 // use rio_window::platform::scancode::PhysicalKeyExtScancode;
 
@@ -243,6 +243,7 @@ impl From<String> for Action {
             "movecurrenttabtoprev" => Some(Action::MoveCurrentTabToPrev),
             "movecurrenttabtonext" => Some(Action::MoveCurrentTabToNext),
             "closetab" => Some(Action::TabCloseCurrent),
+            "tmuxdetach" => Some(Action::TmuxDetach),
             "closesplitortab" => Some(Action::CloseCurrentSplitOrTab),
             "closeunfocusedtabs" => Some(Action::TabCloseUnfocused),
             "openconfigeditor" => Some(Action::ConfigEditor),
@@ -437,6 +438,9 @@ pub enum Action {
 
     /// Close tab.
     TabCloseCurrent,
+
+    /// Detach from the tmux control mode session of the focused tab.
+    TmuxDetach,
 
     CloseCurrentSplitOrTab,
 
@@ -926,6 +930,83 @@ fn convert(config_key_binding: ConfigKeyBinding) -> Result<KeyBinding, String> {
         mode: res_mode.mode,
         notmode: res_mode.not_mode,
     })
+}
+
+/// The name tmux gives a key press, as `list-keys` shows it. `None` for what
+/// tmux has no name for, like a modifier on its own.
+pub fn tmux_key_name(key: &Key, mods: ModifiersState) -> Option<String> {
+    // tmux has no Super, so these can only be Rio's.
+    if mods.super_key() {
+        return None;
+    }
+
+    let mut shift = mods.shift_key();
+    let base = match key {
+        Key::Named(named) => match named {
+            NamedKey::Tab if shift => {
+                shift = false;
+                "BTab".to_string()
+            }
+            NamedKey::Tab => "Tab".to_string(),
+            NamedKey::Space => "Space".to_string(),
+            NamedKey::Enter => "Enter".to_string(),
+            NamedKey::Escape => "Escape".to_string(),
+            NamedKey::Backspace => "BSpace".to_string(),
+            NamedKey::Delete => "DC".to_string(),
+            NamedKey::Insert => "IC".to_string(),
+            NamedKey::Home => "Home".to_string(),
+            NamedKey::End => "End".to_string(),
+            NamedKey::PageUp => "PPage".to_string(),
+            NamedKey::PageDown => "NPage".to_string(),
+            NamedKey::ArrowUp => "Up".to_string(),
+            NamedKey::ArrowDown => "Down".to_string(),
+            NamedKey::ArrowLeft => "Left".to_string(),
+            NamedKey::ArrowRight => "Right".to_string(),
+            NamedKey::F1 => "F1".to_string(),
+            NamedKey::F2 => "F2".to_string(),
+            NamedKey::F3 => "F3".to_string(),
+            NamedKey::F4 => "F4".to_string(),
+            NamedKey::F5 => "F5".to_string(),
+            NamedKey::F6 => "F6".to_string(),
+            NamedKey::F7 => "F7".to_string(),
+            NamedKey::F8 => "F8".to_string(),
+            NamedKey::F9 => "F9".to_string(),
+            NamedKey::F10 => "F10".to_string(),
+            NamedKey::F11 => "F11".to_string(),
+            NamedKey::F12 => "F12".to_string(),
+            _ => return None,
+        },
+        Key::Character(text) => {
+            let mut chars = text.chars();
+            let (Some(character), None) = (chars.next(), chars.next()) else {
+                return None;
+            };
+            if character == ' ' {
+                "Space".to_string()
+            } else if mods.control_key() && character.is_ascii_uppercase() {
+                // tmux reads `C-B` as `C-b`, so Shift has to be spelled out.
+                character.to_ascii_lowercase().to_string()
+            } else {
+                // Shift already made the character what it is.
+                shift = false;
+                character.to_string()
+            }
+        }
+        _ => return None,
+    };
+
+    let mut name = String::with_capacity(base.len() + 6);
+    if mods.control_key() {
+        name.push_str("C-");
+    }
+    if mods.alt_key() {
+        name.push_str("M-");
+    }
+    if shift {
+        name.push_str("S-");
+    }
+    name.push_str(&base);
+    Some(name)
 }
 
 /// Legacy (non-kitty) C0 byte for a ctrl+character combo, using the
@@ -1649,6 +1730,64 @@ mod tests {
             .iter()
             .any(|b| matches!(b.action, Action::Scroll(_)));
         assert!(has_scroll_actions);
+    }
+
+    #[test]
+    fn tmux_key_names() {
+        let ctrl = ModifiersState::CONTROL;
+        let shift = ModifiersState::SHIFT;
+        let alt = ModifiersState::ALT;
+        let none = ModifiersState::empty();
+        let name = |key: Key, mods| tmux_key_name(&key, mods);
+        let char = |s: &str| Key::Character(s.into());
+
+        assert_eq!(name(char("b"), ctrl).as_deref(), Some("C-b"));
+        assert_eq!(name(char("%"), shift).as_deref(), Some("%"));
+        assert_eq!(name(char("K"), shift).as_deref(), Some("K"));
+        assert_eq!(name(char("\""), shift).as_deref(), Some("\""));
+        assert_eq!(name(char("1"), alt).as_deref(), Some("M-1"));
+        assert_eq!(name(char("B"), ctrl | shift).as_deref(), Some("C-S-b"));
+        assert_eq!(name(char("x"), ctrl | alt).as_deref(), Some("C-M-x"));
+        assert_eq!(name(char(" "), ctrl).as_deref(), Some("C-Space"));
+
+        let named = |key| Key::Named(key);
+        assert_eq!(name(named(NamedKey::ArrowUp), none).as_deref(), Some("Up"));
+        assert_eq!(
+            name(named(NamedKey::ArrowUp), ctrl | shift).as_deref(),
+            Some("C-S-Up")
+        );
+        assert_eq!(
+            name(named(NamedKey::PageUp), none).as_deref(),
+            Some("PPage")
+        );
+        assert_eq!(
+            name(named(NamedKey::PageDown), none).as_deref(),
+            Some("NPage")
+        );
+        assert_eq!(name(named(NamedKey::Delete), none).as_deref(), Some("DC"));
+        assert_eq!(name(named(NamedKey::Insert), none).as_deref(), Some("IC"));
+        assert_eq!(
+            name(named(NamedKey::Backspace), none).as_deref(),
+            Some("BSpace")
+        );
+        assert_eq!(
+            name(named(NamedKey::Space), ctrl).as_deref(),
+            Some("C-Space")
+        );
+        assert_eq!(name(named(NamedKey::Tab), shift).as_deref(), Some("BTab"));
+        assert_eq!(name(named(NamedKey::F5), none).as_deref(), Some("F5"));
+    }
+
+    #[test]
+    fn tmux_has_no_name_for_these() {
+        let none = ModifiersState::empty();
+        let key = Key::Named(NamedKey::Control);
+        assert_eq!(tmux_key_name(&key, none), None);
+        let key = Key::Named(NamedKey::Shift);
+        assert_eq!(tmux_key_name(&key, ModifiersState::SHIFT), None);
+        // Rio's own shortcuts.
+        let key = Key::Character("b".into());
+        assert_eq!(tmux_key_name(&key, ModifiersState::SUPER), None);
     }
 
     #[test]

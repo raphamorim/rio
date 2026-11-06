@@ -27,6 +27,11 @@ pub struct TerminalOptions {
     #[clap(short = 'e', long, allow_hyphen_values = true, num_args = 1..)]
     pub command: Vec<String>,
 
+    /// Run the command on plain pipes instead of ConPTY (Windows only). For
+    /// programs that don't need a console, like `ssh -tt`.
+    #[clap(long, requires = "command")]
+    pub use_pipes: bool,
+
     /// Start the shell in the specified working directory.
     #[clap(short, long, value_hint = ValueHint::FilePath)]
     pub working_dir: Option<String>,
@@ -59,6 +64,7 @@ impl TerminalOptions {
         Some(Shell {
             program: Some(program.clone()),
             args: args.to_vec(),
+            use_pipes: self.use_pipes,
         })
     }
 

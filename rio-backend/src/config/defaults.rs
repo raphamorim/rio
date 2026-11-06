@@ -46,6 +46,7 @@ pub fn default_shell() -> crate::config::Shell {
         crate::config::Shell {
             program: None,
             args: vec![String::from("--login")],
+            use_pipes: false,
         }
     }
 
@@ -54,6 +55,7 @@ pub fn default_shell() -> crate::config::Shell {
         crate::config::Shell {
             program: Some(String::from("powershell")),
             args: vec![],
+            use_pipes: false,
         }
     }
 }
@@ -108,6 +110,7 @@ pub fn default_editor() -> Shell {
         Shell {
             program: Some(String::from("vi")),
             args: vec![],
+            use_pipes: false,
         }
     }
 
@@ -116,6 +119,7 @@ pub fn default_editor() -> Shell {
         Shell {
             program: Some(String::from("notepad")),
             args: vec![],
+            use_pipes: false,
         }
     }
 }

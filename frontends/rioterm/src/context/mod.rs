@@ -1,10 +1,11 @@
 pub mod renderable;
 pub mod title;
+mod tmux;
 
 use crate::ansi::CursorShape;
 use crate::context::title::{update_title, ContextTitle};
 use crate::event::sync::FairMutex;
-use crate::event::{Msg, RioEvent};
+use crate::event::RioEvent;
 pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
 use crate::performer::{self, Machine};
@@ -38,7 +39,7 @@ pub fn next_rich_text_id() -> usize {
 }
 
 #[cfg(target_os = "windows")]
-use teletypewriter::create_pty;
+use teletypewriter::{create_pty, create_pty_with_pipes};
 #[cfg(not(target_os = "windows"))]
 use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 
@@ -64,13 +65,16 @@ pub struct Context<T: EventListener> {
     /// `{{ program }}` and the empty-title strip fallback without ever
     /// inspecting the foreground process.
     pub spawned_program: String,
+    /// `(columns, lines)` tmux assigned to this pane, which take precedence
+    /// over what fits the panel. `None` outside of tmux.
+    pub tmux_size: Option<(usize, usize)>,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
     fn drop(&mut self) {
         // Shutdown the terminal's PTY.
-        let _ = self.messenger.channel.send(Msg::Shutdown);
+        self.messenger.send_shutdown();
         // Also hang up synchronously: quit paths call process::exit
         // right after dropping routes, before the reader thread can run
         // its shutdown escalation. The handle is a no-op once the child
@@ -128,6 +132,8 @@ pub struct ContextManagerConfig {
     pub keyboard: rio_backend::config::keyboard::Keyboard,
     pub scrollback_history_limit: usize,
     pub grapheme_clustering: bool,
+    pub tmux_control_mode: bool,
+    pub tmux_prefix: bool,
 }
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
@@ -141,6 +147,8 @@ pub struct ContextManager<T: EventListener> {
     event_proxy: T,
     window_id: WindowId,
     pub config: ContextManagerConfig,
+    /// Running tmux control mode sessions, each holding the tab it took over.
+    tmux: Vec<tmux::TmuxTakeover<T>>,
 }
 
 /// Display name for the command a pane spawns: the configured program,
@@ -201,6 +209,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         title: ContextTitle::default(),
         title_dirty: false,
         spawned_program: String::new(),
+        tmux_size: None,
         _io_thread: None,
     }
 }
@@ -349,14 +358,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(target_os = "windows")]
         {
-            pty = match create_pty(
-                shell_program,
-                shell_args.to_vec(),
-                &config.working_dir,
-                (!integration.env.is_empty()).then(|| integration.env.clone()),
-                cols,
-                rows,
-            ) {
+            let env = (!integration.env.is_empty()).then(|| integration.env.clone());
+            let created = if config.shell.use_pipes {
+                tracing::info!("rio -> teletypewriter: create_pty_with_pipes");
+                create_pty_with_pipes(shell_program, shell_args, &config.working_dir, env)
+            } else {
+                create_pty(
+                    shell_program,
+                    shell_args.to_vec(),
+                    &config.working_dir,
+                    env,
+                    cols,
+                    rows,
+                )
+            };
+            pty = match created {
                 Ok(created_pty) => created_pty,
                 Err(err) => {
                     tracing::error!("{err:?}");
@@ -365,13 +381,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
         }
 
-        let machine = Machine::new(
+        let mut machine = Machine::new(
             Arc::clone(&terminal),
             pty,
             event_proxy.clone(),
             window_id,
             route_id,
         )?;
+        machine.set_tmux_control(config.tmux_control_mode);
         let channel = machine.channel();
         let io_thread = if config.spawn_performer {
             Some(machine.spawn())
@@ -397,6 +414,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title: ContextTitle::default(),
             title_dirty: false,
             spawned_program: spawned_program_name(config),
+            tmux_size: None,
             _io_thread: io_thread,
         };
         context.title = ContextTitle {
@@ -479,6 +497,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config: ctx_config,
+            tmux: Vec::new(),
         };
         // The native titlebar starts as the placeholder; one poke makes
         // it converge on the displayed title even for shells that never
@@ -521,6 +540,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             event_proxy,
             window_id,
             config,
+            tmux: Vec::new(),
         })
     }
 
@@ -538,6 +558,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // looking at), so the search covers every panel of every tab
         // rather than assuming the focused one.
         let Some(tab_index) = self.tab_index_for_route(route_id) else {
+            // A split next to a tmux client, in the tab set aside for it.
+            // The client itself never gets here: its reader ends the
+            // session first, which puts the tab back.
+            for takeover in self.tmux.iter_mut() {
+                takeover.host_grid.remove_by_route(route_id, sugarloaf);
+            }
             return self.contexts.is_empty();
         };
 
@@ -629,15 +655,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     pub fn close_unfocused_tabs(&mut self, sugarloaf: &mut Sugarloaf) {
         let current_route_id = self.current().route_id;
+        // tmux windows close through tmux, not by dropping their tab.
         self.contexts.retain(|ctx| {
-            let keep = ctx.current().route_id == current_route_id;
+            let keep = ctx.current().route_id == current_route_id || ctx.tmux.is_some();
             if !keep {
                 ctx.remove_from_sugarloaf(sugarloaf);
             }
             keep
         });
-        self.current_route = self.contexts[0].current().route_id;
-        self.set_current(0);
+        let index = self
+            .contexts
+            .iter()
+            .position(|ctx| ctx.current().route_id == current_route_id)
+            .unwrap_or(0);
+        self.current_route = self.contexts[index].current().route_id;
+        self.set_current(index);
     }
 
     #[inline]
@@ -690,27 +722,31 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn move_divider_up(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.contexts[self.current_index].move_divider_up(amount, sugarloaf)
+        self.current_grid().tmux.is_none()
+            && self.contexts[self.current_index].move_divider_up(amount, sugarloaf)
     }
 
     #[inline]
     pub fn move_divider_down(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.contexts[self.current_index].move_divider_down(amount, sugarloaf)
+        self.current_grid().tmux.is_none()
+            && self.contexts[self.current_index].move_divider_down(amount, sugarloaf)
     }
 
     #[inline]
     pub fn move_divider_left(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.contexts[self.current_index].move_divider_left(amount, sugarloaf)
+        self.current_grid().tmux.is_none()
+            && self.contexts[self.current_index].move_divider_left(amount, sugarloaf)
     }
 
     #[inline]
     pub fn move_divider_right(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.contexts[self.current_index].move_divider_right(amount, sugarloaf)
+        self.current_grid().tmux.is_none()
+            && self.contexts[self.current_index].move_divider_right(amount, sugarloaf)
     }
 
     #[inline]
     pub fn select_tab(&mut self, tab_index: usize) {
-        if self.config.is_native {
+        if self.uses_native_tabs() {
             self.event_proxy
                 .send_event(RioEvent::SelectNativeTabByIndex(tab_index), self.window_id);
             return;
@@ -756,7 +792,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn select_last_tab(&mut self) {
-        if self.config.is_native {
+        if self.uses_native_tabs() {
             self.event_proxy
                 .send_event(RioEvent::SelectNativeTabLast, self.window_id);
             return;
@@ -878,6 +914,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         for context_grid in self.contexts.iter_mut() {
             context_grid.resize(width, height, sugarloaf);
         }
+        self.tmux_sync_size();
     }
 
     /// Re-render one pane's title. Returns whether the displayed text
@@ -968,7 +1005,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// never disagree.
     pub fn displayed_title_for_tab(&self, index: usize) -> String {
         if let Some(custom) = self.custom_title(index) {
-            return custom.to_string();
+            return match self
+                .tmux_armed_prefix()
+                .filter(|_| index == self.current_index)
+            {
+                Some(prefix) => format!("[{prefix}] {custom}"),
+                None => custom.to_string(),
+            };
         }
         if let Some(grid) = self.contexts.get(index) {
             let context = grid.current();
@@ -1002,6 +1045,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// can never be left showing a pane that is not on screen.
     fn sync_current_route(&mut self) {
         self.current_route = self.current().route_id;
+        self.tmux_sync_selection();
         if self.current().title_dirty {
             let template = self.config.title.content.clone();
             let context = self.contexts[self.current_index].current_mut();
@@ -1024,11 +1068,21 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         if self.contexts[current].get_by_route_id(route_id).is_some() {
             return self.contexts[current].get_by_route_id(route_id);
         }
-        self.contexts
+        if let Some(tab) = self.tab_index_for_route(route_id) {
+            return self.contexts[tab].get_by_route_id(route_id);
+        }
+        // Splits sharing a tab with a tmux client keep running while the
+        // tab is set aside, and still need their replies delivered.
+        self.tmux
             .iter_mut()
-            .enumerate()
-            .filter(|(i, _)| *i != current)
-            .find_map(|(_, grid)| grid.get_by_route_id(route_id))
+            .find_map(|takeover| takeover.host_grid.get_by_route_id(route_id))
+    }
+
+    /// Whether tab actions go to the system. The windows of a tmux session
+    /// live in this `ContextManager` whatever the navigation mode is.
+    #[inline]
+    fn uses_native_tabs(&self) -> bool {
+        self.config.is_native && self.current_grid().tmux.is_none()
     }
 
     #[inline]
@@ -1045,6 +1099,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn remove_current_grid(&mut self, sugarloaf: &mut Sugarloaf) {
+        if self.tmux_kill_pane() {
+            return;
+        }
+
         self.contexts[self.current_index].remove_current(sugarloaf);
         self.sync_current_route();
     }
@@ -1084,6 +1142,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn close_current_context(&mut self, sugarloaf: &mut Sugarloaf) {
+        if self.tmux_kill_window() {
+            return;
+        }
+
         if self.contexts.len() == 1 {
             // MacOS: Close last tab will work, leading to hide and
             // keep Rio running in background.
@@ -1136,7 +1198,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn switch_to_next(&mut self) {
-        if self.config.is_native {
+        if self.uses_native_tabs() {
             self.event_proxy
                 .send_event(RioEvent::SelectNativeTabNext, self.window_id);
             return;
@@ -1153,7 +1215,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn switch_to_prev(&mut self) {
-        if self.config.is_native {
+        if self.uses_native_tabs() {
             self.event_proxy
                 .send_event(RioEvent::SelectNativeTabPrev, self.window_id);
             return;
@@ -1216,6 +1278,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         split_down: bool,
         sugarloaf: &mut Sugarloaf,
     ) {
+        if self.tmux_split(split_down) {
+            return;
+        }
+
         let mut working_dir = self.config.working_dir.clone();
         if self.config.cwd {
             #[cfg(not(target_os = "windows"))]
@@ -1279,6 +1345,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         config: rio_backend::config::Config,
         sugarloaf: &mut Sugarloaf,
     ) {
+        if self.tmux_split(split_down) {
+            return;
+        }
+
         let (shell, working_dir) = process_open_url(
             config.shell.to_owned(),
             config.working_dir.to_owned(),
@@ -1306,6 +1376,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
+            tmux_control_mode: config.tmux_control_mode,
+            tmux_prefix: config.tmux_prefix,
         };
 
         let current = self.current();
@@ -1395,7 +1467,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             ) {
                 Ok(new_context) => {
                     let previous_scaled_margin =
-                        self.contexts[self.current_index].scaled_margin;
+                        self.contexts[self.current_index].base_margin();
                     self.contexts.push(ContextGrid::new(
                         new_context,
                         previous_scaled_margin,
@@ -1465,6 +1537,7 @@ pub fn process_open_url(
                     shell = Shell {
                         program: editor.program,
                         args,
+                        use_pipes: false,
                     }
                 } else if path_buf.is_dir() {
                     working_dir = Some(path_buf.display().to_string());

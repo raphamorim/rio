@@ -156,8 +156,10 @@ impl Parser {
     /// Advance the parser state.
     ///
     /// Requires a [`Perform`] implementation to handle the triggered actions.
+    /// Returns how many bytes were consumed, which is less than `bytes.len()`
+    /// only if [`Perform::terminated`] stopped the parser early.
     #[inline]
-    pub fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) {
+    pub fn advance<P: Perform>(&mut self, performer: &mut P, bytes: &[u8]) -> usize {
         let mut i = 0;
 
         // Handle partial codepoints from previous calls to `advance`.
@@ -191,9 +193,14 @@ impl Parser {
                     let byte = bytes[i];
                     self.change_state(performer, byte);
                     i += 1;
+                    if performer.terminated() {
+                        break;
+                    }
                 }
             }
         }
+
+        i
     }
 
     /// Consume a run of bytes while in `CsiParam`, accumulating digit
@@ -1472,6 +1479,14 @@ pub trait Perform {
         }
     }
 
+    /// Whether the parser should return from `advance` at once. Checked after
+    /// the actions of the generic state machine, which include `hook`, so
+    /// the bytes that follow a DCS introducer can go somewhere else.
+    #[inline]
+    fn terminated(&self) -> bool {
+        false
+    }
+
     /// Called when a device control string is terminated.
     ///
     /// The previously selected handler should be notified that the DCS has
@@ -1657,7 +1672,7 @@ mod tests {
                     "apc" => p.advance(&mut d, b"\x1b_"),
                     "sos" => p.advance(&mut d, b"\x1bX"),
                     _ => p.advance(&mut d, b"\x1b^"),
-                }
+                };
                 let before = d.dispatched.len();
                 match kind {
                     "apc" => p.advance_apc_string(&mut d, b),

@@ -43,6 +43,7 @@ use rio_backend::sugarloaf::{
     layout::RootStyle, Sugarloaf, SugarloafBackend, SugarloafErrors, SugarloafRenderer,
     SugarloafWindow, SugarloafWindowSize,
 };
+use rio_backend::tmux::keys::KeyPress;
 use rio_window::event::ElementState;
 use rio_window::event::Modifiers;
 use rio_window::event::MouseButton;
@@ -69,6 +70,8 @@ pub struct Screen<'screen> {
     pub touchpurpose: TouchPurpose,
     pub search_state: SearchState,
     pub hint_state: HintState,
+    /// The assistant is showing a warning about a tmux key.
+    tmux_key_warning: bool,
     pub renderer: Renderer,
     pub sugarloaf: Sugarloaf<'screen>,
     pub context_manager: context::ContextManager<EventProxy>,
@@ -98,6 +101,7 @@ pub struct Screen<'screen> {
     /// still refreshes it. Reset on wheel scroll and highlight clears.
     last_hint_probe: Option<(Pos, rio_window::keyboard::ModifiersState)>,
     pub resize_state: Option<crate::layout::ResizeState>,
+    pub tmux_divider_drag: Option<crate::layout::TmuxDividerDrag>,
     #[cfg(target_os = "macos")]
     pub allow_manual_dragging: bool,
     last_chrome_press: Option<ChromePress>,
@@ -262,6 +266,8 @@ impl Screen<'_> {
             title: config.title.clone(),
             keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
+            tmux_control_mode: config.tmux_control_mode,
+            tmux_prefix: config.tmux_prefix,
             grapheme_clustering: config.grapheme_clustering,
         };
 
@@ -328,6 +334,7 @@ impl Screen<'_> {
         Ok(Screen {
             search_state: SearchState::default(),
             hint_state: HintState::new(config.hints.alphabet.clone()),
+            tmux_key_warning: false,
             hints_config: config
                 .hints
                 .rules
@@ -348,6 +355,7 @@ impl Screen<'_> {
             bindings,
             last_ime_cursor_pos: None,
             resize_state: None,
+            tmux_divider_drag: None,
             #[cfg(target_os = "macos")]
             allow_manual_dragging: config.navigation.is_enabled(),
             last_chrome_press: None,
@@ -714,7 +722,7 @@ impl Screen<'_> {
 
         for context_grid in self.context_manager.contexts_mut() {
             let old_scale = context_grid.current().dimension.dimension.scale.max(1.0);
-            let scaled_margin = context_grid.scaled_margin;
+            let scaled_margin = context_grid.base_margin();
             let unscaled_margin = Margin::new(
                 scaled_margin.top / old_scale,
                 scaled_margin.right / old_scale,
@@ -767,6 +775,10 @@ impl Screen<'_> {
         for context_grid in self.context_manager.contexts_mut() {
             for context in context_grid.contexts_mut().values_mut() {
                 let ctx = context.context_mut();
+                // Sized by tmux, in response to `tmux_sync_size`.
+                if ctx.tmux_size.is_some() {
+                    continue;
+                }
                 let mut terminal = ctx.terminal.lock();
                 terminal.resize::<ContextDimension>(ctx.dimension);
                 drop(terminal);
@@ -774,6 +786,8 @@ impl Screen<'_> {
                 let _ = ctx.messenger.send_resize(winsize);
             }
         }
+        self.context_manager.tmux_sync_status(&mut self.sugarloaf);
+        self.context_manager.tmux_sync_size();
     }
 
     #[inline]
@@ -900,6 +914,10 @@ impl Screen<'_> {
             return;
         }
 
+        if self.process_tmux_key(key, &mode, mods) {
+            return;
+        }
+
         let ignore_chars = self.process_key_bindings(key, &mode, mods, clipboard);
         if ignore_chars {
             return;
@@ -972,6 +990,128 @@ impl Screen<'_> {
             self.clear_selection();
 
             self.ctx_mut().current_mut().messenger.send_write(bytes);
+        }
+    }
+
+    /// Give tmux's prefix key handling a look at a key press. Returns whether
+    /// the key was taken.
+    fn process_tmux_key(
+        &mut self,
+        key: &rio_window::event::KeyEvent,
+        mode: &Mode,
+        mods: ModifiersState,
+    ) -> bool {
+        if !self.context_manager.tmux_focused()
+            || mode.contains(Mode::VI)
+            || self.search_active()
+        {
+            return false;
+        }
+        let Some(name) = crate::bindings::tmux_key_name(&key.logical_key, mods) else {
+            return false;
+        };
+
+        let press = self.context_manager.tmux_key(&name, key.repeat);
+        if press == KeyPress::Pass {
+            return false;
+        }
+
+        if self.tmux_key_warning {
+            self.tmux_key_warning = false;
+            self.renderer.assistant.clear();
+        }
+        match press {
+            KeyPress::Unsupported(command) => self.tmux_binding_unsupported(command),
+            KeyPress::Prompt(prompt) => {
+                if let Some((id, formats)) =
+                    self.renderer.command_palette.open_tmux_prompt(*prompt)
+                {
+                    self.context_manager.tmux_expand_prompt(id, formats);
+                }
+            }
+            _ => (),
+        }
+        self.refresh_titles();
+        self.mark_dirty();
+        true
+    }
+
+    fn tmux_binding_unsupported(&mut self, command: String) {
+        self.tmux_key_warning = true;
+        self.renderer.assistant.set_error(RioError {
+            report: RioErrorType::TmuxBindingUnsupported(command),
+            level: RioErrorLevel::Warning,
+        });
+    }
+
+    /// Show what tmux said about a prompt's commands, within reason: a
+    /// `list-keys` is a few hundred lines.
+    fn tmux_show_reply(&mut self, reply: &str) {
+        const MAX_LINES: usize = 12;
+
+        let mut text = reply.lines().take(MAX_LINES).collect::<Vec<_>>().join("\n");
+        if reply.lines().count() > MAX_LINES {
+            text.push_str("\n...");
+        }
+        self.tmux_key_warning = true;
+        self.renderer.assistant.set_error(RioError {
+            report: RioErrorType::TmuxMessage(text),
+            level: RioErrorLevel::Warning,
+        });
+    }
+
+    /// A key press for the question from tmux on the command palette.
+    pub fn tmux_prompt_key(&mut self, key: &rio_window::event::KeyEvent) {
+        use rio_backend::tmux::prompt::PromptKind;
+        use rio_window::keyboard::{Key, NamedKey};
+
+        let Some(prompt) = self.renderer.command_palette.tmux_prompt() else {
+            return;
+        };
+        let kind = prompt.kind();
+        let commands = prompt.commands().to_owned();
+        let palette = &mut self.renderer.command_palette;
+
+        match (&key.logical_key, kind) {
+            (Key::Named(NamedKey::Escape), _) => palette.set_enabled(false),
+            (Key::Named(NamedKey::Enter), PromptKind::Text) => {
+                if let Some(commands) = palette.answer_tmux_prompt() {
+                    self.tmux_run_prompt(commands);
+                }
+            }
+            (Key::Named(NamedKey::Backspace), PromptKind::Text) => {
+                let mut query = std::mem::take(&mut palette.query);
+                query.pop();
+                palette.set_query(query);
+            }
+            (_, PromptKind::Text) => {
+                if let Some(text) = key.text.as_ref() {
+                    palette.append_query(text.as_str());
+                }
+            }
+            (Key::Named(NamedKey::Enter), PromptKind::Confirm { enter, .. }) => {
+                palette.set_enabled(false);
+                if enter {
+                    self.tmux_run_prompt(commands);
+                }
+            }
+            (_, PromptKind::Confirm { key: yes, .. }) => {
+                // Modifiers and such aren't an answer either way.
+                let Some(text) = key.text.as_ref() else {
+                    return;
+                };
+                palette.set_enabled(false);
+                if text.as_str().chars().eq([yes]) {
+                    self.tmux_run_prompt(commands);
+                }
+            }
+        }
+        self.mark_dirty();
+    }
+
+    fn tmux_run_prompt(&mut self, commands: String) {
+        if let Err(command) = self.context_manager.tmux_run_prompt(commands) {
+            self.tmux_binding_unsupported(command);
         }
     }
 
@@ -1483,6 +1623,9 @@ impl Screen<'_> {
                     Act::HideOtherApplications => {
                         self.context_manager.hide_other_apps();
                     }
+                    Act::TmuxDetach => {
+                        self.context_manager.tmux_detach();
+                    }
                     Act::SelectNextSplit => {
                         self.cancel_search(clipboard);
                         self.context_manager.select_next_split();
@@ -1699,6 +1842,10 @@ impl Screen<'_> {
     }
 
     pub fn create_tab(&mut self, clipboard: &mut Clipboard) {
+        if self.context_manager.tmux_new_window() {
+            return;
+        }
+
         let redirect = true;
 
         // We resize the current tab ahead to prepare the
@@ -1728,6 +1875,57 @@ impl Screen<'_> {
         );
 
         self.cancel_search(clipboard);
+        self.mark_dirty();
+    }
+
+    /// A tmux session changed shape, or started.
+    pub fn tmux_update(
+        &mut self,
+        host_route: usize,
+        snapshot: &rio_backend::tmux::TmuxSnapshot,
+    ) {
+        self.clear_selection();
+        self.context_manager
+            .tmux_update(host_route, snapshot, &mut self.sugarloaf);
+        if let Some((id, formats)) = &snapshot.prompt_formats {
+            self.renderer.command_palette.set_tmux_formats(*id, formats);
+        }
+        if let Some(reply) = &snapshot.prompt_reply {
+            self.tmux_show_reply(reply);
+        }
+        self.tmux_refresh_chrome();
+    }
+
+    /// The status line of a tmux session changed.
+    pub fn tmux_status(
+        &mut self,
+        host_route: usize,
+        status: std::sync::Arc<rio_backend::tmux::status::TmuxStatus>,
+    ) {
+        self.context_manager.tmux_set_status(host_route, status);
+        self.context_manager.tmux_sync_status(&mut self.sugarloaf);
+        self.context_manager.tmux_sync_size();
+        self.mark_dirty();
+    }
+
+    /// A tmux session ended: the tab it took over is back.
+    pub fn tmux_end(&mut self, host_route: usize) {
+        self.clear_selection();
+        self.context_manager
+            .tmux_end(host_route, &mut self.sugarloaf);
+        if self.renderer.command_palette.tmux_prompt().is_some() {
+            self.renderer.command_palette.set_enabled(false);
+        }
+        self.tmux_refresh_chrome();
+    }
+
+    fn tmux_refresh_chrome(&mut self) {
+        let num_tabs = self.ctx().len();
+        self.resize_top_or_bottom_line(num_tabs);
+        // A tab bar that just appeared takes room from the panes.
+        self.context_manager.tmux_sync_status(&mut self.sugarloaf);
+        self.context_manager.tmux_sync_size();
+        self.refresh_titles();
         self.mark_dirty();
     }
 
@@ -1786,7 +1984,7 @@ impl Screen<'_> {
         // Compare against the grid's scaled margin, the value the
         // layout actually uses. The per panel dimension margin is
         // zeroed by the taffy pass so it cannot be used as a guard.
-        let current_margin = self.context_manager.current_grid().scaled_margin;
+        let current_margin = self.context_manager.current_grid().base_margin();
         if current_margin.top == scaled_top && current_margin.bottom == scaled_bottom {
             return;
         }

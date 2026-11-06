@@ -6,6 +6,7 @@
 use crate::renderer::scrollbar;
 use rio_backend::sugarloaf::text::DrawOpts;
 use rio_backend::sugarloaf::Sugarloaf;
+use rio_backend::tmux::prompt::{PromptKind, TmuxPrompt};
 use std::time::Instant;
 
 /// Convert `[f32; 4]` colour to `[u8; 4]` for the `Text` API (the
@@ -49,6 +50,7 @@ const COPY_ICON_H: f32 = COPY_ICON_PAGE_H + COPY_ICON_OFFSET; // 15
 const SEPARATOR_HEIGHT: f32 = 1.0;
 const RESULTS_MARGIN_TOP: f32 = 2.0;
 const CARET_WIDTH: f32 = 1.5;
+const TMUX_LABEL_GAP: f32 = 8.0;
 const CARET_BLINK_MS: u128 = 500;
 
 // Colors — dark minimalist
@@ -59,6 +61,7 @@ const TEXT_COLOR: [f32; 4] = [0.85, 0.85, 0.85, 1.0];
 const DIM_TEXT_COLOR: [f32; 4] = [0.35, 0.35, 0.35, 1.0];
 const SHORTCUT_TEXT_COLOR: [f32; 4] = [0.30, 0.30, 0.32, 1.0];
 const SEPARATOR_COLOR: [f32; 4] = [0.15, 0.15, 0.15, 1.0];
+const TMUX_LABEL_COLOR: [f32; 4] = [0.55, 0.55, 0.55, 1.0];
 
 // Depth / order
 const DEPTH_BACKDROP: f32 = 0.0;
@@ -247,6 +250,8 @@ const COMMANDS: &[Command] = &[
 enum PaletteMode {
     Commands,
     Fonts(Vec<String>),
+    /// A question from tmux: just an input, in the middle of the window.
+    TmuxPrompt(Box<TmuxPrompt>),
 }
 
 /// One row in the filtered result list. Variants carry exactly the
@@ -449,6 +454,10 @@ pub struct CommandPalette {
     /// `scrollbar::opacity_from_last_scroll`. `None` while the palette
     /// has never scrolled since it opened — scrollbar stays hidden.
     last_scroll_time: Option<Instant>,
+    /// Logical window height as of the last render, to centre a prompt.
+    window_height: f32,
+    /// Id of the latest prompt, to match up the formats tmux expands for it.
+    tmux_prompt_id: u64,
 }
 
 impl Default for CommandPalette {
@@ -462,6 +471,8 @@ impl Default for CommandPalette {
             mode: PaletteMode::Commands,
             caret_blink_start: Instant::now(),
             last_scroll_time: None,
+            window_height: 0.0,
+            tmux_prompt_id: 0,
         }
     }
 }
@@ -506,12 +517,68 @@ impl CommandPalette {
         self.last_scroll_time = None;
     }
 
+    /// Ask a question from tmux. Returns what tmux needs to expand for it,
+    /// under the id to hand to [`Self::set_tmux_formats`].
+    pub fn open_tmux_prompt(&mut self, prompt: TmuxPrompt) -> Option<(u64, Vec<String>)> {
+        self.set_enabled(true);
+        self.tmux_prompt_id += 1;
+        let formats = prompt.formats();
+        self.query = prompt.input().to_owned();
+        self.mode = PaletteMode::TmuxPrompt(Box::new(prompt));
+        (!formats.is_empty()).then_some((self.tmux_prompt_id, formats))
+    }
+
+    /// The question being asked, if there is one.
+    pub fn tmux_prompt(&self) -> Option<&TmuxPrompt> {
+        match &self.mode {
+            PaletteMode::TmuxPrompt(prompt) if self.enabled => Some(prompt),
+            _ => None,
+        }
+    }
+
+    /// Take the formats tmux expanded, unless the prompt has moved on. Text
+    /// the user typed in the meantime stays.
+    pub fn set_tmux_formats(&mut self, id: u64, formats: &[String]) {
+        if id != self.tmux_prompt_id || !self.enabled {
+            return;
+        }
+        if let PaletteMode::TmuxPrompt(prompt) = &mut self.mode {
+            let unexpanded = prompt.input() == self.query;
+            prompt.set_formats(formats);
+            if unexpanded {
+                self.query = prompt.input().to_owned();
+            }
+        }
+    }
+
+    /// Answer the current question with what was typed. Moves on to the next
+    /// question, or closes and returns the commands to run.
+    pub fn answer_tmux_prompt(&mut self) -> Option<String> {
+        let PaletteMode::TmuxPrompt(prompt) = &mut self.mode else {
+            return None;
+        };
+        let commands = prompt.answer(&self.query);
+        self.query = prompt.input().to_owned();
+        self.caret_blink_start = Instant::now();
+        if commands.is_some() {
+            self.set_enabled(false);
+        }
+        commands
+    }
+
     /// Append committed or typed text to the query, applying the
     /// shared overlay input policy (`is_printable_text`) so the key
     /// path and the IME commit path can never drift. Returns whether
     /// anything was appended.
     pub fn append_query(&mut self, text: &str) -> bool {
         if !crate::renderer::is_printable_text(text) {
+            return false;
+        }
+        // A confirmation takes a key, not text.
+        if self
+            .tmux_prompt()
+            .is_some_and(|prompt| prompt.kind() != PromptKind::Text)
+        {
             return false;
         }
         let query = format!("{}{}", self.query, text);
@@ -604,6 +671,7 @@ impl CommandPalette {
                     Some((score, PaletteRow::Font { family }))
                 })
                 .collect(),
+            PaletteMode::TmuxPrompt(_) => Vec::new(),
         };
 
         results.sort_by_key(|r| std::cmp::Reverse(r.0));
@@ -613,6 +681,11 @@ impl CommandPalette {
     /// Returns the palette geometry (x, y, width, height) for hit-testing.
     fn palette_rect(&self, window_width: f32, scale_factor: f32) -> (f32, f32, f32, f32) {
         let px = (window_width / scale_factor - PALETTE_WIDTH) / 2.0;
+        if matches!(self.mode, PaletteMode::TmuxPrompt(_)) {
+            let h = PALETTE_PADDING * 2.0 + INPUT_HEIGHT;
+            let py = ((self.window_height - h) / 2.0).max(0.0);
+            return (px, py, PALETTE_WIDTH, h);
+        }
         let py = PALETTE_MARGIN_TOP;
         let h = PALETTE_PADDING
             + INPUT_HEIGHT
@@ -678,6 +751,65 @@ impl CommandPalette {
         false
     }
 
+    /// The question and its answer on one line. An answer too long for the
+    /// line shows its end, which is where the typing happens.
+    fn render_tmux_prompt(
+        &self,
+        sugarloaf: &mut Sugarloaf,
+        prompt: &TmuxPrompt,
+        input_x: f32,
+        input_y: f32,
+        input_width: f32,
+    ) {
+        let text_y = input_y + (INPUT_HEIGHT - INPUT_FONT_SIZE) / 2.0;
+        let label_opts = DrawOpts {
+            font_size: INPUT_FONT_SIZE,
+            color: color_u8(TMUX_LABEL_COLOR),
+            ..DrawOpts::default()
+        };
+        let text_opts = DrawOpts {
+            font_size: INPUT_FONT_SIZE,
+            color: color_u8(TEXT_COLOR),
+            ..DrawOpts::default()
+        };
+
+        let label_x = input_x + INPUT_PADDING_X;
+        let ui = sugarloaf.text_mut();
+        let label_width = ui.draw(label_x, text_y, prompt.label(), &label_opts);
+        if prompt.kind() != PromptKind::Text {
+            return;
+        }
+
+        let text_x = label_x + label_width + TMUX_LABEL_GAP;
+        let room = input_x + input_width - INPUT_PADDING_X - text_x;
+        let mut text = self.query.as_str();
+        while !text.is_empty() && ui.measure(text, &text_opts) > room {
+            let mut chars = text.chars();
+            chars.next();
+            text = chars.as_str();
+        }
+        let text_width = if text.is_empty() {
+            0.0
+        } else {
+            ui.draw(text_x, text_y, text, &text_opts)
+        };
+
+        let elapsed_ms = self.caret_blink_start.elapsed().as_millis();
+        if (elapsed_ms / CARET_BLINK_MS).is_multiple_of(2) {
+            let caret_height = INPUT_FONT_SIZE + 4.0;
+            sugarloaf.rect(
+                None,
+                text_x + text_width,
+                input_y + (INPUT_HEIGHT - caret_height) / 2.0 + 2.0,
+                CARET_WIDTH,
+                caret_height,
+                TEXT_COLOR,
+                DEPTH_ELEMENT,
+                ORDER,
+            );
+        }
+    }
+
     pub fn render(&mut self, sugarloaf: &mut Sugarloaf, dimensions: (f32, f32, f32)) {
         if !self.enabled {
             // Immediate mode: not drawing == not visible.
@@ -685,6 +817,7 @@ impl CommandPalette {
         }
 
         let (window_width, window_height, scale_factor) = dimensions;
+        self.window_height = window_height / scale_factor;
 
         let (palette_x, palette_y, palette_width, palette_height) =
             self.palette_rect(window_width, scale_factor);
@@ -718,9 +851,15 @@ impl CommandPalette {
 
         // No separate input background — blends with palette bg for minimalism
 
+        if let PaletteMode::TmuxPrompt(prompt) = &self.mode {
+            self.render_tmux_prompt(sugarloaf, prompt, input_x, input_y, input_width);
+            return;
+        }
+
         let placeholder = match self.mode {
             PaletteMode::Commands => "Type a command...",
             PaletteMode::Fonts(_) => "Type a font name...",
+            PaletteMode::TmuxPrompt(_) => "",
         };
         let display_text = if self.query.is_empty() {
             placeholder
@@ -920,6 +1059,104 @@ impl CommandPalette {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tmux_prompt(command: &str) -> TmuxPrompt {
+        TmuxPrompt::parse(command).unwrap()
+    }
+
+    #[test]
+    fn a_tmux_prompt_starts_with_its_input_and_has_no_rows() {
+        let mut palette = CommandPalette::new();
+        let asked = palette.open_tmux_prompt(tmux_prompt(
+            r#"command-prompt -I "main" "rename-window '%%'""#,
+        ));
+        assert_eq!(asked, None);
+        assert_eq!(palette.query, "main");
+        assert!(palette.filtered_rows().is_empty());
+        assert!(palette.get_selected_action().is_none());
+    }
+
+    #[test]
+    fn a_tmux_prompt_answers_with_its_commands_and_closes() {
+        let mut palette = CommandPalette::new();
+        palette.open_tmux_prompt(tmux_prompt("command-prompt"));
+        palette.append_query("neww");
+        assert_eq!(palette.answer_tmux_prompt().as_deref(), Some("neww"));
+        assert!(!palette.is_enabled());
+        assert!(palette.tmux_prompt().is_none());
+    }
+
+    #[test]
+    fn a_tmux_prompt_stays_open_between_questions() {
+        let mut palette = CommandPalette::new();
+        palette.open_tmux_prompt(tmux_prompt(
+            r#"command-prompt -p "a,b" -I "1,2" "run %1 %2""#,
+        ));
+        assert_eq!(palette.answer_tmux_prompt(), None);
+        assert!(palette.is_enabled());
+        assert_eq!(palette.query, "2");
+        assert_eq!(palette.answer_tmux_prompt().as_deref(), Some("run 1 2"));
+    }
+
+    #[test]
+    fn expanded_formats_fill_an_untouched_input() {
+        let mut palette = CommandPalette::new();
+        let (id, formats) = palette
+            .open_tmux_prompt(tmux_prompt(r##"command-prompt -I "#W" "run '%%'""##))
+            .unwrap();
+        assert_eq!(formats, ["(run)", "#W"]);
+        palette.set_tmux_formats(id, &["(run)".into(), "logs".into()]);
+        assert_eq!(palette.query, "logs");
+    }
+
+    #[test]
+    fn expanded_formats_leave_typed_text_alone() {
+        let mut palette = CommandPalette::new();
+        let (id, _) = palette
+            .open_tmux_prompt(tmux_prompt(r##"command-prompt -I "#W" "run '%%'""##))
+            .unwrap();
+        palette.append_query("x");
+        palette.set_tmux_formats(id, &["(run)".into(), "logs".into()]);
+        assert_eq!(palette.query, "#Wx");
+    }
+
+    #[test]
+    fn expanded_formats_for_an_old_prompt_are_dropped() {
+        let mut palette = CommandPalette::new();
+        let (id, _) = palette
+            .open_tmux_prompt(tmux_prompt(r##"command-prompt -I "#W" "run '%%'""##))
+            .unwrap();
+        palette.open_tmux_prompt(tmux_prompt(r##"command-prompt -I "#S" "go '%%'""##));
+        palette.set_tmux_formats(id, &["(run)".into(), "logs".into()]);
+        assert_eq!(palette.query, "#S");
+    }
+
+    #[test]
+    fn confirmations_take_no_text() {
+        let mut palette = CommandPalette::new();
+        palette.open_tmux_prompt(tmux_prompt("confirm-before kill-pane"));
+        assert!(!palette.append_query("y"));
+        assert_eq!(palette.query, "");
+    }
+
+    #[test]
+    fn a_tmux_prompt_sits_in_the_middle_of_the_window() {
+        let mut palette = CommandPalette::new();
+        palette.open_tmux_prompt(tmux_prompt("command-prompt"));
+        palette.window_height = 600.0;
+        let (_, y, _, height) = palette.palette_rect(1000.0, 1.0);
+        assert_eq!(y + height / 2.0, 300.0);
+    }
+
+    #[test]
+    fn the_command_list_goes_back_to_normal_after_a_tmux_prompt() {
+        let mut palette = CommandPalette::new();
+        palette.open_tmux_prompt(tmux_prompt("command-prompt"));
+        palette.set_enabled(false);
+        palette.set_enabled(true);
+        assert!(palette.tmux_prompt().is_none());
+        assert!(!palette.filtered_rows().is_empty());
+    }
 
     #[test]
     fn test_set_enabled_resets_state() {

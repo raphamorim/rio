@@ -49,6 +49,11 @@ pub struct Shell {
     pub program: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
+    /// Windows only: run the program on plain pipes instead of ConPTY, which
+    /// strips sequences like the one that starts tmux control mode. Only for
+    /// programs that don't need a console, like `ssh -tt`.
+    #[serde(default, rename = "use-pipes")]
+    pub use_pipes: bool,
 }
 
 /// `program = ""` used to be how you asked for the default shell, so keep
@@ -246,6 +251,14 @@ pub struct Config {
         rename = "scrollback-history-limit"
     )]
     pub scrollback_history_limit: usize,
+    /// Let `tmux -CC` take over the tab it runs in, showing tmux windows as
+    /// tabs and panes as splits until the session ends.
+    #[serde(default = "default_bool_true", rename = "tmux-control-mode")]
+    pub tmux_control_mode: bool,
+    /// Handle tmux's prefix key while a control mode session runs, which
+    /// tmux can't do for a control client.
+    #[serde(default = "default_bool_true", rename = "tmux-prefix")]
+    pub tmux_prefix: bool,
     #[serde(default = "effects::Effects::default")]
     pub effects: effects::Effects,
 }
@@ -751,6 +764,8 @@ impl Default for Config {
             bell: Bell::default(),
             enable_scroll_bar: true,
             scrollback_history_limit: default_scrollback_history_limit(),
+            tmux_control_mode: true,
+            tmux_prefix: true,
             effects: effects::Effects::default(),
         }
     }
@@ -1253,6 +1268,19 @@ mod tests {
 
         assert_eq!(result.shell.program, None);
         assert_eq!(result.shell.args, ["--login"]);
+    }
+
+    #[test]
+    fn test_shell_use_pipes() {
+        let result = create_temporary_config(
+            "change-shell-use-pipes",
+            r#"
+            shell = { program = "ssh", args = ["-tt", "host"], use-pipes = true }
+        "#,
+        );
+
+        assert!(result.shell.use_pipes);
+        assert!(!default_shell().use_pipes);
     }
 
     #[test]

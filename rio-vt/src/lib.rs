@@ -26,6 +26,7 @@ pub mod selection;
 pub mod simd_base64;
 pub mod simd_utf8;
 pub mod time;
+pub mod tmux;
 
 // avoid double dep requirement
 #[cfg(feature = "pty")]

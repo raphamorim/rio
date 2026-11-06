@@ -5,7 +5,7 @@
 // user-facing config and the sugarloaf renderer glue.
 pub use rio_vt::{
     ansi, clipboard, codepoint_width, crosswords, error, event, performer, selection,
-    simd_base64, simd_utf8,
+    simd_base64, simd_utf8, tmux,
 };
 
 pub mod config;

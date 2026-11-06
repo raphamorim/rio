@@ -1,5 +1,6 @@
 mod child;
 mod conpty;
+mod pipe_child;
 mod pipes;
 mod spsc;
 
@@ -15,8 +16,27 @@ use crate::windows::child::ChildExitWatcher;
 use crate::{ChildEvent, EventedPty, ProcessReadWrite, Winsize, WinsizeBuilder};
 use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
 
-use conpty::Conpty as Backend;
+use conpty::Conpty;
+use pipe_child::PipeChild;
 use pipes::{EventedAnonRead as ReadPipe, EventedAnonWrite as WritePipe};
+
+enum Backend {
+    Conpty(Conpty),
+    // Only here to be dropped along with the terminal.
+    Pipes(#[allow(dead_code)] PipeChild),
+}
+
+impl From<Conpty> for Backend {
+    fn from(conpty: Conpty) -> Self {
+        Self::Conpty(conpty)
+    }
+}
+
+impl From<PipeChild> for Backend {
+    fn from(child: PipeChild) -> Self {
+        Self::Pipes(child)
+    }
+}
 
 pub struct Pty {
     // Backend is required to be the first field, to ensure correct drop order. Dropping
@@ -54,6 +74,17 @@ pub fn create_pty(
         }
     });
     conpty::new(exec.as_deref(), working_directory, env, columns, rows)
+}
+
+/// Runs `program` on plain pipes rather than a pseudoconsole, so its output
+/// reaches the terminal byte for byte. See [`pipe_child`] for what that costs.
+pub fn create_pty_with_pipes(
+    program: Option<&str>,
+    args: &[String],
+    working_directory: &Option<String>,
+    env: Option<Vec<(String, String)>>,
+) -> Result<Pty, std::io::Error> {
+    pipe_child::new(program, args, working_directory, env)
 }
 
 impl Pty {
@@ -218,7 +249,10 @@ impl ProcessReadWrite for Pty {
         winsize_builder: WinsizeBuilder,
     ) -> Result<(), std::io::Error> {
         let winsize: Winsize = winsize_builder.build();
-        self.backend.on_resize(winsize);
+        // A program on pipes has no window size to be told about.
+        if let Backend::Conpty(conpty) = &mut self.backend {
+            conpty.on_resize(winsize);
+        }
         Ok(())
     }
 }

@@ -706,7 +706,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .current_grid_mut()
                         .get_by_route_id(route_id)
                     {
-                        item.context_mut().messenger.send_bytes(resp.into_bytes());
+                        item.context_mut().messenger.send_reply(resp.into_bytes());
                     }
                 }
             }
@@ -936,7 +936,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .context_manager
                             .get_by_route_id(route_id)
                         {
-                            item.val.messenger.send_bytes(text.into_bytes());
+                            item.val.messenger.send_reply(text.into_bytes());
                         }
                     }
                 }
@@ -962,8 +962,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .context_manager
                         .get_by_route_id(route_id)
                     {
-                        item.val.messenger.send_bytes(text.into_bytes());
+                        item.val.messenger.send_reply(text.into_bytes());
                     }
+                }
+            }
+            RioEventType::Rio(RioEvent::TmuxUpdate(route_id, snapshot)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.window.screen.tmux_update(route_id, &snapshot);
+                    route.request_redraw();
+                }
+            }
+            RioEventType::Rio(RioEvent::TmuxStatus(route_id, status)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.window.screen.tmux_status(route_id, status);
+                    route.request_redraw();
+                }
+            }
+            RioEventType::Rio(RioEvent::TmuxEnded(route_id)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route.window.screen.tmux_end(route_id);
+                    route.request_redraw();
                 }
             }
             RioEventType::Rio(RioEvent::TextAreaSizeRequest(route_id, format)) => {
@@ -978,7 +996,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         let text = format(crate::renderer::utils::terminal_dimensions(
                             &dimension,
                         ));
-                        item.val.messenger.send_bytes(text.into_bytes());
+                        item.val.messenger.send_reply(text.into_bytes());
                     }
                 }
             }
@@ -1012,7 +1030,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     };
                     drop(terminal);
 
-                    item.val.messenger.send_bytes(format(color).into_bytes());
+                    item.val.messenger.send_reply(format(color).into_bytes());
                 }
             }
             RioEventType::Rio(RioEvent::CreateWindow) => {
@@ -1330,6 +1348,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
                         route.window.screen.renderer.scrollbar.end_drag();
                         route.window.screen.resize_state = None;
+                        route.window.screen.tmux_divider_drag = None;
                     }
                     return;
                 }
@@ -1392,6 +1411,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                         crate::layout::BorderDirection::Vertical => mx,
                                         crate::layout::BorderDirection::Horizontal => my,
                                     };
+                                    if grid.tmux.is_some() {
+                                        route.window.screen.tmux_divider_drag =
+                                            grid.tmux_divider_drag(&border, start_pos);
+                                        return;
+                                    }
                                     let size_a = grid.get_panel_size(
                                         border.left_or_top,
                                         border.direction,
@@ -1581,8 +1605,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        if route.window.screen.resize_state.is_some() {
+                        if route.window.screen.resize_state.is_some()
+                            || route.window.screen.tmux_divider_drag.is_some()
+                        {
                             route.window.screen.resize_state = None;
+                            route.window.screen.tmux_divider_drag = None;
                             route.window.winit_window.set_cursor(CursorIcon::Default);
                             return;
                         }
@@ -1825,6 +1852,29 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.screen.handle_scrollbar_drag(mouse_y);
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     route.request_redraw();
+                    return;
+                }
+
+                // Handle a tmux divider drag. The divider moves when tmux
+                // answers with a new layout.
+                if let Some(mut drag) = route.window.screen.tmux_divider_drag {
+                    let (pos, cursor) = match drag.direction {
+                        crate::layout::BorderDirection::Vertical => {
+                            (x as f32, CursorIcon::ColResize)
+                        }
+                        crate::layout::BorderDirection::Horizontal => {
+                            (y as f32, CursorIcon::RowResize)
+                        }
+                    };
+                    if let Some(cells) = drag.drag_to(pos) {
+                        route
+                            .window
+                            .screen
+                            .context_manager
+                            .tmux_resize_pane(&drag, cells);
+                    }
+                    route.window.screen.tmux_divider_drag = Some(drag);
+                    route.window.winit_window.set_cursor(cursor);
                     return;
                 }
 
