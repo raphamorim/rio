@@ -20,7 +20,6 @@ use std::io;
 use std::io::Error;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
-use std::os::fd::OwnedFd;
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -40,14 +39,6 @@ const TIOCSWINSZ: libc::c_ulong = 2148037735;
 extern "C" {
     fn forkpty(
         main: *mut libc::c_int,
-        name: *mut libc::c_char,
-        termp: *const libc::termios,
-        winsize: *const Winsize,
-    ) -> libc::pid_t;
-
-    fn openpty(
-        main: *mut libc::c_int,
-        child: *mut libc::c_int,
         name: *mut libc::c_char,
         termp: *const libc::termios,
         winsize: *const Winsize,
@@ -520,49 +511,37 @@ pub fn create_pty_with_spawn(
     #[cfg(any(target_os = "macos", target_os = "freebsd"))]
     let is_controling_terminal = true;
 
-    let mut main: libc::c_int = 0;
-    let mut child: libc::c_int = 0;
-    let winsize = Winsize {
-        ws_row: rows as libc::c_ushort,
-        ws_col: columns as libc::c_ushort,
-        ws_xpixel: width as libc::c_ushort,
-        ws_ypixel: height as libc::c_ushort,
+    let winsize = rustix_openpty::rustix::termios::Winsize {
+        ws_row: rows,
+        ws_col: columns,
+        ws_xpixel: width,
+        ws_ypixel: height,
     };
     let term = create_termp(true);
 
-    let mut open = || unsafe {
-        openpty(
-            &mut main as *mut _,
-            &mut child as *mut _,
-            ptr::null_mut(),
-            &term as *const libc::termios,
-            &winsize as *const _,
-        )
-    };
+    // Both ends come back close-on-exec, so no later exec inherits them.
+    let open = || rustix_openpty::openpty(None, Some(&winsize));
 
     // openpty fails transiently when many PTYs open concurrently (seen
     // on macOS under parallel spawns, with garbage errno); a brief retry
     // absorbs it instead of surfacing a dead surface to the embedder.
     let mut res = open();
     for _ in 0..3 {
-        if res >= 0 {
+        if res.is_ok() {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
         res = open();
     }
 
-    if res < 0 {
-        return Err(Error::other(format!(
-            "openpty failed: {}",
-            Error::last_os_error()
-        )));
-    }
-
     // Own both descriptors before any fallible setup so every error path
     // closes them, including command and signal registration failures.
-    let file = unsafe { File::from_raw_fd(main) };
-    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+    let pty = res.map_err(|e| Error::other(format!("openpty failed: {e}")))?;
+    let (main, child) = (pty.controller.as_raw_fd(), pty.user.as_raw_fd());
+    let (file, owned_child) = (File::from(pty.controller), pty.user);
+    if unsafe { libc::tcsetattr(child, libc::TCSANOW, &term) } != 0 {
+        return Err(Error::last_os_error());
+    }
 
     let user = match ShellUser::from_env() {
         Ok(data) => data,

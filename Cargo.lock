@@ -4149,6 +4149,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustix-openpty"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1de16c7c59892b870a6336f185dc10943517f1327447096bbb7bb32cd85e2393"
+dependencies = [
+ "errno",
+ "libc",
+ "rustix 1.1.4",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4719,6 +4730,8 @@ dependencies = [
  "libc",
  "miow 0.6.1",
  "parking_lot",
+ "rustix 1.1.4",
+ "rustix-openpty",
  "signal-hook",
  "tracing",
  "windows-sys 0.59.0",
