@@ -18,6 +18,7 @@
          <ComponentRef Id="RioExe" />
          <ComponentRef Id="RioShortcut" />
          <ComponentRef Id="ModifyPathEnv" />
+         <ComponentRef Id="RioAumidEnvVar" />
          <ComponentRef Id="ContextMenu" />
       </Feature>
       <!-- Application binaries -->
@@ -40,6 +41,10 @@
          <!-- Add to PATH -->
          <Component Id="ModifyPathEnv" Guid="edf0b679-9eb6-46f7-a5d1-5160f30acb34" KeyPath="yes">
             <Environment Id="PathEnv" Value="[RioProgramFiles]" Name="PATH" Permanent="no" Part="first" Action="set" System="yes" />
+         </Component>
+         <!-- Capability flag for oh-my-pi; set only when the shortcut AUMID is registered. -->
+         <Component Id="RioAumidEnvVar" Guid="8469db42-9301-4fa5-9847-bad650c735ad" KeyPath="yes">
+            <Environment Id="RioAumidEnv" Name="RIO_AUMID_REGISTERED" Value="1" Permanent="no" Part="all" Action="set" System="yes" />
          </Component>
       </DirectoryRef>
       <StandardDirectory Id="ProgramFiles64Folder">
