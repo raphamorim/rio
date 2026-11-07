@@ -6954,6 +6954,62 @@ mod tests {
         );
     }
 
+    #[test]
+    fn osc8_hyperlink_uri_keeps_semicolons() {
+        use crate::performer::handler::Processor;
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = Processor::default();
+
+        processor.advance(&mut cw, b"\x1b]8;;https://x.dev/a;b;\x07X\x1b]8;;\x07");
+
+        let hl = cw.cell_hyperlink(Line(0), Column(0)).expect("hyperlink");
+        assert_eq!(hl.uri(), "https://x.dev/a;b;");
+    }
+
+    #[test]
+    fn osc8_hyperlink_invalid_utf8_and_empty_uri_with_id() {
+        use crate::performer::handler::Processor;
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = Processor::default();
+
+        processor.advance(
+            &mut cw,
+            b"\x1b]8;;https://a.example\x07A\
+              \x1b]8;;file:///caf\xe9\x07B\
+              \x1b]8;id=foo;\x07C\
+              \x1b]8;;\x07D",
+        );
+
+        let a = cw.cell_hyperlink(Line(0), Column(0)).expect("hyperlink");
+        assert_eq!(a.uri(), "https://a.example");
+        let b = cw.cell_hyperlink(Line(0), Column(1)).expect("hyperlink");
+        assert_eq!(b.uri(), "file:///caf\u{FFFD}");
+        // An empty URI with an id is invalid and leaves the link open.
+        let c = cw.cell_hyperlink(Line(0), Column(2)).expect("hyperlink");
+        assert_eq!(c.uri(), "file:///caf\u{FFFD}");
+        assert!(cw.cell_hyperlink(Line(0), Column(3)).is_none());
+    }
+
     /// OSC 8 hyperlinks span multiple lines when the parser writes a
     /// linefeed in the middle of the link. The cells on both lines
     /// should carry the same `extras_id` (modulo the cells before /

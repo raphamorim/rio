@@ -5,6 +5,7 @@
 //! typed result for the corresponding OSC command, leaving the dispatcher in
 //! `handler.rs` as a thin glue layer.
 
+use std::borrow::Cow;
 use std::str::FromStr;
 
 use cursor_icon::CursorIcon;
@@ -159,20 +160,17 @@ pub(super) fn parse_number(input: &[u8]) -> Option<u8> {
     Some(num)
 }
 
-/// OSC 0 / OSC 2: window title set as `;`-joined params.
-pub(super) fn parse_title(params: &[&[u8]]) -> Option<String> {
-    if params.len() < 2 {
-        return None;
+/// Decodes a free-text payload, replacing invalid UTF-8.
+pub(super) fn text_lossy(bytes: &[u8]) -> Cow<'_, str> {
+    match simd_utf8::from_utf8_fast(bytes) {
+        Ok(text) => Cow::Borrowed(text),
+        Err(_) => String::from_utf8_lossy(bytes),
     }
-    Some(
-        params[1..]
-            .iter()
-            .flat_map(|x| simd_utf8::from_utf8_fast(x))
-            .collect::<Vec<&str>>()
-            .join(";")
-            .trim()
-            .to_owned(),
-    )
+}
+
+/// OSC 0 / OSC 2: the window title, everything after `0;` or `2;`.
+pub(super) fn parse_title(params: &[&[u8]]) -> Option<String> {
+    params.get(1).map(|title| text_lossy(title).into_owned())
 }
 
 /// OSC 4: a list of `(index, color | "?")` pairs in `params[1..]`.
@@ -352,14 +350,26 @@ pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<&str> {
         .and_then(|kv| simd_utf8::from_utf8_fast(kv).ok())
 }
 
-/// Construct a [`Hyperlink`] from the link params + URI bytes. Returns
-/// `None` for an empty URI (caller should clear the active hyperlink).
-pub(super) fn parse_hyperlink(link_params: &[u8], uri_param: &[u8]) -> Option<Hyperlink> {
-    let uri = simd_utf8::from_utf8_fast(uri_param).unwrap_or_default();
+/// OSC 8: `Some(None)` closes the link, `Some(Some(_))` opens one. An
+/// empty URI with an `id` is invalid and ignored.
+pub(super) fn parse_hyperlink(
+    link_params: &[u8],
+    uri: &[u8],
+) -> Option<Option<Hyperlink>> {
+    let id = parse_hyperlink_id(link_params).filter(|id| !id.is_empty());
     if uri.is_empty() {
-        return None;
+        return id.is_none().then_some(None);
     }
-    Some(Hyperlink::new(parse_hyperlink_id(link_params), uri))
+    Some(Some(Hyperlink::new(id, &*text_lossy(uri))))
+}
+
+/// OSC 9 notification: the body is everything after `9;`.
+pub(super) fn parse_notification_body(params: &[&[u8]]) -> String {
+    params[1..]
+        .iter()
+        .map(|part| text_lossy(part))
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 /// OSC 9;4 — ConEmu/Windows-Terminal progress reporting.
@@ -384,23 +394,10 @@ pub(super) fn parse_progress_report(params: &[&[u8]]) -> Option<ProgressReport> 
     Some(ProgressReport { state, progress })
 }
 
-/// Rejoin `params[from..]` with the `;` the OSC parser split on, so a
-/// payload defined as verbatim text survives a `;` inside it.
-pub(super) fn join_params(params: &[&[u8]], from: usize) -> Option<String> {
-    Some(
-        params
-            .get(from..)?
-            .iter()
-            .map(|param| simd_utf8::from_utf8_fast(param).ok())
-            .collect::<Option<Vec<_>>>()?
-            .join(";"),
-    )
-}
-
 /// OSC 9;9: ConEmu/Windows-Terminal working directory report, the
 /// Windows counterpart of OSC 7. Format: `9;9;<path>`, with the path
 /// optionally wrapped in double quotes and travelling verbatim (no URL
-/// encoding), so everything after `9;9;` is rejoined.
+/// encoding): the parser keeps everything after `9;9;` as one param.
 ///
 /// The sequence carries no host field, so unlike OSC 7 a remote shell
 /// cannot be told apart from a local one (ConEmu and Windows Terminal
@@ -410,11 +407,11 @@ pub(super) fn parse_conemu_working_directory(params: &[&[u8]]) -> Option<String>
     if params.len() < 3 || params[1] != b"9" {
         return None;
     }
-    let path = join_params(params, 2)?;
+    let path = simd_utf8::from_utf8_fast(params[2]).ok()?;
     let path = path
         .strip_prefix('"')
         .and_then(|p| p.strip_suffix('"'))
-        .unwrap_or(&path);
+        .unwrap_or(path);
     if !is_absolute_path(path) {
         return None;
     }
@@ -593,8 +590,8 @@ mod tests {
             parse(&[b"9", b"9", b"\"C:\\Program Files\""]),
             Some("C:\\Program Files".into())
         );
-        // A `;` in the path arrives as extra params and is rejoined.
-        assert_eq!(parse(&[b"9", b"9", b"C:\\a", b"b"]), Some("C:\\a;b".into()));
+        // The parser keeps a `;` in the path inside the last param.
+        assert_eq!(parse(&[b"9", b"9", b"C:\\a;b"]), Some("C:\\a;b".into()));
 
         // Progress reports and notifications are not directories.
         assert_eq!(parse(&[b"9", b"4", b"1", b"50"]), None);
@@ -611,16 +608,6 @@ mod tests {
             parse(&[b"9", b"9", b"/home/user"]),
             Some("/home/user".into())
         );
-    }
-
-    #[test]
-    fn join_params_restores_split_semicolons() {
-        assert_eq!(
-            join_params(&[b"7", b"kitty-shell-cwd://h/tmp/a", b"b"], 1),
-            Some("kitty-shell-cwd://h/tmp/a;b".into())
-        );
-        assert_eq!(join_params(&[b"7", b"x"], 1), Some("x".into()));
-        assert_eq!(join_params(&[b"7"], 1), Some(String::new()));
     }
 
     #[cfg(not(windows))]
@@ -643,10 +630,8 @@ mod tests {
 
     #[cfg(not(windows))]
     #[test]
-    fn kitty_shell_cwd_keeps_semicolons_after_rejoin() {
-        // The handler rejoins split params before calling the parser.
-        let payload = join_params(&[b"7", b"kitty-shell-cwd:///tmp/a", b"b"], 1).unwrap();
-        assert_eq!(cwd(&payload), Some("/tmp/a;b".into()));
+    fn kitty_shell_cwd_keeps_semicolons() {
+        assert_eq!(cwd("kitty-shell-cwd:///tmp/a;b"), Some("/tmp/a;b".into()));
     }
 
     #[cfg(not(windows))]
@@ -765,5 +750,31 @@ mod tests {
             term.current_directory.as_deref(),
             Some(std::path::Path::new("/home/My Files"))
         );
+    }
+
+    #[test]
+    fn hyperlink_follows_empty_uri_rules() {
+        let open = parse_hyperlink(b"id=a", b"https://x.dev/a;b")
+            .unwrap()
+            .unwrap();
+        assert_eq!(open.uri(), "https://x.dev/a;b");
+        assert_eq!(parse_hyperlink(b"", b""), Some(None));
+        assert_eq!(parse_hyperlink(b"id=", b""), Some(None));
+        assert_eq!(parse_hyperlink(b"id=a", b""), None);
+    }
+
+    #[test]
+    fn notification_body_is_everything_after_nine() {
+        assert_eq!(
+            parse_notification_body(&[b"9", b"done", b" 3 warnings"]),
+            "done; 3 warnings"
+        );
+        assert_eq!(parse_notification_body(&[b"9", b"caf\xe9"]), "caf\u{FFFD}");
+    }
+
+    #[test]
+    fn title_is_verbatim() {
+        assert_eq!(parse_title(&[b"2", b" a;b "]), Some(" a;b ".into()));
+        assert_eq!(parse_title(&[b"2"]), None);
     }
 }

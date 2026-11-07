@@ -911,19 +911,20 @@ impl<U: Handler> Perform for Performer<'_, U> {
 
             // Inform current directory.
             b"7" => {
-                // Rejoined: the kitty-shell-cwd flavor is verbatim, so a
-                // `;` in the directory arrives as extra params.
-                if let Some(payload) = osc::join_params(params, 1) {
-                    if let Some(path) = osc::parse_current_directory(payload.as_bytes()) {
-                        self.handler.set_current_directory(path.into());
-                    }
+                if let Some(path) = params
+                    .get(1)
+                    .and_then(|payload| osc::parse_current_directory(payload))
+                {
+                    self.handler.set_current_directory(path.into());
                 }
             }
 
             // Hyperlink.
             b"8" if params.len() > 2 => {
-                self.handler
-                    .set_hyperlink(osc::parse_hyperlink(params[1], params[2]));
+                match osc::parse_hyperlink(params[1], params[2]) {
+                    Some(link) => self.handler.set_hyperlink(link),
+                    None => unhandled(params),
+                }
             }
 
             // OSC 9 dispatches on its sub-command: 9;4 progress and 9;9
@@ -941,10 +942,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
                         self.handler.set_current_directory(path.into());
                     }
                 }
-                Some(body) => {
-                    let body = std::str::from_utf8(body).unwrap_or_default().to_string();
-                    self.handler.desktop_notification(String::new(), body);
-                }
+                Some(_) => self.handler.desktop_notification(
+                    String::new(),
+                    osc::parse_notification_body(params),
+                ),
                 None => unhandled(params),
             },
 
@@ -957,13 +958,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
 
             // OSC 777 - rxvt notification.
             b"777" if params.len() >= 4 && params[1] == b"notify" => {
-                let title = std::str::from_utf8(params[2])
-                    .unwrap_or_default()
-                    .to_string();
-                let body = std::str::from_utf8(params[3])
-                    .unwrap_or_default()
-                    .to_string();
-                self.handler.desktop_notification(title, body);
+                self.handler.desktop_notification(
+                    osc::text_lossy(params[2]).into_owned(),
+                    osc::text_lossy(params[3]).into_owned(),
+                );
             }
 
             // Set or query dynamic colors (foreground/background/cursor).
