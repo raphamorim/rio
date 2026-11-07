@@ -530,6 +530,7 @@ pub fn create_pty_with_spawn(
     };
     let term = create_termp(true);
 
+    let _spawn_guard = spawn_lock();
     let mut open = || unsafe {
         openpty(
             &mut main as *mut _,
@@ -795,6 +796,7 @@ pub fn create_pty_with_fork(
 
     let signals = Signals::new([sigconsts::SIGCHLD])?;
 
+    let _spawn_guard = spawn_lock();
     match unsafe {
         forkpty(
             &mut main as *mut _,
@@ -856,6 +858,17 @@ fn set_controlling_terminal(fd: libc::c_int) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+/// Held from opening a pty until it is close-on-exec and through every
+/// shell spawn, so a shell started on another thread (librio surfaces
+/// can be created in parallel) never inherits a pty still being set up.
+static SPAWN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn spawn_lock() -> std::sync::MutexGuard<'static, ()> {
+    SPAWN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Marks `fd` close-on-exec. openpty and forkpty return descriptors
