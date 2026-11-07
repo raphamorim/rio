@@ -432,6 +432,43 @@ mod tests {
     }
 
     #[test]
+    fn later_shells_do_not_inherit_an_open_pty() {
+        let mut first = create_pty_with_spawn(
+            Some("/bin/sh"),
+            vec!["-c".into(), "sleep 5".into()],
+            &None,
+            None,
+            80,
+            24,
+            0,
+            0,
+        )
+        .unwrap();
+        let main = std::os::fd::AsRawFd::as_raw_fd(&first.file);
+        let flags = unsafe { libc::fcntl(main, libc::F_GETFD) };
+        assert_ne!(flags & libc::FD_CLOEXEC, 0);
+
+        let mut second = create_pty_with_spawn(
+            Some("/bin/sh"),
+            vec![
+                "-c".into(),
+                format!("[ -e /dev/fd/{main} ] && exit 1; exit 0"),
+            ],
+            &None,
+            None,
+            80,
+            24,
+            0,
+            0,
+        )
+        .unwrap();
+        let status = second.child.process.as_mut().unwrap().wait().unwrap();
+        assert_eq!(status.code(), Some(0));
+        first.shutdown().unwrap();
+        second.shutdown().unwrap();
+    }
+
+    #[test]
     fn externally_reaped_pty_emits_unknown_status_once() {
         let mut pty = create_pty_with_spawn(
             Some("/bin/sh"),
