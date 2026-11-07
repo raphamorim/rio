@@ -45,15 +45,6 @@ extern "C" {
         winsize: *const Winsize,
     ) -> libc::pid_t;
 
-    fn openpty(
-        main: *mut libc::c_int,
-        child: *mut libc::c_int,
-        name: *mut libc::c_char,
-        termp: *const libc::termios,
-        winsize: *const Winsize,
-    ) -> libc::pid_t;
-
-    fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
 /// Export `envs` in the forked child before exec. Runs post-fork, so
@@ -520,8 +511,6 @@ pub fn create_pty_with_spawn(
     #[cfg(any(target_os = "macos", target_os = "freebsd"))]
     let is_controling_terminal = true;
 
-    let mut main: libc::c_int = 0;
-    let mut child: libc::c_int = 0;
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
         ws_col: columns as libc::c_ushort,
@@ -530,42 +519,21 @@ pub fn create_pty_with_spawn(
     };
     let term = create_termp(true);
 
-    let _spawn_guard = spawn_lock();
-    let mut open = || unsafe {
-        openpty(
-            &mut main as *mut _,
-            &mut child as *mut _,
-            ptr::null_mut(),
-            &term as *const libc::termios,
-            &winsize as *const _,
-        )
-    };
-
-    // openpty fails transiently when many PTYs open concurrently (seen
+    // Opening a pty fails transiently when many open concurrently (seen
     // on macOS under parallel spawns, with garbage errno); a brief retry
     // absorbs it instead of surfacing a dead surface to the embedder.
-    let mut res = open();
+    let mut res = open_pty(&term, &winsize);
     for _ in 0..3 {
-        if res >= 0 {
+        if res.is_ok() {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
-        res = open();
+        res = open_pty(&term, &winsize);
     }
-
-    if res < 0 {
-        return Err(Error::other(format!(
-            "openpty failed: {}",
-            Error::last_os_error()
-        )));
-    }
-
-    // Own both descriptors before any fallible setup so every error path
-    // closes them, including command and signal registration failures.
-    let file = unsafe { File::from_raw_fd(main) };
-    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
-    set_cloexec(main)?;
-    set_cloexec(child)?;
+    let (main_fd, owned_child) =
+        res.map_err(|err| Error::other(format!("openpty failed: {err}")))?;
+    let (main, child) = (main_fd.as_raw_fd(), owned_child.as_raw_fd());
+    let file = File::from(main_fd);
 
     let user = match ShellUser::from_env() {
         Ok(data) => data,
@@ -796,7 +764,6 @@ pub fn create_pty_with_fork(
 
     let signals = Signals::new([sigconsts::SIGCHLD])?;
 
-    let _spawn_guard = spawn_lock();
     match unsafe {
         forkpty(
             &mut main as *mut _,
@@ -860,20 +827,61 @@ fn set_controlling_terminal(fd: libc::c_int) -> Result<(), Error> {
     Ok(())
 }
 
-/// Held from opening a pty until it is close-on-exec and through every
-/// shell spawn, so a shell started on another thread (librio surfaces
-/// can be created in parallel) never inherits a pty still being set up.
-static SPAWN_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// Opens a pty with both ends close-on-exec from the start, so no shell
+/// spawned meanwhile, on any thread, inherits it and keeps it from
+/// hanging up on close.
+fn open_pty(
+    term: &libc::termios,
+    winsize: &Winsize,
+) -> Result<(OwnedFd, OwnedFd), Error> {
+    let flags = libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC;
+    let main = unsafe { libc::posix_openpt(flags) };
+    if main < 0 {
+        return Err(Error::last_os_error());
+    }
+    let main = unsafe { OwnedFd::from_raw_fd(main) };
+    if unsafe { libc::grantpt(main.as_raw_fd()) } != 0
+        || unsafe { libc::unlockpt(main.as_raw_fd()) } != 0
+    {
+        return Err(Error::last_os_error());
+    }
 
-fn spawn_lock() -> std::sync::MutexGuard<'static, ()> {
-    SPAWN_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    let name = pty_name(main.as_raw_fd())?;
+    let child = unsafe { libc::open(name.as_ptr(), flags) };
+    if child < 0 {
+        return Err(Error::last_os_error());
+    }
+    let child = unsafe { OwnedFd::from_raw_fd(child) };
+    if unsafe { libc::tcsetattr(child.as_raw_fd(), libc::TCSANOW, term) } != 0
+        || unsafe { libc::ioctl(child.as_raw_fd(), TIOCSWINSZ as _, winsize) } != 0
+    {
+        return Err(Error::last_os_error());
+    }
+
+    Ok((main, child))
 }
 
-/// Marks `fd` close-on-exec. openpty and forkpty return descriptors
-/// without it, so every shell spawned later would inherit the pty of
-/// each terminal already open and keep it from hanging up on close.
+/// The path of the child end of the pty whose main end is `fd`.
+fn pty_name(fd: libc::c_int) -> Result<CString, Error> {
+    let mut buf = [0 as libc::c_char; 128];
+
+    #[cfg(target_os = "macos")]
+    if unsafe { libc::ioctl(fd, libc::TIOCPTYGNAME as _, buf.as_mut_ptr()) } != 0 {
+        return Err(Error::last_os_error());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    match unsafe { libc::ptsname_r(fd, buf.as_mut_ptr(), buf.len()) } {
+        0 => {}
+        err => return Err(Error::from_raw_os_error(err)),
+    }
+
+    Ok(unsafe { CStr::from_ptr(buf.as_ptr()) }.to_owned())
+}
+
+/// Marks `fd` close-on-exec. forkpty returns the main end without it,
+/// so every shell spawned later would inherit the pty of each terminal
+/// already open and keep it from hanging up on close.
 fn set_cloexec(fd: libc::c_int) -> Result<(), Error> {
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
     if flags < 0
@@ -984,22 +992,11 @@ fn get_pw_entry(buf: &mut [i8; 1024]) -> Result<Passwd<'_>, Error> {
     })
 }
 
-/// Unsafe
 /// Return tty pts name [`String`]
-///
-/// # Safety
-///
-/// This function is unsafe because it contains the usage of `libc::ptsname`
-/// from libc that's naturally unsafe.
 pub fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
-    let c_str: &CStr = unsafe {
-        let name_ptr = ptsname(fd as *mut _);
-        CStr::from_ptr(name_ptr)
-    };
-    let str_slice: &str = c_str.to_str().unwrap();
-    let str_buf: String = str_slice.to_owned();
-
-    Ok(str_buf)
+    pty_name(fd)
+        .map_err(|err| err.to_string())
+        .map(|name| name.to_string_lossy().into_owned())
 }
 
 pub fn foreground_process_name(main_fd: RawFd, shell_pid: u32) -> String {
