@@ -6,7 +6,7 @@
       Codepage="1252"
       Version="{{ .Version }}"
       Manufacturer="Raphael Amorim"
-      InstallerVersion="200">
+      InstallerVersion="500">
 
       <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
       <WixVariable Id="WixUILicenseRtf" Value=".\misc\windows\License.rtf" />
@@ -29,7 +29,9 @@
       <DirectoryRef Id="RioProgramMenu">
          <!-- Application shortcut -->
          <Component Id="RioShortcut" Guid="aa36e61a-23cd-4383-b744-2f78e912f0dc">
-            <Shortcut Id="RioShortcutFile" Name="Rio" Description="A hardware-accelerated GPU terminal emulator" Target="[RioProgramFiles]rio.exe" Icon="RioIcon" />
+            <Shortcut Id="RioShortcutFile" Name="Rio" Description="A hardware-accelerated GPU terminal emulator" Target="[RioProgramFiles]rio.exe" Icon="RioIcon">
+               <ShortcutProperty Key="System.AppUserModel.ID" Value="Rio" />
+            </Shortcut>
             <RemoveFolder Id="RioProgramMenu" On="uninstall" />
             <RegistryValue Root="HKCU" Key="Software\Microsoft\Rio" Name="installed" Type="integer" Value="1" KeyPath="yes" />
          </Component>
