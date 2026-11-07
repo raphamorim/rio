@@ -1167,6 +1167,7 @@ pub unsafe extern "C" fn sl_render_surface(
         let rows = rs.lines();
         let term_colors = *rs.term_colors();
         let (cursor_line, cursor_col) = rs.cursor();
+        let cursor_wide = rs.cursor_wide() && !preedit_active;
         let cursor_visible = rs.cursor_visible();
         let cursor_shape = rs.cursor_shape();
         let selection = rs.selection();
@@ -1296,6 +1297,7 @@ pub unsafe extern "C" fn sl_render_surface(
                 style,
                 cursor_col as u16,
                 cursor_line as u16,
+                cursor_wide,
                 color,
                 cw,
                 ch,
@@ -1317,15 +1319,16 @@ pub unsafe extern "C" fn sl_render_surface(
             cursor_b as f32 / 255.0,
             1.0,
         ];
-        let (cursor_pos, cursor_col_u, cursor_bg_u) =
+        let (cursor_pos, cursor_wide, cursor_col_u, cursor_bg_u) =
             if matches!(render_style, Some(rio_grid::CursorRenderStyle::Block)) {
                 (
                     [cursor_col as u32, cursor_line as u32],
+                    u32::from(cursor_wide),
                     [bg_col[0], bg_col[1], bg_col[2], bg_col[3]],
                     cursor_color_f,
                 )
             } else {
-                ([u32::MAX; 2], [0.0; 4], [0.0; 4])
+                ([u32::MAX; 2], 0, [0.0; 4], [0.0; 4])
             };
 
         let uniforms = GridUniforms {
@@ -1339,7 +1342,8 @@ pub unsafe extern "C" fn sl_render_surface(
             cell_size: [cell_w, cell_h],
             grid_size: [cols as u32, rows as u32],
             cursor_pos,
-            _pad_cursor: [0; 2],
+            cursor_wide,
+            _pad_cursor: 0,
             min_contrast: 0.0,
             flags: 0,
             padding_extend: sl.padding_extend,
