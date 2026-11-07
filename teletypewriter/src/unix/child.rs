@@ -469,6 +469,27 @@ mod tests {
     }
 
     #[test]
+    fn spawned_shell_gets_a_configured_controlling_pty() {
+        let mut pty = create_pty_with_spawn(
+            Some("/bin/sh"),
+            vec![
+                "-c".into(),
+                "exec 3</dev/tty || exit 1; stty -a | grep -q -- -iutf8 && exit 2; [ \"$(stty size)\" = '24 80' ] || exit 3".into(),
+            ],
+            &None,
+            None,
+            80,
+            24,
+            0,
+            0,
+        )
+        .unwrap();
+        let status = pty.child.process.as_mut().unwrap().wait().unwrap();
+        assert_eq!(status.code(), Some(0));
+        pty.shutdown().unwrap();
+    }
+
+    #[test]
     fn externally_reaped_pty_emits_unknown_status_once() {
         let mut pty = create_pty_with_spawn(
             Some("/bin/sh"),
