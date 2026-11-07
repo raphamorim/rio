@@ -791,8 +791,13 @@ impl Parser {
             self.osc_raw.slice(start, end)
         };
         match self.osc_num_params {
-            1 => param(0) == b"7",
-            2 => matches!((param(0), param(1)), (b"8", _) | (b"9", b"9")),
+            1 => matches!(param(0), b"0" | b"2" | b"7"),
+            2 => match param(0) {
+                b"8" => true,
+                b"9" => param(1) != b"4",
+                _ => false,
+            },
+            3 => param(0) == b"777" && param(1) == b"notify",
             _ => false,
         }
     }
@@ -1986,6 +1991,26 @@ mod tests {
                 Sequence::Osc(params, _) => {
                     assert_eq!(params.len(), n, "{prefix}");
                     assert_eq!(params[n - 1], path.as_bytes(), "{prefix}");
+                }
+                _ => panic!("expected osc sequence"),
+            }
+        }
+    }
+
+    #[test]
+    fn parse_osc_free_text_payloads_keep_semicolons() {
+        let text = format!("a{}", ";b".repeat(MAX_OSC_PARAMS + 1));
+        for (prefix, n) in [("0", 2), ("2", 2), ("9;x", 3), ("777;notify;t", 4)] {
+            let input = format!("\x1b]{prefix};{text}\x07").into_bytes();
+            let mut dispatcher = Dispatcher::default();
+            let mut parser = Parser::default();
+
+            parser.advance(&mut dispatcher, &input);
+
+            match &dispatcher.dispatched[0] {
+                Sequence::Osc(params, _) => {
+                    assert_eq!(params.len(), n, "{prefix}");
+                    assert_eq!(params[n - 1], text.as_bytes(), "{prefix}");
                 }
                 _ => panic!("expected osc sequence"),
             }

@@ -6829,7 +6829,7 @@ mod tests {
     }
 
     #[test]
-    fn osc8_hyperlink_invalid_utf8_and_id_close() {
+    fn osc8_hyperlink_invalid_utf8_and_empty_uri_with_id() {
         use crate::performer::handler::Processor;
 
         let size = CrosswordsSize::new(40, 5);
@@ -6848,14 +6848,18 @@ mod tests {
             &mut cw,
             b"\x1b]8;;https://a.example\x07A\
               \x1b]8;;file:///caf\xe9\x07B\
-              \x1b]8;id=foo;\x07C",
+              \x1b]8;id=foo;\x07C\
+              \x1b]8;;\x07D",
         );
 
         let a = cw.cell_hyperlink(Line(0), Column(0)).expect("hyperlink");
         assert_eq!(a.uri(), "https://a.example");
         let b = cw.cell_hyperlink(Line(0), Column(1)).expect("hyperlink");
         assert_eq!(b.uri(), "file:///caf\u{FFFD}");
-        assert!(cw.cell_hyperlink(Line(0), Column(2)).is_none());
+        // An empty URI with an id is invalid and leaves the link open.
+        let c = cw.cell_hyperlink(Line(0), Column(2)).expect("hyperlink");
+        assert_eq!(c.uri(), "file:///caf\u{FFFD}");
+        assert!(cw.cell_hyperlink(Line(0), Column(3)).is_none());
     }
 
     /// OSC 8 hyperlinks span multiple lines when the parser writes a

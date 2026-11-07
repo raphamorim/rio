@@ -1151,16 +1151,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
 
             // Hyperlink.
             b"8" if params.len() > 2 => {
-                let uri = match crate::simd_utf8::from_utf8_fast(params[2]) {
-                    Ok(uri) => std::borrow::Cow::Borrowed(uri),
-                    Err(_) => String::from_utf8_lossy(params[2]),
-                };
-                let link = (!uri.is_empty()).then(|| {
-                    let id =
-                        osc::parse_hyperlink_id(params[1]).filter(|id| !id.is_empty());
-                    Hyperlink::new(id, &*uri)
-                });
-                self.handler.set_hyperlink(link);
+                match osc::parse_hyperlink(params[1], params[2]) {
+                    Some(link) => self.handler.set_hyperlink(link),
+                    None => unhandled(params),
+                }
             }
 
             // OSC 9 dispatches on its sub-command: 9;4 progress and 9;9
@@ -1178,10 +1172,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
                         self.handler.set_current_directory(path.into());
                     }
                 }
-                Some(body) => {
-                    let body = std::str::from_utf8(body).unwrap_or_default().to_string();
-                    self.handler.desktop_notification(String::new(), body);
-                }
+                Some(_) => self.handler.desktop_notification(
+                    String::new(),
+                    osc::parse_notification_body(params),
+                ),
                 None => unhandled(params),
             },
 
@@ -1194,13 +1188,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
 
             // OSC 777 - rxvt notification.
             b"777" if params.len() >= 4 && params[1] == b"notify" => {
-                let title = std::str::from_utf8(params[2])
-                    .unwrap_or_default()
-                    .to_string();
-                let body = std::str::from_utf8(params[3])
-                    .unwrap_or_default()
-                    .to_string();
-                self.handler.desktop_notification(title, body);
+                self.handler.desktop_notification(
+                    osc::text_lossy(params[2]).into_owned(),
+                    osc::text_lossy(params[3]).into_owned(),
+                );
             }
 
             // Set or query dynamic colors (foreground/background/cursor).

@@ -5,12 +5,14 @@
 //! typed result for the corresponding OSC command, leaving the dispatcher in
 //! `handler.rs` as a thin glue layer.
 
+use std::borrow::Cow;
 use std::str::FromStr;
 
 use cursor_icon::CursorIcon;
 
 use crate::ansi::CursorShape;
 use crate::config::colors::{ColorRgb, NamedColor};
+use crate::crosswords::square::Hyperlink;
 use crate::event::{ProgressReport, ProgressState};
 use crate::simd_utf8;
 
@@ -159,20 +161,17 @@ pub(super) fn parse_number(input: &[u8]) -> Option<u8> {
     Some(num)
 }
 
-/// OSC 0 / OSC 2: window title set as `;`-joined params.
-pub(super) fn parse_title(params: &[&[u8]]) -> Option<String> {
-    if params.len() < 2 {
-        return None;
+/// Decodes a free-text payload, replacing invalid UTF-8.
+pub(super) fn text_lossy(bytes: &[u8]) -> Cow<'_, str> {
+    match simd_utf8::from_utf8_fast(bytes) {
+        Ok(text) => Cow::Borrowed(text),
+        Err(_) => String::from_utf8_lossy(bytes),
     }
-    Some(
-        params[1..]
-            .iter()
-            .flat_map(|x| simd_utf8::from_utf8_fast(x))
-            .collect::<Vec<&str>>()
-            .join(";")
-            .trim()
-            .to_owned(),
-    )
+}
+
+/// OSC 0 / OSC 2: the window title, everything after `0;` or `2;`.
+pub(super) fn parse_title(params: &[&[u8]]) -> Option<String> {
+    params.get(1).map(|title| text_lossy(title).into_owned())
 }
 
 /// OSC 4: a list of `(index, color | "?")` pairs in `params[1..]`.
@@ -350,6 +349,28 @@ pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<&str> {
         .split(|&b| b == b':')
         .find_map(|kv| kv.strip_prefix(b"id="))
         .and_then(|kv| simd_utf8::from_utf8_fast(kv).ok())
+}
+
+/// OSC 8: `Some(None)` closes the link, `Some(Some(_))` opens one. An
+/// empty URI with an `id` is invalid and ignored.
+pub(super) fn parse_hyperlink(
+    link_params: &[u8],
+    uri: &[u8],
+) -> Option<Option<Hyperlink>> {
+    let id = parse_hyperlink_id(link_params).filter(|id| !id.is_empty());
+    if uri.is_empty() {
+        return id.is_none().then_some(None);
+    }
+    Some(Some(Hyperlink::new(id, &*text_lossy(uri))))
+}
+
+/// OSC 9 notification: the body is everything after `9;`.
+pub(super) fn parse_notification_body(params: &[&[u8]]) -> String {
+    params[1..]
+        .iter()
+        .map(|part| text_lossy(part))
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 /// OSC 9;4 — ConEmu/Windows-Terminal progress reporting.
@@ -731,5 +752,31 @@ mod tests {
             term.current_directory.as_deref(),
             Some(std::path::Path::new("/home/My Files"))
         );
+    }
+
+    #[test]
+    fn hyperlink_follows_empty_uri_rules() {
+        let open = parse_hyperlink(b"id=a", b"https://x.dev/a;b")
+            .unwrap()
+            .unwrap();
+        assert_eq!(open.uri(), "https://x.dev/a;b");
+        assert_eq!(parse_hyperlink(b"", b""), Some(None));
+        assert_eq!(parse_hyperlink(b"id=", b""), Some(None));
+        assert_eq!(parse_hyperlink(b"id=a", b""), None);
+    }
+
+    #[test]
+    fn notification_body_is_everything_after_nine() {
+        assert_eq!(
+            parse_notification_body(&[b"9", b"done", b" 3 warnings"]),
+            "done; 3 warnings"
+        );
+        assert_eq!(parse_notification_body(&[b"9", b"caf\xe9"]), "caf\u{FFFD}");
+    }
+
+    #[test]
+    fn title_is_verbatim() {
+        assert_eq!(parse_title(&[b"2", b" a;b "]), Some(" a;b ".into()));
+        assert_eq!(parse_title(&[b"2"]), None);
     }
 }
