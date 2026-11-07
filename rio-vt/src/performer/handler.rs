@@ -494,7 +494,39 @@ struct ApcState {
     /// Buffer for accumulating APC data.
     /// Pre-allocated to a reasonable size for Kitty graphics chunks.
     buffer: Vec<u8>,
+    /// Set once bytes past `APC_MAX_LEN` were discarded; the sequence is
+    /// then dropped at `apc_end` instead of being processed.
+    truncated: bool,
 }
+
+impl ApcState {
+    /// Begin a new sequence.
+    fn start(&mut self) {
+        self.buffer.clear();
+        self.truncated = false;
+        // Pre-allocate reasonable size for Kitty graphics chunks (typically 4KB)
+        self.buffer.reserve(4096);
+    }
+
+    /// Append bytes, keeping at most `APC_MAX_LEN` of them.
+    fn put_slice(&mut self, bytes: &[u8]) {
+        let room = APC_MAX_LEN.saturating_sub(self.buffer.len());
+        if bytes.len() > room {
+            self.truncated = true;
+            self.buffer.extend_from_slice(&bytes[..room]);
+            return;
+        }
+        self.buffer.extend_from_slice(bytes);
+    }
+}
+
+/// Upper bound on the bytes one APC sequence may hold. Kitty graphics
+/// sends image data in 4 KiB chunks, each its own APC, so a well-formed
+/// sequence never comes near this. An APC whose terminator never arrives
+/// would otherwise grow the buffer for as long as the program keeps
+/// writing. Bytes past the bound are discarded and the sequence is
+/// dropped when it ends.
+const APC_MAX_LEN: usize = 64 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct Processor {
@@ -1364,9 +1396,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
     /// OSC-style parameter parsing.
     fn apc_start(&mut self) {
         debug!("[apc_start] Beginning APC accumulation");
-        self.state.apc_state.buffer.clear();
-        // Pre-allocate reasonable size for Kitty graphics chunks (typically 4KB)
-        self.state.apc_state.buffer.reserve(4096);
+        self.state.apc_state.start();
     }
 
     /// Called for each byte in the APC sequence.
@@ -1374,11 +1404,11 @@ impl<U: Handler> Perform for Performer<'_, U> {
     /// We accumulate all bytes here to handle large sequences that exceed Copa's
     /// default OSC buffer size (1024 bytes).
     fn apc_put(&mut self, byte: u8) {
-        self.state.apc_state.buffer.push(byte);
+        self.state.apc_state.put_slice(&[byte]);
     }
 
     fn apc_put_slice(&mut self, bytes: &[u8]) {
-        self.state.apc_state.buffer.extend_from_slice(bytes);
+        self.state.apc_state.put_slice(bytes);
     }
 
     /// Called when the APC sequence ends. Processes the accumulated APC data.
@@ -1388,7 +1418,15 @@ impl<U: Handler> Perform for Performer<'_, U> {
             self.state.apc_state.buffer.len()
         );
 
-        // Process the accumulated buffer
+        // A payload cut at `APC_MAX_LEN` is dropped whole rather than
+        // processed half-complete.
+        if self.state.apc_state.truncated {
+            warn!("[apc_end] Dropping APC longer than {APC_MAX_LEN} bytes");
+            // Give back the memory the sequence took.
+            self.state.apc_state.buffer = Vec::new();
+            self.state.apc_state.start();
+            return;
+        }
         self.process_apc_buffer();
     }
 }
@@ -2470,6 +2508,36 @@ mod tests {
             state.buffer.len() > 16000,
             "Should handle very large payloads"
         );
+    }
+
+    #[test]
+    fn apc_past_max_len_is_capped_and_dropped() {
+        // An APC that never terminates must not grow the heap without
+        // bound, and once it does end its cut-off payload must not be
+        // processed. The next APC accumulates as usual.
+        let chunk = vec![b'A'; 1024 * 1024];
+        let chunks = APC_MAX_LEN / chunk.len() + 8;
+
+        let mut handler = SyncHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_Gf=100,a=T;");
+        for _ in 0..chunks {
+            processor.advance(&mut handler, &chunk);
+        }
+        assert!(
+            processor.state.apc_state.buffer.len() <= APC_MAX_LEN,
+            "apc buffer grew to {} bytes",
+            processor.state.apc_state.buffer.len()
+        );
+
+        processor.advance(&mut handler, b"\x1b\\\x1b_Ga=d\x1b\\");
+        assert!(
+            processor.state.apc_state.buffer.capacity() < APC_MAX_LEN,
+            "a dropped apc must give its memory back"
+        );
+        assert!(processor.state.apc_state.buffer.starts_with(b"Ga=d"));
+        assert!(processor.state.apc_state.buffer.len() <= b"Ga=d\x1b".len());
     }
 
     #[test]
