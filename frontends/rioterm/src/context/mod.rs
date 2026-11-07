@@ -1,12 +1,15 @@
 pub mod renderable;
 pub mod title;
 
+use crate::ansi::mode::{NamedPrivateMode, PrivateMode};
 use crate::ansi::CursorShape;
+use crate::ansi::{KeyboardModes, KeyboardModesApplyBehavior};
 use crate::context::title::{update_title, ContextTitle};
 use crate::event::sync::FairMutex;
 use crate::event::{Msg, RioEvent};
 pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
+use crate::performer::handler::Handler;
 use crate::performer::{self, Machine};
 use renderable::Cursor;
 use renderable::RenderableContent;
@@ -14,6 +17,7 @@ use rio_backend::config::layout::Margin;
 use rio_backend::config::Shell;
 use smallvec::{smallvec, SmallVec};
 
+use rio_backend::crosswords::pos::{CharsetIndex, StandardCharset};
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::EventListener;
@@ -64,6 +68,8 @@ pub struct Context<T: EventListener> {
     /// `{{ program }}` and the empty-title strip fallback without ever
     /// inspecting the foreground process.
     pub spawned_program: String,
+    /// The command exited and the pane is held open until a key press.
+    pub exited: bool,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
 }
 
@@ -201,6 +207,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         title: ContextTitle::default(),
         title_dirty: false,
         spawned_program: String::new(),
+        exited: false,
         _io_thread: None,
     }
 }
@@ -397,6 +404,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title: ContextTitle::default(),
             title_dirty: false,
             spawned_program: spawned_program_name(config),
+            exited: false,
             _io_thread: io_thread,
         };
         context.title = ContextTitle {
@@ -522,6 +530,67 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             window_id,
             config,
         })
+    }
+
+    /// Holds the exited pane open with a note instead of closing it.
+    /// Returns false when the pane is gone or was already held, so the
+    /// close goes ahead.
+    pub fn hold_exited(&mut self, route_id: usize) -> bool {
+        let Some(item) = self.get_by_route_id(route_id) else {
+            return false;
+        };
+        let context = item.context_mut();
+        if context.exited {
+            return false;
+        }
+        context.exited = true;
+        let left_vi_mode = {
+            let mut terminal = context.terminal.lock();
+            let in_vi_mode = terminal.mode().contains(rio_backend::crosswords::Mode::VI);
+            if in_vi_mode {
+                terminal.toggle_vi_mode();
+            }
+            terminal.terminal_attribute(rio_backend::crosswords::attr::Attr::Reset);
+            terminal.configure_charset(CharsetIndex::G0, StandardCharset::Ascii);
+            terminal.set_active_charset(CharsetIndex::G0);
+            terminal.carriage_return();
+            terminal.linefeed();
+            terminal.input_str("Process exited. Press any key to close the terminal.");
+            for mode in [
+                NamedPrivateMode::ShowCursor,
+                NamedPrivateMode::ReportX10MouseClicks,
+                NamedPrivateMode::ReportMouseClicks,
+                NamedPrivateMode::ReportCellMouseMotion,
+                NamedPrivateMode::ReportAllMouseMotion,
+                NamedPrivateMode::ReportFocusInOut,
+            ] {
+                terminal.unset_private_mode(PrivateMode::Named(mode));
+            }
+            Handler::set_keyboard_mode(
+                &mut *terminal,
+                KeyboardModes::empty(),
+                KeyboardModesApplyBehavior::Replace,
+            );
+            in_vi_mode
+        };
+        if left_vi_mode {
+            context
+                .renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+        }
+        context.renderable_content.pending_update.set_dirty();
+        true
+    }
+
+    /// Closes the focused pane if it is held after its command exited.
+    pub fn close_if_exited(&mut self) -> bool {
+        if !self.current().exited {
+            return false;
+        }
+        self.event_proxy
+            .send_event(RioEvent::CloseTerminal(self.current_route), self.window_id);
+        true
     }
 
     #[inline]
@@ -1612,6 +1681,55 @@ pub mod test {
         assert!(cm.bell(2));
         assert!(cm.clear_current_bell());
         assert!(!cm.bell(2));
+    }
+
+    #[test]
+    fn hold_keeps_exited_pane_until_closed() {
+        use rio_backend::crosswords::pos::{Column, Line, Pos};
+        use rio_backend::crosswords::{CrosswordsSize, Mode};
+
+        let mut cm =
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
+                .unwrap();
+        let route = cm.current().route_id;
+        {
+            let mut terminal = cm.current().terminal.lock();
+            terminal.resize(CrosswordsSize::new(80, 4));
+            Handler::set_keyboard_mode(
+                &mut *terminal,
+                KeyboardModes::DISAMBIGUATE_ESC_CODES,
+                KeyboardModesApplyBehavior::Replace,
+            );
+            terminal.set_private_mode(PrivateMode::Named(
+                NamedPrivateMode::ReportAllMouseMotion,
+            ));
+            terminal.toggle_vi_mode();
+        }
+        assert!(!cm.close_if_exited());
+
+        assert!(cm.hold_exited(route));
+        assert!(cm.current().exited);
+        let mode = cm.current().terminal.lock().mode();
+        assert!(!mode.contains(Mode::SHOW_CURSOR));
+        assert!(!mode.intersects(Mode::KITTY_KEYBOARD_PROTOCOL));
+        assert!(!mode.intersects(Mode::MOUSE_MODE));
+        assert!(!mode.contains(Mode::VI));
+        let text = {
+            let terminal = cm.current().terminal.lock();
+            let end = Pos::new(
+                Line(terminal.screen_lines() as i32 - 1),
+                Column(terminal.columns() - 1),
+            );
+            terminal.bounds_to_string(Pos::new(Line(0), Column(0)), end)
+        };
+        assert!(
+            text.contains("Process exited. Press any key to close the terminal."),
+            "{text:?}"
+        );
+
+        assert!(cm.close_if_exited());
+        assert!(!cm.hold_exited(route));
+        assert!(!cm.hold_exited(usize::MAX));
     }
 
     #[test]

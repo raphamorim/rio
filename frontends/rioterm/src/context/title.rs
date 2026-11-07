@@ -61,6 +61,13 @@ fn shorten_path(absolute: &str) -> String {
     }
 }
 
+/// Whether the title has `{{ }}` variables to render; anything else is
+/// shown as-is.
+#[inline]
+pub fn is_template(title: &str) -> bool {
+    title.contains("{{")
+}
+
 #[inline]
 /// Render the title template. Every variable is event-known, so this
 /// NEVER inspects the foreground process: `{{ title }}` is OSC 0/2,
@@ -76,7 +83,7 @@ pub fn update_title<T: rio_backend::event::EventListener>(
     context: &Context<T>,
     prefetched_title: Option<&str>,
 ) -> String {
-    if template.is_empty() {
+    if !is_template(template) {
         return template.to_string();
     }
 
@@ -238,6 +245,10 @@ pub mod test {
             context_dimension,
         );
         assert_eq!(update_title("", &context, None), String::from(""));
+        assert_eq!(
+            update_title("my title, columns", &context, Some("shell")),
+            String::from("my title, columns")
+        );
         assert_eq!(
             update_title("{{columns}}", &context, None),
             String::from("64")
