@@ -5359,6 +5359,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         cp: u32,
         payload: crate::ansi::glyph_protocol::GlyphPayload,
         width: u8,
+        layout: rio_graphics::glyph_layout::GlyphLayout,
     ) -> Result<(), crate::ansi::glyph_protocol::RegisterError> {
         use crate::ansi::glyph_protocol::{is_pua, GlyphPayload, RegisterError};
         use rio_graphics::glyph::glyf_decode;
@@ -5448,7 +5449,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let was_uninitialised = self.glyph_registry.is_none();
         let registry = self.glyph_registry.get_or_insert_with(GlyphRegistry::new);
 
-        let result = match registry.register_with_width(cp, stored, upm, width) {
+        let result = match registry.register(cp, stored, upm, width, layout) {
             Ok(_evicted) => Ok(()),
             Err(RegisterRejection::OutOfNamespace) => {
                 // Unreachable given the is_pua check above, but the
@@ -6463,7 +6464,13 @@ mod tests {
 
         let glyf = minimal_glyf_bytes();
         // E0A0 is the Powerline branch codepoint — in basic PUA.
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(glyf, 1000), 1);
+        let res = Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(glyf, 1000),
+            1,
+            Default::default(),
+        );
         assert!(res.is_ok());
         assert!(cw.glyph_registry.is_some());
         assert!(registry_contains(&cw, 0xE0A0));
@@ -6482,6 +6489,7 @@ mod tests {
             0x61,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
+            Default::default(),
         );
         assert_eq!(res, Err(RegisterError::OutOfNamespace));
         assert!(cw.glyph_registry.is_none());
@@ -6504,7 +6512,13 @@ mod tests {
         v.extend_from_slice(&0i16.to_be_bytes());
         v.extend_from_slice(&0i16.to_be_bytes());
 
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(v, 1000), 1);
+        let res = Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(v, 1000),
+            1,
+            Default::default(),
+        );
         assert_eq!(res, Err(RegisterError::HintingUnsupported));
         // Decode failed before the registry was touched, so it stays
         // uninitialised.
@@ -6539,7 +6553,13 @@ mod tests {
         let mut cw = make_crosswords();
 
         let v = dense_glyf_bytes(MAX_DECODED_POINTS + 1);
-        let res = Handler::glyph_register(&mut cw, 0xE0A0, glyf_payload(v, 1000), 1);
+        let res = Handler::glyph_register(
+            &mut cw,
+            0xE0A0,
+            glyf_payload(v, 1000),
+            1,
+            Default::default(),
+        );
         assert_eq!(res, Err(RegisterError::OutlineTooLarge));
         assert!(cw.glyph_registry.is_none());
     }
@@ -6568,6 +6588,7 @@ mod tests {
                 upm: 1000,
             },
             1,
+            Default::default(),
         );
         assert_eq!(res, Err(RegisterError::OutlineTooLarge));
         assert!(cw.glyph_registry.is_none());
@@ -6590,6 +6611,7 @@ mod tests {
                 upm: 1000,
             },
             1,
+            Default::default(),
         );
         assert!(res.is_ok());
         assert!(registry_contains(&cw, 0xE0A0));
@@ -6615,6 +6637,7 @@ mod tests {
             0xE0A0,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
+            Default::default(),
         )
         .unwrap();
         Handler::glyph_register(
@@ -6622,6 +6645,7 @@ mod tests {
             0xE0A1,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
+            Default::default(),
         )
         .unwrap();
         assert_eq!(registry_len(&cw), 2);
@@ -6651,6 +6675,7 @@ mod tests {
             0xE0A0,
             glyf_payload(minimal_glyf_bytes(), 1000),
             2,
+            Default::default(),
         )
         .unwrap();
         Handler::input(&mut cw, '\u{E0A0}');
@@ -6676,6 +6701,7 @@ mod tests {
             0xE0A0,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
+            Default::default(),
         )
         .unwrap();
         assert!(cw.is_fully_damaged(), "register must repaint (§7.3)");
@@ -6694,6 +6720,7 @@ mod tests {
             0xE0A0,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
+            Default::default(),
         )
         .unwrap();
         Handler::glyph_register(
@@ -6701,6 +6728,7 @@ mod tests {
             0xE0A1,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
+            Default::default(),
         )
         .unwrap();
 

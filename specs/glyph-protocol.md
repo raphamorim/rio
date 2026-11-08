@@ -2,7 +2,7 @@
 
 **Author:** Raphael Amorim
 **Year:** 2026
-**Last updated:** 2026-08-17
+**Last updated:** 2026-11-08
 
 **See also:**
 - Blog post introducing the protocol and its rationale:
@@ -216,7 +216,7 @@ future sources are forward-compatible.
 ### 6.1 Request
 
 ```
-ESC _ 25a1 ; r ; cp=<hex> ; fmt=glyf ; reply=<0|1|2> ; upm=<int> ; aw=<int> ; lh=<int> ; width=<1|2> ; size=<mode> ; align=<h>,<v> ; pad=<t>,<r>,<b>,<l> ; <base64-payload> ESC \
+ESC _ 25a1 ; r ; cp=<hex> ; fmt=glyf ; reply=<0|1|2> ; upm=<int> ; aw=<int> ; lh=<int> ; ymin=<int> ; width=<1|2> ; size=<mode> ; align=<h>,<v> ; pad=<t>,<r>,<b>,<l> ; <base64-payload> ESC \
 ```
 
 Parameters:
@@ -242,10 +242,13 @@ Parameters:
   authored in. Optional; default `1000`.
 - `aw` — authored advance width, in upm units. The intended
   horizontal extent of the glyph, NOT the outline's bounding box.
-  Optional; default `upm`.
+  Optional; default `upm` when the extent is declared (§8.5.1).
 - `lh` — authored line height, in upm units. The intended vertical
   extent (descender-to-ascender), NOT the outline's bounding box.
-  Optional; default `upm`.
+  Optional; default `upm` when the extent is declared (§8.5.1).
+- `ymin` — bottom of the authored extent, in upm units: the
+  descender, so `0` or negative for most glyphs. Optional; default
+  `0` when the extent is declared (§8.5.1).
 - `width` — the glyph's render span in cells. One of `1` (one
   cell) or `2` (two cells). Optional; default `1`. Render-level
   only: the codepoint's logical cell width stays its system
@@ -257,7 +260,7 @@ Parameters:
   that following cell blank (emit a space after the codepoint) so
   the overflow lands on empty space. See §8.5.2.
 - `size` — scale policy. One of `height`, `advance`, `contain`,
-  `cover`, `stretch`. Optional; default `height`. See §8.5.
+  `cover`, `stretch`. Optional; default `contain`. See §8.5.
 - `align` — placement of the scaled outline within the render span,
   as a comma-separated pair `<h>,<v>`. `<h>` is one of `start`,
   `center`, `end`; `<v>` is one of `start`, `center`, `end`,
@@ -267,6 +270,10 @@ Parameters:
   top/bottom are fractions of cell height, left/right of render
   span width). Optional; default `0,0,0,0`. See §8.5.
 - payload — base64-encoded payload for the declared `fmt`.
+
+An invalid value for `upm`, `width`, `aw`, `lh`, `ymin`, `size`,
+`align`, or
+`pad` rejects the registration with `reason=malformed_payload`.
 
 ### 6.2 Response
 
@@ -296,7 +303,7 @@ Defined error codes:
 | `out_of_namespace`      | `cp` is not in any PUA range. |
 | `composite_unsupported` | Payload contains composite glyphs. |
 | `hinting_unsupported`   | Payload contains hinting instructions. |
-| `malformed_payload`     | Payload failed to parse as `glyf`. |
+| `malformed_payload`     | Payload failed to parse as `glyf`, or a sizing parameter has an invalid value. |
 | `payload_too_large`     | Payload exceeds 64 KiB post-base64-decode. |
 | `outline_too_large`     | An outline (or a colour container's outlines in aggregate) exceeds the 64 KiB decoded-size budget (§8.2). |
 
@@ -436,11 +443,30 @@ outline within the span).
 #### 8.5.1 Coordinate convention
 
 Outlines are authored in `upm`-unit space, Y-up, with `y=0` at the
-baseline. The authored extent is the rectangle `[0, aw] × [y_min,
-y_max]` where `lh = y_max − y_min` (matching OpenType line height:
-descender to ascender, with descender ≤ 0). Points outside this
-rectangle are allowed — they clip or overflow per the `size`/align`
-rules below.
+baseline. Placement is computed from the **authored extent**, a
+rectangle in that space:
+
+```
+x: 0 .. aw
+y: ymin .. ymin + lh
+```
+
+The extent is *declared* when the registration sends any of `aw`,
+`lh`, or `ymin`; the absent ones take their defaults (`upm`, `upm`,
+and `0`). Terminals MUST NOT use the outline's own bounds to place a
+glyph whose extent is declared: that is what stops the glyphs of a
+set from shifting relative to each other.
+
+When none of the three is sent, the author has said nothing about
+metrics and the outline is the only information available, so the
+extent is the outline's bounding box, computed from its points (the
+bounds stored in the `glyf` header are not trusted). For
+`colrv0`/`colrv1` that is
+the base glyph's clip box when it has one, and its outline's bounds
+otherwise.
+
+Points outside a declared extent are allowed. They are placed by the
+same transform and clipped by §8.5.7.
 
 #### 8.5.2 Render span and padding
 
@@ -456,6 +482,9 @@ The span is a pixel-space quantity. `width=2` widens the pixels
 the outline scales into, not the codepoint's logical cell width
 (§6.1): the cursor still advances one cell and the glyph overflows
 rightward into the following cell, which the client keeps blank.
+If the glyph is in the grid's last column, or the following cell is
+not blank, there is nowhere for the overflow to land: the terminal
+MUST render it with a one-cell span.
 
 `pad=<t>,<r>,<b>,<l>` shrinks the span:
 
@@ -464,64 +493,70 @@ W' = W × (1 − l − r)
 H' = H × (1 − t − b)
 ```
 
-Padding values are fractions. If `l + r ≥ 1` or `t + b ≥ 1` the
+Padding values are fractions from `0.0` to `1.0`; one outside that
+range is an invalid value (§6.1). If `l + r ≥ 1` or `t + b ≥ 1` the
 terminal MUST treat the request as if `pad=0,0,0,0` (no padding)
 — a degenerate span is not useful and suggests a client bug. The
 effective span `W' × H'` is what `size` and `align` operate on.
 
 #### 8.5.3 Size modes
 
-Given the authored extent `aw × lh` and effective span `W' × H'`:
+Given the authored extent `aw × lh` (the outline's width and height
+when the extent is not declared) and effective span `W' × H'`:
 
 | `size`     | `sx`              | `sy`              | Aspect ratio | Notes |
 |------------|-------------------|-------------------|--------------|-------|
-| `height`   | `H' / lh`         | `H' / lh`         | Preserved    | Default. Line-height drives. Horizontal extent is whatever `aw` scales to; may overflow the span. |
-| `advance`  | `W' / aw`         | `W' / aw`         | Preserved    | Advance drives. Vertical extent is whatever `lh` scales to; may overflow. |
-| `contain`  | `min(W'/aw, H'/lh)` | same            | Preserved    | Outline fits entirely inside the span on both axes. May leave empty space on one axis. |
-| `cover`    | `max(W'/aw, H'/lh)` | same            | Preserved    | Outline fills the span on both axes. May overflow on one axis. |
+| `height`   | `H' / lh`         | `H' / lh`         | Preserved    | Line-height drives. Horizontal extent is whatever `aw` scales to; may exceed the span. |
+| `advance`  | `W' / aw`         | `W' / aw`         | Preserved    | Advance drives. Vertical extent is whatever `lh` scales to; may exceed the span. |
+| `contain`  | `min(W'/aw, H'/lh)` (see below) | same | Preserved    | Default. The extent fits entirely inside the span on both axes. May leave empty space on one axis. |
+| `cover`    | `max(W'/aw, H'/lh)` | same            | Preserved    | The extent fills the span on both axes. May exceed it on one axis. |
 | `stretch`  | `W' / aw`         | `H' / lh`         | Not preserved | Each axis independent. Useful for box-drawing. |
 
-`height` is the default because it matches how characters behave
-(the terminal's line-height maps to the cell's vertical pixels,
-the horizontal footprint is what the glyph's own advance dictates).
-For icons that must stay inside the cell regardless of aspect,
-prefer `contain`.
+When the extent is not declared, `contain` is further capped at
+`min(W', H') / upm`. The outline's bounds say nothing about how big
+the glyph was meant to be, so the em keeps a set in proportion: a
+period stays smaller than an `M` instead of growing to fill the cell.
+
+`contain` is the default because a client that says nothing about
+sizing should get a whole glyph inside its span. For character-like
+glyphs, prefer `size=advance` with `align=center,baseline`: the
+advance fills the cell's width and the glyph sits on the text
+baseline.
 
 #### 8.5.4 Alignment
 
-After scaling, the outline has a scaled authored extent `(aw×sx)
-× (lh×sy)` positioned somewhere within the effective span. `align`
-picks where.
+After scaling, the authored extent measures `(aw×sx) × (lh×sy)`
+and `align` picks where it sits within the effective span.
 
 Horizontal:
 
-- `start` — outline's `x=0` aligns with the span's left edge
+- `start` — the extent's left edge aligns with the span's left edge
   (`pad_left`).
-- `center` — outline's horizontal midpoint aligns with the span's
+- `center` — the extent's horizontal midpoint aligns with the span's
   horizontal midpoint.
-- `end` — outline's `x=aw` aligns with the span's right edge
+- `end` — the extent's right edge aligns with the span's right edge
   (`W − pad_right`).
 
 Vertical (Y-up):
 
-- `start` — outline's `y=y_min` aligns with the span's bottom edge
-  (`pad_bottom`).
-- `center` — outline's vertical midpoint aligns with the span's
+- `start` — the extent's bottom (`y=ymin`) aligns with the span's
+  bottom edge (`pad_bottom`).
+- `center` — the extent's vertical midpoint aligns with the span's
   vertical midpoint.
-- `end` — outline's `y=y_max` aligns with the span's top edge
-  (`H − pad_top`).
-- `baseline` — outline's `y=0` aligns with the terminal's text
-  baseline within the cell. Preferred for character-like glyphs
-  that must sit on the same baseline as surrounding text;
-  descenders extend below the baseline naturally.
+- `end` — the extent's top (`y=ymin+lh`) aligns with the span's top
+  edge (`H − pad_top`).
+- `baseline` — `y=0` aligns with the terminal's text baseline within
+  the cell. Preferred for character-like glyphs that must sit on the
+  same baseline as surrounding text; descenders extend below the
+  baseline naturally.
 
 When `size=stretch`, the scaled extent exactly matches the span on
-both axes, so `align` has no visible effect. When `size=cover`,
-the scaled extent overflows on one axis; `align` picks which edge
-to anchor (and therefore which overflow is visible vs. clipped).
-When `size=contain`/`height`/`advance`, the scaled extent may be
-smaller than the span on at least one axis; `align` picks where
-the empty space goes.
+both axes, so `align` has no visible effect. When `size=cover`, the
+scaled extent exceeds the span on one axis; `align` picks which edge
+to anchor and therefore which part is clipped. When
+`size=contain`/`height`/`advance`, the scaled extent may be smaller
+than the span on at least one axis; `align` picks where the empty
+space goes.
 
 #### 8.5.5 Resolution independence
 
@@ -534,12 +569,20 @@ current cell metrics.
 
 There is no `group` parameter. A set of glyphs that must visually
 align — spinner frames, progress-bar steps, a multi-glyph logo —
-aligns automatically if authored with identical `aw`, `lh`, `size`,
-`align`, and `pad`, and if their outline geometry is coordinated
-(e.g. all spinner frames sized inside a common bounding circle).
+aligns automatically when each glyph declares the same extent (`aw`,
+`lh`, `ymin`) and uses the same `size`, `align`, and `pad`, because
+placement then does not depend on any glyph's own outline.
 Scale-group semantics can be added later if authoring experience
 shows they are genuinely needed; for v1 the burden sits with
 the author, not the protocol.
+
+#### 8.5.7 Clipping
+
+Terminals MUST clip a registered glyph's pixels to its render span
+`W × H` (before padding). The application owns the grid and cannot
+see or repair ink that lands in a neighbouring cell, so a glyph MUST
+NOT paint outside its span. A glyph that needs more room asks for it
+with `width=2`.
 
 ### 8.6 Payload format: `colrv0`
 
@@ -726,9 +769,10 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
    graph, resolving palette index `0xFFFF` to the current
    foreground color.
 7. Scales and positions glyphs according to `upm`, `aw`, `lh`,
-   `width`, `size`, `align`, and `pad` as specified in §8.5,
+   `ymin`, `width`, `size`, `align`, and `pad` as specified in §8.5,
    rendering a `width=2` glyph across two cells of pixels while
-   the codepoint's logical cell width stays its system `wcwidth`.
+   the codepoint's logical cell width stays its system `wcwidth`,
+   and clipping each glyph to its render span (§8.5.7).
 8. Enforces the cell-buffer authority invariant in §9: selection,
    copy, and search return the raw codepoint.
 9. Ignores unrecognized parameters rather than failing the
@@ -858,3 +902,4 @@ rather than serving a stale bitmap.
 | 2026-05-03 | v1.9    | Replaced the `q` reply's `u8` two-bit `status` field with a comma-separated list of coverage names: `status=system`, `status=glossary`, `status=system,glossary`, or empty for "free". Same motivation as v1.8 for the `s` reply. The `r` and `c` replies still use `status=<u8>` for success/failure since that's a closed boolean, not an extensible set. |
 | 2026-08-17 | v1.10   | Added a decoded-size budget to §8.2: 64 KiB of decoded outline data (12 bytes per point, i.e. 5,461 points), enforced per outline and per registration before point storage is allocated; violations reject with the new `reason=outline_too_large`. Closes a decode-amplification hole: repeat-compressed flags and omitted deltas let a 64 KiB wire payload expand to ~768 KiB per monochrome slot (~768 MiB per session at 1024 slots), and a colour container amplifies further via its up-to-1024 carried outlines. Requested by Mitchell Hashimoto, who hit the expansion while implementing the protocol in Ghostty; the budget follows his survey of Apple Symbols, Noto, and Nerd Fonts, where the largest real glyph decodes to ~40 KiB. |
 | 2026-08-17 | v1.11   | Redefined `width` as a render-level span, matching the reference implementation (rio#1649, rio#1650): the codepoint's logical cell width always stays its system `wcwidth`, because interactive applications (shells, line editors, multiplexers) compute column counts independently and a terminal-only width override desyncs the cursor between terminal and application. A `width=2` glyph overflows into the following cell in pixels, and the client MUST leave that cell blank. v1.7's "authoritative for all layout decisions" wording is withdrawn. |
+| 2026-11-08 | v1.12   | Made the authored extent explicit: added `ymin`, the extent's bottom in upm units, because `lh` alone did not say where the extent sits and implementations had to guess. Placement now uses the declared extent and never the outline's bounds; with no `aw`, `lh`, or `ymin`, the extent is the outline's bounding box and `contain` is capped by the em. A client written for v1.11 that sends `lh` for an outline with descenders must add `ymin`, since `ymin` defaults to `0`. Changed the `size` default from `height` to `contain`, so a client that says nothing about sizing gets a whole glyph inside its span. Terminals MUST clip a glyph to its render span (§8.5.7). An invalid sizing value now rejects with `reason=malformed_payload`. A `width=2` glyph with no blank following cell renders with a one-cell span. |

@@ -51,8 +51,10 @@ pub struct Point {
 }
 
 /// Fully-decoded simple glyph: a list of closed contours, each a
-/// `Vec<Point>`, plus the glyph's bounding box in its authoring
-/// coordinate space.
+/// `Vec<Point>`, plus the bounding box of all its points (on- and
+/// off-curve, what FreeType calls the control box) in its authoring
+/// coordinate space. Computed here rather than read from the record's
+/// header, which an application can set to anything.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outline {
     pub contours: Vec<Vec<Point>>,
@@ -62,8 +64,20 @@ pub struct Outline {
     pub y_max: i32,
 }
 
-/// Decode a simple-glyph record.
-pub fn decode(data: &[u8]) -> Result<Outline, DecodeError> {
+/// The control box of `points` as `(x_min, y_min, x_max, y_max)`, or
+/// zeros when there are none.
+fn control_box(points: impl Iterator<Item = (i32, i32)>) -> (i32, i32, i32, i32) {
+    points
+        .fold(None, |bounds: Option<(i32, i32, i32, i32)>, (x, y)| {
+            Some(match bounds {
+                None => (x, y, x, y),
+                Some((x0, y0, x1, y1)) => (x0.min(x), y0.min(y), x1.max(x), y1.max(y)),
+            })
+        })
+        .unwrap_or_default()
+}
+
+fn read_simple_glyph(data: &[u8]) -> Result<SimpleGlyph<'_>, DecodeError> {
     // Peek at numberOfContours before handing to read-fonts, because
     // `SimpleGlyph::read` will happily parse a composite record as a
     // simple one and give back garbage. The first two bytes of every
@@ -75,18 +89,27 @@ pub fn decode(data: &[u8]) -> Result<Outline, DecodeError> {
     if num_contours < 0 {
         return Err(DecodeError::Composite);
     }
+    SimpleGlyph::read(FontData::new(data)).map_err(|_| DecodeError::Malformed)
+}
 
-    let glyph =
-        SimpleGlyph::read(FontData::new(data)).map_err(|_| DecodeError::Malformed)?;
+/// The control box of a simple-glyph record, as `(x_min, y_min, x_max,
+/// y_max)`, without decoding it. Hinting is allowed: instructions don't
+/// move the stored points, so a glyph that is only measured needn't pass
+/// [`decode`]'s check.
+pub fn bounds(data: &[u8]) -> Result<(i32, i32, i32, i32), DecodeError> {
+    let glyph = read_simple_glyph(data)?;
+    Ok(control_box(
+        glyph.points().map(|p| (p.x as i32, p.y as i32)),
+    ))
+}
+
+/// Decode a simple-glyph record.
+pub fn decode(data: &[u8]) -> Result<Outline, DecodeError> {
+    let glyph = read_simple_glyph(data)?;
 
     if glyph.instruction_length() != 0 {
         return Err(DecodeError::Hinted);
     }
-
-    let x_min = glyph.x_min() as i32;
-    let y_min = glyph.y_min() as i32;
-    let x_max = glyph.x_max() as i32;
-    let y_max = glyph.y_max() as i32;
 
     let end_pts: Vec<usize> = glyph
         .end_pts_of_contours()
@@ -96,10 +119,10 @@ pub fn decode(data: &[u8]) -> Result<Outline, DecodeError> {
     if end_pts.is_empty() {
         return Ok(Outline {
             contours: Vec::new(),
-            x_min,
-            y_min,
-            x_max,
-            y_max,
+            x_min: 0,
+            y_min: 0,
+            x_max: 0,
+            y_max: 0,
         });
     }
     // End-points must be strictly increasing.
@@ -136,6 +159,9 @@ pub fn decode(data: &[u8]) -> Result<Outline, DecodeError> {
         contours.push(contour);
         start = end + 1;
     }
+
+    let (x_min, y_min, x_max, y_max) =
+        control_box(contours.iter().flatten().map(|p| (p.x, p.y)));
 
     Ok(Outline {
         contours,
@@ -360,6 +386,33 @@ mod tests {
                 y: 100,
                 on_curve: true
             }
+        );
+    }
+
+    #[test]
+    fn bounds_come_from_the_points_not_the_header() {
+        let honest = decode(&triangle_bytes()).unwrap();
+        let mut lying = triangle_bytes();
+        // Overwrite xMin, yMin, xMax and yMax.
+        lying[2..10].copy_from_slice(&[0x7F; 8]);
+        let lying = decode(&lying).unwrap();
+        assert_eq!(
+            (lying.x_min, lying.y_min, lying.x_max, lying.y_max),
+            (honest.x_min, honest.y_min, honest.x_max, honest.y_max)
+        );
+    }
+
+    #[test]
+    fn bounds_measure_a_hinted_outline_that_decode_rejects() {
+        let mut hinted = triangle_bytes();
+        let plain = decode(&hinted).unwrap();
+        // instructionLength follows the one endPtsOfContours entry.
+        hinted[12..14].copy_from_slice(&1u16.to_be_bytes());
+        hinted.insert(14, 0x00);
+        assert_eq!(decode(&hinted), Err(DecodeError::Hinted));
+        assert_eq!(
+            bounds(&hinted),
+            Ok((plain.x_min, plain.y_min, plain.x_max, plain.y_max))
         );
     }
 

@@ -25,16 +25,12 @@ env:
 
 jobs:
   librio:
-    runs-on: macos-14
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
       - run: rustup toolchain install stable --profile minimal
       - run: cargo test -p librio
       - run: make librio-ctest
-      - run: make librio-xcframework
-      - uses: actions/upload-artifact@v4
-        with:
-          name: RioKit.xcframework
-          path: target/librio/RioKit.xcframework
-          if-no-files-found: error
+      - if: github.ref == 'refs/heads/main'
+        run: make librio-xcframework

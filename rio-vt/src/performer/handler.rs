@@ -431,6 +431,7 @@ pub trait Handler {
         _cp: u32,
         _payload: glyph_protocol::GlyphPayload,
         _width: u8,
+        _layout: rio_graphics::glyph_layout::GlyphLayout,
     ) -> Result<(), glyph_protocol::RegisterError> {
         Ok(())
     }
@@ -706,7 +707,8 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                 payload,
                 reply,
                 width,
-            }) => match self.handler.glyph_register(cp, payload, width) {
+                layout,
+            }) => match self.handler.glyph_register(cp, payload, width, layout) {
                 Ok(()) => {
                     if reply.emit_success() {
                         let resp = glyph_protocol::format_register_ok(cp);

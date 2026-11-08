@@ -20,6 +20,7 @@ use std::cmp;
 
 #[cfg(feature = "glyph")]
 pub mod glyph;
+pub mod glyph_layout;
 
 /// `Instant` for every target. std's panics on wasm32-unknown-unknown, so
 /// wasm builds use `web-time`, same API backed by `performance.now()`.
