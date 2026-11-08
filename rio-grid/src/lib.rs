@@ -517,8 +517,8 @@ const DECORATION_FONT_ID_BASE: u32 = 0xFFFF_FF00;
 /// Sentinel font_id for Glyph Protocol registrations. Pulled directly
 /// in u32 form from `sugarloaf::font::glyph_registry`; lands above the
 /// cursor/decoration ranges and never collides with a real font index.
-/// The atlas `glyph_id` for a registered cell is
-/// `pack_atlas_glyph_id(codepoint, version)`.
+/// The atlas `glyph_id` for a registered cell comes from
+/// [`CustomGlyphIds`].
 use rio_backend::sugarloaf::font::glyph_registry::CUSTOM_GLYPH_FONT_ID_U32;
 
 /// Sentinel font_id base for cursor sprites. Distinct from the
@@ -1316,6 +1316,8 @@ pub struct GridGlyphRasterizer {
     /// (char, route) pair) compared to the cost of mis-rendering.
     font_resolve: FxHashMap<(char, u8, usize), (u32, bool)>,
     ascent_cache: FxHashMap<(u32, u16), i16>,
+    /// Atlas ids for Glyph Protocol rasterisations.
+    custom_glyph_ids: CustomGlyphIds,
     /// `(should_embolden, should_italicize)` per font_id. Read from
     /// `FontData` synthesis flags; matches the rich-text rasterizer's
     /// convention.
@@ -1397,6 +1399,7 @@ impl GridGlyphRasterizer {
         Self {
             font_resolve: FxHashMap::default(),
             ascent_cache: FxHashMap::default(),
+            custom_glyph_ids: CustomGlyphIds::default(),
             synthesis_cache: FxHashMap::default(),
             run_cache: (0..RUN_BUCKET_COUNT)
                 .map(|_| Vec::with_capacity(RUN_BUCKET_SIZE))
@@ -1427,6 +1430,7 @@ impl GridGlyphRasterizer {
     pub fn clear_font_caches(&mut self) {
         self.font_resolve.clear();
         self.ascent_cache.clear();
+        self.custom_glyph_ids = CustomGlyphIds::default();
         self.synthesis_cache.clear();
         for bucket in &mut self.run_cache {
             bucket.clear();
@@ -1699,7 +1703,7 @@ fn shape_run_ct(
                 &handle,
                 size_u16 as f32,
             );
-            m.ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
+            rounded_ascent_px(m.ascent)
         });
     let ct_glyphs = rio_backend::sugarloaf::font::macos::shape_text_utf16(
         &handle,
@@ -1758,7 +1762,7 @@ fn shape_run_swash(
         .entry((font_id, size_bucket))
         .or_insert_with(|| {
             let m = font_ref.metrics(&[]).scale(size_u16 as f32);
-            m.ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
+            rounded_ascent_px(m.ascent)
         });
 
     const WGHT_TAG: u32 = u32::from_be_bytes(*b"wght");
@@ -1999,9 +2003,20 @@ pub fn build_row_fg<P: GridPalette>(
             // pixels while the grid still treats this codepoint as one
             // logical column. The author is expected to leave that next
             // cell blank (a trailing space) so the overflow lands on
-            // empty space rather than real content.
+            // empty space rather than real content; when it didn't, or
+            // at the grid's edge, the span drops to one cell (§8.5.2).
             if let Some((_, slot, is_color, span)) = ensure_custom_glyph_by_codepoint(
-                grid, registry, ch as u32, cell_w_u32, cell_h, color,
+                grid,
+                rasterizer,
+                registry,
+                ch as u32,
+                cell_w_u32,
+                cell_h,
+                color,
+                custom_glyph_room(row, x, cols),
+                |rasterizer| {
+                    primary_ascent_px(rasterizer, font_library, size_u16, size_bucket)
+                },
             ) {
                 // A registered glyph's render span can overflow into
                 // the next cell: like a wide glyph, drop it while the
@@ -2011,22 +2026,12 @@ pub fn build_row_fg<P: GridPalette>(
                     continue;
                 }
                 if slot.w != 0 && slot.h != 0 {
-                    // Center the rasterised glyph in its render-span box
-                    // (`span × cell_w` wide, `cell_h` tall). The raster
-                    // is already contained within that box, so centering
-                    // keeps it inside the span regardless of the
-                    // outline's own bearings. `bearings.x` is the offset
-                    // from the cell's left edge; `bearings.y` is measured
-                    // from the cell *bottom* (the shader flips it), so a
-                    // vertically-centred glyph's top sits at
-                    // `(cell_h + glyph_h) / 2`.
-                    let span_w_px =
-                        (cell_w_u32 * span as u32).min(i16::MAX as u32) as i16;
+                    // The bitmap is exactly the render span by the cell
+                    // height, so its top-left is the cell's. `bearings.y`
+                    // is measured from the cell *bottom* (the shader
+                    // flips it).
                     let cell_h_i16 = cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
-                    let glyph_w = slot.w.min(i16::MAX as u16) as i16;
-                    let glyph_h = slot.h.min(i16::MAX as u16) as i16;
-                    let bearing_x = (span_w_px - glyph_w) / 2;
-                    let bearing_y = (cell_h_i16 + glyph_h) / 2;
+                    let (bearing_x, bearing_y) = (0, cell_h_i16);
 
                     // Colour atlas entries are pre-painted (palette
                     // applied during COLR rasterisation), so the
@@ -2753,11 +2758,32 @@ fn emit_preedit_caret(
     });
 }
 
+/// A registration's render span in cells, given the room at its cell.
+fn custom_glyph_span(declared_width: u8, room: u16) -> u16 {
+    (declared_width as u16).clamp(1, 2).min(room)
+}
+
+/// How many cells a registered glyph at `col` may paint across (§8.5.2):
+/// a `width=2` glyph needs a blank cell to overflow into, which the last
+/// column doesn't have and a client may have failed to leave.
+fn custom_glyph_room(row: &Row<Square>, col: usize, cols: usize) -> u16 {
+    let next_is_blank = col + 1 < cols && {
+        let next = row[Column(col + 1)];
+        !is_skipped_spacer(next)
+            && !next.has_grapheme()
+            && (is_run_breaker(next) || next.c() == ' ')
+    };
+    if next_is_blank {
+        2
+    } else {
+        1
+    }
+}
+
 /// Whether a registered custom glyph's render span reaches the
 /// composition block from `col`: the fg pass drops such a glyph, so
 /// its decorations must vanish with it. One predicate for both
-/// decoration emitters; the span rule mirrors
-/// `ensure_custom_glyph_by_codepoint`'s clamp to the protocol's 1..=2.
+/// decoration emitters; [`custom_glyph_span`] is the span rule.
 /// The `covers_ink(col, 2)` prefilter keeps the registry (an RwLock)
 /// out of cells that are not next to the block, and callers run this
 /// only after the cell is known to carry a decoration.
@@ -2766,13 +2792,16 @@ fn custom_glyph_ink_covered(
     registry: Option<&rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry>,
     sq: Square,
     col: usize,
+    row: &Row<Square>,
+    cols: usize,
 ) -> bool {
     let Some(registry) = registry else {
         return false;
     };
     pre.covers_ink(col, 2)
         && registry.get(sq.c() as u32).is_some_and(|entry| {
-            pre.covers_ink(col, (entry.width as u16).clamp(1, 2) as usize)
+            let room = custom_glyph_room(row, col, cols);
+            pre.covers_ink(col, custom_glyph_span(entry.width, room) as usize)
         })
 }
 
@@ -2816,7 +2845,9 @@ fn emit_underlines<P: GridPalette>(
             }
             None => continue,
         };
-        if preedit.is_some_and(|p| custom_glyph_ink_covered(p, glyph_registry, sq, x)) {
+        if preedit.is_some_and(|p| {
+            custom_glyph_ink_covered(p, glyph_registry, sq, x, row, cols)
+        }) {
             continue;
         }
         let Some(slot) = ensure_decoration_slot(grid, deco, cell_w, cell_h, thickness)
@@ -2888,7 +2919,9 @@ fn emit_strikethroughs<P: GridPalette>(
         if !style.flags.contains(StyleFlags::STRIKEOUT) {
             continue;
         }
-        if preedit.is_some_and(|p| custom_glyph_ink_covered(p, glyph_registry, sq, x)) {
+        if preedit.is_some_and(|p| {
+            custom_glyph_ink_covered(p, glyph_registry, sq, x, row, cols)
+        }) {
             continue;
         }
         let Some(slot) = ensure_decoration_slot(
@@ -2992,20 +3025,132 @@ fn ensure_glyph_by_id(
     Some((key, slot, is_color))
 }
 
+/// A font's ascent as the whole pixels the grid places text by.
+#[inline]
+fn rounded_ascent_px(ascent: f32) -> i16 {
+    ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
+}
+
+/// The primary font's ascent at this size: where text sits in the cell.
+fn primary_ascent_px(
+    rasterizer: &mut GridGlyphRasterizer,
+    font_library: &FontLibrary,
+    size_u16: u16,
+    size_bucket: u16,
+) -> Option<i16> {
+    let font_id = rio_backend::sugarloaf::font::FONT_ID_REGULAR;
+    let key = (font_id as u32, size_bucket);
+    if let Some(ascent) = rasterizer.ascent_cache.get(&key) {
+        return Some(*ascent);
+    }
+    #[cfg(target_os = "macos")]
+    let ascent = rio_backend::sugarloaf::font::macos::font_metrics(
+        &font_library.ct_font(font_id)?,
+        size_u16 as f32,
+    )
+    .ascent;
+    #[cfg(not(target_os = "macos"))]
+    let ascent = {
+        let data = font_library.inner.read().get_data(&font_id)?;
+        let font = rio_backend::sugarloaf::swash::FontRef {
+            data: data.0.as_ref(),
+            offset: data.1,
+            key: data.2,
+        };
+        font.metrics(&[]).scale(size_u16 as f32).ascent
+    };
+    let ascent = rounded_ascent_px(ascent);
+    rasterizer.ascent_cache.insert(key, ascent);
+    Some(ascent)
+}
+
+/// Everything one rasterisation of a registration depends on, exactly.
+/// The foreground counts only for payloads whose paint graph asks for it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct CustomGlyphRaster {
+    codepoint: u32,
+    /// The registration this bitmap came from, so an overwrite never
+    /// serves the old outline.
+    registration: u32,
+    /// Render span in pixels: the bitmap is exactly this wide.
+    span_w: u16,
+    cell_h: u16,
+    /// Text baseline in pixels from the cell top, for baseline-aligned
+    /// glyphs.
+    baseline: i16,
+    foreground: [u8; 4],
+}
+
+fn custom_glyph_raster(
+    codepoint: u32,
+    entry: &rio_backend::sugarloaf::font::glyph_registry::RegisteredGlyph,
+    span_w_px: u16,
+    cell_h_px: u16,
+    baseline_px: i16,
+    foreground_rgba: [u8; 4],
+) -> CustomGlyphRaster {
+    let uses_foreground = *entry.render_state.uses_foreground.get_or_init(|| {
+        rio_backend::sugarloaf::glyph_protocol::payload_uses_foreground(&entry.payload)
+    });
+    CustomGlyphRaster {
+        codepoint,
+        registration: entry.version,
+        span_w: span_w_px,
+        cell_h: cell_h_px,
+        baseline: baseline_px,
+        foreground: if uses_foreground {
+            foreground_rgba
+        } else {
+            [0; 4]
+        },
+    }
+}
+
+/// How many rasterisations [`CustomGlyphIds`] remembers. Above the 1024
+/// registrations a session can hold, so a steady screen never hits it.
+const MAX_CUSTOM_GLYPH_IDS: usize = 4096;
+
+/// Maps a Glyph Protocol rasterisation to an atlas id. Every text glyph
+/// hashes `GlyphKey`, so it stays small and registered glyphs pay for
+/// their larger identity only when one is actually drawn.
+#[derive(Default)]
+struct CustomGlyphIds {
+    ids: FxHashMap<CustomGlyphRaster, u32>,
+    next: u32,
+}
+
+impl CustomGlyphIds {
+    /// An id is never reused, so forgetting them all is always safe: the
+    /// worst outcome is drawing a glyph again. That is what bounds the
+    /// map when an application re-registers glyphs forever.
+    fn key(&mut self, raster: CustomGlyphRaster) -> GlyphKey {
+        if self.ids.len() >= MAX_CUSTOM_GLYPH_IDS && !self.ids.contains_key(&raster) {
+            self.ids.clear();
+        }
+        let next = &mut self.next;
+        let glyph_id = *self.ids.entry(raster).or_insert_with(|| {
+            let id = *next;
+            *next = next.wrapping_add(1);
+            id
+        });
+        GlyphKey {
+            font_id: CUSTOM_GLYPH_FONT_ID_U32,
+            glyph_id,
+            size_bucket: 0,
+        }
+    }
+}
+
 /// Look up or rasterise a Glyph Protocol registration into the grid
-/// atlas. The atlas key combines the codepoint with the registration's
-/// `version` (bumped on every register/clear) so re-registering the
-/// same codepoint never serves a stale rasterisation. Each unique
-/// (codepoint × version × pixel size) combination owns one atlas slot;
-/// previous-version slots become unreachable and the atlas LRU evicts
-/// them in due course.
+/// atlas. See [`CustomGlyphRaster`] for what identifies a slot; slots of
+/// earlier registrations become unreachable and go when the atlas next
+/// fills and is cleared.
 ///
-/// `ascent_px` matches the primary font's ascent at the same size
-/// bucket — Glyph Protocol payloads have no font-of-their-own, so we
-/// align registered glyphs to the surrounding text baseline. A more
-/// faithful rendering would walk the registered outline's bbox to
-/// compute per-glyph bearings, but for icon-style PUA glyphs the
-/// primary-font baseline produces the expected appearance.
+/// `max_span` is [`custom_glyph_room`] for this cell.
+///
+/// `primary_ascent` yields the primary font's ascent, which is where
+/// text sits in the cell. It is only called for a registration using
+/// `align=_,baseline`.
 ///
 /// `registry` is the active terminal's glyph registry, cloned once
 /// per row by `build_row_fg`. Passing it in (instead of going through
@@ -3016,49 +3161,52 @@ fn ensure_glyph_by_id(
 /// resolution and render, or when rasterisation produces no pixels
 /// (zero-area outline, malformed COLR, etc.). On success the 4th tuple
 /// element is the declared render span in cells (1 or 2) so the caller
-/// can center the glyph across its overflow box.
+/// can tell which cells its ink covers.
 #[allow(clippy::too_many_arguments)]
 fn ensure_custom_glyph_by_codepoint(
     grid: &mut GridRenderer,
+    rasterizer: &mut GridGlyphRasterizer,
     registry: &rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry,
     codepoint: u32,
     cell_w_u32: u32,
     cell_h: f32,
     foreground_rgba: [u8; 4],
+    max_span: u16,
+    primary_ascent: impl FnOnce(&mut GridGlyphRasterizer) -> Option<i16>,
 ) -> Option<(GlyphKey, AtlasSlot, bool, u16)> {
-    use rio_backend::sugarloaf::font::glyph_registry::pack_atlas_glyph_id;
+    use rio_backend::sugarloaf::font::glyph_registry::GlyphAlignV;
+    use std::sync::atomic::Ordering;
 
     // Fetch first so we know the registration's version + declared
     // width. The lookup happens under the registry's RwLock read; the
     // entry's payload is cloned out so the lock drops before tiny-skia.
     let entry = registry.get(codepoint)?;
+    if entry.render_state.unrenderable.load(Ordering::Relaxed) {
+        return None;
+    }
 
     // The declared `width` is a render hint: the glyph rasterises into a
     // `span × cell_w` box and overflows rightward in pixels. The grid
     // still treats the codepoint as one logical column (no cell was
     // reserved), so this is purely visual. Clamp to the protocol's 1..=2.
-    let span = (entry.width as u16).clamp(1, 2);
+    let span = custom_glyph_span(entry.width, max_span);
     let span_w_px = (cell_w_u32 * span as u32).min(u16::MAX as u32) as u16;
     let cell_h_px = cell_h.round().clamp(0.0, u16::MAX as f32) as u16;
-    let cell_w_px = cell_w_u32.min(u16::MAX as u32) as u16;
-    // The cached slot is now a pure function of (cp, version, upm,
-    // scale) — the bitmap and its raster-intrinsic bearings depend only
-    // on the scale `min(span_w, cell_h)/upm`, and `upm`/version ride in
-    // `glyph_id`. So the key only has to capture the geometry that feeds
-    // the scale: cell_w, cell_h and the 1-vs-2-cell span. Pack them the
-    // same way the cursor sprite key does (span in bit 15, low cell_w
-    // bits in 12..15, cell_h in the low 12) so a line-height-only change
-    // re-keys instead of serving a stale raster. (Within a font family
-    // cell_h pins cell_w, so the 3 low cell_w bits are ample.) The font
-    // ascent is no longer part of the slot — it's applied per-emit — so
-    // it can't alias here.
-    let key = GlyphKey {
-        font_id: CUSTOM_GLYPH_FONT_ID_U32,
-        glyph_id: pack_atlas_glyph_id(codepoint, entry.version),
-        size_bucket: (((span >= 2) as u16) << 15)
-            | ((cell_w_px & 0x7) << 12)
-            | (cell_h_px & 0xFFF),
+    if span_w_px == 0 || cell_h_px == 0 {
+        return None;
+    }
+    let baseline_px = match entry.layout.align_v {
+        GlyphAlignV::Baseline => primary_ascent(rasterizer)?,
+        _ => 0,
     };
+    let key = rasterizer.custom_glyph_ids.key(custom_glyph_raster(
+        codepoint,
+        &entry,
+        span_w_px,
+        cell_h_px,
+        baseline_px,
+        foreground_rgba,
+    ));
     if let Some(slot) = grid.lookup_glyph(key) {
         return Some((key, slot, false, span));
     }
@@ -3066,18 +3214,23 @@ fn ensure_custom_glyph_by_codepoint(
         return Some((key, slot, true, span));
     }
 
-    let raster = rio_backend::sugarloaf::glyph_protocol::rasterize_payload(
+    let Some(raster) = rio_backend::sugarloaf::glyph_protocol::rasterize_payload(
         &entry.payload,
         entry.upm,
         span_w_px,
         cell_h_px,
         foreground_rgba,
-    )?;
+        &entry.layout,
+        baseline_px as f32,
+    ) else {
+        // The geometry is valid, so the payload itself can't be drawn.
+        entry
+            .render_state
+            .unrenderable
+            .store(true, Ordering::Relaxed);
+        return None;
+    };
 
-    // Bearings are NOT baked into the cached slot: the caller centers
-    // the glyph in its cell box from `slot.w/h` + the cell metrics at
-    // emit time, so placement always tracks the current geometry and
-    // the slot stays a pure (cp, version, scale) → bitmap mapping.
     let raster_in = RasterizedGlyph {
         width: raster.width,
         height: raster.height,
@@ -3476,5 +3629,161 @@ mod cluster_text_tests {
             out.push(cell_idx);
         }
         assert_eq!(out, [0, 0, 1]);
+    }
+}
+
+#[cfg(test)]
+mod custom_glyph_tests {
+    use super::*;
+    use rio_backend::crosswords::square::CellFlags;
+    use rio_backend::sugarloaf::font::glyph_registry::{
+        GlyphLayout, GlyphRegistry, StoredPayload,
+    };
+
+    const CP: u32 = 0xE0A0;
+    const RED: [u8; 4] = [255, 0, 0, 255];
+    const BLUE: [u8; 4] = [0, 0, 255, 255];
+
+    fn colour() -> StoredPayload {
+        StoredPayload::ColrV1 {
+            glyphs: Vec::new(),
+            colr: Vec::new(),
+            cpal: Vec::new(),
+        }
+    }
+
+    fn key(registry: &GlyphRegistry, foreground: [u8; 4]) -> CustomGlyphRaster {
+        custom_glyph_raster(CP, &registry.get(CP).unwrap(), 10, 20, 0, foreground)
+    }
+
+    fn raster(codepoint: u32) -> CustomGlyphRaster {
+        CustomGlyphRaster {
+            codepoint,
+            registration: 0,
+            span_w: 10,
+            cell_h: 20,
+            baseline: 0,
+            foreground: [0; 4],
+        }
+    }
+
+    #[test]
+    fn text_glyph_keys_carry_nothing_for_the_protocol() {
+        assert_eq!(std::mem::size_of::<GlyphKey>(), 12);
+    }
+
+    #[test]
+    fn a_raster_keeps_its_id_and_different_ones_never_share() {
+        let mut ids = CustomGlyphIds::default();
+        let first = ids.key(raster(1));
+        assert_eq!(ids.key(raster(1)), first);
+        assert_ne!(ids.key(raster(2)), first);
+    }
+
+    #[test]
+    fn the_id_table_is_bounded_and_ids_are_not_reused_after_it_empties() {
+        let mut ids = CustomGlyphIds::default();
+        let first = ids.key(raster(0));
+        for codepoint in 1..=MAX_CUSTOM_GLYPH_IDS as u32 {
+            ids.key(raster(codepoint));
+        }
+        assert!(ids.ids.len() <= MAX_CUSTOM_GLYPH_IDS);
+        assert_ne!(
+            ids.key(raster(0)),
+            first,
+            "a forgotten raster gets a new id"
+        );
+    }
+
+    #[test]
+    fn only_a_payload_that_uses_the_foreground_is_keyed_by_it() {
+        for (uses, differs) in [(true, true), (false, false)] {
+            let registry = GlyphRegistry::new();
+            registry
+                .register(CP, colour(), 1000, 1, GlyphLayout::default())
+                .unwrap();
+            let entry = registry.get(CP).unwrap();
+            entry.render_state.uses_foreground.set(uses).unwrap();
+            assert_eq!(key(&registry, RED) != key(&registry, BLUE), differs);
+        }
+    }
+
+    #[test]
+    fn alpha_masks_share_one_slot_across_foregrounds() {
+        let registry = GlyphRegistry::new();
+        registry
+            .register(
+                CP,
+                StoredPayload::glyf(vec![1]),
+                1000,
+                1,
+                GlyphLayout::default(),
+            )
+            .unwrap();
+        assert_eq!(key(&registry, RED), key(&registry, BLUE));
+    }
+
+    #[test]
+    fn every_registration_gets_its_own_key_past_any_small_window() {
+        let registry = GlyphRegistry::new();
+        registry
+            .register(
+                CP,
+                StoredPayload::glyf(vec![1]),
+                1000,
+                1,
+                GlyphLayout::default(),
+            )
+            .unwrap();
+        let first = key(&registry, RED);
+        for _ in 0..4096 {
+            registry
+                .register(
+                    CP,
+                    StoredPayload::glyf(vec![1]),
+                    1000,
+                    1,
+                    GlyphLayout::default(),
+                )
+                .unwrap();
+            assert_ne!(key(&registry, RED), first);
+        }
+    }
+
+    #[test]
+    fn keys_track_the_exact_span_and_baseline() {
+        let registry = GlyphRegistry::new();
+        registry
+            .register(
+                CP,
+                StoredPayload::glyf(vec![1]),
+                1000,
+                1,
+                GlyphLayout::default(),
+            )
+            .unwrap();
+        let entry = registry.get(CP).unwrap();
+        let base = custom_glyph_raster(CP, &entry, 10, 20, 15, RED);
+        // Cell widths 8 apart, and ascents that differ by one pixel.
+        assert_ne!(base, custom_glyph_raster(CP, &entry, 18, 20, 15, RED));
+        assert_ne!(base, custom_glyph_raster(CP, &entry, 10, 20, 16, RED));
+    }
+
+    #[test]
+    fn a_wide_glyph_needs_a_blank_next_cell_inside_the_grid() {
+        let mut row: Row<Square> = Row::new(3);
+        assert_eq!(custom_glyph_room(&row, 0, 3), 2, "next cell is empty");
+        assert_eq!(custom_glyph_room(&row, 2, 3), 1, "last column");
+
+        row[Column(1)] = Square::from_char(' ');
+        assert_eq!(custom_glyph_room(&row, 0, 3), 2, "a space is blank");
+
+        row[Column(1)] = Square::from_char('x');
+        assert_eq!(custom_glyph_room(&row, 0, 3), 1, "next cell has text");
+
+        let mut marked = Square::from_char(' ');
+        marked.insert_cell_flag(CellFlags::GRAPHEME);
+        row[Column(1)] = marked;
+        assert_eq!(custom_glyph_room(&row, 0, 3), 1, "a space with a mark");
     }
 }
