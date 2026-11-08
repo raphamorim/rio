@@ -27,6 +27,7 @@
 // coverage for codepoints they intend to register.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use rio_graphics::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphLayout, GlyphSize};
 
 /// Protocol identifier — the literal ASCII string `"25a1"` that
 /// prefixes every Glyph Protocol APC body. Terminals MUST drop APC
@@ -55,7 +56,7 @@ pub fn is_pua(cp: u32) -> bool {
 }
 
 /// Parsed Glyph Protocol command, ready for dispatch.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GlyphCommand {
     /// Advertise supported payload formats. Parameter-free; doubles as
     /// the protocol-detection ping.
@@ -71,12 +72,14 @@ pub enum GlyphCommand {
     /// (narrow, the default) or `2` (wide). It never changes the
     /// codepoint's logical cell width; the renderer paints the glyph
     /// across that many cells in pixels while layout, cursor and
-    /// selection keep following system wcwidth.
+    /// selection keep following system wcwidth. `layout` is the §8.5
+    /// sizing and placement, with the protocol's defaults for absent keys.
     Register {
         cp: u32,
         payload: GlyphPayload,
         reply: ReplyMode,
         width: u8,
+        layout: GlyphLayout,
     },
     /// Clear a single PUA codepoint (`Some`) or every slot (`None`).
     Clear { cp: Option<u32> },
@@ -335,14 +338,18 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         return Err(ParseError::Malformed("register fmt unknown"));
     }
 
+    let malformed = || ParseError::RegisterFailed {
+        cp,
+        reason: RegisterError::MalformedPayload,
+        reply,
+    };
+
     let upm = match params.get("upm") {
-        Some(raw) => {
-            parse_decimal_u16(raw).ok_or(ParseError::Malformed("register upm invalid"))?
-        }
+        Some(raw) => parse_decimal_u16(raw).ok_or(malformed())?,
         None => 1000,
     };
     if upm == 0 {
-        return Err(ParseError::Malformed("register upm must be non-zero"));
+        return Err(malformed());
     }
 
     // Declared Unicode width (spec §8.5): `1` or `2`, default `1`.
@@ -350,10 +357,12 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         Some(raw) => match trim(raw) {
             b"1" => 1,
             b"2" => 2,
-            _ => return Err(ParseError::Malformed("register width must be 1 or 2")),
+            _ => return Err(malformed()),
         },
         None => 1,
     };
+
+    let layout = parse_layout(&params).ok_or_else(malformed)?;
 
     let payload_b64 = trim(payload_b64);
     let raw = BASE64
@@ -404,7 +413,82 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         payload,
         reply,
         width,
+        layout,
     })
+}
+
+/// Read the §8.5 sizing keys; each absent key takes the protocol's
+/// default (`size=contain`, `align=center,center`, no padding). `None`
+/// when a value is invalid.
+fn parse_layout(params: &Params<'_>) -> Option<GlyphLayout> {
+    let extent = |key: &str| match params.get(key) {
+        Some(raw) => parse_decimal_u16(raw).filter(|value| *value > 0).map(Some),
+        None => Some(None),
+    };
+    let mut layout = GlyphLayout {
+        aw: extent("aw")?,
+        lh: extent("lh")?,
+        ..Default::default()
+    };
+
+    if let Some(raw) = params.get("ymin") {
+        layout.ymin = Some(parse_decimal_i16(raw)?);
+    }
+
+    if let Some(raw) = params.get("size") {
+        layout.size = match trim(raw) {
+            b"height" => GlyphSize::Height,
+            b"advance" => GlyphSize::Advance,
+            b"contain" => GlyphSize::Contain,
+            b"cover" => GlyphSize::Cover,
+            b"stretch" => GlyphSize::Stretch,
+            _ => return None,
+        };
+    }
+
+    if let Some(raw) = params.get("align") {
+        let mut parts = raw.split(|&b| b == b',').map(trim);
+        let (Some(h), Some(v), None) = (parts.next(), parts.next(), parts.next()) else {
+            return None;
+        };
+        layout.align_h = match h {
+            b"start" => GlyphAlignH::Start,
+            b"center" => GlyphAlignH::Center,
+            b"end" => GlyphAlignH::End,
+            _ => return None,
+        };
+        layout.align_v = match v {
+            b"start" => GlyphAlignV::Start,
+            b"center" => GlyphAlignV::Center,
+            b"end" => GlyphAlignV::End,
+            b"baseline" => GlyphAlignV::Baseline,
+            _ => return None,
+        };
+    }
+
+    if let Some(raw) = params.get("pad") {
+        let [top, right, bottom, left] = parse_pad(raw)?;
+        // Spec §8.5.2: a degenerate span is treated as no padding.
+        if left + right < 1.0 && top + bottom < 1.0 {
+            layout.pad = [top, right, bottom, left];
+        }
+    }
+
+    Some(layout)
+}
+
+/// Parse `<top>,<right>,<bottom>,<left>`, each a fraction in `0..=1`.
+fn parse_pad(raw: &[u8]) -> Option<[f32; 4]> {
+    let mut out = [0.0; 4];
+    let mut parts = raw.split(|&b| b == b',').map(trim);
+    for slot in &mut out {
+        let value: f32 = std::str::from_utf8(parts.next()?).ok()?.parse().ok()?;
+        if !(0.0..=1.0).contains(&value) {
+            return None;
+        }
+        *slot = value;
+    }
+    parts.next().is_none().then_some(out)
 }
 
 /// Decode a `colrv0`/`colrv1` container (see [`ColrContainer`] doc for
@@ -545,6 +629,21 @@ fn parse_hex_cp(raw: &[u8]) -> Option<u32> {
         return None;
     }
     Some(out)
+}
+
+/// A decimal integer: digits with an optional leading `-`, and nothing
+/// else `str::parse` would allow, such as a leading `+`.
+fn parse_decimal_i16(raw: &[u8]) -> Option<i16> {
+    let raw = trim(raw);
+    let (negative, digits) = match raw.strip_prefix(b"-") {
+        Some(digits) => (true, digits),
+        None => (false, raw),
+    };
+    if !digits.first()?.is_ascii_digit() {
+        return None;
+    }
+    let magnitude = i32::from(parse_decimal_u16(digits)?);
+    i16::try_from(if negative { -magnitude } else { magnitude }).ok()
 }
 
 fn parse_decimal_u16(raw: &[u8]) -> Option<u16> {
@@ -742,8 +841,125 @@ mod tests {
                 },
                 reply: ReplyMode::All,
                 width: 1,
+                layout: GlyphLayout::default(),
             }
         );
+    }
+
+    fn parse_layout_of(params: &str) -> Result<GlyphLayout, ParseError> {
+        let body = format!("25a1;r;cp=E0A0;{params};{}", b64(&[1, 2, 3]));
+        parse(body.as_bytes()).map(|command| match command {
+            GlyphCommand::Register { layout, .. } => layout,
+            other => panic!("expected a registration, got {other:?}"),
+        })
+    }
+
+    #[test]
+    fn register_without_sizing_keys_takes_the_spec_defaults() {
+        let layout = parse_layout_of("upm=1000;width=2;future=1").unwrap();
+        assert_eq!(layout, GlyphLayout::default());
+        assert_eq!(layout.size, GlyphSize::Contain);
+        assert_eq!(layout.align_h, GlyphAlignH::Center);
+        assert_eq!(layout.align_v, GlyphAlignV::Center);
+    }
+
+    #[test]
+    fn register_parses_every_sizing_key() {
+        assert_eq!(
+            parse_layout_of(
+                "upm=2048;aw=1024;lh=1536;ymin=-148;size=cover;align=end,baseline;pad=0.1,0.2,0.3,0.4"
+            ),
+            Ok(GlyphLayout {
+                aw: Some(1024),
+                lh: Some(1536),
+                ymin: Some(-148),
+                size: GlyphSize::Cover,
+                align_h: GlyphAlignH::End,
+                align_v: GlyphAlignV::Baseline,
+                pad: [0.1, 0.2, 0.3, 0.4],
+            })
+        );
+    }
+
+    #[test]
+    fn register_single_sizing_key_defaults_the_rest() {
+        assert_eq!(
+            parse_layout_of("size=stretch"),
+            Ok(GlyphLayout {
+                size: GlyphSize::Stretch,
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
+    fn register_degenerate_pad_means_no_padding() {
+        assert_eq!(
+            parse_layout_of("pad=0.4,0.2,0.6,0.1"),
+            Ok(GlyphLayout::default())
+        );
+    }
+
+    #[test]
+    fn register_invalid_sizing_value_honours_the_reply_level() {
+        let body = format!("25a1;r;cp=E0A0;reply=2;aw=0;{}", b64(&[1, 2, 3]));
+        assert!(matches!(
+            parse(body.as_bytes()),
+            Err(ParseError::RegisterFailed {
+                reply: ReplyMode::ErrorsOnly,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn register_ymin_accepts_the_whole_signed_range() {
+        for (text, expected) in [
+            ("-148", -148),
+            ("0", 0),
+            ("-32768", i16::MIN),
+            ("32767", i16::MAX),
+        ] {
+            let layout = parse_layout_of(&format!("ymin={text}")).unwrap();
+            assert_eq!(layout.ymin, Some(expected), "ymin={text}");
+        }
+    }
+
+    #[test]
+    fn register_rejects_invalid_sizing_values() {
+        for params in [
+            "aw=0",
+            "lh=x",
+            "ymin=x",
+            "ymin=99999",
+            "ymin=+148",
+            "ymin=--5",
+            "ymin=- 5",
+            "ymin=-",
+            "ymin=",
+            "ymin=32768",
+            "ymin=-32769",
+            "size=huge",
+            "align=center",
+            "align=middle,center",
+            "align=center,center,center",
+            "pad=0,0,0",
+            "pad=0,0,0,0,0",
+            "pad=0,1.2,0,0",
+            "pad=nan,0,0,0",
+        ] {
+            assert!(
+                matches!(
+                    parse_layout_of(params),
+                    Err(ParseError::RegisterFailed {
+                        cp: 0xE0A0,
+                        reason: RegisterError::MalformedPayload,
+                        ..
+                    })
+                ),
+                "{params} must be rejected"
+            );
+        }
     }
 
     #[test]
@@ -770,7 +986,13 @@ mod tests {
         for bad in ["0", "3", "two", ""].iter() {
             let body = format!("25a1;r;cp=E0A0;upm=1000;width={};{}", bad, payload);
             assert!(
-                matches!(parse(body.as_bytes()), Err(ParseError::Malformed(_))),
+                matches!(
+                    parse(body.as_bytes()),
+                    Err(ParseError::RegisterFailed {
+                        reason: RegisterError::MalformedPayload,
+                        ..
+                    })
+                ),
                 "width={:?} must be rejected",
                 bad
             );
@@ -883,7 +1105,23 @@ mod tests {
         let body = format!("25a1;r;cp=E0A0;upm=0;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()),
-            Err(ParseError::Malformed(_))
+            Err(ParseError::RegisterFailed {
+                cp: 0xE0A0,
+                reason: RegisterError::MalformedPayload,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn register_invalid_upm_honours_the_reply_level() {
+        let body = format!("25a1;r;cp=E0A0;reply=2;upm=abc;{}", b64(&[1, 2, 3]));
+        assert!(matches!(
+            parse(body.as_bytes()),
+            Err(ParseError::RegisterFailed {
+                reply: ReplyMode::ErrorsOnly,
+                ..
+            })
         ));
     }
 
@@ -1059,6 +1297,7 @@ mod tests {
                         upm: 1000,
                     },
                 reply: ReplyMode::All,
+                layout: _,
                 width: 1,
             } => {
                 assert_eq!(c.glyphs.len(), 1);
@@ -1091,6 +1330,7 @@ mod tests {
                         upm: 2048,
                     },
                 reply: ReplyMode::All,
+                layout: _,
                 width: 1,
             } => {
                 assert_eq!(c.glyphs.len(), 3);
