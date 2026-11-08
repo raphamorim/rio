@@ -142,7 +142,7 @@ fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidLi
     .unwrap()
 }
 
-fn first_line(machine: &Machine<TestPty, VoidListener>, len: usize) -> String {
+fn first_line<U: EventListener>(machine: &Machine<TestPty, U>, len: usize) -> String {
     let terminal = machine.terminal.lock();
     (0..len)
         .map(|col| terminal.grid[Line(0)][Column(col)].c())
@@ -167,13 +167,10 @@ fn read_with_contended_terminal(ending: Option<ErrorKind>, raw_error: Option<i32
     drop(guard);
     let (machine, result) = worker.join().unwrap();
     exhausted.unwrap();
-    if let Some(code) = raw_error {
-        assert_eq!(result.unwrap_err().raw_os_error(), Some(code));
-    } else {
-        match ending {
-            Some(kind) => assert_eq!(result.unwrap_err().kind(), kind),
-            None => assert_eq!(result.unwrap(), ReadOutcome::Closed),
-        }
+    match (raw_error, ending) {
+        (None, Some(kind)) => assert_eq!(result.unwrap_err().kind(), kind),
+        // EOF and a hangup errno both read as Closed.
+        _ => assert_eq!(result.unwrap(), ReadOutcome::Closed),
     }
     assert_eq!(first_line(&machine, 12), "final output");
 }
@@ -309,25 +306,49 @@ fn pending_sync_is_visible_before_child_exited_notification() {
     worker.join().unwrap();
 }
 
-#[cfg(unix)]
-#[test]
-fn hangup_without_readable_readiness_drains_residual_output() {
-    let mut machine = machine(b"final output".to_vec(), Some(ErrorKind::Other));
-    let (registration, readiness) = corcovado::Registration::new2();
+/// Runs the machine with `readiness` armed on the pty's read token until
+/// it exits, shutting it down if the exit regresses into a hang.
+fn run_until_exit<U: EventListener + Send + 'static>(
+    mut machine: Machine<TestPty, U>,
+    readiness: Ready,
+) -> Machine<TestPty, U> {
+    let (registration, set_readiness) = corcovado::Registration::new2();
     machine.pty.child = Some(registration);
     machine.pty.read_event = true;
-    readiness.set_readiness(UnixReady::hup().into()).unwrap();
+    set_readiness.set_readiness(readiness).unwrap();
     let shutdown = machine.channel();
     let (completed, receiver) = mpsc::channel();
     let worker = machine.spawn();
     std::thread::spawn(move || completed.send(worker.join().unwrap()).unwrap());
     let result = receiver.recv_timeout(Duration::from_secs(5));
     if result.is_err() {
-        // Unblock the worker even if HUP handling regresses.
         shutdown.send(Msg::Shutdown).unwrap();
     }
-    let (machine, _) = result.expect("HUP must be handled without readable readiness");
+    result.expect("the machine must exit").0
+}
+
+#[cfg(unix)]
+#[test]
+fn hangup_without_readable_readiness_drains_residual_output() {
+    let machine = machine(b"final output".to_vec(), Some(ErrorKind::Other));
+    let machine = run_until_exit(machine, UnixReady::hup().into());
     assert_eq!(first_line(&machine, 12), "final output");
+    assert_eq!(machine.pty.shutdown_calls, 1);
+    assert_eq!(machine.pty.deregister_calls, 1);
+}
+
+// A hangup ends the pty as a child exit would, with the pending exit
+// status and no reader error.
+#[cfg(unix)]
+#[test]
+fn hangup_ends_the_pty() {
+    let (machine, events, _) = recording_machine(b"final output".to_vec(), None);
+    let machine = run_until_exit(machine, Ready::readable());
+    assert_eq!(first_line(&machine, 12), "final output");
+    assert!(
+        events.try_iter().any(|event| event == "exited"),
+        "a hangup must report the pending exit status"
+    );
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
 }
@@ -348,7 +369,7 @@ impl EventListener for EventRecorder {
     fn send_event(&self, event: RioEvent, _: WindowId) {
         let name = match event {
             RioEvent::TerminalDamaged(_) => "damaged",
-            RioEvent::ChildExited(..) => "exited",
+            RioEvent::ChildExited(_, Some(_)) => "exited",
             _ => return,
         };
         let _ = self.0.send(name);
