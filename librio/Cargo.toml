@@ -37,3 +37,6 @@ pty = ["rio-vt/pty", "dep:teletypewriter", "dep:corcovado"]
 # machinery are most of the binary, and the protocol paths still parse
 # without them; only pixel decode is stubbed out.
 graphics = ["rio-vt/graphics"]
+
+[dev-dependencies]
+libc = { workspace = true }

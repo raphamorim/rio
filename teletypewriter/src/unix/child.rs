@@ -45,6 +45,10 @@ enum ChildLifecycle {
 }
 
 impl ChildLifecycle {
+    fn retired() -> Arc<Mutex<Self>> {
+        Arc::new(Mutex::new(Self::Exited(None)))
+    }
+
     fn wait(&mut self, options: libc::c_int) -> io::Result<Self> {
         let (Self::Running(pid) | Self::HungUp(pid) | Self::Killed(pid)) = *self else {
             return Ok(*self);
@@ -202,7 +206,7 @@ pub struct ChildTerminator(Arc<Mutex<ChildLifecycle>>);
 impl ChildTerminator {
     /// A handle with no child; every operation is a no-op.
     pub fn retired() -> Self {
-        Self(Arc::new(Mutex::new(ChildLifecycle::Exited(None))))
+        Self(ChildLifecycle::retired())
     }
 
     /// Send SIGHUP without waiting or escalating. For Drop on threads
@@ -245,6 +249,17 @@ impl Child {
             ptsname,
             process,
             lifecycle: Arc::new(Mutex::new(ChildLifecycle::Running(pid))),
+        }
+    }
+
+    /// A pty with no child of ours on it; `pid` reads as 0.
+    pub(super) fn detached(fd: libc::c_int, ptsname: String) -> Self {
+        Self {
+            id: Arc::new(fd),
+            pid: Arc::new(0),
+            ptsname,
+            process: None,
+            lifecycle: ChildLifecycle::retired(),
         }
     }
 
@@ -329,11 +344,12 @@ impl Drop for Child {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::unix::create_pty_with_spawn;
+    use crate::unix::{create_pty_from_fd, create_pty_with_spawn};
     use crate::EventedPty;
     use libc::waitpid;
     use std::io::Error;
     use std::io::Read;
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
     use std::process::{Command, Stdio};
 
     fn child(script: &str) -> Child {
@@ -466,6 +482,58 @@ mod tests {
         assert_eq!(status.code(), Some(0));
         first.shutdown().unwrap();
         second.shutdown().unwrap();
+    }
+
+    /// A pty pair: the main (master) and sub (slave) ends.
+    fn openpty() -> (OwnedFd, OwnedFd) {
+        let (mut main, mut sub) = (0, 0);
+        let opened = unsafe {
+            libc::openpty(
+                &mut main,
+                &mut sub,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(opened, 0);
+        unsafe { (OwnedFd::from_raw_fd(main), OwnedFd::from_raw_fd(sub)) }
+    }
+
+    #[test]
+    fn existing_pty_has_no_child() {
+        let (main, sub) = openpty();
+        let mut pty = create_pty_from_fd(main, 80, 24, 0, 0).unwrap();
+
+        let mut size = libc::winsize {
+            ws_row: 0,
+            ws_col: 0,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        assert_eq!(
+            unsafe { libc::ioctl(sub.as_raw_fd(), libc::TIOCGWINSZ, &mut size) },
+            0
+        );
+        assert_eq!((size.ws_col, size.ws_row), (80, 24));
+
+        // No exit is ever reported, and Drop signals nobody: pid 0 would
+        // be our own process group.
+        unsafe { libc::raise(libc::SIGCHLD) };
+        assert!(pty.next_child_event().is_none());
+    }
+
+    #[test]
+    fn a_non_pty_fd_is_refused() {
+        let (read_end, _write_end) = std::io::pipe().unwrap();
+        assert!(create_pty_from_fd(read_end.into(), 80, 24, 0, 0).is_err());
+    }
+
+    // A slave takes TIOCSWINSZ like a master but has no ptsname: refused, not a crash.
+    #[test]
+    fn a_pty_slave_is_refused() {
+        let (_main, sub) = openpty();
+        assert!(create_pty_from_fd(sub, 80, 24, 0, 0).is_err());
     }
 
     #[test]

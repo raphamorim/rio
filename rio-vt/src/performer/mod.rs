@@ -70,6 +70,8 @@ const MAX_LOCKED_READ: usize = READ_CHUNK * 4;
 #[derive(Debug, PartialEq, Eq)]
 enum ReadOutcome {
     Idle,
+    /// On unix the slave side is gone. On Windows the ConPTY ring is
+    /// momentarily empty.
     Closed,
     Budget,
 }
@@ -277,6 +279,12 @@ where
                     result = Ok(ReadOutcome::Idle);
                     true
                 }
+                // Linux reports a hung-up master as EIO rather than EOF.
+                #[cfg(unix)]
+                Err(err) if err.raw_os_error() == Some(libc::EIO) => {
+                    result = Ok(ReadOutcome::Closed);
+                    true
+                }
                 Err(err) => {
                     result = Err(err);
                     true
@@ -394,6 +402,16 @@ where
         })
     }
 
+    /// The slave side is gone. A child of ours may have caused it with
+    /// its SIGCHLD already pending: report that status.
+    fn hangup_exit(&mut self) -> ExitReason {
+        ExitReason::ChildExited(
+            self.pty
+                .next_child_event()
+                .and_then(|teletypewriter::ChildEvent::Exited(status)| status),
+        )
+    }
+
     fn run(&mut self, state: &mut State, buf: &mut [u8]) -> io::Result<ExitReason> {
         let mut tokens = (0..).map(Into::into);
 
@@ -482,8 +500,11 @@ where
                         #[cfg(not(unix))]
                         let hung_up = false;
                         // HUP can accompany unread final output.
-                        if event.readiness().is_readable() || hung_up {
-                            self.pty_read(state, buf)?;
+                        if (event.readiness().is_readable() || hung_up)
+                            && self.pty_read(state, buf)? == ReadOutcome::Closed
+                            && cfg!(unix)
+                        {
+                            return Ok(self.hangup_exit());
                         }
 
                         if !hung_up && event.readiness().is_writable() {
