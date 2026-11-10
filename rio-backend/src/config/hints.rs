@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 /// Default alphabet for hint labels
 pub const DEFAULT_HINTS_ALPHABET: &str = "jfkdls;ahgurieowpq";
 
-/// Default URL/path regex pattern.
+/// Default URL/path regex pattern (non-Windows).
 ///
 /// Requires a regex
 /// engine with lookbehind support — rio uses oniguruma via the `onig`
@@ -19,6 +19,7 @@ pub const DEFAULT_HINTS_ALPHABET: &str = "jfkdls;ahgurieowpq";
 ///    contain a dotted filename segment.
 /// 3. **Bare relative paths** — `word/.../name.ext`. A dotted segment is
 ///    required, and lookbehinds prevent matching mid-word starts.
+#[cfg(not(target_os = "windows"))]
 pub const DEFAULT_URL_REGEX: &str = concat!(
  // schemed URLs
     "(?:https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:)",
@@ -53,6 +54,64 @@ pub const DEFAULT_URL_REGEX: &str = concat!(
     r"[\w\-.~:/?#@!$&*+;=%]+",
     r"(?<!:)",
     r"(?: +(?= *$))?",
+);
+
+/// Default URL/path regex pattern (Windows) — the common alternations plus
+/// three Windows-only forms (rio issue #1943): drive-letter paths
+/// (`C:\x\f.txt`, `C:/x/f.txt`), UNC shares (`\\host\share\doc.pdf` and the
+/// MSYS forward-slash spelling `//host/share/doc.pdf`), all supporting
+/// spaces and parentheses inside segments (e.g. `Program Files (x86)`).
+/// Windows-only branches require a dotted filename segment, mirroring the
+/// conservative bare-relative branch; a trailing drive/UNC form without a
+/// dot is intentionally not matched (prose safety).
+///
+/// Keep the shared body in sync with the non-Windows const above.
+#[cfg(target_os = "windows")]
+pub const DEFAULT_URL_REGEX: &str = concat!(
+ // schemed URLs
+    "(?:https?://|mailto:|ftp://|file:|ssh:|git://|ssh://|tel:|magnet:|ipfs://|ipns://|gemini://|gopher://|news:)",
+    "(?:",
+        r"(?:\[[:0-9a-fA-F]+(?:[:0-9a-fA-F]*)+\](?::[0-9]+)?)",
+        "|",
+        r"[\w\-.~:/?#@!$&*+,;=%]+(?:[\(\[]\w*[\)\]])?",
+    ")+",
+    r"(?<![,.])",
+    "|",
+ // rooted or explicitly-relative paths
+    r"(?:\.\./|\./|(?<!\w)~/|(?:[\w][\w\-.]*/)*(?<!\w)\$[A-Za-z_]\w*/|\.[\w][\w\-.]*/|(?<![\w~/])/(?!/))",
+    "(?:",
+ // Dotted: file-like, allows internal spaces around dotted segments.
+        r"(?=[\w\-.~:/?#@!$&*+;=%]*\.)",
+        r"[\w\-.~:/?#@!$&*+;=%]+",
+        r"(?:(?<!:) (?!\w+://)(?!\.{0,2}/)(?!~/)[\w\-.~:/?#@!$&*+;=%]*[/.])*",
+        r"(?<!:)",
+        r"(?: +(?= *$))?",
+        "|",
+ // Non-dotted: directory-like, broader.
+        r"(?![\w\-.~:/?#@!$&*+;=%]*\.)",
+        r"[\w\-.~:/?#@!$&*+;=%]+",
+        r"(?:(?<!:) (?!\w+://)(?!\.{0,2}/)(?!~/)[\w\-.~:/?#@!$&*+;=%]+)*",
+        r"(?<!:)",
+        r"(?: +(?= *$))?",
+    ")",
+    "|",
+ // bare relative paths (word/foo.ext)
+    r"(?=[\w\-.~:/?#@!$&*+;=%]*\.)",
+    r"(?<!\$\d*)(?<!\w)[\w][\w\-.]*/",
+    r"[\w\-.~:/?#@!$&*+;=%]+",
+    r"(?<!:)",
+    r"(?: +(?= *$))?",
+    "|",
+
+ // Windows drive-letter paths: C:\x\f.txt or C:/x/f.txt (spaces and
+ // parentheses allowed inside segments; final segment dotted, alnum end).
+    r"(?<![A-Za-z0-9])[A-Za-z]:[\\/](?:[\w\-. ()]+[\\/])*[\w\-. ()]*\.[A-Za-z0-9]+",
+    "|",
+ // Windows backslash UNC: \\host\share\...\doc.pdf (dotted final segment).
+    r"\\\\[\w\-. ()]+(?:\\[\w\-. ()]+)*\\[\w\-. ()]*\.[A-Za-z0-9]+",
+    "|",
+ // Windows forward-slash UNC (MSYS spelling): //host/share/doc.pdf.
+    r"(?<![\w~/])//[\w\-. ()]+(?:/[\w\-. ()]+)*/[\w\-. ()]*\.[A-Za-z0-9]+",
 );
 
 /// Hints configuration
@@ -601,5 +660,50 @@ mods = ["Control"]
         let serialized = toml::to_string(&hint).unwrap();
         let parsed: Hint = toml::from_str(&serialized).unwrap();
         assert_eq!(parsed.action, hint.action);
+    }
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_default_regex_matches_windows_path_forms() {
+        // Drive-letter paths, both separators, spaces and parens inside
+        // segments (rio issue #1943).
+        assert_eq!(
+            find_all(r"see C:\Users\feng\notes.txt end"),
+            vec![r"C:\Users\feng\notes.txt"],
+        );
+        assert_eq!(
+            find_all("see C:/Users/feng/notes.txt end"),
+            vec!["C:/Users/feng/notes.txt"],
+        );
+        assert_eq!(
+            find_all(r"see C:\Program Files (x86)\app\readme.md end"),
+            vec![r"C:\Program Files (x86)\app\readme.md"],
+        );
+        // UNC shares, backslash and MSYS forward-slash spellings.
+        assert_eq!(
+            find_all(r"see \\server\share\doc.pdf end"),
+            vec![r"\\server\share\doc.pdf"],
+        );
+        assert_eq!(
+            find_all("see //server/share/doc.pdf end"),
+            vec!["//server/share/doc.pdf"],
+        );
+        // MSYS single-letter roots flow through the rooted branch.
+        assert_eq!(
+            find_all("see /c/Users/feng/notes.txt end"),
+            vec!["/c/Users/feng/notes.txt"],
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_default_regex_rejects_windows_prose() {
+        // A drive letter without a path tail is prose-safe.
+        assert!(find_all("option C: drive").is_empty());
+        // Version numbers and timestamps stay unmatched.
+        assert!(find_all("v1.2.3 at 12:34:56").is_empty());
+        // NOTE: `cd /d` still yields the span `/d` via the pre-existing
+        // non-dotted rooted branch (same on every platform); the wrong-open
+        // is prevented in the resolver — posix_to_windows(`/d`) is None,
+        // pinned by the rioterm decision-table test.
     }
 }
