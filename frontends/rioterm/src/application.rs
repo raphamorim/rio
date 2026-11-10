@@ -759,6 +759,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::CursorBlinkingChange) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    route
+                        .window
+                        .screen
+                        .ctx_mut()
+                        .current_mut()
+                        .renderable_content
+                        .pending_update
+                        .set_dirty();
                     route.request_redraw();
                 }
             }
