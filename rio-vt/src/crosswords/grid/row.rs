@@ -21,6 +21,18 @@ pub enum SemanticPrompt {
     PromptContinuation,
 }
 
+/// Row-level command marks from OSC 133 shell integration. Kept apart
+/// from [`SemanticPrompt`] because they overlap it: a command with no
+/// output starts its output, ends, and gives way to the next prompt
+/// all on one row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SemanticCommand {
+    /// `C`: a command's output starts on this row.
+    pub output_start: bool,
+    /// `D`: a command ended with the cursor on this row.
+    pub end: bool,
+}
+
 /// A row in the grid.
 #[derive(Clone, Debug)]
 pub struct Row<T> {
@@ -53,6 +65,11 @@ pub struct Row<T> {
     /// scrollback; cleared when the row is recycled.
     pub semantic_prompt: SemanticPrompt,
 
+    /// OSC 133 command marks: where a command's output starts and
+    /// where the command ended. Travel and clear like
+    /// `semantic_prompt`.
+    pub semantic_command: SemanticCommand,
+
     /// Per-row dirty bit set on every write through `IndexMut` /
     /// `last_mut` / `iter_mut` / `reset` / `append*` / `front_split_off`.
     /// Read + cleared by the renderer's snapshot path so it can copy
@@ -71,6 +88,7 @@ impl<T> Default for Row<T> {
             has_extras: false,
             has_styles: false,
             semantic_prompt: SemanticPrompt::None,
+            semantic_command: SemanticCommand::default(),
             dirty: true,
         }
     }
@@ -111,6 +129,7 @@ impl<T: Clone + Default> Row<T> {
             has_extras: false,
             has_styles: false,
             semantic_prompt: SemanticPrompt::None,
+            semantic_command: SemanticCommand::default(),
             dirty: true,
         }
     }
@@ -129,6 +148,7 @@ impl<T: Clone + Default> Row<T> {
         self.has_extras = src.has_extras;
         self.has_styles = src.has_styles;
         self.semantic_prompt = src.semantic_prompt;
+        self.semantic_command = src.semantic_command;
     }
 
     /// Reset a recycled row back to a blank `columns`-wide row, reusing the
@@ -146,6 +166,7 @@ impl<T: Clone + Default> Row<T> {
         self.has_extras = false;
         self.has_styles = false;
         self.semantic_prompt = SemanticPrompt::None;
+        self.semantic_command = SemanticCommand::default();
         self.dirty = true;
     }
 
@@ -232,6 +253,7 @@ impl<T: Clone + Default> Row<T> {
         self.has_extras = false;
         self.has_styles = template.carries_style();
         self.semantic_prompt = SemanticPrompt::None;
+        self.semantic_command = SemanticCommand::default();
         self.dirty = true;
     }
 }
@@ -251,6 +273,7 @@ impl<T> Row<T> {
             has_extras: true,
             has_styles,
             semantic_prompt: SemanticPrompt::None,
+            semantic_command: SemanticCommand::default(),
             dirty: true,
         }
     }

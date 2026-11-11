@@ -80,6 +80,14 @@ pub trait Handler {
     /// OSC 133: mark the cursor row as a semantic prompt row.
     fn set_semantic_prompt(&mut self, _: crate::crosswords::grid::row::SemanticPrompt) {}
 
+    /// OSC 133 `C`: mark the cursor row as the start of a command's
+    /// output.
+    fn set_semantic_output_start(&mut self) {}
+
+    /// OSC 133 `D`: mark the cursor row as where a command ended, and
+    /// record how it ended.
+    fn set_semantic_command_end(&mut self, _: crate::crosswords::CommandEnd) {}
+
     /// OSC 1337 SetUserVar: record a shell-provided variable.
     fn set_user_var(&mut self, _name: String, _value: String) {}
 
@@ -951,11 +959,18 @@ impl<U: Handler> Perform for Performer<'_, U> {
             },
 
             // OSC 133 - semantic prompt zones (shell integration).
-            b"133" => {
-                if let Some(mark) = osc::parse_semantic_prompt(params) {
+            b"133" => match osc::parse_semantic_mark(params) {
+                Some(osc::SemanticMark::Prompt(mark)) => {
                     self.handler.set_semantic_prompt(mark);
                 }
-            }
+                Some(osc::SemanticMark::OutputStart) => {
+                    self.handler.set_semantic_output_start();
+                }
+                Some(osc::SemanticMark::CommandEnd(end)) => {
+                    self.handler.set_semantic_command_end(end);
+                }
+                None => {}
+            },
 
             // OSC 777 - rxvt notification.
             b"777" if params.len() >= 4 && params[1] == b"notify" => {
@@ -2182,29 +2197,42 @@ mod tests {
     }
 
     #[test]
-    fn semantic_prompt_parsing() {
+    fn semantic_mark_parsing() {
         use crate::crosswords::grid::row::SemanticPrompt;
-        use crate::performer::osc::parse_semantic_prompt as parse;
+        use crate::crosswords::CommandEnd;
+        use crate::performer::osc::parse_semantic_mark as parse;
+        use crate::performer::osc::SemanticMark;
 
-        assert_eq!(parse(&[b"133", b"A"]), Some(SemanticPrompt::Prompt));
+        let prompt = Some(SemanticMark::Prompt(SemanticPrompt::Prompt));
+        let continuation = Some(SemanticMark::Prompt(SemanticPrompt::PromptContinuation));
+        let ended =
+            |exit_status| Some(SemanticMark::CommandEnd(CommandEnd { exit_status }));
+
+        assert_eq!(parse(&[b"133", b"A"]), prompt);
+        assert_eq!(parse(&[b"133", b"A", b"aid=1"]), prompt);
+        assert_eq!(parse(&[b"133", b"P"]), prompt);
+        assert_eq!(parse(&[b"133", b"P", b"k=i"]), prompt);
+        assert_eq!(parse(&[b"133", b"P", b"k=s"]), continuation);
+        assert_eq!(parse(&[b"133", b"P", b"k=c"]), continuation);
+
+        assert_eq!(parse(&[b"133", b"C"]), Some(SemanticMark::OutputStart));
         assert_eq!(
-            parse(&[b"133", b"A", b"aid=1"]),
-            Some(SemanticPrompt::Prompt)
+            parse(&[b"133", b"C", b"cmdline=ls"]),
+            Some(SemanticMark::OutputStart)
         );
-        assert_eq!(parse(&[b"133", b"P"]), Some(SemanticPrompt::Prompt));
-        assert_eq!(parse(&[b"133", b"P", b"k=i"]), Some(SemanticPrompt::Prompt));
-        assert_eq!(
-            parse(&[b"133", b"P", b"k=s"]),
-            Some(SemanticPrompt::PromptContinuation)
-        );
-        assert_eq!(
-            parse(&[b"133", b"P", b"k=c"]),
-            Some(SemanticPrompt::PromptContinuation)
-        );
+
+        assert_eq!(parse(&[b"133", b"D", b"0"]), ended(Some(0)));
+        assert_eq!(parse(&[b"133", b"D", b"127", b"aid=1"]), ended(Some(127)));
+        assert_eq!(parse(&[b"133", b"D", b"-1"]), ended(Some(-1)));
+        // No status: the command line was abandoned, or the first
+        // option is not one.
+        assert_eq!(parse(&[b"133", b"D"]), ended(None));
+        assert_eq!(parse(&[b"133", b"D", b""]), ended(None));
+        assert_eq!(parse(&[b"133", b"D", b"aid=1"]), ended(None));
+
         // Accepted subcommands that set no row mark.
         assert_eq!(parse(&[b"133", b"B"]), None);
-        assert_eq!(parse(&[b"133", b"C"]), None);
-        assert_eq!(parse(&[b"133", b"D", b"0"]), None);
+        assert_eq!(parse(&[b"133", b"N"]), None);
         assert_eq!(parse(&[b"133"]), None);
         assert_eq!(parse(&[b"133", b""]), None);
     }
