@@ -48,7 +48,7 @@ use crate::simd_utf8;
 use attr::*;
 use base64::{engine::general_purpose, Engine as _};
 use bitflags::bitflags;
-use grid::row::Row;
+use grid::row::{Row, SemanticCommand};
 use pos::{
     Boundary, CharsetIndex, Column, Cursor, CursorState, Direction, Line, Pos, Side,
 };
@@ -431,6 +431,14 @@ const TITLE_STACK_MAX_DEPTH: usize = 4096;
 // Max size of the keyboard modes.
 const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 8;
 
+/// How a command ended, as reported by OSC 133 `D`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CommandEnd {
+    /// `None` when the shell reported no status, as it does for a
+    /// command line that was abandoned rather than run.
+    pub exit_status: Option<i32>,
+}
+
 #[derive(Debug)]
 pub struct Crosswords<U>
 where
@@ -467,6 +475,9 @@ where
     pub route_id: usize,
     title_stack: Vec<String>,
     pub current_directory: Option<std::path::PathBuf>,
+    /// How the last command ended, from OSC 133 `D`. `None` until a
+    /// command ends, and again while the next one runs.
+    pub last_command_end: Option<CommandEnd>,
     /// Shell state from `OSC 1337 ; SetUserVar` (iTerm2 style).
     pub user_vars: rustc_hash::FxHashMap<String, String>,
 
@@ -542,6 +553,7 @@ impl<U: EventListener> Crosswords<U> {
             route_id,
             title_stack: Default::default(),
             current_directory: None,
+            last_command_end: None,
             user_vars: rustc_hash::FxHashMap::default(),
             damage_event_in_flight: false,
             sync_update_started: None,
@@ -726,6 +738,45 @@ impl<U: EventListener> Crosswords<U> {
             let new_offset = (-line).max(0);
             self.scroll_display(Scroll::Delta(new_offset - display_offset));
         }
+    }
+
+    /// The rows holding the output of the last command, running or
+    /// finished, from OSC 133 marks. `None` when no command has
+    /// marked its output, when the last one printed nothing, or when
+    /// the row its output started on has left scrollback.
+    pub fn last_command_output(&self) -> Option<std::ops::RangeInclusive<Line>> {
+        use crate::crosswords::grid::row::SemanticPrompt;
+
+        let cursor = self.grid.cursor.pos.row.0;
+        let history = self.grid.history_size() as i32;
+
+        let start = (-history..=cursor)
+            .rev()
+            .find(|line| self.grid[Line(*line)].semantic_command.output_start)?;
+        let start_row = &self.grid[Line(start)];
+        if start_row.semantic_command.end {
+            // Ended on the row it started on: no output.
+            return None;
+        }
+        // A shell that marks the output before leaving the command
+        // line has marked a prompt row; the output starts below it.
+        let first = if start_row.semantic_prompt == SemanticPrompt::None {
+            start
+        } else {
+            start + 1
+        };
+
+        // The output runs to where the command ended, or to the next
+        // prompt from a shell that reports no end, or to the cursor
+        // while the command is still running.
+        let after = (first..=cursor)
+            .find(|line| {
+                let row = &self.grid[Line(*line)];
+                row.semantic_command.end || row.semantic_prompt != SemanticPrompt::None
+            })
+            .unwrap_or(cursor + 1);
+
+        (first < after).then(|| Line(first)..=Line(after - 1))
     }
 
     #[inline]
@@ -3398,6 +3449,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
         self.tabs = TabStops::new(self.grid.columns());
         self.title_stack = Vec::new();
+        self.last_command_end = None;
         self.modify_other_keys = 0;
         self.keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
         self.inactive_keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
@@ -3550,6 +3602,22 @@ impl<U: EventListener> Handler for Crosswords<U> {
     ) {
         let row = self.grid.cursor.pos.row;
         self.grid[row].semantic_prompt = mark;
+    }
+
+    fn set_semantic_output_start(&mut self) {
+        let row = self.grid.cursor.pos.row;
+        // A new command: whatever ended on this row is behind it.
+        self.grid[row].semantic_command = SemanticCommand {
+            output_start: true,
+            end: false,
+        };
+        self.last_command_end = None;
+    }
+
+    fn set_semantic_command_end(&mut self, end: CommandEnd) {
+        let row = self.grid.cursor.pos.row;
+        self.grid[row].semantic_command.end = true;
+        self.last_command_end = Some(end);
     }
 
     fn set_user_var(&mut self, name: String, value: String) {
@@ -6417,7 +6485,180 @@ mod tests {
 
         assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);
         assert_eq!(cw.grid[Line(1)].semantic_prompt, SemanticPrompt::None);
+        assert!(!cw.grid[Line(0)].semantic_command.output_start);
+        assert!(cw.grid[Line(1)].semantic_command.output_start);
+        assert!(cw.grid[Line(2)].semantic_command.end);
+        assert_eq!(
+            cw.last_command_end,
+            Some(CommandEnd {
+                exit_status: Some(0)
+            })
+        );
+        assert_eq!(cw.last_command_output(), Some(Line(1)..=Line(1)));
         assert_eq!(cw.user_vars.get("foo").map(String::as_str), Some("hello"));
+    }
+
+    /// A 40x8 terminal fed `bytes`, with `\n` standing for CR LF.
+    fn shell_session(bytes: &str) -> Crosswords<VoidListener> {
+        use crate::performer::handler::Processor;
+
+        let size = CrosswordsSize::new(40, 8);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = Processor::default();
+        processor.advance(&mut cw, bytes.replace('\n', "\r\n").as_bytes());
+        cw
+    }
+
+    fn row_text(cw: &Crosswords<VoidListener>, line: i32) -> String {
+        let row = &cw.grid[Line(line)];
+        let text: String = row.inner.iter().map(|square| square.c()).collect();
+        text.trim_end_matches(['\0', ' ']).to_string()
+    }
+
+    fn last_output_text(cw: &Crosswords<VoidListener>) -> Option<Vec<String>> {
+        let rows = cw.last_command_output()?;
+        Some(
+            (rows.start().0..=rows.end().0)
+                .map(|line| row_text(cw, line))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn last_command_output_is_none_without_marks() {
+        let cw = shell_session("$ ls\nfile\n$ ");
+        assert_eq!(cw.last_command_output(), None);
+    }
+
+    #[test]
+    fn last_command_output_of_a_finished_command() {
+        let cw = shell_session(
+            "\x1b]133;A\x07$ \x1b]133;B\x07one\n\
+             \x1b]133;C\x07first\n\
+             \x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07two\n\
+             \x1b]133;C\x07second\nthird\n\
+             \x1b]133;D;1\x07\x1b]133;A\x07$ ",
+        );
+        assert_eq!(
+            last_output_text(&cw),
+            Some(vec!["second".to_string(), "third".to_string()])
+        );
+        assert!(cw.grid[cw.grid.cursor.pos.row].semantic_command.end);
+        assert_eq!(
+            cw.last_command_end,
+            Some(CommandEnd {
+                exit_status: Some(1)
+            })
+        );
+    }
+
+    #[test]
+    fn last_command_output_skips_a_prompt_of_several_rows() {
+        // The row the command is typed on carries no prompt mark.
+        let cw = shell_session(
+            "\x1b]133;A\x07~/src main\n> \x1b]133;B\x07ls\n\
+             \x1b]133;C\x07file\n\
+             \x1b]133;D;0\x07\x1b]133;A\x07~/src main\n> ",
+        );
+        assert_eq!(last_output_text(&cw), Some(vec!["file".to_string()]));
+    }
+
+    #[test]
+    fn last_command_output_of_a_running_command_ends_at_the_cursor() {
+        let cw = shell_session(
+            "\x1b]133;A\x07$ \x1b]133;B\x07build\n\
+             \x1b]133;C\x07step 1\nstep 2",
+        );
+        assert_eq!(
+            last_output_text(&cw),
+            Some(vec!["step 1".to_string(), "step 2".to_string()])
+        );
+        assert_eq!(cw.last_command_end, None);
+    }
+
+    #[test]
+    fn last_command_output_is_none_for_a_command_that_printed_nothing() {
+        let cw = shell_session(
+            "\x1b]133;A\x07$ \x1b]133;B\x07ls\n\
+             \x1b]133;C\x07file\n\
+             \x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07true\n\
+             \x1b]133;C\x07\x1b]133;D;0\x07\x1b]133;A\x07$ ",
+        );
+        assert_eq!(cw.last_command_output(), None);
+    }
+
+    #[test]
+    fn last_command_output_ends_at_the_next_prompt_without_an_end_mark() {
+        let cw = shell_session(
+            "\x1b]133;A\x07$ ls\n\
+             \x1b]133;C\x07file\n\
+             \x1b]133;A\x07$ ",
+        );
+        assert_eq!(last_output_text(&cw), Some(vec!["file".to_string()]));
+    }
+
+    #[test]
+    fn last_command_output_starts_below_a_prompt_row_marked_as_output() {
+        // The output mark arrives before the shell leaves the command
+        // line, so it lands on the prompt row.
+        let cw = shell_session(
+            "\x1b]133;A\x07$ ls\x1b]133;C\x07\n\
+             file\n\
+             \x1b]133;D;0\x07\x1b]133;A\x07$ ",
+        );
+        assert_eq!(last_output_text(&cw), Some(vec!["file".to_string()]));
+    }
+
+    #[test]
+    fn last_command_output_reaches_into_scrollback() {
+        let mut session = String::from("\x1b]133;A\x07$ seq\n\x1b]133;C\x07");
+        for line in 0..20 {
+            session.push_str(&format!("line {line}\n"));
+        }
+        session.push_str("\x1b]133;D;0\x07\x1b]133;A\x07$ ");
+        let cw = shell_session(&session);
+
+        let output = last_output_text(&cw).unwrap();
+        assert_eq!(output.len(), 20);
+        assert_eq!(output[0], "line 0");
+        assert_eq!(output[19], "line 19");
+        assert!(*cw.last_command_output().unwrap().start() < Line(0));
+    }
+
+    #[test]
+    fn last_command_output_survives_reflow() {
+        let mut cw = shell_session(
+            "\x1b]133;A\x07$ \x1b]133;B\x07ls\n\
+             \x1b]133;C\x07a line long enough to wrap when narrow\nshort\n\
+             \x1b]133;D;0\x07\x1b]133;A\x07$ ",
+        );
+
+        cw.resize(CrosswordsSize::new(20, 8));
+        assert_eq!(
+            last_output_text(&cw),
+            Some(vec![
+                "a line long enough t".to_string(),
+                "o wrap when narrow".to_string(),
+                "short".to_string(),
+            ])
+        );
+
+        cw.resize(CrosswordsSize::new(40, 8));
+        assert_eq!(
+            last_output_text(&cw),
+            Some(vec![
+                "a line long enough to wrap when narrow".to_string(),
+                "short".to_string(),
+            ])
+        );
     }
 
     #[test]

@@ -11,7 +11,9 @@ use cursor_icon::CursorIcon;
 
 use crate::ansi::CursorShape;
 use crate::config::colors::{ColorRgb, NamedColor};
+use crate::crosswords::grid::row::SemanticPrompt;
 use crate::crosswords::square::Hyperlink;
+use crate::crosswords::CommandEnd;
 use crate::event::{ProgressReport, ProgressState};
 use crate::simd_utf8;
 
@@ -42,28 +44,44 @@ pub(super) enum PaletteReset {
     Indices(Vec<u8>),
 }
 
+/// What an OSC 133 semantic prompt sequence marks on the cursor row.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum SemanticMark {
+    Prompt(SemanticPrompt),
+    OutputStart,
+    CommandEnd(CommandEnd),
+}
+
 /// Parse an OSC 133 semantic prompt sequence into the row mark it
 /// should set, if any. `A` and `P` mark the cursor row as a prompt
-/// (`P;k=c` / `P;k=s` as a continuation); the remaining subcommands
-/// (`B`, `C`, `D`, `I`, `L`, `N`) and all `key=value` options are
-/// accepted and ignored, matching the spec's leniency.
-pub(super) fn parse_semantic_prompt(
-    params: &[&[u8]],
-) -> Option<crate::crosswords::grid::row::SemanticPrompt> {
-    use crate::crosswords::grid::row::SemanticPrompt;
-
+/// (`P;k=c` / `P;k=s` as a continuation), `C` as the start of a
+/// command's output, and `D` as where the command ended, with the
+/// exit status when the first option is one. The remaining
+/// subcommands (`B`, `I`, `L`, `N`) and all other `key=value` options
+/// are accepted and ignored, matching the spec's leniency.
+pub(super) fn parse_semantic_mark(params: &[&[u8]]) -> Option<SemanticMark> {
     let subcommand = *params.get(1)?.first()?;
     match subcommand {
-        b'A' => Some(SemanticPrompt::Prompt),
+        b'A' => Some(SemanticMark::Prompt(SemanticPrompt::Prompt)),
         b'P' => {
             for option in &params[2..] {
                 if let Some(kind) = option.strip_prefix(b"k=") {
                     if kind == b"c" || kind == b"s" {
-                        return Some(SemanticPrompt::PromptContinuation);
+                        return Some(SemanticMark::Prompt(
+                            SemanticPrompt::PromptContinuation,
+                        ));
                     }
                 }
             }
-            Some(SemanticPrompt::Prompt)
+            Some(SemanticMark::Prompt(SemanticPrompt::Prompt))
+        }
+        b'C' => Some(SemanticMark::OutputStart),
+        b'D' => {
+            let exit_status = params
+                .get(2)
+                .and_then(|status| std::str::from_utf8(status).ok())
+                .and_then(|status| status.parse().ok());
+            Some(SemanticMark::CommandEnd(CommandEnd { exit_status }))
         }
         _ => None,
     }
