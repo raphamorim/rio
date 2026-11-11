@@ -387,7 +387,9 @@ This section documents the *[renderer]* table of the configuration file.
 
 *performance* = _"High"_ | _"Low"_
 
-	Rendering performance mode.
+	Which GPU to prefer on a machine with more than one. _"High"_ prefers
+	the discrete GPU and _"Low"_ the integrated one. Takes effect on
+	restart.
 
 	Default: _"High"_
 
