@@ -34,7 +34,7 @@ use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::layout::Margin;
-use rio_backend::config::renderer::Backend;
+use rio_backend::config::renderer::{Backend, Performance};
 use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
@@ -214,6 +214,9 @@ impl Screen<'_> {
             // `window.opacity < 1` does. Fixed at surface creation; a
             // live-reloaded opacity change takes effect on restart.
             prefer_alpha_capable_adapter: !window_should_be_opaque(config),
+            // Fixed at device creation, like the line above; a
+            // live-reloaded change takes effect on restart.
+            prefer_integrated_gpu: config.renderer.performance == Performance::Low,
         };
 
         let mut sugarloaf: Sugarloaf = match Sugarloaf::new(

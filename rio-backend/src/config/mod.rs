@@ -700,6 +700,9 @@ impl Config {
             if let Some(strategy) = &renderer_overwrite.strategy {
                 self.renderer.strategy = strategy.clone();
             }
+            if let Some(performance) = renderer_overwrite.performance {
+                self.renderer.performance = performance;
+            }
         }
 
         // Append platform-specific env vars to the global ones
@@ -823,6 +826,7 @@ mod tests {
         );
 
         assert!(!result.renderer.disable_unfocused_render);
+        assert_eq!(result.renderer.performance, renderer::Performance::High);
 
         assert_eq!(result.fonts, SugarloafFonts::default());
         assert_eq!(result.theme, String::default());
@@ -1288,6 +1292,7 @@ mod tests {
         );
 
         assert_eq!(result.renderer.backend, renderer::Backend::Webgpu);
+        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         // Developer
         assert_eq!(result.developer.log_level, String::from("INFO"));
         assert!(result.developer.enable_fps_counter);
@@ -1594,6 +1599,27 @@ mod tests {
 
         // Backend should be set
         assert_eq!(result.renderer.backend, renderer::Backend::Metal);
+        // Other fields should be preserved
+        assert!(result.renderer.disable_unfocused_render);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_platform_renderer_performance_merge() {
+        let mut result = create_temporary_config(
+            "platform-renderer-performance",
+            r#"
+            [renderer]
+            disable-unfocused-render = true
+
+            [platform]
+            linux.renderer.performance = "Low"
+        "#,
+        );
+
+        result.overwrite_based_on_platform();
+
+        assert_eq!(result.renderer.performance, renderer::Performance::Low);
         // Other fields should be preserved
         assert!(result.renderer.disable_unfocused_render);
     }

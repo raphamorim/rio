@@ -27,6 +27,12 @@ pub struct Renderer {
     /// are not yet implemented on the CPU path.
     #[serde(default = "default_use_cpu", rename = "use-cpu")]
     pub use_cpu: bool,
+    /// Which GPU to ask for on a machine with more than one. `High`
+    /// (the default) prefers the discrete GPU; `Low` prefers the
+    /// integrated one, so a hybrid laptop can leave its discrete GPU
+    /// asleep. A software rasterizer is never preferred over hardware.
+    #[serde(default = "Performance::default")]
+    pub performance: Performance,
 }
 
 fn default_use_cpu() -> bool {
@@ -69,6 +75,25 @@ impl Default for Renderer {
             filters: Vec::default(),
             strategy: RendererStategy::Events,
             use_cpu: default_use_cpu(),
+            performance: Performance::default(),
+        }
+    }
+}
+
+#[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
+pub enum Performance {
+    #[default]
+    #[serde(alias = "high")]
+    High,
+    #[serde(alias = "low")]
+    Low,
+}
+
+impl Display for Performance {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Performance::High => write!(f, "High"),
+            Performance::Low => write!(f, "Low"),
         }
     }
 }

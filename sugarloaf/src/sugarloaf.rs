@@ -135,6 +135,11 @@ pub struct SugarloafRenderer {
     /// `Opaque`, while Vulkan exposes `PreMultiplied`, so which adapter
     /// wgpu happens to pick decides whether transparency works at all.
     pub prefer_alpha_capable_adapter: bool,
+    /// Prefer the integrated GPU over the discrete one when a machine
+    /// has both, so a hybrid laptop can leave its discrete GPU asleep.
+    /// Honoured by the native Vulkan and wgpu backends. Either way a
+    /// hardware GPU is preferred over a software rasterizer.
+    pub prefer_integrated_gpu: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -193,6 +198,7 @@ impl Default for SugarloafRenderer {
             font_features: None,
             colorspace: Colorspace::default(),
             prefer_alpha_capable_adapter: false,
+            prefer_integrated_gpu: false,
         }
     }
 }
