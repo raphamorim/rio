@@ -476,6 +476,11 @@ where
 
     /// When the last BSU of the active synchronized update arrived.
     pub sync_update_started: Option<crate::time::Instant>,
+    /// Whether the embedder handles OSC 7501. Off by default: until an
+    /// embedder opts in, the support query goes unanswered (so programs
+    /// don't believe in a protocol nobody acts on) and reports are
+    /// dropped here instead of waking the embedder for nothing.
+    program_status_enabled: bool,
     /// Whether an OSC 7501 report arrived since the last full reset.
     /// Until one does, prompts and resets send no program-status events,
     /// so terminals that never use the protocol never wake the embedder
@@ -550,6 +555,7 @@ impl<U: EventListener> Crosswords<U> {
             user_vars: rustc_hash::FxHashMap::default(),
             damage_event_in_flight: false,
             sync_update_started: None,
+            program_status_enabled: false,
             program_status_seen: false,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
@@ -564,6 +570,12 @@ impl<U: EventListener> Crosswords<U> {
     /// program's DECSET/DECRST still wins at runtime. Defaults to
     /// enabled; consumers whose renderers or downstream protocols
     /// assume legacy wcwidth cell layout can turn it off.
+    /// Opt in to OSC 7501 program status: answer the support query and
+    /// send reports and lifecycle events to the listener.
+    pub fn set_program_status_enabled(&mut self, enabled: bool) {
+        self.program_status_enabled = enabled;
+    }
+
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
         self.grapheme_clustering_default = enabled;
         self.mode.set(Mode::GRAPHEME_CLUSTER, enabled);
@@ -3546,6 +3558,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn set_program_status(&mut self, status: crate::event::ProgramStatus) {
+        if !self.program_status_enabled {
+            return;
+        }
         self.program_status_seen = true;
         self.event_proxy.send_event(
             RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::Report(status)),
@@ -3554,9 +3569,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn report_program_status_support(&mut self, terminator: &str) {
-        // The bare form: the spec's default states and kinds are exactly
-        // what this terminal parses.
-        let text = format!("\x1b]7501;?{terminator}");
+        if !self.program_status_enabled {
+            return;
+        }
+        // The reply only ever carries this fixed list, never anything a
+        // program reported (the spec forbids echoing report contents).
+        let text = format!(
+            "\x1b]7501;{}{terminator}",
+            crate::event::PROGRAM_STATUS_QUERY_REPLY
+        );
         self.event_proxy
             .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
     }
@@ -5956,6 +5977,36 @@ mod tests {
     }
 
     #[test]
+    fn osc_7501_is_silent_until_the_embedder_opts_in() {
+        let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(4, 4),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+
+        // No reply to the query, no report, and no lifecycle events.
+        parser.advance(&mut cw, b"\x1b]7501;?\x07");
+        parser.advance(&mut cw, b"\x1b]7501;state=working\x07");
+        parser.advance(&mut cw, b"\x1b]133;A\x07\x1bc");
+
+        assert!(
+            !events.borrow().iter().any(|e| matches!(
+                e,
+                RioEvent::ProgramStatus(_) | RioEvent::PtyWrite(..)
+            )),
+            "{:?}",
+            events.borrow()
+        );
+    }
+
+    #[test]
     fn osc_7501_program_status_events() {
         use crate::event::{BlockedKind, ProgramState, ProgramStatusEvent};
 
@@ -5970,6 +6021,7 @@ mod tests {
             0,
             10,
         );
+        cw.set_program_status_enabled(true);
         let mut parser = crate::performer::handler::Processor::default();
 
         // Query (BEL-terminated), a report (ST-terminated), a rejected
@@ -6001,7 +6053,13 @@ mod tests {
             .filter(|e| matches!(e, RioEvent::ProgramStatus(_) | RioEvent::PtyWrite(..)))
             .collect();
         assert_eq!(seen.len(), 6, "{seen:?}");
-        assert!(matches!(&seen[0], RioEvent::PtyWrite(_, t) if t == "\x1b]7501;?\x07"));
+        assert!(matches!(
+            &seen[0],
+            RioEvent::PtyWrite(_, t) if *t == format!(
+                "\x1b]7501;{}\x07",
+                crate::event::PROGRAM_STATUS_QUERY_REPLY
+            )
+        ));
         match &seen[1] {
             RioEvent::ProgramStatus(ProgramStatusEvent::Report(r)) => {
                 assert_eq!(r.state, ProgramState::Blocked);

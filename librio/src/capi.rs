@@ -318,6 +318,10 @@ impl SurfaceDelegate for CDelegate {
             cb(self.config.userdata, surface);
         }
     }
+
+    fn handles_program_status(&self) -> bool {
+        self.config.program_status_cb.is_some()
+    }
 }
 
 impl CDelegate {
