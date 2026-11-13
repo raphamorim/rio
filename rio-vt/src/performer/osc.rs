@@ -74,12 +74,11 @@ pub(super) fn parse_semantic_prompt(
 }
 
 /// The exit status of an OSC 133 `D` (command finished): its first
-/// option, when that is a bare integer (`D;0`, `D;127`). Exit codes
-/// are a byte, so any integer outside 0..=255, however long or
-/// negative, counts as a generic failure. `None` when the shell sent
+/// option, when that is a bare integer (`D;0`, `D;127`, `D;-1`). A
+/// number too large for 32 bits saturates. `None` when the shell sent
 /// no status, as it does for a command line that was abandoned rather
 /// than run, or when the first option is a `key=value` pair.
-pub(super) fn parse_exit_status(option: Option<&[u8]>) -> Option<u8> {
+pub(super) fn parse_exit_status(option: Option<&[u8]>) -> Option<i32> {
     let raw = option?;
     let (negative, digits) = match raw.split_first()? {
         (b'-', digits) => (true, digits),
@@ -89,14 +88,14 @@ pub(super) fn parse_exit_status(option: Option<&[u8]>) -> Option<u8> {
     if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
         return None;
     }
-    // `None` here is an overflow: a number too large for a byte.
-    let status = digits.iter().try_fold(0u8, |acc, digit| {
-        acc.checked_mul(10)?.checked_add(digit - b'0')
+    let magnitude = digits.iter().fold(0u32, |acc, digit| {
+        acc.saturating_mul(10)
+            .saturating_add(u32::from(digit - b'0'))
     });
-    Some(match status {
-        Some(0) => 0,
-        Some(code) if !negative => code,
-        _ => 1,
+    Some(if negative {
+        i32::try_from(magnitude).map_or(i32::MIN, |m| -m)
+    } else {
+        i32::try_from(magnitude).unwrap_or(i32::MAX)
     })
 }
 

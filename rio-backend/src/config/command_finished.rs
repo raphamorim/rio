@@ -22,13 +22,15 @@ pub enum NotifyWhen {
 pub struct NotifyOnCommandFinish {
     #[serde(default)]
     pub when: NotifyWhen,
-    /// Ring the bell, with the same audio and tab indicator as BEL.
+    /// Ring the bell as BEL would: the audio bell, and the tab
+    /// indicator when the command's tab is not the current one.
     #[serde(default = "default_bell")]
     pub bell: bool,
     /// Send a desktop notification naming the exit status and duration.
     #[serde(default)]
     pub notify: bool,
-    /// Commands shorter than this many milliseconds are not announced.
+    /// Commands that ran this many milliseconds or less are not
+    /// announced.
     #[serde(default = "default_after")]
     pub after: u64,
 }

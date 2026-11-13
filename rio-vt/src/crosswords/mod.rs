@@ -3630,7 +3630,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.command_started_at = Some(crate::time::Instant::now());
     }
 
-    fn command_end(&mut self, exit_status: Option<u8>) {
+    fn command_end(&mut self, exit_status: Option<i32>) {
         // Without a `C` there is no command to report: the shell is
         // closing a command line it never ran, or marks only ends.
         let Some(started) = self.command_started_at.take() else {
@@ -6040,7 +6040,7 @@ mod tests {
     /// The `(route_id, exit_status)` of every finished command reported.
     fn finished_commands(
         events: &std::cell::RefCell<Vec<RioEvent>>,
-    ) -> Vec<(usize, Option<u8>)> {
+    ) -> Vec<(usize, Option<i32>)> {
         events
             .borrow()
             .iter()

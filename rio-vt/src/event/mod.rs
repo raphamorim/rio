@@ -271,7 +271,7 @@ pub enum RioEvent {
     /// command's output.
     CommandFinished {
         route_id: usize,
-        exit_status: Option<u8>,
+        exit_status: Option<i32>,
         duration: crate::time::Duration,
     },
 

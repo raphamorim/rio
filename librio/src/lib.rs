@@ -137,7 +137,7 @@ pub enum Action {
     /// is `None` when the shell sent none; `duration` runs from the
     /// start of the command's output.
     CommandFinished {
-        exit_status: Option<u8>,
+        exit_status: Option<i32>,
         duration: std::time::Duration,
     },
 }
@@ -2071,7 +2071,7 @@ mod tests {
         surface.inject_output(b"\x1b]133;C\x07\x1b]133;D\x07");
 
         let actions = delegate.actions.lock().unwrap();
-        let finished: Vec<Option<u8>> = actions
+        let finished: Vec<Option<i32>> = actions
             .iter()
             .filter_map(|a| match a {
                 Action::CommandFinished { exit_status, .. } => Some(*exit_status),

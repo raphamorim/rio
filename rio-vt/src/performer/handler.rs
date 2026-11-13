@@ -397,7 +397,7 @@ pub trait Handler {
 
     /// OSC 133 `D`: the command finished, with its exit status when
     /// the shell sent one.
-    fn command_end(&mut self, _exit_status: Option<u8>) {}
+    fn command_end(&mut self, _exit_status: Option<i32>) {}
 
     /// Report current keyboard mode.
     fn report_keyboard_mode(&mut self) {}
@@ -2445,18 +2445,18 @@ mod tests {
 
         assert_eq!(parse(Some(b"0")), Some(0));
         assert_eq!(parse(Some(b"127")), Some(127));
-        assert_eq!(parse(Some(b"255")), Some(255));
-        // Outside a byte: a failure, whatever the number.
-        assert_eq!(parse(Some(b"256")), Some(1));
-        assert_eq!(parse(Some(b"-1")), Some(1));
-        assert_eq!(parse(Some(b"99999999999999999999999")), Some(1));
+        assert_eq!(parse(Some(b"256")), Some(256));
+        assert_eq!(parse(Some(b"-1")), Some(-1));
+        assert_eq!(parse(Some(b"+1")), Some(1));
         assert_eq!(parse(Some(b"-0")), Some(0));
+        // Too large for the type: saturates rather than vanishing.
+        assert_eq!(parse(Some(b"99999999999999999999999")), Some(i32::MAX));
+        assert_eq!(parse(Some(b"-99999999999999999999999")), Some(i32::MIN));
         // No status sent, or the first option is not one.
         assert_eq!(parse(None), None);
         assert_eq!(parse(Some(b"")), None);
         assert_eq!(parse(Some(b"aid=1")), None);
         assert_eq!(parse(Some(b"1_0")), None);
-        assert_eq!(parse(Some(b"+1")), Some(1));
         assert_eq!(parse(Some(b"+")), None);
         assert_eq!(parse(Some(b"-")), None);
         assert_eq!(parse(Some(b"\xff")), None);

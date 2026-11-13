@@ -49,6 +49,22 @@ pub struct Application<'a> {
     quake_previous_app: Option<i32>,
 }
 
+/// A command's running time for a notification: `1h 2m 3s`, `2m 3s`,
+/// or `3.2s` under a minute.
+fn format_duration(duration: std::time::Duration) -> String {
+    // Decide the form from the rounded tenths, so 59.97s is "1m 0s"
+    // and not "60.0s".
+    let tenths = (duration.as_secs_f64() * 10.0).round() as u64;
+    if tenths < 600 {
+        return format!("{}.{}s", tenths / 10, tenths % 10);
+    }
+    let secs = tenths / 10;
+    match (secs / 3600, (secs % 3600) / 60, secs % 60) {
+        (0, m, s) => format!("{m}m {s}s"),
+        (h, m, s) => format!("{h}h {m}m {s}s"),
+    }
+}
+
 impl Application<'_> {
     pub fn new<'app>(
         config: rio_backend::config::Config,
@@ -188,16 +204,19 @@ impl Application<'_> {
         &mut self,
         window_id: rio_backend::event::WindowId,
         route_id: usize,
-        exit_status: Option<u8>,
+        exit_status: Option<i32>,
         duration: std::time::Duration,
     ) {
         use rio_backend::config::command_finished::NotifyWhen;
 
         let config = self.config.notify_on_command_finish;
-        let focused = self.router.routes.get(&window_id).is_some_and(|route| {
-            route.window.is_focused
-                && route.window.screen.ctx().current_route() == route_id
-        });
+        // The window may be gone by the time the event is handled; a
+        // closed window has nothing to announce.
+        let Some(route) = self.router.routes.get(&window_id) else {
+            return;
+        };
+        let focused = route.window.is_focused
+            && route.window.screen.ctx().current_route() == route_id;
         match config.when {
             NotifyWhen::Never => return,
             NotifyWhen::Unfocused if focused => return,
@@ -211,17 +230,17 @@ impl Application<'_> {
             self.ring_bell(window_id, route_id);
         }
         if config.notify {
-            let seconds = duration.as_secs_f64();
-            let title = match exit_status {
-                None => "Command Finished",
-                Some(0) => "Command Succeeded",
-                Some(_) => "Command Failed",
-            };
-            let body = match exit_status {
-                None => format!("Command took {seconds:.1}s."),
-                Some(code) => {
-                    format!("Command took {seconds:.1}s and exited with code {code}.")
-                }
+            let took = format_duration(duration);
+            let (title, body) = match exit_status {
+                None => ("Command Finished", format!("Command took {took}.")),
+                Some(0) => (
+                    "Command Succeeded",
+                    format!("Command took {took} and exited with code 0."),
+                ),
+                Some(code) => (
+                    "Command Failed",
+                    format!("Command took {took} and exited with code {code}."),
+                ),
             };
             self.handle_desktop_notification(title, &body);
         }
@@ -2575,4 +2594,19 @@ where
     std::thread::sleep(crate::constants::BELL_DURATION);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_duration;
+    use std::time::Duration;
+
+    #[test]
+    fn durations_read_as_people_say_them() {
+        assert_eq!(format_duration(Duration::from_millis(3_240)), "3.2s");
+        assert_eq!(format_duration(Duration::from_secs(59)), "59.0s");
+        assert_eq!(format_duration(Duration::from_millis(59_970)), "1m 0s");
+        assert_eq!(format_duration(Duration::from_secs(123)), "2m 3s");
+        assert_eq!(format_duration(Duration::from_secs(7_323)), "2h 2m 3s");
+    }
 }
