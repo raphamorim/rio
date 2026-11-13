@@ -511,12 +511,13 @@ struct ApcState {
     overflowed: bool,
 }
 
-/// Longest APC sequence the terminal accumulates. Kitty graphics
-/// chunks are at most 4 KiB of base64 and glyph protocol payloads are
-/// capped at 64 KiB, so this is generous for every real client while
+/// Longest APC sequence the terminal accumulates. The kitty protocol
+/// asks for 4 KiB chunks but some clients send a whole base64 image in
+/// one APC, so the cap is sized for that while
 /// an unterminated `ESC _` can no longer grow the buffer until the
-/// process is killed.
-const MAX_APC_BYTES: usize = 4 * 1024 * 1024;
+/// process is killed. Glyph protocol payloads are capped separately at
+/// 64 KiB.
+const MAX_APC_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct Processor {

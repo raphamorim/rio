@@ -21,18 +21,14 @@ const MAX_SIZE: usize = 400 * 1024 * 1024;
 /// mid-stream.
 const CHUNK_STALE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Most chunked uploads kept in flight at once. Staleness eviction only
-/// runs when another graphics command arrives, so without a count cap a
-/// client could park an unbounded number of partial uploads. Real
-/// clients transmit one image at a time; when the cap is hit the least
-/// recently touched upload makes room.
-const MAX_INCOMPLETE_UPLOADS: usize = 16;
-
-/// Largest up-front reservation made from a chunked upload's declared
-/// `S=` size. The declared size is a client claim; a bogus one must not
-/// turn into a multi-gigabyte allocation (which aborts the process)
-/// before a single byte of image data has arrived.
-const MAX_CHUNK_PREALLOC: usize = 16 * 1024 * 1024;
+/// Chunked uploads kept in flight at once. The protocol forbids other
+/// graphics commands between the chunks of one transmission, and kitty
+/// itself keeps exactly one load in progress, so a new transmission
+/// abandons the one before it. Staleness eviction alone
+/// was not enough: it only runs when another command arrives, so a
+/// client could park any number of partial uploads. Storage stays keyed
+/// by id so continuation chunks that repeat their id find their upload.
+const MAX_INCOMPLETE_UPLOADS: usize = 1;
 
 /// Per-terminal state for Kitty graphics protocol.
 /// This stores the accumulated command state for chunked transmissions.
@@ -518,78 +514,36 @@ pub fn parse(
         // chunks can simply append their bytes.
         use std::collections::hash_map::Entry;
 
-        // Pending bytes across every upload (this one included) stay
-        // within one image's budget, so parked partial uploads cannot
-        // add up past it however many there are. `incomplete_images`
-        // holds at most MAX_INCOMPLETE_UPLOADS entries, so the sum is
-        // cheap.
-        let pending: usize = state
-            .incomplete_images
-            .values()
-            .map(|stored| stored.payload.len())
-            .sum();
-        if pending.saturating_add(cmd.payload.len()) > MAX_SIZE {
-            debug!(
-                "Dropping chunked upload {}: {} bytes already pending",
-                image_key, pending
-            );
-            state.incomplete_images.remove(&image_key);
-            state.current_transmission_key = 0;
-            return None;
-        }
-
-        if !state.incomplete_images.contains_key(&image_key) {
-            // A new upload. The declared size is checked here, where
-            // the file path already checks it, so a client cannot
-            // announce more than the terminal would ever accept.
-            let expected_size = cmd.size as usize;
-            if expected_size > MAX_SIZE {
+        if !state.incomplete_images.contains_key(&image_key)
+            && state.incomplete_images.len() >= MAX_INCOMPLETE_UPLOADS
+        {
+            // A new transmission abandons the one in progress (the
+            // least recently touched, should the cap ever be raised).
+            let victim = state
+                .incomplete_images
+                .iter()
+                .min_by_key(|(_, stored)| stored.last_touched)
+                .map(|(key, _)| *key);
+            if let Some(victim) = victim {
                 debug!(
-                    "Dropping chunked upload {}: declared size {} exceeds MAX_SIZE ({})",
-                    image_key, expected_size, MAX_SIZE
+                    "Abandoning chunked upload {} for new transmission {}",
+                    victim, image_key
                 );
-                state.current_transmission_key = 0;
-                return None;
-            }
-            if state.incomplete_images.len() >= MAX_INCOMPLETE_UPLOADS {
-                let victim = state
-                    .incomplete_images
-                    .iter()
-                    .min_by_key(|(_, stored)| stored.last_touched)
-                    .map(|(key, _)| *key);
-                if let Some(victim) = victim {
-                    debug!(
-                        "Evicting idle chunked upload {} to stay within {} in flight",
-                        victim, MAX_INCOMPLETE_UPLOADS
-                    );
-                    state.incomplete_images.remove(&victim);
-                }
+                state.incomplete_images.remove(&victim);
             }
         }
 
         match state.incomplete_images.entry(image_key) {
             Entry::Vacant(e) => {
-                // First chunk - move cmd into storage (no clone!)
-                // Pre-allocate capacity if size is known to avoid
-                // reallocations, within MAX_CHUNK_PREALLOC; the Vec grows
-                // on its own past that as real bytes arrive.
-                let expected_size = (cmd.size as usize).min(MAX_CHUNK_PREALLOC);
-                if expected_size > 0 && cmd.payload.capacity() < expected_size {
-                    cmd.payload
-                        .reserve(expected_size.saturating_sub(cmd.payload.len()));
-                    debug!(
-                        "First chunk for image key {}: {} bytes, reserved {} bytes total",
-                        image_key,
-                        cmd.payload.len(),
-                        expected_size
-                    );
-                } else {
-                    debug!(
-                        "First chunk for image key {}: {} bytes",
-                        image_key,
-                        cmd.payload.len()
-                    );
-                }
+                // First chunk - move cmd into storage (no clone!). The
+                // declared `S=` is a file/shm read size and says nothing
+                // about direct data, so nothing is reserved from it: the
+                // buffer grows as bytes arrive, within MAX_SIZE.
+                debug!(
+                    "First chunk for image key {}: {} bytes",
+                    image_key,
+                    cmd.payload.len()
+                );
                 cmd.last_touched = Instant::now();
                 e.insert(cmd);
             }
@@ -2821,46 +2775,41 @@ mod tests {
     }
 
     #[test]
-    fn test_declared_size_over_cap_drops_upload_without_reserving() {
-        // `S=` is a client claim. Over MAX_SIZE the upload is dropped
-        // up front; under it the reservation is still bounded.
+    fn test_declared_size_is_not_reserved_for_direct_chunks() {
+        // `S=` is a client claim about file/shm reads; a direct chunked
+        // upload must neither trust it for allocation nor fail on it.
         let mut state = KittyGraphicsState::default();
-
         let huge = format!("a=t,f=32,s=1,v=1,m=1,i=1,S={}", u32::MAX);
         let p = vec![b"G".as_ref(), huge.as_bytes(), b"/wAA"];
-        assert!(parse(&p, &mut state).is_none());
-        assert!(state.incomplete_images.is_empty());
-        assert_eq!(state.current_transmission_key, 0);
-
-        let big = format!("a=t,f=32,s=1,v=1,m=1,i=2,S={}", MAX_SIZE);
-        let p = vec![b"G".as_ref(), big.as_bytes(), b"/wAA"];
         assert!(parse(&p, &mut state).is_some());
-        let stored = state.incomplete_images.get(&2).expect("stored");
+        let stored = state.incomplete_images.get(&1).expect("stored");
+        assert_eq!(stored.payload.len(), 3);
         assert!(
-            stored.payload.capacity() <= MAX_CHUNK_PREALLOC + 4096,
+            stored.payload.capacity() < 1024 * 1024,
             "capacity {} must not follow the declared size",
             stored.payload.capacity()
         );
     }
 
     #[test]
-    fn test_in_flight_uploads_are_capped() {
-        // Parking partial uploads under distinct ids cannot grow the
-        // table past MAX_INCOMPLETE_UPLOADS; the least recently touched
-        // one goes first.
+    fn test_new_transmission_abandons_in_flight_upload() {
+        // One chunked upload at a time, as in kitty: parking partial
+        // uploads under distinct ids leaves only the latest.
         let mut state = KittyGraphicsState::default();
-        for i in 1..=(MAX_INCOMPLETE_UPLOADS as u32 + 4) {
+        for i in 1..=3u32 {
             let ctl = format!("a=t,f=32,s=1,v=1,m=1,i={i}");
             let p = vec![b"G".as_ref(), ctl.as_bytes(), b"/wAA"];
             parse(&p, &mut state).expect("pending chunk");
-            assert!(state.incomplete_images.len() <= MAX_INCOMPLETE_UPLOADS);
+            assert_eq!(state.incomplete_images.len(), MAX_INCOMPLETE_UPLOADS);
+            assert!(state.incomplete_images.contains_key(&i));
         }
-        assert_eq!(state.incomplete_images.len(), MAX_INCOMPLETE_UPLOADS);
         assert!(!state.incomplete_images.contains_key(&1));
-        assert!(state.incomplete_images.contains_key(&5));
-        assert!(state
-            .incomplete_images
-            .contains_key(&(MAX_INCOMPLETE_UPLOADS as u32 + 4)));
+        assert!(!state.incomplete_images.contains_key(&2));
+
+        // Continuation chunks for the surviving upload still land.
+        let p = vec![b"G".as_ref(), b"a=t,m=1,i=3", b"/wAA"];
+        parse(&p, &mut state).expect("pending chunk");
+        assert_eq!(state.incomplete_images[&3].payload.len(), 6);
     }
 
     #[test]
