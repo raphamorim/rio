@@ -12,7 +12,9 @@ use cursor_icon::CursorIcon;
 use crate::ansi::CursorShape;
 use crate::config::colors::{ColorRgb, NamedColor};
 use crate::crosswords::square::Hyperlink;
-use crate::event::{ProgressReport, ProgressState};
+use crate::event::{
+    BlockedKind, ProgramState, ProgramStatus, ProgressReport, ProgressState,
+};
 use crate::simd_utf8;
 
 /// Either a concrete color value or a query for the current value.
@@ -384,6 +386,184 @@ pub(super) fn parse_progress_report(params: &[&[u8]]) -> Option<ProgressReport> 
     Some(ProgressReport { state, progress })
 }
 
+/// An OSC 7501 sequence, after validation.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum ProgramStatusRequest {
+    /// `OSC 7501 ; ? ST`: feature detection, answered in kind.
+    Query,
+    Report(ProgramStatus),
+}
+
+// OSC 7501 limits (Program Status Protocol, rev 0.4). A report over
+// any of them is discarded whole.
+const PROGRAM_STATUS_MAX_SEQUENCE: usize = 4096;
+const PROGRAM_STATUS_MAX_KEY: usize = 16;
+const PROGRAM_STATUS_MAX_APP: usize = 32;
+const PROGRAM_STATUS_MAX_MSG: (usize, usize) = (2732, 2048);
+const PROGRAM_STATUS_MAX_TITLE: (usize, usize) = (256, 192);
+const PROGRAM_STATUS_MAX_ID: usize = 128;
+const PROGRAM_STATUS_MAX_SEGMENT: usize = 32;
+const PROGRAM_STATUS_MAX_DEPTH: usize = 8;
+
+/// OSC 7501 — program status (`state=working:app=cargo:progress=40`).
+///
+/// The body is `key=value` pairs separated by `:`. Malformed pairs and
+/// unknown keys are skipped and a repeated key keeps its last value. The
+/// report is dropped whole when the final `state` is missing or unknown,
+/// the final `id` fails the grammar, any base64 is undecodable or decodes
+/// to control characters, or any size limit is exceeded.
+///
+/// `terminator_len` is 1 for BEL and 2 for `ESC \`, so the 4096-byte cap
+/// applies to the sequence exactly as it arrived.
+pub(super) fn parse_program_status(
+    params: &[&[u8]],
+    terminator_len: usize,
+) -> Option<ProgramStatusRequest> {
+    // Values never contain `;`, but rejoin so a stray one fails the
+    // alphabet check instead of silently truncating the body. The usual
+    // single-param body is borrowed, not copied.
+    let body: std::borrow::Cow<str> = match params {
+        [_, body] => simd_utf8::from_utf8_fast(body).ok()?.into(),
+        _ => join_params(params, 1)?.into(),
+    };
+    // `ESC ] 7501 ;` is 7 bytes.
+    if body.len() + 7 + terminator_len > PROGRAM_STATUS_MAX_SEQUENCE {
+        return None;
+    }
+    if body.trim() == "?" {
+        return Some(ProgramStatusRequest::Query);
+    }
+
+    // `state` and `id` keep their last value, valid or not, and are
+    // judged once the body is read: `state=bogus:state=idle` is idle.
+    let mut state: Option<Option<ProgramState>> = None;
+    let mut id: Option<Option<String>> = None;
+    let mut kind = None;
+    let mut app = None;
+    let mut msg = None;
+    let mut title = None;
+    let mut progress = None;
+
+    for pair in body.split(':') {
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        let (key, value) = (key.trim(), value.trim());
+        if key.len() > PROGRAM_STATUS_MAX_KEY {
+            return None;
+        }
+        let well_formed =
+            !value.is_empty() && value.bytes().all(is_program_status_value_byte);
+        match key {
+            // A malformed `id` must not fall back to the root record, so
+            // unlike other keys it is recorded as invalid, not skipped.
+            "id" => {
+                if value.len() > PROGRAM_STATUS_MAX_ID {
+                    return None;
+                }
+                id = Some(
+                    (well_formed && is_valid_program_status_id(value))
+                        .then(|| value.to_string()),
+                );
+            }
+            _ if !well_formed => continue,
+            "state" => {
+                state = Some(match value {
+                    "idle" => Some(ProgramState::Idle),
+                    "working" => Some(ProgramState::Working),
+                    "done" => Some(ProgramState::Done),
+                    "blocked" => Some(ProgramState::Blocked),
+                    "error" => Some(ProgramState::Error),
+                    "clear" => Some(ProgramState::Clear),
+                    _ => None,
+                })
+            }
+            // Unrecognized kinds are treated as absent.
+            "kind" => {
+                kind = match value {
+                    "permission" => Some(BlockedKind::Permission),
+                    "question" => Some(BlockedKind::Question),
+                    "auth" => Some(BlockedKind::Auth),
+                    _ => None,
+                }
+            }
+            "app" => {
+                if value.len() > PROGRAM_STATUS_MAX_APP {
+                    return None;
+                }
+                app = Some(value.to_string());
+            }
+            "msg" => {
+                msg = Some(decode_program_status_text(value, PROGRAM_STATUS_MAX_MSG)?)
+            }
+            "title" => {
+                title = Some(decode_program_status_text(value, PROGRAM_STATUS_MAX_TITLE)?)
+            }
+            // Not an integer in 0..=100: a malformed pair, skipped.
+            "progress" => {
+                if let Some(p) = value.parse::<u8>().ok().filter(|p| *p <= 100) {
+                    progress = Some(p);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let state = state??;
+    let id = match id {
+        None => None,
+        Some(valid) => Some(valid?),
+    };
+    Some(ProgramStatusRequest::Report(ProgramStatus {
+        state,
+        kind: kind.filter(|_| state == ProgramState::Blocked),
+        app,
+        msg,
+        title,
+        progress: progress
+            .filter(|_| matches!(state, ProgramState::Working | ProgramState::Blocked)),
+        id,
+    }))
+}
+
+/// The value alphabet: letters, digits and `_ . , + / = -`.
+fn is_program_status_value_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"_.,+/=-".contains(&byte)
+}
+
+/// Decode a base64 `msg`/`title`, enforcing its (encoded, decoded) caps
+/// and refusing control characters, which would let a status line carry
+/// its own escape sequences into the embedder's UI.
+fn decode_program_status_text(
+    value: &str,
+    (encoded, decoded): (usize, usize),
+) -> Option<String> {
+    if value.len() > encoded {
+        return None;
+    }
+    let bytes = crate::simd_base64::decode(value.as_bytes())?;
+    if bytes.len() > decoded {
+        return None;
+    }
+    let text = String::from_utf8(bytes).ok()?;
+    if text.chars().any(char::is_control) {
+        return None;
+    }
+    Some(text)
+}
+
+/// `seg(/seg)*`, each segment 1-32 bytes of `[A-Za-z0-9_.+-]`, at most
+/// 8 deep (the 128-byte total is checked by the caller).
+fn is_valid_program_status_id(id: &str) -> bool {
+    id.split('/').count() <= PROGRAM_STATUS_MAX_DEPTH
+        && id.split('/').all(|segment| {
+            (1..=PROGRAM_STATUS_MAX_SEGMENT).contains(&segment.len())
+                && segment
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"_.+-".contains(&b))
+        })
+}
+
 /// Rejoin `params[from..]` with the `;` the OSC parser split on, so a
 /// payload defined as verbatim text survives a `;` inside it.
 pub(super) fn join_params(params: &[&[u8]], from: usize) -> Option<String> {
@@ -519,6 +699,115 @@ pub(super) fn parse_palette_reset(params: &[&[u8]]) -> PaletteReset {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn status(body: &str) -> Option<ProgramStatusRequest> {
+        let params: Vec<&[u8]> = vec![b"7501", body.as_bytes()];
+        parse_program_status(&params, 2)
+    }
+
+    fn report(body: &str) -> ProgramStatus {
+        match status(body) {
+            Some(ProgramStatusRequest::Report(report)) => report,
+            other => panic!("expected a report for {body:?}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn program_status_full_report() {
+        // msg = "Apply plan?", title = "tf"
+        let r = report("state=blocked:kind=permission:app=terraform:msg=QXBwbHkgcGxhbj8=:title=dGY=:id=plan/apply:progress=40");
+        assert_eq!(r.state, ProgramState::Blocked);
+        assert_eq!(r.kind, Some(BlockedKind::Permission));
+        assert_eq!(r.app.as_deref(), Some("terraform"));
+        assert_eq!(r.msg.as_deref(), Some("Apply plan?"));
+        assert_eq!(r.title.as_deref(), Some("tf"));
+        assert_eq!(r.id.as_deref(), Some("plan/apply"));
+        assert_eq!(r.progress, Some(40));
+    }
+
+    #[test]
+    fn program_status_minimal_and_query() {
+        let r = report("state=idle");
+        assert_eq!(r.state, ProgramState::Idle);
+        assert_eq!(
+            (r.kind, r.app, r.msg, r.id, r.progress),
+            (None, None, None, None, None)
+        );
+        assert_eq!(status("?"), Some(ProgramStatusRequest::Query));
+        assert_eq!(report("state=clear").state, ProgramState::Clear);
+    }
+
+    #[test]
+    fn program_status_lenient_parts() {
+        // Whitespace stripped, malformed pairs and unknown keys skipped,
+        // last repeat wins, unknown kind is absent.
+        let r = report(" state = working : junk : future=1 : app=a : app=b ");
+        assert_eq!(r.state, ProgramState::Working);
+        assert_eq!(r.app.as_deref(), Some("b"));
+        assert_eq!(report("state=blocked:kind=telepathy").kind, None);
+        // kind only applies to blocked, progress to working/blocked.
+        assert_eq!(report("state=idle:kind=question").kind, None);
+        assert_eq!(report("state=done:progress=50").progress, None);
+        assert_eq!(report("state=working:progress=101").progress, None);
+    }
+
+    #[test]
+    fn program_status_discards_whole_report() {
+        let long_app = format!("state=idle:app={}", "a".repeat(33));
+        let long_body = format!("state=idle:pad={}", "a".repeat(4096));
+        for body in [
+            "",
+            "app=cargo",                         // no state
+            "state=sleeping",                    // unknown state
+            "state=idle:msg=A",                  // undecodable base64
+            "state=idle:msg=G1sybQ==",           // decodes to ESC [ 2 m
+            "state=idle:id=a//b",                // empty segment
+            "state=idle:id=a/b c",               // byte outside the id grammar
+            "state=idle:id=1/2/3/4/5/6/7/8/9",   // nine levels deep
+            "state=idle:averyveryverylongkey=1", // key over 16 bytes
+            &long_app,
+            &long_body,
+        ] {
+            assert_eq!(status(body), None, "{body}");
+        }
+    }
+
+    #[test]
+    fn program_status_last_repeat_wins() {
+        assert_eq!(report("state=bogus:state=idle").state, ProgramState::Idle);
+        // An empty or out-of-alphabet value is a malformed pair: skipped.
+        assert_eq!(report("state=idle:state=").state, ProgramState::Idle);
+        assert_eq!(report("state=idle:state=!").state, ProgramState::Idle);
+        assert_eq!(status("state=idle:state=bogus"), None);
+        assert_eq!(report("state=idle:id=a//b:id=ok").id.as_deref(), Some("ok"));
+        assert_eq!(status("state=idle:id=ok:id=a//b"), None);
+        // A malformed progress is skipped, not a reset to indeterminate.
+        assert_eq!(
+            report("state=working:progress=40:progress=abc").progress,
+            Some(40)
+        );
+        assert_eq!(
+            report("state=working:progress=40:progress=101").progress,
+            Some(40)
+        );
+    }
+
+    #[test]
+    fn program_status_sequence_cap_counts_the_terminator() {
+        // 7 bytes of `ESC ] 7501 ;` + body + terminator = 4096 exactly.
+        let fill = |len: usize| format!("state=idle:p={}", "a".repeat(len - 13));
+        let bel_max = fill(4096 - 7 - 1);
+        let params: Vec<&[u8]> = vec![b"7501", bel_max.as_bytes()];
+        assert!(parse_program_status(&params, 1).is_some());
+        assert!(parse_program_status(&params, 2).is_none());
+    }
+
+    #[test]
+    fn program_status_skips_malformed_pairs() {
+        // A value outside the alphabet makes only that pair malformed.
+        let r = report("state=working:msg=!!!:app=cargo");
+        assert_eq!((r.msg, r.app.as_deref()), (None, Some("cargo")));
+    }
 
     fn cwd(payload: &str) -> Option<String> {
         parse_current_directory(payload.as_bytes())
