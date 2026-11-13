@@ -501,7 +501,7 @@ struct XtgettcapState {
 /// list of hex-encoded capability names, a few hundred bytes for even
 /// the largest real query, while an unterminated `DCS + q` could grow
 /// the buffer without limit.
-const MAX_XTGETTCAP_BYTES: usize = 64 * 1024;
+const MAX_XTGETTCAP_BYTES: usize = 1024 * 1024;
 
 /// State for accumulating APC (Application Program Command) sequences.
 ///
