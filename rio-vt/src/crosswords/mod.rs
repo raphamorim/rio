@@ -485,6 +485,10 @@ where
     /// for it.
     program_status_seen: bool,
 
+    /// When the running shell command started its output (OSC 133 `C`),
+    /// so `D` can report how long it ran. `None` between commands.
+    command_started_at: Option<crate::time::Instant>,
+
     /// What DECRQM callers see after a full reset: the
     /// consumer-configured default for grapheme clustering (mode
     /// 2027). On by default; embedders serving legacy wcwidth
@@ -554,6 +558,7 @@ impl<U: EventListener> Crosswords<U> {
             sync_update_started: None,
             program_status_enabled: false,
             program_status_seen: false,
+            command_started_at: None,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
             keyboard_mode_idx: 0,
@@ -3468,6 +3473,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         self.event_proxy
             .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+        self.command_started_at = None;
         // RIS drops every OSC 7501 record (DECSTR does not).
         if std::mem::take(&mut self.program_status_seen) {
             self.event_proxy.send_event(
@@ -3609,6 +3615,38 @@ impl<U: EventListener> Handler for Crosswords<U> {
         }
         self.event_proxy.send_event(
             RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::PromptStart),
+            self.window_id,
+        );
+    }
+
+    fn command_start(&mut self) {
+        // A prompt row with the cursor at column zero is being
+        // overwritten by output: shells without a continuation prompt
+        // (fish) mark no `k=s` lines, so a newline from a prompt row
+        // is taken to continue the prompt until the output mark says
+        // otherwise.
+        use crate::crosswords::grid::row::SemanticPrompt;
+        let row = self.grid.cursor.pos.row;
+        if self.grid[row].semantic_prompt != SemanticPrompt::None
+            && self.grid.cursor.pos.col == Column(0)
+        {
+            self.grid[row].semantic_prompt = SemanticPrompt::None;
+        }
+        self.command_started_at = Some(crate::time::Instant::now());
+    }
+
+    fn command_end(&mut self, exit_status: Option<u8>) {
+        // Without a `C` there is no command to report: the shell is
+        // closing a command line it never ran, or marks only ends.
+        let Some(started) = self.command_started_at.take() else {
+            return;
+        };
+        self.event_proxy.send_event(
+            RioEvent::CommandFinished {
+                route_id: self.route_id,
+                exit_status,
+                duration: started.elapsed(),
+            },
             self.window_id,
         );
     }
@@ -6021,6 +6059,79 @@ mod tests {
             "{:?}",
             events.borrow()
         );
+    }
+
+    /// OSC 133 `C` then `D` reports one finished command with its
+    /// status and how long it ran; a `D` with no `C` before it, or
+    /// after a full reset, reports nothing.
+    #[test]
+    fn osc_133_command_finished_events() {
+        let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(20, 4),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            crate::event::WindowId::from(0),
+            7,
+            10,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+        let finished = |events: &std::cell::RefCell<Vec<RioEvent>>| {
+            events
+                .borrow()
+                .iter()
+                .filter_map(|e| match e {
+                    RioEvent::CommandFinished {
+                        route_id,
+                        exit_status,
+                        ..
+                    } => Some((*route_id, *exit_status)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+
+        parser.advance(&mut cw, b"\x1b]133;D;0\x07");
+        assert!(finished(&events).is_empty(), "D without C reports nothing");
+
+        parser.advance(&mut cw, b"\x1b]133;C\x07out\r\n\x1b]133;D;3\x07");
+        assert_eq!(finished(&events), vec![(7, Some(3))]);
+
+        // Repeating `D` does not report the same command twice.
+        parser.advance(&mut cw, b"\x1b]133;D;3\x07");
+        assert_eq!(finished(&events).len(), 1);
+
+        // No status, and an option in its place, are both "none".
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;D\x07");
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;D;aid=1\x07");
+        assert_eq!(finished(&events), vec![(7, Some(3)), (7, None), (7, None)]);
+
+        // A full reset forgets the running command.
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1bc\x1b]133;D;0\x07");
+        assert_eq!(finished(&events).len(), 3);
+    }
+
+    /// OSC 133 `C` at column zero of a prompt row means the output is
+    /// overwriting what was taken for a prompt continuation, so the
+    /// row's prompt mark goes; with the cursor past column zero the
+    /// prompt mark stays.
+    #[test]
+    fn osc_133_output_start_unmarks_an_empty_prompt_row() {
+        use crate::crosswords::grid::row::SemanticPrompt;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+
+        parser.advance(&mut cw, b"\x1b]133;A\x07$ \r\n");
+        assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);
+        cw.grid[Line(1)].semantic_prompt = SemanticPrompt::PromptContinuation;
+        parser.advance(&mut cw, b"\x1b]133;C\x07");
+        assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);
+        assert_eq!(cw.grid[Line(1)].semantic_prompt, SemanticPrompt::None);
+
+        parser.advance(&mut cw, b"\x1b]133;A\x07$ \x1b]133;C\x07");
+        assert_eq!(cw.grid[Line(1)].semantic_prompt, SemanticPrompt::Prompt);
     }
 
     #[test]

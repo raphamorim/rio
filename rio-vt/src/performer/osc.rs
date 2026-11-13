@@ -47,9 +47,10 @@ pub(super) enum PaletteReset {
 
 /// Parse an OSC 133 semantic prompt sequence into the row mark it
 /// should set, if any. `A` and `P` mark the cursor row as a prompt
-/// (`P;k=c` / `P;k=s` as a continuation); the remaining subcommands
-/// (`B`, `C`, `D`, `I`, `L`, `N`) and all `key=value` options are
-/// accepted and ignored, matching the spec's leniency.
+/// (`P;k=c` / `P;k=s` as a continuation). `C` and `D` set no row mark
+/// and are dispatched separately as command start and end; the
+/// remaining subcommands (`B`, `I`, `L`, `N`) and all `key=value`
+/// options are accepted and ignored, matching the spec's leniency.
 pub(super) fn parse_semantic_prompt(
     params: &[&[u8]],
 ) -> Option<crate::crosswords::grid::row::SemanticPrompt> {
@@ -70,6 +71,17 @@ pub(super) fn parse_semantic_prompt(
         }
         _ => None,
     }
+}
+
+/// The exit status of an OSC 133 `D` (command finished): its first
+/// option, when that is a bare integer (`D;0`, `D;127`). Exit codes
+/// are a byte, so a value outside 0..=255 counts as a generic failure.
+/// `None` when the shell sent no status, as it does for a command line
+/// that was abandoned rather than run, or when the first option is a
+/// `key=value` pair.
+pub(super) fn parse_exit_status(option: Option<&[u8]>) -> Option<u8> {
+    let raw: i32 = simd_utf8::from_utf8_fast(option?).ok()?.parse().ok()?;
+    Some(u8::try_from(raw).unwrap_or(1))
 }
 
 /// Parse an `xterm`-style color value (`#rgb`, `#rrggbb`, `rgb:r/g/b`).
