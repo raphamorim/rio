@@ -880,7 +880,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 return;
             }
             if request.buffer.len() >= MAX_XTGETTCAP_BYTES {
-                warn!("discarding XTGETTCAP request over {MAX_XTGETTCAP_BYTES} bytes");
+                debug!("discarding XTGETTCAP request over {MAX_XTGETTCAP_BYTES} bytes");
                 request.overflowed = true;
                 request.buffer = Vec::new();
                 return;
@@ -1109,8 +1109,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
 
             // OSC 1337 - iTerm2 inline image protocol. The other
             // iTerm2 commands (SetUserVar, SetMark, ...) are not
-            // implemented; only the command name is logged, since a
-            // payload can be as large as the OSC cap.
+            // implemented; only a short prefix of the command name is
+            // logged, since a payload can be as large as the OSC cap.
+            // A rejected `File=` is the image parser's business and is
+            // not reported as unimplemented.
             b"1337" => {
                 if let Some((graphic, cursor_movement)) =
                     iterm2_image_protocol::parse(params)
@@ -1118,16 +1120,16 @@ impl<U: Handler> Perform for Performer<'_, U> {
                     self.handler
                         .insert_graphic(graphic, None, Some(cursor_movement));
                 } else {
-                    let key = params
-                        .get(1)
-                        .map(|p| {
-                            &p[..p.iter().position(|&b| b == b'=').unwrap_or(p.len())]
-                        })
-                        .unwrap_or(b"");
-                    debug!(
-                        "unimplemented OSC 1337 command: {}",
-                        String::from_utf8_lossy(key)
-                    );
+                    let payload = params.get(1).copied().unwrap_or(b"");
+                    let head = &payload[..payload.len().min(32)];
+                    let key = &head
+                        [..head.iter().position(|&b| b == b'=').unwrap_or(head.len())];
+                    if key != b"File" {
+                        debug!(
+                            "unimplemented OSC 1337 command: {}",
+                            String::from_utf8_lossy(key)
+                        );
+                    }
                 }
             }
 
@@ -2485,6 +2487,14 @@ mod tests {
         processor.advance(&mut handler, b"\x1bP+q544E\x1b\\");
         assert_eq!(handler.responses.len(), 1);
         assert!(handler.responses[0].starts_with("\x1bP1+r544E="));
+
+        // A request of exactly the cap is still answered.
+        processor.advance(&mut handler, b"\x1bP+q");
+        processor.advance(&mut handler, &vec![b'5'; MAX_XTGETTCAP_BYTES]);
+        assert!(!processor.state.xtgettcap_state.overflowed);
+        processor.advance(&mut handler, b"\x1b\\");
+        assert_eq!(handler.responses.len(), 2);
+        assert!(handler.responses[1].starts_with("\x1bP0+r"));
     }
 
     #[test]

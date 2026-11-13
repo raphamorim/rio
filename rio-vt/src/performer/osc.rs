@@ -371,17 +371,22 @@ fn percent_decode(path: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// OSC 8: extract `id=...` from `key=val:key=val` link params. The id is
-/// an opaque token, so invalid UTF-8 is replaced rather than making the
-/// id vanish (which would turn `id=..;` into a link close). An id over
+/// OSC 8: the raw `id=...` value from `key=val:key=val` link params,
+/// if the program sent one (possibly empty).
+fn hyperlink_id_bytes(link_params: &[u8]) -> Option<&[u8]> {
+    link_params
+        .split(|&b| b == b':')
+        .find_map(|kv| kv.strip_prefix(b"id="))
+}
+
+/// OSC 8: the id to store. The id is an opaque token, so invalid UTF-8
+/// is replaced rather than making the id vanish. An id over
 /// [`MAX_HYPERLINK_ID_BYTES`] (measured as sent) is dropped: the link
 /// still opens, it just does not group with its namesakes.
 pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<Cow<'_, str>> {
-    let id = link_params
-        .split(|&b| b == b':')
-        .find_map(|kv| kv.strip_prefix(b"id="))?;
+    let id = hyperlink_id_bytes(link_params).filter(|id| !id.is_empty())?;
     if id.len() > MAX_HYPERLINK_ID_BYTES {
-        tracing::warn!(
+        tracing::debug!(
             "dropping OSC 8 id of {} bytes (limit {MAX_HYPERLINK_ID_BYTES})",
             id.len()
         );
@@ -409,19 +414,23 @@ pub(super) fn parse_hyperlink(
     uri: &[u8],
 ) -> Option<Option<Hyperlink>> {
     if uri.len() > MAX_HYPERLINK_URI_BYTES {
-        tracing::warn!(
+        tracing::debug!(
             "closing link: OSC 8 URI of {} bytes (limit {MAX_HYPERLINK_URI_BYTES})",
             uri.len()
         );
         return Some(None);
     }
-    let id = parse_hyperlink_id(link_params).filter(|id| !id.is_empty());
     if uri.is_empty() {
-        if id.is_some() {
+        // Whether an id was sent is judged on the bytes as sent: an id
+        // too long to keep is still an id here, so `8;id=<long>;` is
+        // invalid and ignored rather than a close.
+        let id_sent = hyperlink_id_bytes(link_params).is_some_and(|id| !id.is_empty());
+        if id_sent {
             tracing::debug!("ignoring OSC 8 with an id and no URI");
         }
-        return id.is_none().then_some(None);
+        return (!id_sent).then_some(None);
     }
+    let id = parse_hyperlink_id(link_params);
     Some(Some(Hyperlink::new(id.as_deref(), &*text_lossy(uri))))
 }
 
@@ -1219,13 +1228,14 @@ mod tests {
         let open = parse_hyperlink(id.as_bytes(), b"https://x.dev")
             .unwrap()
             .unwrap();
-        assert_ne!(open.id(), &id[3..]);
+        assert!(open.id().ends_with("_rio"), "auto id, got {:?}", open.id());
         let mut raw = b"id=".to_vec();
         raw.extend(std::iter::repeat_n(0xFF, MAX_HYPERLINK_ID_BYTES));
         let open = parse_hyperlink(&raw, b"https://x.dev").unwrap().unwrap();
         assert_eq!(open.id().chars().count(), MAX_HYPERLINK_ID_BYTES);
-        // With the oversized id gone, an empty URI is a plain close.
-        assert_eq!(parse_hyperlink(id.as_bytes(), b""), Some(None));
+        // An oversized id with an empty URI is still "an id and no
+        // URI": invalid and ignored, never a close.
+        assert_eq!(parse_hyperlink(id.as_bytes(), b""), None);
     }
 
     #[test]
