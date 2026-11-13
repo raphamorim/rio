@@ -85,13 +85,7 @@ pub(super) fn parse_exit_status(option: Option<&[u8]>) -> Option<i32> {
         (b'+', digits) => (false, digits),
         _ => (false, raw),
     };
-    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-        return None;
-    }
-    let magnitude = digits.iter().fold(0u32, |acc, digit| {
-        acc.saturating_mul(10)
-            .saturating_add(u32::from(digit - b'0'))
-    });
+    let magnitude = parse_digits(digits)?;
     Some(if negative {
         i32::try_from(magnitude).map_or(i32::MIN, |m| -m)
     } else {
@@ -158,20 +152,19 @@ fn parse_legacy_color(color: &[u8]) -> Option<ColorRgb> {
 }
 
 pub(super) fn parse_number(input: &[u8]) -> Option<u8> {
-    if input.is_empty() {
+    u8::try_from(parse_digits(input)?).ok()
+}
+
+/// A non-empty run of ASCII digits as a number, saturating at
+/// `u32::MAX` so an absurdly long one still parses.
+fn parse_digits(digits: &[u8]) -> Option<u32> {
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
         return None;
     }
-    let mut num: u8 = 0;
-    for c in input {
-        let c = *c as char;
-        {
-            let digit = c.to_digit(10)?;
-            num = num
-                .checked_mul(10)
-                .and_then(|v| v.checked_add(digit as u8))?
-        }
-    }
-    Some(num)
+    Some(digits.iter().fold(0u32, |acc, digit| {
+        acc.saturating_mul(10)
+            .saturating_add(u32::from(digit - b'0'))
+    }))
 }
 
 /// Decodes a free-text payload, replacing invalid UTF-8.

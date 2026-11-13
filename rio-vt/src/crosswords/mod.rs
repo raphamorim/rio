@@ -3473,7 +3473,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         self.event_proxy
             .send_event(RioEvent::CursorBlinkingChange, self.window_id);
-        self.command_started_at = None;
+        // A running command survives the reset: a program that ends
+        // with RIS still gets its `D` from the shell afterwards.
         // RIS drops every OSC 7501 record (DECSTR does not).
         if std::mem::take(&mut self.program_status_seen) {
             self.event_proxy.send_event(
@@ -6097,8 +6098,8 @@ mod tests {
     }
 
     /// OSC 133 `C` then `D` reports one finished command with its
-    /// status and how long it ran; a `D` with no `C` before it, or
-    /// after a full reset, reports nothing.
+    /// status and how long it ran; a `D` with no `C` before it reports
+    /// nothing, and a full reset in between does not lose the command.
     #[test]
     fn osc_133_command_finished_events() {
         let (mut cw, events) = make_crosswords_with_events(7);
@@ -6125,9 +6126,10 @@ mod tests {
             vec![(7, Some(3)), (7, None), (7, None)]
         );
 
-        // A full reset forgets the running command.
+        // A program that ends with a full reset is still reported.
         parser.advance(&mut cw, b"\x1b]133;C\x07\x1bc\x1b]133;D;0\x07");
-        assert_eq!(finished_commands(&events).len(), 3);
+        assert_eq!(finished_commands(&events).len(), 4);
+        assert_eq!(finished_commands(&events)[3], (7, Some(0)));
     }
 
     /// A command still open at the next prompt: `N` terminates it and

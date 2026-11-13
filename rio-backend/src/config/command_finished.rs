@@ -22,8 +22,10 @@ pub enum NotifyWhen {
 pub struct NotifyOnCommandFinish {
     #[serde(default)]
     pub when: NotifyWhen,
-    /// Ring the bell as BEL would: the audio bell, and the tab
-    /// indicator when the command's tab is not the current one.
+    /// Ring the bell as BEL would, so the `[bell]` settings apply: the
+    /// audio bell when `audio` is on (the default only on macOS and
+    /// Windows), and the tab indicator when the command's tab is not
+    /// the current one.
     #[serde(default = "default_bell")]
     pub bell: bool,
     /// Send a desktop notification naming the exit status and duration.

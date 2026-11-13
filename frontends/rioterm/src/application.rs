@@ -210,13 +210,16 @@ impl Application<'_> {
         use rio_backend::config::command_finished::NotifyWhen;
 
         let config = self.config.notify_on_command_finish;
-        // The window may be gone by the time the event is handled; a
-        // closed window has nothing to announce.
-        let Some(route) = self.router.routes.get(&window_id) else {
+        // The window or the pane may be gone by the time the event is
+        // handled; a closed one has nothing to announce.
+        let Some(route) = self.router.routes.get_mut(&window_id) else {
             return;
         };
-        let focused = route.window.is_focused
-            && route.window.screen.ctx().current_route() == route_id;
+        let manager = &mut route.window.screen.context_manager;
+        if manager.tab_index_for_route(route_id).is_none() {
+            return;
+        }
+        let focused = route.window.is_focused && manager.current_route() == route_id;
         match config.when {
             NotifyWhen::Never => return,
             NotifyWhen::Unfocused if focused => return,
@@ -233,12 +236,12 @@ impl Application<'_> {
             let took = format_duration(duration);
             let (title, body) = match exit_status {
                 None => ("Command Finished", format!("Command took {took}.")),
-                Some(0) => (
-                    "Command Succeeded",
-                    format!("Command took {took} and exited with code 0."),
-                ),
                 Some(code) => (
-                    "Command Failed",
+                    if code == 0 {
+                        "Command Succeeded"
+                    } else {
+                        "Command Failed"
+                    },
                     format!("Command took {took} and exited with code {code}."),
                 ),
             };

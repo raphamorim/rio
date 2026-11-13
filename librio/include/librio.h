@@ -22,11 +22,11 @@ typedef size_t rio_surface_id_t;
    3 indeterminate, 4 paused), data_b the 0-100 value. */
 #define RIO_ACTION_PROGRESS 3u
 /* OSC 133: a shell command finished (D after C). data_a is its exit
-   status as a byte (anything outside 0..=255 reads as 1), or
-   RIO_EXIT_STATUS_NONE when the shell sent none; data_b is how long it
-   ran, in milliseconds. */
+   status as a signed 32-bit value in two's complement (read it as
+   (int32_t)data_a), or RIO_EXIT_STATUS_NONE (INT32_MIN) when the shell
+   sent none; data_b is how long it ran, in milliseconds. */
 #define RIO_ACTION_COMMAND_FINISHED 4u
-#define RIO_EXIT_STATUS_NONE 0xFFFFFFFFu
+#define RIO_EXIT_STATUS_NONE 0x80000000u
 
 /* OSC 7501 program status (see program_status_cb). `event` is REPORT,
    or a lifecycle event after which the host drops records: on

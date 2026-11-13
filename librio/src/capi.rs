@@ -15,12 +15,13 @@ pub const RIO_ACTION_CURSOR_BLINKING_CHANGE: u32 = 2;
 /// OSC 9;4 progress: `data_a` is the ConEmu state (0 remove, 1 set,
 /// 2 error, 3 indeterminate, 4 paused), `data_b` the 0-100 value.
 pub const RIO_ACTION_PROGRESS: u32 = 3;
-/// A shell command finished: `data_a` is its exit status as a byte
-/// (anything outside 0..=255 reads as 1), or `RIO_EXIT_STATUS_NONE`
-/// when the shell sent none; `data_b` is how long it ran, in
-/// milliseconds.
+/// A shell command finished: `data_a` is its exit status as a signed
+/// 32-bit value in two's complement (read it as `int32_t`), or
+/// `RIO_EXIT_STATUS_NONE` when the shell sent none; `data_b` is how
+/// long it ran, in milliseconds.
 pub const RIO_ACTION_COMMAND_FINISHED: u32 = 4;
-pub const RIO_EXIT_STATUS_NONE: u32 = u32::MAX;
+/// `INT32_MIN`, which no real exit status takes.
+pub const RIO_EXIT_STATUS_NONE: u32 = i32::MIN as u32;
 
 /// `rio_program_status_s::event`: a report, or a lifecycle event after
 /// which the host drops records (see `program_status_cb`).
@@ -302,8 +303,10 @@ impl SurfaceDelegate for CDelegate {
                         tag: RIO_ACTION_COMMAND_FINISHED,
                         title: std::ptr::null(),
                         subtitle: std::ptr::null(),
+                        // The sentinel is INT32_MIN, so a status
+                        // saturated down to it moves up by one.
                         data_a: exit_status.map_or(RIO_EXIT_STATUS_NONE, |status| {
-                            u8::try_from(status).map_or(1, u32::from)
+                            status.max(i32::MIN + 1) as u32
                         }),
                         data_b: u32::try_from(duration.as_millis()).unwrap_or(u32::MAX),
                     },
