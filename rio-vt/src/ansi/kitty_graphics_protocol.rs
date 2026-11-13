@@ -517,20 +517,12 @@ pub fn parse(
         if !state.incomplete_images.contains_key(&image_key)
             && state.incomplete_images.len() >= MAX_INCOMPLETE_UPLOADS
         {
-            // A new transmission abandons the one in progress (the
-            // least recently touched, should the cap ever be raised).
-            let victim = state
-                .incomplete_images
-                .iter()
-                .min_by_key(|(_, stored)| stored.last_touched)
-                .map(|(key, _)| *key);
-            if let Some(victim) = victim {
-                debug!(
-                    "Abandoning chunked upload {} for new transmission {}",
-                    victim, image_key
-                );
-                state.incomplete_images.remove(&victim);
-            }
+            // A new transmission abandons the one in progress.
+            debug!(
+                "Abandoning in-flight chunked upload for new transmission {}",
+                image_key
+            );
+            state.incomplete_images.clear();
         }
 
         match state.incomplete_images.entry(image_key) {
@@ -538,7 +530,16 @@ pub fn parse(
                 // First chunk - move cmd into storage (no clone!). The
                 // declared `S=` is a file/shm read size and says nothing
                 // about direct data, so nothing is reserved from it: the
-                // buffer grows as bytes arrive, within MAX_SIZE.
+                // buffer grows as bytes arrive, within MAX_SIZE, which
+                // the first chunk is held to as well.
+                if cmd.payload.len() > MAX_SIZE {
+                    debug!(
+                        "Dropping chunked upload {}: first chunk exceeds MAX_SIZE ({})",
+                        image_key, MAX_SIZE
+                    );
+                    state.current_transmission_key = 0;
+                    return None;
+                }
                 debug!(
                     "First chunk for image key {}: {} bytes",
                     image_key,

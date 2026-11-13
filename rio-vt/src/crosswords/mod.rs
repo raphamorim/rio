@@ -1621,7 +1621,11 @@ impl<U: EventListener> Crosswords<U> {
     /// Append `c` to the cluster of the cell most recently written at
     /// the cursor (legacy zero-width semantics: `saturating_sub`
     /// column math, so a mark at column 0 targets column 0).
-    fn attach_to_prev_cell(&mut self, c: char) {
+    /// `true` when `c` was stored on the cell; `false` when it was
+    /// dropped (no base, the cell is at its mark cap, or the extras
+    /// table is full), so callers can skip width changes that would
+    /// describe a codepoint the cell does not hold.
+    fn attach_to_prev_cell(&mut self, c: char) -> bool {
         /// Most combining marks one cell keeps; later ones are dropped.
         /// Every attach clones the cell's extras and re-interns them,
         /// so an unbounded run (`e` U+0301 `ESC[65535b`) costs
@@ -1649,7 +1653,7 @@ impl<U: EventListener> Crosswords<U> {
             self.grid[row][column].content_tag(),
             crate::crosswords::square::ContentTag::Codepoint
         ) {
-            return;
+            return false;
         }
         // Copy-on-write: slots are interned and shared; every
         // cell written under one OSC 8 template references the
@@ -1662,7 +1666,7 @@ impl<U: EventListener> Crosswords<U> {
             .and_then(|id| self.grid.extras_table.get(id));
         if existing.is_some_and(|extras| extras.zerowidth.len() >= MAX_ZEROWIDTH_PER_CELL)
         {
-            return;
+            return false;
         }
         let mut extras = existing.cloned().unwrap_or_default();
         extras.zerowidth.push(c);
@@ -1677,10 +1681,12 @@ impl<U: EventListener> Crosswords<U> {
             // bookkeeping: record it here or the renderer never
             // repaints the row (stale glyphs until a full redraw).
             self.damage.damage_line(row.0 as usize);
+            return true;
         }
         // id == 0: slot space exhausted. Keep the cell's existing
         // extras (hyperlink, earlier marks) rather than erasing
         // them; only the new mark is lost.
+        false
     }
 
     /// Mode-2027 cluster continuation. `true` means `c` was consumed:
@@ -1743,29 +1749,35 @@ impl<U: EventListener> Crosswords<U> {
         // width-bearing continuation makes the whole cluster wide
         // (the base already contributed one column); zero-width
         // continuations change nothing.
+        // The mark is stored first and the width follows only when it
+        // was: a dropped codepoint (cell at its mark cap) must not
+        // leave the cell widened for a modifier it does not hold, or
+        // the break state rebuilt from the cell would not match what
+        // was drawn.
         match c {
             '\u{FE0F}' => {
                 // A selector modifies the codepoint immediately before
                 // it, so validity is judged against the *last* codepoint
                 // of the cluster, not its base. The width helpers are
                 // no-ops when the cell is already in the target state.
-                if vs_is_valid_base(last_cp, c) {
+                if vs_is_valid_base(last_cp, c) && self.attach_to_prev_cell(c) {
                     self.widen_prev_cell();
-                    self.attach_to_prev_cell(c);
                 }
                 // Invalid selector: ignore. The cell is untouched, so
                 // the reconstructed state next time is identical.
             }
             '\u{FE0E}' => {
-                if vs_is_valid_base(last_cp, c) {
+                if vs_is_valid_base(last_cp, c) && self.attach_to_prev_cell(c) {
                     self.narrow_prev_cell();
-                    self.attach_to_prev_cell(c);
                 }
             }
-            _ if width == 0 => self.attach_to_prev_cell(c),
-            _ => {
-                self.widen_prev_cell();
+            _ if width == 0 => {
                 self.attach_to_prev_cell(c);
+            }
+            _ => {
+                if self.attach_to_prev_cell(c) {
+                    self.widen_prev_cell();
+                }
             }
         }
         true
@@ -9563,6 +9575,23 @@ mod tests {
         // One interned slot per intermediate length at most, so the
         // final slot's id is bounded by the cap, not by the run.
         assert!(id <= 64, "slot id {id}");
+    }
+
+    /// A width-bearing continuation that the capped cell drops must not
+    /// widen the cell either (mode 2027).
+    #[test]
+    fn capped_cell_is_not_widened_by_dropped_modifier() {
+        let mut cw = new_term(10, 2);
+        cw.mode.insert(Mode::GRAPHEME_CLUSTER);
+        cw.input('e');
+        for _ in 0..64 {
+            cw.input('\u{301}');
+        }
+        cw.input('\u{1F3FB}');
+        assert_eq!(cw.grid[Line(0)][Column(0)].wide(), Wide::Narrow);
+        assert_eq!(cw.grid.cursor.pos.col, Column(1));
+        let id = cw.grid[Line(0)][Column(0)].extras_id().unwrap();
+        assert_eq!(cw.grid.extras_table.get(id).unwrap().zerowidth.len(), 64);
     }
 
     /// A combining mark typed inside an OSC 8 hyperlink must attach to
