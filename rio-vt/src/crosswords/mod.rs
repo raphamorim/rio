@@ -481,12 +481,6 @@ where
     /// so terminals that never use the protocol never wake the embedder
     /// for it.
     program_status_seen: bool,
-    /// The last OSC 7501 report sent, so an identical repeat (a program
-    /// re-reporting on every tick) is dropped instead of waking the
-    /// embedder. Safe because a repeat of the most recent report changes
-    /// neither the record nor its recency. Cleared by lifecycle events,
-    /// after which the embedder may have dropped the record.
-    last_program_status: Option<crate::event::ProgramStatus>,
 
     /// What DECRQM callers see after a full reset: the
     /// consumer-configured default for grapheme clustering (mode
@@ -557,7 +551,6 @@ impl<U: EventListener> Crosswords<U> {
             damage_event_in_flight: false,
             sync_update_started: None,
             program_status_seen: false,
-            last_program_status: None,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
             keyboard_mode_idx: 0,
@@ -3443,7 +3436,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.event_proxy
             .send_event(RioEvent::CursorBlinkingChange, self.window_id);
         // RIS drops every OSC 7501 record (DECSTR does not).
-        self.last_program_status = None;
         if std::mem::take(&mut self.program_status_seen) {
             self.event_proxy.send_event(
                 RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::Reset),
@@ -3555,10 +3547,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     fn set_program_status(&mut self, status: crate::event::ProgramStatus) {
         self.program_status_seen = true;
-        if self.last_program_status.as_ref() == Some(&status) {
-            return;
-        }
-        self.last_program_status = Some(status.clone());
         self.event_proxy.send_event(
             RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::Report(status)),
             self.window_id,
@@ -3577,7 +3565,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         if !self.program_status_seen {
             return;
         }
-        self.last_program_status = None;
         self.event_proxy.send_event(
             RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::PromptStart),
             self.window_id,
@@ -5994,7 +5981,7 @@ mod tests {
             &mut cw,
             b"\x1b]7501;state=blocked:kind=question:app=claude-code\x1b\\",
         );
-        // An identical repeat is dropped.
+        // Repeats are delivered: only the embedder knows its records.
         parser.advance(
             &mut cw,
             b"\x1b]7501;state=blocked:kind=question:app=claude-code\x07",
@@ -6004,11 +5991,6 @@ mod tests {
         parser.advance(&mut cw, b"\x1b]133;Ax\x07");
         parser.advance(&mut cw, b"\x1b]133;A;aid=1\x07");
         parser.advance(&mut cw, b"\x1b]133;N\x07");
-        // After a prompt the embedder may have dropped it: sent again.
-        parser.advance(
-            &mut cw,
-            b"\x1b]7501;state=blocked:kind=question:app=claude-code\x07",
-        );
         parser.advance(&mut cw, b"\x1bc");
         // The reset clears the flag: the next prompt is silent again.
         parser.advance(&mut cw, b"\x1b]133;A\x07");
@@ -6028,17 +6010,18 @@ mod tests {
             }
             other => panic!("expected a report, got {other:?}"),
         }
-        assert!(matches!(
-            seen[2],
-            RioEvent::ProgramStatus(ProgramStatusEvent::PromptStart)
-        ));
+        let report = |e: &RioEvent| match e {
+            RioEvent::ProgramStatus(ProgramStatusEvent::Report(r)) => Some(r.clone()),
+            _ => None,
+        };
+        assert_eq!(report(&seen[2]), report(&seen[1]), "the repeat arrives");
         assert!(matches!(
             seen[3],
             RioEvent::ProgramStatus(ProgramStatusEvent::PromptStart)
         ));
         assert!(matches!(
             seen[4],
-            RioEvent::ProgramStatus(ProgramStatusEvent::Report(_))
+            RioEvent::ProgramStatus(ProgramStatusEvent::PromptStart)
         ));
         assert!(matches!(
             seen[5],

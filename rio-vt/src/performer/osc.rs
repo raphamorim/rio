@@ -455,6 +455,18 @@ pub(super) fn parse_program_status(
         let well_formed =
             !value.is_empty() && value.bytes().all(is_program_status_value_byte);
         match key {
+            // A malformed `id` must not fall back to the root record, so
+            // unlike other keys it is recorded as invalid, not skipped.
+            "id" => {
+                if value.len() > PROGRAM_STATUS_MAX_ID {
+                    return None;
+                }
+                id = Some(
+                    (well_formed && is_valid_program_status_id(value))
+                        .then(|| value.to_string()),
+                );
+            }
+            _ if !well_formed => continue,
             "state" => {
                 state = Some(match value {
                     "idle" => Some(ProgramState::Idle),
@@ -466,17 +478,6 @@ pub(super) fn parse_program_status(
                     _ => None,
                 })
             }
-            // A malformed `id` must not fall back to the root record.
-            "id" => {
-                if value.len() > PROGRAM_STATUS_MAX_ID {
-                    return None;
-                }
-                id = Some(
-                    (well_formed && is_valid_program_status_id(value))
-                        .then(|| value.to_string()),
-                );
-            }
-            _ if !well_formed => continue,
             // Unrecognized kinds are treated as absent.
             "kind" => {
                 kind = match value {
@@ -774,6 +775,9 @@ mod tests {
     #[test]
     fn program_status_last_repeat_wins() {
         assert_eq!(report("state=bogus:state=idle").state, ProgramState::Idle);
+        // An empty or out-of-alphabet value is a malformed pair: skipped.
+        assert_eq!(report("state=idle:state=").state, ProgramState::Idle);
+        assert_eq!(report("state=idle:state=!").state, ProgramState::Idle);
         assert_eq!(status("state=idle:state=bogus"), None);
         assert_eq!(report("state=idle:id=a//b:id=ok").id.as_deref(), Some("ok"));
         assert_eq!(status("state=idle:id=ok:id=a//b"), None);
