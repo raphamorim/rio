@@ -15,6 +15,7 @@ pub use rio_vt::crosswords::grid::row::Row;
 pub use rio_vt::crosswords::pos::Column;
 pub use rio_vt::crosswords::square::{Extras, Square};
 pub use rio_vt::crosswords::style::{Style, StyleFlags};
+pub use rio_vt::event::{BlockedKind, ProgramState, ProgramStatus, ProgramStatusEvent};
 pub use rio_vt::grapheme_lut::cluster_width;
 pub use rio_vt::selection::SelectionRange;
 
@@ -128,6 +129,10 @@ pub enum Action {
         state: u8,
         value: u8,
     },
+    /// OSC 7501 program status: a validated report, or a lifecycle event
+    /// (new prompt, full reset) after which the embedder must drop
+    /// records. Records themselves live in the embedder.
+    ProgramStatus(ProgramStatusEvent),
 }
 
 /// `Send + Sync` everywhere threads exist. On wasm there is one thread and
@@ -225,6 +230,10 @@ impl Listener {
                         value: report.progress.unwrap_or(0),
                     },
                 );
+            }
+            RioEvent::ProgramStatus(event) => {
+                self.delegate
+                    .action(self.surface_id, Action::ProgramStatus(event));
             }
             _ => {}
         }
@@ -1940,6 +1949,47 @@ mod tests {
                     value: 42
                 },
                 &Action::Progress { state: 0, value: 0 },
+            ]
+        );
+    }
+
+    // OSC 7501 reaches the embedder as validated reports plus the
+    // lifecycle events that tell it to drop records.
+    #[test]
+    fn program_status_reaches_the_delegate() {
+        let delegate = Arc::new(ActionRecorder {
+            actions: Mutex::new(Vec::new()),
+        });
+        let engine = Engine::new(delegate.clone());
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+
+        surface.inject_output(b"\x1b]7501;state=working:app=cargo:progress=40\x07");
+        surface.inject_output(b"\x1b]7501;state=nope\x07");
+        surface.inject_output(b"\x1b]133;A\x07");
+
+        let actions = delegate.actions.lock().unwrap();
+        let status: Vec<&ProgramStatusEvent> = actions
+            .iter()
+            .filter_map(|a| match a {
+                Action::ProgramStatus(event) => Some(event),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            status,
+            vec![
+                &ProgramStatusEvent::Report(ProgramStatus {
+                    state: ProgramState::Working,
+                    kind: None,
+                    app: Some("cargo".into()),
+                    msg: None,
+                    title: None,
+                    progress: Some(40),
+                    id: None,
+                }),
+                &ProgramStatusEvent::PromptStart,
             ]
         );
     }

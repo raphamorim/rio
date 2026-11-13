@@ -384,6 +384,15 @@ pub trait Handler {
     /// Set progress bar report (OSC 9;4).
     fn set_progress_report(&mut self, _: crate::event::ProgressReport) {}
 
+    /// OSC 7501 program status report.
+    fn set_program_status(&mut self, _: crate::event::ProgramStatus) {}
+
+    /// Answer an OSC 7501 feature-detection query (`OSC 7501 ; ? ST`).
+    fn report_program_status_support(&mut self, _terminator: &str) {}
+
+    /// OSC 133 `A`: a shell prompt began.
+    fn prompt_start(&mut self) {}
+
     /// Report current keyboard mode.
     fn report_keyboard_mode(&mut self) {}
 
@@ -955,7 +964,21 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 if let Some(mark) = osc::parse_semantic_prompt(params) {
                     self.handler.set_semantic_prompt(mark);
                 }
+                if params.get(1).and_then(|p| p.first()) == Some(&b'A') {
+                    self.handler.prompt_start();
+                }
             }
+
+            // OSC 7501 - program status (Program Status Protocol).
+            b"7501" => match osc::parse_program_status(params) {
+                Some(osc::ProgramStatusRequest::Query) => {
+                    self.handler.report_program_status_support(terminator)
+                }
+                Some(osc::ProgramStatusRequest::Report(status)) => {
+                    self.handler.set_program_status(status)
+                }
+                None => unhandled(params),
+            },
 
             // OSC 777 - rxvt notification.
             b"777" if params.len() >= 4 && params[1] == b"notify" => {

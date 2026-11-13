@@ -3429,6 +3429,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         self.event_proxy
             .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+        // RIS drops every OSC 7501 record (DECSTR does not).
+        self.event_proxy.send_event(
+            RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::Reset),
+            self.window_id,
+        );
         self.mark_fully_damaged();
     }
 
@@ -3530,6 +3535,28 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn set_progress_report(&mut self, report: crate::event::ProgressReport) {
         self.event_proxy
             .send_event(RioEvent::ProgressReport(report), self.window_id);
+    }
+
+    fn set_program_status(&mut self, status: crate::event::ProgramStatus) {
+        self.event_proxy.send_event(
+            RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::Report(status)),
+            self.window_id,
+        );
+    }
+
+    fn report_program_status_support(&mut self, terminator: &str) {
+        // The bare form: the spec's default states and kinds are exactly
+        // what this terminal parses.
+        let text = format!("\x1b]7501;?{terminator}");
+        self.event_proxy
+            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+    }
+
+    fn prompt_start(&mut self) {
+        self.event_proxy.send_event(
+            RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::PromptStart),
+            self.window_id,
+        );
     }
 
     fn set_current_directory(&mut self, path: std::path::PathBuf) {
@@ -5914,6 +5941,59 @@ mod tests {
                 self.0.lock().unwrap().push(text);
             }
         }
+    }
+
+    #[test]
+    fn osc_7501_program_status_events() {
+        use crate::event::{BlockedKind, ProgramState, ProgramStatusEvent};
+
+        let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(4, 4),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+
+        // Query (BEL-terminated), a report (ST-terminated), a rejected
+        // report, a new prompt, and a full reset.
+        parser.advance(&mut cw, b"\x1b]7501;?\x07");
+        parser.advance(
+            &mut cw,
+            b"\x1b]7501;state=blocked:kind=question:app=claude-code\x1b\\",
+        );
+        parser.advance(&mut cw, b"\x1b]7501;state=bogus\x07");
+        parser.advance(&mut cw, b"\x1b]133;A\x07");
+        parser.advance(&mut cw, b"\x1bc");
+
+        let seen: Vec<RioEvent> = events
+            .borrow_mut()
+            .drain(..)
+            .filter(|e| matches!(e, RioEvent::ProgramStatus(_) | RioEvent::PtyWrite(..)))
+            .collect();
+        assert_eq!(seen.len(), 4, "{seen:?}");
+        assert!(matches!(&seen[0], RioEvent::PtyWrite(_, t) if t == "\x1b]7501;?\x07"));
+        match &seen[1] {
+            RioEvent::ProgramStatus(ProgramStatusEvent::Report(r)) => {
+                assert_eq!(r.state, ProgramState::Blocked);
+                assert_eq!(r.kind, Some(BlockedKind::Question));
+                assert_eq!(r.app.as_deref(), Some("claude-code"));
+            }
+            other => panic!("expected a report, got {other:?}"),
+        }
+        assert!(matches!(
+            seen[2],
+            RioEvent::ProgramStatus(ProgramStatusEvent::PromptStart)
+        ));
+        assert!(matches!(
+            seen[3],
+            RioEvent::ProgramStatus(ProgramStatusEvent::Reset)
+        ));
     }
 
     #[test]
