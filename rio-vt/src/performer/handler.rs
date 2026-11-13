@@ -79,12 +79,6 @@ pub trait Handler {
     /// payload), so any stored one is stale.
     fn set_current_directory(&mut self, _: Option<std::path::PathBuf>) {}
 
-    /// OSC 1337 SetUserVar: a shell-provided variable, decoded. Any
-    /// program writing to the terminal can set one, so an embedder that
-    /// stores or shows them should cap their number and size and treat
-    /// the content as untrusted. The terminal itself does not keep them.
-    fn set_user_var(&mut self, _name: String, _value: String) {}
-
     /// OSC 133: mark the cursor row as a semantic prompt row.
     fn set_semantic_prompt(&mut self, _: crate::crosswords::grid::row::SemanticPrompt) {}
 
@@ -1127,9 +1121,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
             // A rejected `File=` is the image parser's business and is
             // not reported as unimplemented.
             b"1337" => {
-                if let Some((name, value)) = osc::parse_set_user_var(params) {
-                    self.handler.set_user_var(name, value);
-                } else if let Some((graphic, cursor_movement)) =
+                if let Some((graphic, cursor_movement)) =
                     iterm2_image_protocol::parse(params)
                 {
                     self.handler
@@ -1139,7 +1131,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
                     let head = &payload[..payload.len().min(32)];
                     let key = &head
                         [..head.iter().position(|&b| b == b'=').unwrap_or(head.len())];
-                    if key != b"File" && key != b"SetUserVar" {
+                    if key != b"File" {
                         debug!(
                             "unimplemented OSC 1337 command: {}",
                             String::from_utf8_lossy(key)
@@ -2473,49 +2465,12 @@ mod tests {
     #[derive(Default)]
     struct XtgettcapHandler {
         responses: Vec<String>,
-        user_vars: Vec<(String, String)>,
     }
 
     impl Handler for XtgettcapHandler {
         fn xtgettcap_response(&mut self, response: String) {
             self.responses.push(response);
         }
-
-        fn set_user_var(&mut self, name: String, value: String) {
-            self.user_vars.push((name, value));
-        }
-    }
-
-    #[test]
-    fn set_user_var_parsing() {
-        use crate::performer::osc::parse_set_user_var as parse;
-
-        // "hello" in base64.
-        assert_eq!(
-            parse(&[b"1337", b"SetUserVar=foo=aGVsbG8="]),
-            Some(("foo".to_string(), "hello".to_string()))
-        );
-        assert_eq!(parse(&[b"1337", b"SetUserVar=foo"]), None);
-        assert_eq!(parse(&[b"1337", b"SetUserVar==aGVsbG8="]), None);
-        assert_eq!(parse(&[b"1337", b"SetUserVar=foo=!!!"]), None);
-        assert_eq!(parse(&[b"1337", b"File=inline=1"]), None);
-        assert_eq!(parse(&[b"1337"]), None);
-    }
-
-    /// The variable reaches the handler, which decides what to keep;
-    /// the default implementation drops it.
-    #[test]
-    fn set_user_var_is_handed_to_the_handler() {
-        let mut handler = XtgettcapHandler::default();
-        let mut processor = Processor::default();
-        processor.advance(
-            &mut handler,
-            b"\x1b]1337;SetUserVar=foo=aGVsbG8=\x07\x1b]1337;SetUserVar=bad\x07",
-        );
-        assert_eq!(
-            handler.user_vars,
-            vec![("foo".to_string(), "hello".to_string())]
-        );
     }
 
     /// A request over the cap gets no reply, its buffer is released,
