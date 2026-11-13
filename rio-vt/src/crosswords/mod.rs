@@ -3532,12 +3532,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
             .send_event(RioEvent::ProgressReport(report), self.window_id);
     }
 
-    fn set_current_directory(&mut self, path: std::path::PathBuf) {
+    fn set_current_directory(&mut self, path: Option<std::path::PathBuf>) {
         trace!("Setting working directory {:?}", path);
-        if self.current_directory.as_deref() == Some(path.as_path()) {
+        if self.current_directory == path {
             return;
         }
-        self.current_directory = Some(path);
+        self.current_directory = path;
         self.event_proxy.send_event(
             RioEvent::CurrentDirectoryChanged(self.route_id),
             self.window_id,
@@ -8195,24 +8195,33 @@ mod tests {
             10,
         );
 
-        Handler::set_current_directory(&mut term, "/tmp/a".into());
-        Handler::set_current_directory(&mut term, "/tmp/a".into());
+        let changes = || {
+            events
+                .borrow()
+                .iter()
+                .filter(
+                    |e| matches!(e, RioEvent::CurrentDirectoryChanged(route) if *route == 7),
+                )
+                .count()
+        };
 
-        let count = events
-            .borrow()
-            .iter()
-            .filter(
-                |e| matches!(e, RioEvent::CurrentDirectoryChanged(route) if *route == 7),
-            )
-            .count();
+        Handler::set_current_directory(&mut term, Some("/tmp/a".into()));
+        Handler::set_current_directory(&mut term, Some("/tmp/a".into()));
         assert_eq!(
-            count, 1,
+            changes(),
+            1,
             "a repeated OSC 7 for the same directory must not re-emit"
         );
         assert_eq!(
             term.current_directory.as_deref(),
             Some(std::path::Path::new("/tmp/a"))
         );
+
+        // Forgetting the directory is a change too, but only once.
+        Handler::set_current_directory(&mut term, None);
+        Handler::set_current_directory(&mut term, None);
+        assert_eq!(changes(), 2, "clearing a known directory emits once");
+        assert_eq!(term.current_directory, None);
     }
 
     #[test]

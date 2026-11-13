@@ -168,9 +168,34 @@ pub(super) fn text_lossy(bytes: &[u8]) -> Cow<'_, str> {
     }
 }
 
+/// Longest title (in bytes) a program can set. Longer titles are
+/// ignored rather than truncated, so a cut never lands mid-word or
+/// mid-character.
+pub(super) const MAX_TITLE_BYTES: usize = 255;
+
 /// OSC 0 / OSC 2: the window title, everything after `0;` or `2;`.
+/// A title with invalid UTF-8 or longer than [`MAX_TITLE_BYTES`] is
+/// rejected whole: a window title is too visible to show a guessed-at
+/// version of what the program meant.
 pub(super) fn parse_title(params: &[&[u8]]) -> Option<String> {
-    params.get(1).map(|title| text_lossy(title).into_owned())
+    let Some(title) = params.get(1).copied() else {
+        tracing::warn!("ignoring OSC title without a payload");
+        return None;
+    };
+    if title.len() > MAX_TITLE_BYTES {
+        tracing::warn!(
+            "ignoring OSC title of {} bytes (limit {MAX_TITLE_BYTES})",
+            title.len()
+        );
+        return None;
+    }
+    match simd_utf8::from_utf8_fast(title) {
+        Ok(title) => Some(title.to_owned()),
+        Err(_) => {
+            tracing::warn!("ignoring OSC title with invalid UTF-8");
+            None
+        }
+    }
 }
 
 /// OSC 4: a list of `(index, color | "?")` pairs in `params[1..]`.
@@ -215,7 +240,24 @@ fn strip_scheme<'a>(s: &'a str, scheme: &str) -> Option<&'a str> {
 /// Anything on the other end of the PTY can send this, including a shell on the
 /// far side of an ssh session, so a directory that belongs to another machine is
 /// refused rather than reported as ours.
-pub(super) fn parse_current_directory(param: &[u8]) -> Option<String> {
+///
+/// `Some(None)` is an empty payload: the program no longer knows its
+/// directory, so the stored one is stale. `None` is a malformed
+/// payload, which changes nothing.
+pub(super) fn parse_current_directory(param: &[u8]) -> Option<Option<String>> {
+    if param.is_empty() {
+        return Some(None);
+    }
+    let dir = parse_directory_url(param);
+    if dir.is_none() {
+        // Debug, not warn: a broken shell integration repeats this at
+        // every prompt. The non-local host case warns on its own.
+        tracing::debug!("ignoring malformed OSC 7 payload {:?}", text_lossy(param));
+    }
+    dir.map(Some)
+}
+
+fn parse_directory_url(param: &[u8]) -> Option<String> {
     let s = simd_utf8::from_utf8_fast(param).ok()?;
 
     let (after_scheme, percent_encoded) = match strip_scheme(s, FILE_SCHEME) {
@@ -342,12 +384,14 @@ fn percent_decode(path: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// OSC 8: extract `id=...` from `key=val:key=val` link params.
-pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<&str> {
+/// OSC 8: extract `id=...` from `key=val:key=val` link params. The id is
+/// an opaque token, so invalid UTF-8 is replaced rather than making the
+/// id vanish (which would turn `id=..;` into a link close).
+pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<Cow<'_, str>> {
     link_params
         .split(|&b| b == b':')
         .find_map(|kv| kv.strip_prefix(b"id="))
-        .and_then(|kv| simd_utf8::from_utf8_fast(kv).ok())
+        .map(text_lossy)
 }
 
 /// OSC 8: `Some(None)` closes the link, `Some(Some(_))` opens one. An
@@ -360,10 +404,13 @@ pub(super) fn parse_hyperlink(
     if uri.is_empty() {
         return id.is_none().then_some(None);
     }
-    Some(Some(Hyperlink::new(id, &*text_lossy(uri))))
+    Some(Some(Hyperlink::new(id.as_deref(), &*text_lossy(uri))))
 }
 
-/// OSC 9 notification: the body is everything after `9;`.
+/// OSC 9 notification: the body is everything after `9;`. The parser
+/// keeps the payload verbatim only from the second `;` on (it has to see
+/// the sub-command to tell 9;4 apart), so a body with a `;` of its own
+/// arrives as two params and is joined back here.
 pub(super) fn parse_notification_body(params: &[&[u8]]) -> String {
     params[1..]
         .iter()
@@ -403,7 +450,10 @@ pub(super) fn parse_progress_report(params: &[&[u8]]) -> Option<ProgressReport> 
 /// cannot be told apart from a local one (ConEmu and Windows Terminal
 /// accept the same). Requiring an absolute path at least drops
 /// free-text payloads and relative garbage.
-pub(super) fn parse_conemu_working_directory(params: &[&[u8]]) -> Option<String> {
+///
+/// As with OSC 7, an empty path (quoted or not) is `Some(None)`: the
+/// program no longer knows its directory.
+pub(super) fn parse_conemu_working_directory(params: &[&[u8]]) -> Option<Option<String>> {
     if params.len() < 3 || params[1] != b"9" {
         return None;
     }
@@ -412,10 +462,35 @@ pub(super) fn parse_conemu_working_directory(params: &[&[u8]]) -> Option<String>
         .strip_prefix('"')
         .and_then(|p| p.strip_suffix('"'))
         .unwrap_or(path);
+    if path.is_empty() {
+        return Some(None);
+    }
     if !is_absolute_path(path) {
+        tracing::debug!("ignoring OSC 9;9 with non-absolute path {path:?}");
         return None;
     }
-    Some(path.to_string())
+    Some(Some(path.to_string()))
+}
+
+/// Whether an OSC 9 sub-command (the text before the second `;`) is one
+/// of the ConEmu extensions: 1 sleep, 2 message box, 3 tab title, 4
+/// progress, 5-7 GuiMacro, 8 environment variable, 9 working directory,
+/// 10-12 xterm emulation. Anything else is an iTerm2 notification body.
+pub(super) fn is_conemu_subcommand(sub: &[u8]) -> bool {
+    matches!(
+        sub,
+        b"1" | b"2"
+            | b"3"
+            | b"4"
+            | b"5"
+            | b"6"
+            | b"7"
+            | b"8"
+            | b"9"
+            | b"10"
+            | b"11"
+            | b"12"
+    )
 }
 
 /// Whether `path` is absolute in either flavor a cwd report can carry:
@@ -518,7 +593,15 @@ mod tests {
     use super::*;
 
     fn cwd(payload: &str) -> Option<String> {
-        parse_current_directory(payload.as_bytes())
+        parse_current_directory(payload.as_bytes()).flatten()
+    }
+
+    #[test]
+    fn current_directory_empty_payload_clears() {
+        // Empty means "unknown": the caller clears the stored directory.
+        assert_eq!(parse_current_directory(b""), Some(None));
+        // Malformed means "ignore".
+        assert_eq!(parse_current_directory(b"not-a-url"), None);
     }
 
     #[cfg(not(windows))]
@@ -583,21 +666,27 @@ mod tests {
         let parse = parse_conemu_working_directory;
         assert_eq!(
             parse(&[b"9", b"9", b"C:\\Users\\rapha"]),
-            Some("C:\\Users\\rapha".into())
+            Some(Some("C:\\Users\\rapha".into()))
         );
         // Windows Terminal profiles commonly quote the path.
         assert_eq!(
             parse(&[b"9", b"9", b"\"C:\\Program Files\""]),
-            Some("C:\\Program Files".into())
+            Some(Some("C:\\Program Files".into()))
         );
         // The parser keeps a `;` in the path inside the last param.
-        assert_eq!(parse(&[b"9", b"9", b"C:\\a;b"]), Some("C:\\a;b".into()));
+        assert_eq!(
+            parse(&[b"9", b"9", b"C:\\a;b"]),
+            Some(Some("C:\\a;b".into()))
+        );
 
         // Progress reports and notifications are not directories.
         assert_eq!(parse(&[b"9", b"4", b"1", b"50"]), None);
         assert_eq!(parse(&[b"9", b"hello"]), None);
-        assert_eq!(parse(&[b"9", b"9", b""]), None);
-        assert_eq!(parse(&[b"9", b"9", b"\"\""]), None);
+        assert_eq!(parse(&[b"9", b"9"]), None);
+
+        // An empty path, quoted or not, means the directory is unknown.
+        assert_eq!(parse(&[b"9", b"9", b""]), Some(None));
+        assert_eq!(parse(&[b"9", b"9", b"\"\""]), Some(None));
 
         // Only absolute paths: free text and relative paths are not a
         // cwd, and UNC names another machine like a remote OSC 7 host.
@@ -606,7 +695,7 @@ mod tests {
         assert_eq!(parse(&[b"9", b"9", b"\\\\server\\share"]), None);
         assert_eq!(
             parse(&[b"9", b"9", b"/home/user"]),
-            Some("/home/user".into())
+            Some(Some("/home/user".into()))
         );
     }
 
@@ -750,6 +839,32 @@ mod tests {
             term.current_directory.as_deref(),
             Some(std::path::Path::new("/home/My Files"))
         );
+
+        // A malformed payload is ignored, not treated as "unknown".
+        processor.advance(&mut term, b"\x1b]7;not-a-url\x1b\\");
+        assert_eq!(
+            term.current_directory.as_deref(),
+            Some(std::path::Path::new("/home/My Files"))
+        );
+
+        // An empty payload means the program no longer knows its
+        // directory, so the stale one is forgotten.
+        processor.advance(&mut term, b"\x1b]7;\x1b\\");
+        assert_eq!(term.current_directory, None);
+
+        // Same for the ConEmu flavor.
+        processor.advance(&mut term, b"\x1b]9;9;/tmp/x\x07");
+        assert_eq!(
+            term.current_directory.as_deref(),
+            Some(std::path::Path::new("/tmp/x"))
+        );
+        processor.advance(&mut term, b"\x1b]9;9;\x07");
+        assert_eq!(term.current_directory, None);
+
+        // A quoted empty path clears too.
+        processor.advance(&mut term, b"\x1b]9;9;/tmp/y\x07");
+        processor.advance(&mut term, b"\x1b]9;9;\"\"\x07");
+        assert_eq!(term.current_directory, None);
     }
 
     #[test]
@@ -761,6 +876,24 @@ mod tests {
         assert_eq!(parse_hyperlink(b"", b""), Some(None));
         assert_eq!(parse_hyperlink(b"id=", b""), Some(None));
         assert_eq!(parse_hyperlink(b"id=a", b""), None);
+
+        // An id with invalid UTF-8 is still an id: it must not turn an
+        // open into a close, and the program's grouping is kept.
+        assert_eq!(parse_hyperlink(b"id=caf\xe9", b""), None);
+        let open = parse_hyperlink(b"id=caf\xe9", b"https://x.dev")
+            .unwrap()
+            .unwrap();
+        assert_eq!(open.id(), "caf\u{FFFD}");
+    }
+
+    #[test]
+    fn conemu_subcommands() {
+        for sub in [b"1" as &[u8], b"4", b"9", b"10", b"12"] {
+            assert!(is_conemu_subcommand(sub), "{sub:?}");
+        }
+        for sub in [b"" as &[u8], b"0", b"13", b"01", b"hello", b"4x"] {
+            assert!(!is_conemu_subcommand(sub), "{sub:?}");
+        }
     }
 
     #[test]
@@ -775,6 +908,28 @@ mod tests {
     #[test]
     fn title_is_verbatim() {
         assert_eq!(parse_title(&[b"2", b" a;b "]), Some(" a;b ".into()));
+        assert_eq!(parse_title(&[b"2", b""]), Some(String::new()));
         assert_eq!(parse_title(&[b"2"]), None);
+    }
+
+    #[test]
+    fn title_rejects_invalid_utf8_and_oversize() {
+        // Invalid UTF-8 drops the whole title instead of replacing bytes.
+        assert_eq!(parse_title(&[b"0", b"caf\xe9"]), None);
+
+        let at_limit = "a".repeat(MAX_TITLE_BYTES);
+        assert_eq!(
+            parse_title(&[b"0", at_limit.as_bytes()]),
+            Some(at_limit.clone())
+        );
+        let over = "a".repeat(MAX_TITLE_BYTES + 1);
+        assert_eq!(parse_title(&[b"0", over.as_bytes()]), None);
+
+        // The limit is in bytes: a multi-byte title near the limit
+        // is accepted or rejected whole, never cut mid-character.
+        let wide = "é".repeat(MAX_TITLE_BYTES / 2); // 254 bytes
+        assert_eq!(parse_title(&[b"0", wide.as_bytes()]), Some(wide));
+        let wide_over = "é".repeat(MAX_TITLE_BYTES / 2 + 1); // 256 bytes
+        assert_eq!(parse_title(&[b"0", wide_over.as_bytes()]), None);
     }
 }

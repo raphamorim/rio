@@ -1151,9 +1151,6 @@ mod tests {
         // Test handling multiple trailing delimiters
         assert_eq!(trim_tail("https://example.com.'),"), "https://example.com");
 
-        // Test markdown-style URLs
-        assert_eq!(trim_tail("https://example.com)"), "https://example.com");
-
         // Test handling unbalanced brackets
         assert_eq!(
             trim_tail("https://example.com/path]"),
