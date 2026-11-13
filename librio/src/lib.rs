@@ -152,6 +152,14 @@ pub trait SurfaceDelegate: MaybeSendSync + 'static {
     fn action(&self, _surface: SurfaceId, _action: Action) {}
     fn clipboard_write(&self, _surface: SurfaceId, _kind: ClipboardType, _text: String) {}
     fn close_surface(&self, _surface: SurfaceId) {}
+    /// Whether this delegate acts on `Action::ProgramStatus` (OSC 7501).
+    /// Read once per surface at creation. While false, the terminal
+    /// leaves the support query unanswered, so programs don't report to
+    /// a terminal that ignores them, and no program-status actions are
+    /// sent.
+    fn handles_program_status(&self) -> bool {
+        false
+    }
     /// Bytes the terminal wants delivered to the child process. Only called
     /// on non-`pty` builds, where the host owns the transport (a WebSocket
     /// to a real shell, an in-page demo interpreter, ...); with a PTY the
@@ -433,7 +441,7 @@ impl Surface {
             pty_writer: pty_writer.clone(),
         };
 
-        let terminal = Crosswords::new(
+        let mut terminal = Crosswords::new(
             GridSize::new(
                 desc.cols as usize,
                 desc.rows as usize,
@@ -446,6 +454,7 @@ impl Surface {
             id,
             desc.scrollback,
         );
+        terminal.set_program_status_enabled(engine.delegate.handles_program_status());
         // On wasm the delegate (and so the whole graph) is single-threaded
         // by design; Arc stays because the pty build shares it with the IO
         // thread and the API is one type on every target.
@@ -1247,6 +1256,9 @@ mod tests {
         fn action(&self, _surface: SurfaceId, action: Action) {
             self.actions.lock().unwrap().push(action);
         }
+        fn handles_program_status(&self) -> bool {
+            true
+        }
     }
 
     // The wheel means different things to different programs. A pager on
@@ -1951,6 +1963,34 @@ mod tests {
                 &Action::Progress { state: 0, value: 0 },
             ]
         );
+    }
+
+    // A delegate that doesn't handle OSC 7501 gets no program-status
+    // actions, and the terminal doesn't claim support to programs.
+    #[test]
+    fn program_status_needs_the_delegate_to_opt_in() {
+        struct OptedOut(Mutex<Vec<Action>>);
+        impl SurfaceDelegate for OptedOut {
+            fn wakeup(&self, _surface: SurfaceId) {}
+            fn action(&self, _surface: SurfaceId, action: Action) {
+                self.0.lock().unwrap().push(action);
+            }
+        }
+        let delegate = Arc::new(OptedOut(Mutex::new(Vec::new())));
+        let engine = Engine::new(delegate.clone());
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+
+        surface.inject_output(b"\x1b]7501;state=working\x07");
+        surface.inject_output(b"\x1b]133;A\x07");
+
+        assert!(!delegate
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|a| matches!(a, Action::ProgramStatus(_))));
     }
 
     // OSC 7501 reaches the embedder as validated reports plus the

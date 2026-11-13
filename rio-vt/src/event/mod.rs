@@ -579,6 +579,13 @@ pub struct ProgressReport {
     pub progress: Option<u8>,
 }
 
+/// Body of the reply to the OSC 7501 support query (`OSC 7501 ; ? ST`):
+/// `?` plus the states and kinds this terminal accepts, so a program can
+/// fall back when it wants one from a later revision of the spec.
+/// `clear` is left out because it is not a state.
+pub const PROGRAM_STATUS_QUERY_REPLY: &str =
+    "?:states=idle,working,done,blocked,error:kinds=permission,question,auth";
+
 /// `state` of an OSC 7501 program status report.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgramState {

@@ -139,7 +139,8 @@ typedef struct {
   void (*clipboard_write_cb)(void *userdata, rio_surface_id_t surface, uint8_t kind,
                              const char *utf8);
   void (*close_surface_cb)(void *userdata, rio_surface_id_t surface);
-  /* OSC 7501. NULL to ignore program status. */
+  /* OSC 7501. NULL to ignore program status: the terminal then also
+     leaves the support query (OSC 7501 ; ?) unanswered. */
   void (*program_status_cb)(void *userdata, rio_surface_id_t surface,
                             const rio_program_status_s *status);
 } rio_runtime_config_s;
