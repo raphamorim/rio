@@ -158,6 +158,72 @@ impl Application<'_> {
         rio_notifier::send_notification(title, body);
     }
 
+    /// BEL from `route_id`: the audio bell, and the tab indicator when
+    /// the tab is not the one being looked at.
+    fn ring_bell(&mut self, window_id: rio_backend::event::WindowId, route_id: usize) {
+        if self.config.bell.audio {
+            self.handle_audio_bell();
+        }
+
+        if self.config.bell.tab_indicator {
+            if let Some(route) = self.router.routes.get_mut(&window_id) {
+                let focused = route.window.is_focused;
+                if route
+                    .window
+                    .screen
+                    .context_manager
+                    .ring_bell(route_id, focused)
+                {
+                    route.request_overlay_redraw();
+                }
+            }
+        }
+    }
+
+    /// A shell command finished on `route_id` (OSC 133). Announced per
+    /// `[notify-on-command-finish]`: only past the configured duration,
+    /// and, for `unfocused`, only when the command's tab is not the
+    /// one being looked at.
+    fn handle_command_finished(
+        &mut self,
+        window_id: rio_backend::event::WindowId,
+        route_id: usize,
+        exit_status: Option<u8>,
+        duration: std::time::Duration,
+    ) {
+        use rio_backend::config::command_finished::NotifyWhen;
+
+        let config = self.config.notify_on_command_finish.clone();
+        let focused = self.router.routes.get(&window_id).is_some_and(|route| {
+            route.window.is_focused
+                && route.window.screen.ctx().current_route() == route_id
+        });
+        match config.when {
+            NotifyWhen::Never => return,
+            NotifyWhen::Unfocused if focused => return,
+            NotifyWhen::Unfocused | NotifyWhen::Always => {}
+        }
+        if duration.as_millis() <= u128::from(config.after) {
+            return;
+        }
+
+        if config.bell {
+            self.ring_bell(window_id, route_id);
+        }
+        if config.notify {
+            let seconds = duration.as_secs_f64();
+            let (title, body) = match exit_status {
+                None => ("Command Finished", format!("Command took {seconds:.1}s.")),
+                Some(0) => ("Command Succeeded", format!("Command took {seconds:.1}s.")),
+                Some(code) => (
+                    "Command Failed",
+                    format!("Command took {seconds:.1}s and exited with code {code}."),
+                ),
+            };
+            self.handle_desktop_notification(title, &body);
+        }
+    }
+
     pub fn run(
         &mut self,
         event_loop: EventLoop<EventPayload>,
@@ -818,24 +884,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::Bell(route_id)) => {
-                // Handle audio bell
-                if self.config.bell.audio {
-                    self.handle_audio_bell();
-                }
-
-                if self.config.bell.tab_indicator {
-                    if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        let focused = route.window.is_focused;
-                        if route
-                            .window
-                            .screen
-                            .context_manager
-                            .ring_bell(route_id, focused)
-                        {
-                            route.request_overlay_redraw();
-                        }
-                    }
-                }
+                self.ring_bell(window_id, route_id);
+            }
+            RioEventType::Rio(RioEvent::CommandFinished {
+                route_id,
+                exit_status,
+                duration,
+            }) => {
+                self.handle_command_finished(window_id, route_id, exit_status, duration);
             }
             RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {
                 self.handle_desktop_notification(&title, &body);
