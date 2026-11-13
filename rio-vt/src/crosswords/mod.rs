@@ -6538,8 +6538,9 @@ mod tests {
         let mut processor = Processor::default();
 
         // A prompt mark, a full A/B/C/D cycle with options, and an
-        // iTerm2 SetUserVar (not implemented, must be ignored without
-        // disturbing the marks), bell-terminated like shells emit them.
+        // iTerm2 SetUserVar (parsed, but the terminal keeps nothing, so
+        // it must pass without disturbing the marks), bell-terminated
+        // like shells emit them.
         let bytes = b"]133;A;aid=1prompt]133;Bcmd
 ]133;Cout
 ]133;D;0]1337;SetUserVar=foo=aGVsbG8=";

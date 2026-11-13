@@ -72,6 +72,23 @@ pub(super) fn parse_semantic_prompt(
     }
 }
 
+/// Parse `OSC 1337 ; SetUserVar=name=<base64 value>`. The value is
+/// base64 per iTerm2's spec; anything undecodable is dropped. The
+/// result goes to [`Handler::set_user_var`](super::handler::Handler::set_user_var),
+/// which embedders may implement; the terminal itself ignores it.
+pub(super) fn parse_set_user_var(params: &[&[u8]]) -> Option<(String, String)> {
+    let payload = params.get(1)?.strip_prefix(b"SetUserVar=")?;
+    let mut parts = payload.splitn(2, |byte| *byte == b'=');
+    let name = simd_utf8::from_utf8_fast(parts.next()?).ok()?;
+    if name.is_empty() {
+        return None;
+    }
+    let encoded = parts.next()?;
+    let decoded = crate::simd_base64::decode(encoded)?;
+    let value = String::from_utf8(decoded).ok()?;
+    Some((name.to_string(), value))
+}
+
 /// Parse an `xterm`-style color value (`#rgb`, `#rrggbb`, `rgb:r/g/b`).
 pub(super) fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
     if !color.is_empty() && color[0] == b'#' {
