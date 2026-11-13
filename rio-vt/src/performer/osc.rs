@@ -391,10 +391,10 @@ pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<Cow<'_, str>> {
 
 /// Longest OSC 8 payload accepted: everything after `8;`, that is the
 /// link params, the `;` after them and the URI, as one budget shared
-/// by both parts. The figure is what a 2 KiB capture buffer holds once
-/// a terminating byte is set aside for the payload. A URI is stored
-/// for as long as the cells carrying it live, so the budget also keeps
-/// a link's raw size in the grid bounded.
+/// by both parts. The figure is a design cap, 2 KiB less a byte, and
+/// is not tied to this parser's fixed OSC buffer, which also holds the
+/// `8;` prefix. A URI is stored for as long as the cells carrying it
+/// live, so the budget also keeps a link's raw size in the grid bounded.
 pub(crate) const MAX_HYPERLINK_BYTES: usize = 2047;
 
 /// OSC 8: `Some(None)` closes the link, `Some(Some(_))` opens one and

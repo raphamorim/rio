@@ -843,10 +843,9 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 self.handler.sixel_graphic_start(params);
             }
             ('q', [b'+']) => {
-                // XTGETTCAP request: DCS + q <hex-encoded-names> ST
+                // XTGETTCAP request: DCS + q <hex-encoded-names> ST.
+                // `unhook` left the buffer empty and the flag clear.
                 self.state.xtgettcap_state.active = true;
-                self.state.xtgettcap_state.buffer.clear();
-                self.state.xtgettcap_state.overflowed = false;
             }
             // Legacy iTerm2 synchronized updates (`DCS = 1 s ST` begin,
             // `DCS = 2 s ST` end), the form older `Sync` terminfo
@@ -910,14 +909,12 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 self.handler.xtgettcap_response(response);
             }
 
-            // Reset state; `hook` clears `overflowed` for the next request.
+            // Every DCS exit reaches here, so this is the one place the
+            // request state is reset; `hook` only arms it.
             let request = &mut self.state.xtgettcap_state;
             request.active = false;
-            if request.buffer.capacity() > XTGETTCAP_RETAIN_BYTES {
-                request.buffer = Vec::new();
-            } else {
-                request.buffer.clear();
-            }
+            request.overflowed = false;
+            super::clear_or_release(&mut request.buffer, XTGETTCAP_RETAIN_BYTES);
         } else {
             debug!("[unhandled dcs_unhook]");
         }
@@ -1470,11 +1467,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
     fn apc_start(&mut self) {
         debug!("[apc_start] Beginning APC accumulation");
         let apc = &mut self.state.apc_state;
-        if apc.buffer.capacity() > APC_RETAIN_BYTES {
-            apc.buffer = Vec::new();
-        } else {
-            apc.buffer.clear();
-        }
+        super::clear_or_release(&mut apc.buffer, APC_RETAIN_BYTES);
         apc.overflowed = false;
         // Pre-allocate reasonable size for Kitty graphics chunks (typically 4KB)
         apc.buffer.reserve(4096);

@@ -7160,8 +7160,10 @@ mod tests {
 
     /// An OSC 8 over the payload budget is invalid end to end: it does
     /// not open a link, and it does not close the one already open, so
-    /// the text that follows stays attributed to the open link. The
-    /// budget arithmetic itself is pinned by the parser's unit test.
+    /// the text that follows stays attributed to the open link. A link
+    /// exactly at the budget still opens through the parser's param
+    /// split and its fixed-buffer spill; the budget arithmetic itself
+    /// is pinned by the unit test in `performer::osc`.
     #[test]
     fn osc8_oversized_hyperlink_is_ignored() {
         use crate::performer::handler::Processor;
@@ -7179,20 +7181,28 @@ mod tests {
         );
         let mut processor = Processor::default();
 
-        let over = format!("https://x.dev/{}", "a".repeat(MAX_HYPERLINK_BYTES));
+        let at_limit = format!(
+            "https://x.dev/{}",
+            "a".repeat(MAX_HYPERLINK_BYTES - 1 - "https://x.dev/".len())
+        );
+        let over = format!("{at_limit}a");
         let mut input = Vec::new();
         input.extend_from_slice(b"\x1b]8;;https://a.example\x07A");
         input.extend_from_slice(format!("\x1b]8;;{over}\x07B").as_bytes());
-        input.extend_from_slice(b"\x1b]8;;\x07C");
+        input.extend_from_slice(format!("\x1b]8;;{at_limit}\x07C").as_bytes());
+        input.extend_from_slice(b"\x1b]8;;\x07D");
         processor.advance(&mut cw, &input);
 
         let a = cw.cell_hyperlink(Line(0), Column(0)).expect("hyperlink");
         assert_eq!(a.uri(), "https://a.example");
         // The oversized open is ignored: the first link stays open over
-        // "B" and the following close ends it.
+        // "B".
         let b = cw.cell_hyperlink(Line(0), Column(1)).expect("hyperlink");
         assert_eq!(b.uri(), "https://a.example");
-        assert!(cw.cell_hyperlink(Line(0), Column(2)).is_none());
+        // Exactly at the budget: opens, with the URI intact.
+        let c = cw.cell_hyperlink(Line(0), Column(2)).expect("hyperlink");
+        assert_eq!(c.uri(), at_limit);
+        assert!(cw.cell_hyperlink(Line(0), Column(3)).is_none());
     }
 
     /// OSC 8 hyperlinks span multiple lines when the parser writes a
