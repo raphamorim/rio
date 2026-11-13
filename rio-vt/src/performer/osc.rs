@@ -420,8 +420,12 @@ pub(super) fn parse_program_status(
     terminator_len: usize,
 ) -> Option<ProgramStatusRequest> {
     // Values never contain `;`, but rejoin so a stray one fails the
-    // alphabet check instead of silently truncating the body.
-    let body = join_params(params, 1)?;
+    // alphabet check instead of silently truncating the body. The usual
+    // single-param body is borrowed, not copied.
+    let body: std::borrow::Cow<str> = match params {
+        [_, body] => simd_utf8::from_utf8_fast(body).ok()?.into(),
+        _ => join_params(params, 1)?.into(),
+    };
     // `ESC ] 7501 ;` is 7 bytes.
     if body.len() + 7 + terminator_len > PROGRAM_STATUS_MAX_SEQUENCE {
         return None;

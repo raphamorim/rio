@@ -116,7 +116,7 @@ impl SurfaceDelegate for JsDelegate {
             Action::RingBell => Event::Bell,
             Action::CursorBlinkingChange => Event::CursorBlinkingChange,
             Action::Progress { state, value } => Event::Progress(state, value),
-            // No JS surface for OSC 7501 yet.
+            // Dropped: the wasm build has no JavaScript callback for OSC 7501 yet.
             Action::ProgramStatus(_) => return,
         });
     }
