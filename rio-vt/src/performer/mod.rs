@@ -1,5 +1,5 @@
 pub mod handler;
-mod osc;
+pub(crate) mod osc;
 pub mod parser;
 
 #[cfg(all(test, feature = "pty"))]
