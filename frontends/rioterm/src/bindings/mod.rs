@@ -606,6 +606,12 @@ macro_rules! trigger {
             location: $location,
         }
     }};
+    (KeyBinding, $key:expr, $location:expr) => {{
+        BindingKey::Keycode {
+            key: $key,
+            location: $location,
+        }
+    }};
     (KeyBinding, $key:literal,) => {{
         BindingKey::Keycode {
             key: Character($key.into()),
@@ -666,6 +672,9 @@ pub fn default_key_bindings(config: &rio_backend::config::Config) -> Vec<KeyBind
         Key::Named(Enter), +BindingMode::SEARCH, +BindingMode::VI; SearchAction::SearchConfirm;
         Key::Named(Escape), +BindingMode::SEARCH; SearchAction::SearchCancel;
         Key::Named(Enter), ModifiersState::SHIFT, +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusPrevious;
+        Key::Named(Enter) => KeyLocation::Numpad, +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusNext;
+        Key::Named(Enter) => KeyLocation::Numpad, +BindingMode::SEARCH, +BindingMode::VI; SearchAction::SearchConfirm;
+        Key::Named(Enter) => KeyLocation::Numpad, ModifiersState::SHIFT, +BindingMode::SEARCH, ~BindingMode::VI; SearchAction::SearchFocusPrevious;
         "i", +BindingMode::VI, ~BindingMode::SEARCH; Action::ToggleViMode;
         "c", ModifiersState::CONTROL, +BindingMode::VI; Action::ToggleViMode;
         Key::Named(Escape), +BindingMode::VI; Action::ClearSelection;
@@ -1728,6 +1737,56 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn triggered(
+        mode: BindingMode,
+        mods: ModifiersState,
+        location: KeyLocation,
+    ) -> Vec<Action> {
+        let config = rio_backend::config::Config::default();
+        let input = BindingKey::Keycode {
+            key: Key::Named(Enter),
+            location,
+        };
+        default_key_bindings(&config)
+            .into_iter()
+            .filter(|b| b.is_triggered_by(mode.clone(), mods, &input))
+            .map(|b| b.action)
+            .collect()
+    }
+
+    #[test]
+    fn numpad_enter_drives_search_like_return() {
+        let none = ModifiersState::empty();
+        for (mode, mods) in [
+            (BindingMode::SEARCH, none),
+            (BindingMode::SEARCH | BindingMode::VI, none),
+            (BindingMode::SEARCH, ModifiersState::SHIFT),
+        ] {
+            assert_eq!(
+                triggered(mode.clone(), mods, KeyLocation::Numpad),
+                triggered(mode, mods, KeyLocation::Standard),
+            );
+        }
+        assert_eq!(
+            triggered(BindingMode::SEARCH, none, KeyLocation::Numpad),
+            vec![Action::Search(SearchAction::SearchFocusNext)]
+        );
+    }
+
+    #[test]
+    fn numpad_enter_ignores_app_keypad_mode() {
+        let none = ModifiersState::empty();
+        assert!(triggered(BindingMode::APP_KEYPAD, none, KeyLocation::Numpad).is_empty());
+        assert_eq!(
+            triggered(
+                BindingMode::APP_KEYPAD | BindingMode::SEARCH,
+                none,
+                KeyLocation::Numpad
+            ),
+            vec![Action::Search(SearchAction::SearchFocusNext)]
+        );
     }
 
     #[test]

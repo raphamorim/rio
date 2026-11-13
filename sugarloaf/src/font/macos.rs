@@ -897,7 +897,7 @@ pub fn all_families() -> Vec<String> {
 /// Swap B and R in each 4-byte pixel. CoreGraphics' `premul_first +
 /// byte_order_32_little` writes BGRA; Rio's atlas is RGBA. Alpha stays put.
 fn bgra_to_rgba_in_place(bytes: &mut [u8]) {
-    for px in bytes.chunks_exact_mut(4) {
+    for px in bytes.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
 }

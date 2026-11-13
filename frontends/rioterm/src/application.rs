@@ -1,5 +1,6 @@
 use crate::event::{ClickState, EventPayload, EventProxy, RioEvent, RioEventType};
 use crate::ime::{Preedit, PreeditCursor};
+use crate::renderer::island::PROGRESS_BAR_TIMEOUT;
 use crate::renderer::utils::update_colors_based_on_theme;
 use crate::router::{routes::RoutePath, Router};
 use crate::scheduler::{Scheduler, TimerId, Topic};
@@ -32,6 +33,7 @@ use std::time::{Duration, Instant};
 
 pub struct Application<'a> {
     config: rio_backend::config::Config,
+    overrides: crate::cli::Overrides,
     /// The title template shows `{{columns}}`/`{{lines}}`, so a resize
     /// must re-render titles (the only title data with no PTY event;
     /// everything else arrives via OSC 0/2 and OSC 7).
@@ -53,6 +55,7 @@ impl Application<'_> {
         config_error: Option<rio_backend::config::ConfigError>,
         event_loop: &EventLoop<EventPayload>,
         app_id: Option<String>,
+        overrides: crate::cli::Overrides,
     ) -> Application<'app> {
         // SAFETY: Since this takes a pointer to the winit event loop, it MUST be dropped first,
         // which is done in `exiting`.
@@ -81,6 +84,7 @@ impl Application<'_> {
         Application {
             title_tracks_size: title_tracks_size(&config),
             config,
+            overrides,
             event_proxy,
             router,
             scheduler,
@@ -191,7 +195,8 @@ impl Application<'_> {
 /// input with no PTY event attached (resizes are locally known).
 fn title_tracks_size(config: &rio_backend::config::Config) -> bool {
     let template = config.title.content.to_lowercase();
-    template.contains("columns") || template.contains("lines")
+    crate::context::title::is_template(&template)
+        && (template.contains("columns") || template.contains("lines"))
 }
 
 impl Application<'_> {
@@ -584,11 +589,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::UpdateConfig) => {
-                let (config, config_error) = match rio_backend::config::Config::try_load()
-                {
-                    Ok(config) => (config, None),
-                    Err(error) => (rio_backend::config::Config::default(), Some(error)),
-                };
+                let (mut config, config_error) =
+                    match rio_backend::config::Config::try_load() {
+                        Ok(config) => (config, None),
+                        Err(error) => {
+                            (rio_backend::config::Config::default(), Some(error))
+                        }
+                    };
+                self.overrides.apply(&mut config);
 
                 let has_font_updates = self.config.fonts != config.fonts;
                 let has_binding_updates = self.config.bindings != config.bindings;
@@ -613,7 +621,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
 
                 let mut has_checked_adaptive_colors = false;
-                for (_id, route) in self.router.routes.iter_mut() {
+                for route in self.router.routes.values_mut() {
                     // Apply system theme to ensure colors are consistent
                     if !has_checked_adaptive_colors {
                         let system_theme = event_loop.system_theme();
@@ -711,6 +719,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::CloseTerminal(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    if self.config.hold
+                        && route.window.screen.context_manager.hold_exited(route_id)
+                    {
+                        route.request_redraw();
+                        return;
+                    }
+
                     route
                         .window
                         .screen
@@ -773,8 +788,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             RioEventType::Rio(RioEvent::ProgressReport(report)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if let Some(island) = &mut route.window.screen.renderer.island {
+                        let state = report.state;
                         island.set_progress_report(report);
                         route.request_overlay_redraw();
+
+                        let timer_id = TimerId::new(
+                            Topic::ProgressTimeout,
+                            u64::from(window_id) as usize,
+                        );
+                        self.scheduler.unschedule(timer_id);
+                        if state != rio_backend::event::ProgressState::Remove {
+                            self.scheduler.schedule(
+                                EventPayload::new(
+                                    RioEventType::Rio(RioEvent::Render),
+                                    window_id,
+                                ),
+                                PROGRESS_BAR_TIMEOUT,
+                                false,
+                                timer_id,
+                            );
+                        }
                     }
                 }
             }
@@ -1177,7 +1210,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
         let mut tab_id = None;
 
         // In case only have one window
-        for (_, route) in self.router.routes.iter() {
+        for route in self.router.routes.values() {
             if tab_id.is_none() {
                 tab_id = Some(route.window.winit_window.tabbing_identifier());
             }

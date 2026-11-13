@@ -1321,6 +1321,110 @@ mod tests {
         assert!(state.display_offset() > 0, "the view should have moved");
     }
 
+    /// A surface and render state for the synchronized update tests. The
+    /// engine is returned too, since the surface must not outlive it.
+    fn hold_fixture() -> (Engine, Surface, RenderState) {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let state = RenderState::new(&surface);
+        (engine, surface, state)
+    }
+
+    fn row_10(state: &RenderState) -> Option<char> {
+        state.square(9, 0).map(|sq| sq.c())
+    }
+
+    /// Move the active update's last BSU far enough back that it expired.
+    fn expire_hold(surface: &Surface) {
+        surface.terminal().lock().sync_update_started = rio_vt::time::Instant::now()
+            .checked_sub(rio_vt::time::Duration::from_secs(2));
+    }
+
+    /// A synchronized update holds the last snapshot until it ends, so an
+    /// embedder never draws a half-written frame.
+    #[test]
+    fn render_state_holds_during_synchronized_update() {
+        let (_engine, surface, mut state) = hold_fixture();
+
+        surface.inject_output(b"\x1b[10;1Ha");
+        state.update();
+        assert_eq!(row_10(&state), Some('a'));
+
+        surface.inject_output(b"\x1b[?2026h\x1b[10;1Hb");
+        state.update();
+        assert_eq!(row_10(&state), Some('a'), "held during the update");
+
+        surface.inject_output(b"\x1b[?2026l");
+        state.update();
+        assert_eq!(row_10(&state), Some('b'));
+    }
+
+    /// A resize that changes nothing keeps the update; a pixel size
+    /// change ends it even when the grid keeps its size.
+    #[test]
+    fn render_state_resize_ends_hold_only_on_change() {
+        let (_engine, surface, mut state) = hold_fixture();
+        let desc = SurfaceDesc::default();
+
+        surface.inject_output(b"\x1b[10;1Ha");
+        state.update();
+        surface.inject_output(b"\x1b[?2026h\x1b[10;1Hb");
+        state.update();
+        assert_eq!(row_10(&state), Some('a'));
+
+        surface.resize(desc.cols, desc.rows, desc.pixel_width, desc.pixel_height);
+        state.update();
+        assert_eq!(row_10(&state), Some('a'), "unchanged size keeps the hold");
+
+        surface.resize(
+            desc.cols,
+            desc.rows,
+            desc.pixel_width * 2,
+            desc.pixel_height,
+        );
+        state.update();
+        assert_eq!(row_10(&state), Some('b'));
+    }
+
+    /// A program that never ends its update cannot hold the snapshot for
+    /// more than a second.
+    #[test]
+    fn render_state_gives_up_on_a_stuck_hold() {
+        let (_engine, surface, mut state) = hold_fixture();
+
+        surface.inject_output(b"\x1b[10;1Ha");
+        state.update();
+        surface.inject_output(b"\x1b[?2026h\x1b[10;1Hb");
+        state.update();
+        assert_eq!(row_10(&state), Some('a'));
+
+        expire_hold(&surface);
+        state.update();
+        assert_eq!(row_10(&state), Some('b'));
+        assert!(!surface.terminal().lock().synchronized_output());
+    }
+
+    /// Every BSU re-arms the limit, so a stream of back-to-back updates is
+    /// not cut off mid-frame.
+    #[test]
+    fn render_state_hold_limit_rearms_on_bsu() {
+        let (_engine, surface, mut state) = hold_fixture();
+
+        surface.inject_output(b"\x1b[10;1Ha");
+        state.update();
+        surface.inject_output(b"\x1b[?2026h\x1b[10;1Hb");
+        expire_hold(&surface);
+
+        surface.inject_output(b"\x1b[?2026l\x1b[?2026h\x1b[10;1Hc");
+        state.update();
+        assert_eq!(row_10(&state), Some('a'), "the new update is still held");
+        assert!(surface.terminal().lock().synchronized_output());
+    }
+
     // The wasm renderer draws a cell's full cluster text (base +
     // attached codepoints) when the wire flag says one exists; the
     // accessor is the source of that text.

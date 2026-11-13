@@ -413,6 +413,7 @@ struct ShellUser {
 impl ShellUser {
     /// look for shell, username, longname, and home dir in the respective environment variables
     /// before falling back on looking in to `passwd`.
+    #[allow(clippy::question_mark)]
     fn from_env() -> Result<Self, Error> {
         let mut buf = [0; 1024];
         let pw = get_pw_entry(&mut buf);
@@ -562,6 +563,8 @@ pub fn create_pty_with_spawn(
     // closes them, including command and signal registration failures.
     let file = unsafe { File::from_raw_fd(main) };
     let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+    set_cloexec(main)?;
+    set_cloexec(child)?;
 
     let user = match ShellUser::from_env() {
         Ok(data) => data,
@@ -809,6 +812,9 @@ pub fn create_pty_with_fork(
         }
         id if id > 0 => {
             let file = unsafe { File::from_raw_fd(main) };
+            if let Err(err) = set_cloexec(main) {
+                tracing::warn!("failed to set close-on-exec on the pty: {err}");
+            }
             // TODO: Currently we fork the process and don't wait to know if led to failure
             // Whenever it happens it will just simply shut down the teletyperwriter
             // In the future add an option to check before release the method
@@ -849,6 +855,19 @@ fn set_controlling_terminal(fd: libc::c_int) -> Result<(), Error> {
         return Err(Error::last_os_error());
     }
 
+    Ok(())
+}
+
+/// Marks `fd` close-on-exec. openpty and forkpty return descriptors
+/// without it, so every shell spawned later would inherit the pty of
+/// each terminal already open and keep it from hanging up on close.
+fn set_cloexec(fd: libc::c_int) -> Result<(), Error> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    if flags < 0
+        || unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } < 0
+    {
+        return Err(Error::last_os_error());
+    }
     Ok(())
 }
 

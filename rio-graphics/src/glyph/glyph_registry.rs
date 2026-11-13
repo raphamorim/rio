@@ -21,7 +21,10 @@
 
 use parking_lot::RwLock;
 use rustc_hash::FxHashMap;
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, OnceLock};
+
+pub use crate::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphLayout, GlyphSize};
 
 /// Sentinel `font_id` returned by `FontLibraryData::find_best_font_match`
 /// when the codepoint has a live registration. The rasterizer branches
@@ -33,18 +36,6 @@ pub const CUSTOM_GLYPH_FONT_ID: usize = usize::MAX;
 /// `CUSTOM_GLYPH_FONT_ID as u32` on every supported target; we expose
 /// it as its own const so call sites stay free of `as` casts.
 pub const CUSTOM_GLYPH_FONT_ID_U32: u32 = u32::MAX;
-
-/// Pack a `(codepoint, version)` pair into the 32-bit `glyph_id` field
-/// the grid atlas uses. Each register/clear bumps the registration's
-/// `version`, so re-registering the same codepoint produces a fresh
-/// atlas key and never serves stale rasterisation. PUA codepoints fit
-/// in 21 bits; the remaining 11 bits give 2048 versions before
-/// wraparound — large enough that an unrelated collision is
-/// astronomical for any realistic register/clear cadence.
-#[inline]
-pub fn pack_atlas_glyph_id(codepoint: u32, version: u32) -> u32 {
-    ((version & 0x7FF) << 21) | (codepoint & 0x1F_FFFF)
-}
 
 /// Maximum simultaneous registrations per session (spec §4). Each
 /// registration is one slot regardless of payload type.
@@ -93,6 +84,17 @@ impl StoredPayload {
     }
 }
 
+/// Facts about a payload that only rendering reveals, kept with the
+/// registration so they're worked out once.
+#[derive(Debug, Default)]
+pub struct RenderState {
+    /// The payload failed to rasterise (a malformed COLR table, an empty
+    /// outline), so the renderer needn't retry it every frame.
+    pub unrenderable: AtomicBool,
+    /// Whether the paint graph asks for the foreground colour.
+    pub uses_foreground: OnceLock<bool>,
+}
+
 /// A single registered glyph. The raw payload is retained so the
 /// renderer can re-rasterize at any cell size without re-transmitting.
 ///
@@ -110,6 +112,8 @@ pub struct RegisteredGlyph {
     /// hint only; the codepoint's logical cell width stays at system
     /// wcwidth, the renderer overflows the extra cell in pixels.
     pub width: u8,
+    /// §8.5 sizing and placement.
+    pub layout: GlyphLayout,
     /// Stable render-side index in `0..GLOSSARY_CAPACITY`. The
     /// renderer's glyph-id field is u16, so the slot id fits directly.
     /// Indices are reused after eviction or explicit clear, so the
@@ -119,12 +123,14 @@ pub struct RegisteredGlyph {
     /// Per-registration insertion id used to order entries for FIFO
     /// eviction. A larger id means "registered later."
     pub insertion_id: u64,
-    /// Bumps on every register call (fresh OR overwrite). The atlas
-    /// key for a custom glyph is `(CUSTOM_FONT_ID, pack(cp, version),
-    /// size)`, so any mutation produces a fresh slot and prevents a
+    /// Bumps on every register call (fresh OR overwrite). Part of the
+    /// atlas key, so any mutation produces a fresh slot and prevents a
     /// post-clear or post-overwrite render from serving the previous
     /// rasterisation.
     pub version: u32,
+    /// What the renderer has learned about this payload. Replaced on
+    /// every registration, so it can never outlive the payload.
+    pub render_state: Arc<RenderState>,
 }
 
 #[derive(Debug)]
@@ -137,9 +143,6 @@ struct Inner {
     /// evict the oldest in O(n) over `GLOSSARY_CAPACITY` entries.
     next_insertion: u64,
     /// Monotonic counter stamped onto every registration's `version`.
-    /// Wraps around (≈4 billion before wrap) — collisions only matter
-    /// modulo the 11-bit window the atlas key uses, which is checked
-    /// in `pack_atlas_glyph_id`.
     next_version: u32,
 }
 
@@ -183,33 +186,23 @@ impl GlyphRegistry {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 
-    /// Register a glyph at a PUA codepoint.
+    /// Register a glyph at a PUA codepoint, with its declared render
+    /// span and §8.5 layout.
     ///
     /// If the codepoint is already registered, the outline is replaced
     /// and the existing insertion order and slot index are preserved.
     ///
-    /// If the glossary is full (`GLOSSARY_CAPACITY` entries) and `cp` is NOT already
-    /// registered, the oldest entry is evicted to make room. Returns
-    /// `Some(evicted_cp)` in that case so the caller can invalidate
-    /// its render cache for that codepoint.
+    /// If the glossary is full (`GLOSSARY_CAPACITY` entries) and `cp` is
+    /// NOT already registered, the oldest entry is evicted to make room.
+    /// Returns `Some(evicted_cp)` in that case so the caller can
+    /// invalidate its render cache for that codepoint.
     pub fn register(
         &self,
         cp: u32,
         payload: StoredPayload,
         upm: u16,
-    ) -> Result<Option<u32>, RegisterRejection> {
-        self.register_with_width(cp, payload, upm, 1)
-    }
-
-    /// Register a glyph with an explicit declared Unicode width
-    /// (spec §8.5: `1` or `2`). See [`GlyphRegistry::register`] for
-    /// overwrite / eviction semantics.
-    pub fn register_with_width(
-        &self,
-        cp: u32,
-        payload: StoredPayload,
-        upm: u16,
         width: u8,
+        layout: GlyphLayout,
     ) -> Result<Option<u32>, RegisterRejection> {
         if !is_pua(cp) {
             return Err(RegisterRejection::OutOfNamespace);
@@ -232,6 +225,8 @@ impl GlyphRegistry {
             existing.upm = upm;
             existing.version = version;
             existing.width = width;
+            existing.layout = layout;
+            existing.render_state = Arc::default();
             return Ok(None);
         }
 
@@ -262,9 +257,11 @@ impl GlyphRegistry {
                 payload,
                 upm,
                 width,
+                layout,
                 index: slot_index,
                 insertion_id: id,
                 version,
+                render_state: Arc::default(),
             },
         );
         Ok(evicted)
@@ -332,35 +329,43 @@ mod tests {
     }
 
     #[test]
-    fn pack_atlas_glyph_id_is_unique_per_codepoint_and_version() {
-        // Distinct codepoints with the same version → distinct keys.
-        assert_ne!(
-            pack_atlas_glyph_id(0xE0A0, 0),
-            pack_atlas_glyph_id(0xE0A1, 0)
-        );
-        // Distinct versions with the same codepoint → distinct keys
-        // (this is the property that fixes the stale-atlas bug).
-        assert_ne!(
-            pack_atlas_glyph_id(0xE0A0, 0),
-            pack_atlas_glyph_id(0xE0A0, 1)
-        );
-        // Wrap-around at the 11-bit version window. Documented
-        // limitation: register/clear/re-register more than 2048
-        // times for the same cp would alias. Acceptable for any
-        // realistic cadence.
-        assert_eq!(
-            pack_atlas_glyph_id(0xE0A0, 0),
-            pack_atlas_glyph_id(0xE0A0, 0x800)
-        );
+    fn overwriting_a_registration_clears_its_failure() {
+        use std::sync::atomic::Ordering;
+
+        let r = GlyphRegistry::new();
+        r.register(0xE0A1, glyf(vec![1]), 1000, 1, GlyphLayout::default())
+            .unwrap();
+        r.get(0xE0A1)
+            .unwrap()
+            .render_state
+            .unrenderable
+            .store(true, Ordering::Relaxed);
+        assert!(r
+            .get(0xE0A1)
+            .unwrap()
+            .render_state
+            .unrenderable
+            .load(Ordering::Relaxed));
+
+        r.register(0xE0A1, glyf(vec![2]), 1000, 1, GlyphLayout::default())
+            .unwrap();
+        assert!(!r
+            .get(0xE0A1)
+            .unwrap()
+            .render_state
+            .unrenderable
+            .load(Ordering::Relaxed));
     }
 
     #[test]
     fn register_overwrite_bumps_version_for_atlas_busting() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, glyf(vec![0xAA]), 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![0xAA]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         let v_first = r.get(0xE0A0).unwrap().version;
 
-        r.register(0xE0A0, glyf(vec![0xBB]), 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![0xBB]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         let v_second = r.get(0xE0A0).unwrap().version;
 
         assert_ne!(
@@ -372,11 +377,13 @@ mod tests {
     #[test]
     fn clear_then_reregister_yields_new_version() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, glyf(vec![0xAA]), 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![0xAA]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         let v_first = r.get(0xE0A0).unwrap().version;
 
         r.clear_one(0xE0A0);
-        r.register(0xE0A0, glyf(vec![0xBB]), 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![0xBB]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         let v_second = r.get(0xE0A0).unwrap().version;
 
         assert_ne!(
@@ -399,7 +406,11 @@ mod tests {
     #[test]
     fn register_and_lookup() {
         let r = GlyphRegistry::new();
-        assert_eq!(r.register(0xE0A0, glyf(vec![1, 2, 3]), 1000).unwrap(), None);
+        assert_eq!(
+            r.register(0xE0A0, glyf(vec![1, 2, 3]), 1000, 1, GlyphLayout::default())
+                .unwrap(),
+            None
+        );
         let g = r.get(0xE0A0).unwrap();
         assert_glyf_bytes(&g.payload, &[1, 2, 3]);
         assert_eq!(g.upm, 1000);
@@ -411,7 +422,7 @@ mod tests {
     fn register_rejects_non_pua() {
         let r = GlyphRegistry::new();
         assert_eq!(
-            r.register(0x61, glyf(vec![1]), 1000),
+            r.register(0x61, glyf(vec![1]), 1000, 1, GlyphLayout::default()),
             Err(RegisterRejection::OutOfNamespace)
         );
         assert!(r.is_empty());
@@ -420,11 +431,14 @@ mod tests {
     #[test]
     fn register_overwrites_preserving_insertion_order_and_index() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
-        r.register(0xE0A1, glyf(vec![2]), 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1]), 1000, 1, GlyphLayout::default())
+            .unwrap();
+        r.register(0xE0A1, glyf(vec![2]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         let idx_before = r.get(0xE0A0).unwrap().index;
         // Overwrite the first entry — index and insertion order stable.
-        r.register(0xE0A0, glyf(vec![9]), 2048).unwrap();
+        r.register(0xE0A0, glyf(vec![9]), 2048, 1, GlyphLayout::default())
+            .unwrap();
         let a = r.get(0xE0A0).unwrap();
         let b = r.get(0xE0A1).unwrap();
         assert_glyf_bytes(&a.payload, &[9]);
@@ -436,9 +450,12 @@ mod tests {
     #[test]
     fn distinct_registrations_get_distinct_indices() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
-        r.register(0xE0A1, glyf(vec![2]), 1000).unwrap();
-        r.register(0xE0A2, glyf(vec![3]), 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1]), 1000, 1, GlyphLayout::default())
+            .unwrap();
+        r.register(0xE0A1, glyf(vec![2]), 1000, 1, GlyphLayout::default())
+            .unwrap();
+        r.register(0xE0A2, glyf(vec![3]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         let i0 = r.get(0xE0A0).unwrap().index;
         let i1 = r.get(0xE0A1).unwrap().index;
         let i2 = r.get(0xE0A2).unwrap().index;
@@ -452,19 +469,23 @@ mod tests {
     #[test]
     fn cleared_slot_is_reused_by_next_registration() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         let old_index = r.get(0xE0A0).unwrap().index;
         r.clear_one(0xE0A0);
         assert_eq!(r.cp_for_index(old_index), None);
-        r.register(0xE0A1, glyf(vec![2]), 1000).unwrap();
+        r.register(0xE0A1, glyf(vec![2]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         assert_eq!(r.get(0xE0A1).unwrap().index, old_index);
     }
 
     #[test]
     fn clear_one_removes_registration() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
-        r.register(0xE0A1, glyf(vec![2]), 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1]), 1000, 1, GlyphLayout::default())
+            .unwrap();
+        r.register(0xE0A1, glyf(vec![2]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         r.clear_one(0xE0A0);
         assert!(!r.contains(0xE0A0));
         assert!(r.contains(0xE0A1));
@@ -480,8 +501,10 @@ mod tests {
     #[test]
     fn clear_all_drops_everything() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
-        r.register(0xE0A1, glyf(vec![2]), 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1]), 1000, 1, GlyphLayout::default())
+            .unwrap();
+        r.register(0xE0A1, glyf(vec![2]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         r.clear_all();
         assert!(r.is_empty());
     }
@@ -491,12 +514,21 @@ mod tests {
         let r = GlyphRegistry::new();
         // Fill the glossary using contiguous PUA codepoints.
         for i in 0..GLOSSARY_CAPACITY as u32 {
-            r.register(0xE000 + i, glyf(vec![i as u8]), 1000).unwrap();
+            r.register(
+                0xE000 + i,
+                glyf(vec![i as u8]),
+                1000,
+                1,
+                GlyphLayout::default(),
+            )
+            .unwrap();
         }
         assert_eq!(r.len(), GLOSSARY_CAPACITY);
 
         // The next register evicts the oldest (U+E000) to make room.
-        let evicted = r.register(0xE500, glyf(vec![0xFF]), 1000).unwrap();
+        let evicted = r
+            .register(0xE500, glyf(vec![0xFF]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         assert_eq!(evicted, Some(0xE000));
         assert!(!r.contains(0xE000));
         assert!(r.contains(0xE500));
@@ -507,10 +539,19 @@ mod tests {
     fn overwrite_at_capacity_does_not_evict() {
         let r = GlyphRegistry::new();
         for i in 0..GLOSSARY_CAPACITY as u32 {
-            r.register(0xE000 + i, glyf(vec![i as u8]), 1000).unwrap();
+            r.register(
+                0xE000 + i,
+                glyf(vec![i as u8]),
+                1000,
+                1,
+                GlyphLayout::default(),
+            )
+            .unwrap();
         }
         // Overwriting an existing codepoint MUST NOT evict.
-        let evicted = r.register(0xE000, glyf(vec![0xAB]), 1000).unwrap();
+        let evicted = r
+            .register(0xE000, glyf(vec![0xAB]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         assert_eq!(evicted, None);
         assert_eq!(r.len(), GLOSSARY_CAPACITY);
         assert_glyf_bytes(&r.get(0xE000).unwrap().payload, &[0xAB]);
@@ -520,22 +561,39 @@ mod tests {
     fn registry_is_arc_shareable() {
         let r1 = GlyphRegistry::new();
         let r2 = r1.clone();
-        r1.register(0xE0A0, glyf(vec![1]), 1000).unwrap();
+        r1.register(0xE0A0, glyf(vec![1]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         assert!(r2.contains(0xE0A0));
     }
 
     #[test]
-    fn register_with_width_stores_render_hint() {
+    fn register_stores_and_overwrites_layout() {
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, glyf(vec![1]), 1000).unwrap(); // default narrow
+        let layout = GlyphLayout {
+            aw: Some(350),
+            size: GlyphSize::Advance,
+            ..Default::default()
+        };
+        r.register(0xE0A1, glyf(vec![1]), 1000, 1, layout).unwrap();
+        assert_eq!(r.get(0xE0A1).unwrap().layout, layout);
+        r.register(0xE0A1, glyf(vec![2]), 1000, 1, GlyphLayout::default())
+            .unwrap();
+        assert_eq!(r.get(0xE0A1).unwrap().layout, GlyphLayout::default());
+    }
+
+    #[test]
+    fn register_stores_render_hint() {
+        let r = GlyphRegistry::new();
+        r.register(0xE0A0, glyf(vec![1]), 1000, 1, GlyphLayout::default())
+            .unwrap(); // default narrow
         assert_eq!(r.get(0xE0A0).unwrap().width, 1);
 
-        r.register_with_width(0xE0A1, glyf(vec![2]), 1000, 2)
+        r.register(0xE0A1, glyf(vec![2]), 1000, 2, GlyphLayout::default())
             .unwrap();
         assert_eq!(r.get(0xE0A1).unwrap().width, 2);
 
         // Overwrite narrows it back; the stored render hint follows.
-        r.register_with_width(0xE0A1, glyf(vec![3]), 1000, 1)
+        r.register(0xE0A1, glyf(vec![3]), 1000, 1, GlyphLayout::default())
             .unwrap();
         assert_eq!(r.get(0xE0A1).unwrap().width, 1);
     }
@@ -553,6 +611,8 @@ mod tests {
                 cpal: cpal.clone(),
             },
             1024,
+            1,
+            GlyphLayout::default(),
         )
         .unwrap();
         match &*r.get(0xE0A0).unwrap().payload {
@@ -580,6 +640,8 @@ mod tests {
                 cpal: vec![],
             },
             2048,
+            1,
+            GlyphLayout::default(),
         )
         .unwrap();
         assert!(matches!(
@@ -594,7 +656,8 @@ mod tests {
         // should swap the stored payload while preserving index and
         // insertion order (FIFO eviction invariant).
         let r = GlyphRegistry::new();
-        r.register(0xE0A0, glyf(vec![1, 2, 3]), 1000).unwrap();
+        r.register(0xE0A0, glyf(vec![1, 2, 3]), 1000, 1, GlyphLayout::default())
+            .unwrap();
         let idx = r.get(0xE0A0).unwrap().index;
         r.register(
             0xE0A0,
@@ -604,6 +667,8 @@ mod tests {
                 cpal: vec![],
             },
             1000,
+            1,
+            GlyphLayout::default(),
         )
         .unwrap();
         let g = r.get(0xE0A0).unwrap();

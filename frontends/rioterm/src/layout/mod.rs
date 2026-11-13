@@ -674,11 +674,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Use flex_grow proportional to the desired size so panels
         // scale correctly when the window is resized.
         if let Some(w) = width {
-            style.flex_basis = length(0.0);
+            style.flex_basis = length(0.0_f32);
             style.flex_grow = w;
             style.flex_shrink = 1.0;
         } else if let Some(h) = height {
-            style.flex_basis = length(0.0);
+            style.flex_basis = length(0.0_f32);
             style.flex_grow = h;
             style.flex_shrink = 1.0;
         }
@@ -914,11 +914,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             // Clear margin since Taffy layout already accounts for spacing
             item.val.dimension.margin = Margin::all(0.0);
+            let resized =
+                item.val.dimension.width != width || item.val.dimension.height != height;
             item.val.dimension.update_width(width);
             item.val.dimension.update_height(height);
 
             // Update terminal size
             let mut terminal = item.val.terminal.lock();
+            if resized {
+                terminal.end_sync_update();
+            }
             terminal.resize::<ContextDimension>(item.val.dimension);
             drop(terminal);
 

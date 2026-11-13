@@ -29,6 +29,7 @@ pub enum Topic {
     UpdateConfig,
     CursorBlinking,
     SelectionScrolling,
+    ProgressTimeout,
 }
 
 /// Event scheduled to be emitted at a specific time.

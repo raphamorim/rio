@@ -28,7 +28,6 @@ use crate::layout::ContextDimension;
 use crate::mouse::{calculate_mouse_position, Mouse};
 use crate::renderer::island::{self, TabStripLayout, ISLAND_HEIGHT};
 use crate::renderer::{utils::padding_top_from_config, Renderer};
-use crate::screen::hint::HintMatches;
 use crate::selection::{Selection, SelectionType};
 use core::fmt::Debug;
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
@@ -969,6 +968,10 @@ impl Screen<'_> {
         };
 
         if !bytes.is_empty() {
+            if self.context_manager.close_if_exited() {
+                return;
+            }
+
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
@@ -1165,7 +1168,6 @@ impl Screen<'_> {
                         let context = self.context_manager.current_mut();
                         let mut terminal = context.terminal.lock();
                         terminal.toggle_vi_mode();
-                        let has_vi_mode_enabled = terminal.mode().contains(Mode::VI);
                         drop(terminal);
                         context
                             .renderable_content
@@ -1173,7 +1175,6 @@ impl Screen<'_> {
                             .set_terminal_damage(
                                 rio_backend::event::TerminalDamage::Full,
                             );
-                        self.renderer.set_vi_mode(has_vi_mode_enabled);
                         self.mark_dirty();
                     }
                     Act::ViMotion(motion) => {
@@ -3615,6 +3616,9 @@ impl Screen<'_> {
         let dim = self.context_manager.current().dimension.dimension;
         let width = dim.width as f64;
         let height = dim.height as f64;
+        if !(width > 0.0 && height > 0.0) {
+            return;
+        }
         let mode = self.get_mode();
 
         const MOUSE_WHEEL_UP: u8 = 64;
@@ -3705,7 +3709,14 @@ impl Screen<'_> {
             for c in text.chars() {
                 self.search_input(c);
             }
-        } else if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
+            return;
+        }
+
+        if !text.is_empty() && self.context_manager.close_if_exited() {
+            return;
+        }
+
+        if bracketed && self.get_mode().contains(Mode::BRACKETED_PASTE) {
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
@@ -3887,32 +3898,24 @@ impl Screen<'_> {
         }
 
         if is_search_active {
-            // Update search hints in renderable content
-            let terminal = self.context_manager.current().terminal.lock();
-            let hints = self
-                .search_state
-                .dfas_mut()
-                .map(|dfas| HintMatches::visible_regex_matches(&terminal, dfas));
-            drop(terminal);
-
+            // Force invalidation for search with full damage
             self.context_manager
                 .current_mut()
                 .renderable_content
-                .hint_matches = hints.map(|h| h.iter().cloned().collect());
-
-            // Force invalidation for search with full damage
-            {
-                let current = self.context_manager.current_mut();
-                current
-                    .renderable_content
-                    .pending_update
-                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
-            }
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
         }
 
-        let (window_update, any_panel_dirty) = self
-            .renderer
-            .run(&mut self.sugarloaf, &mut self.context_manager);
+        let search_dfas = if is_search_active {
+            Some(self.search_state.dfas_mut())
+        } else {
+            None
+        };
+        let (window_update, any_panel_dirty) = self.renderer.run(
+            &mut self.sugarloaf,
+            &mut self.context_manager,
+            search_dfas,
+        );
 
         if self.renderer.custom_mouse_cursor {
             let scale = self.sugarloaf.scale_factor();
@@ -3963,7 +3966,10 @@ impl Screen<'_> {
                     current.route_id,
                 );
 
-                let cursor_color = self.renderer.named_colors.cursor;
+                let cursor_color = self.renderer.cursor_color(
+                    &current.renderable_content.term_colors,
+                    current.renderable_content.is_vi_mode,
+                );
                 self.renderer.trail_cursor.draw(
                     &mut self.sugarloaf,
                     scale_factor,
@@ -4034,10 +4040,7 @@ impl Screen<'_> {
                 /// configured shape so the user can tell IME is
                 /// taking input.
                 cursor_preedit: bool,
-                /// Resolved cursor color: OSC 12 wins, then config /
-                /// theme `cursor`.
-                /// `state.colors.cursor → config.cursor_color`
-                /// resolution. Per-panel
+                /// Resolved by `Renderer::cursor_color`. Per-panel
                 /// because each terminal can issue its own OSC 12.
                 cursor_color: rio_backend::config::colors::ColorArray,
                 is_active: bool,
@@ -4189,14 +4192,11 @@ impl Screen<'_> {
                     None
                 };
                 let cursor_preedit = preedit_line.is_some();
-                // OSC 12 wins; otherwise fall back to the named-color
-                // theme value. `Renderer::color`'s fallback (the
-                // indexed-color List) is not populated for the Cursor
-                // slot — `List::fill_named` skips it — so we read
-                // `named_colors.cursor` directly.
-                let cursor_color = term_colors
-                    [rio_backend::config::colors::NamedColor::Cursor as usize]
-                    .unwrap_or(self.renderer.named_colors.cursor);
+                // `vi-cursor` in Vi mode; otherwise OSC 12, then the
+                // theme `cursor`.
+                let cursor_color = self
+                    .renderer
+                    .cursor_color(&term_colors, ctx.renderable_content.is_vi_mode);
                 panels.push(PanelFrame {
                     route_id: ctx.route_id,
                     layout_rect: item.layout_rect,
@@ -4646,11 +4646,11 @@ impl Screen<'_> {
             // (rows, per-cell styles, extras table). Closed routes
             // simply drop their PanelFrame; the context (and its
             // renderable_content) is gone too.
-            for (_, item) in self
+            for item in self
                 .context_manager
                 .current_grid_mut()
                 .contexts_mut()
-                .iter_mut()
+                .values_mut()
             {
                 let route_id = item.val.route_id;
                 if let Some(idx) = panels.iter().position(|p| p.route_id == route_id) {
