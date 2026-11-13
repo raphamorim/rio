@@ -81,9 +81,10 @@ pub(super) fn parse_semantic_prompt(
 /// than run, or when the first option is a `key=value` pair.
 pub(super) fn parse_exit_status(option: Option<&[u8]>) -> Option<u8> {
     let raw = option?;
-    let (negative, digits) = match raw.strip_prefix(b"-") {
-        Some(digits) => (true, digits),
-        None => (false, raw),
+    let (negative, digits) = match raw.split_first()? {
+        (b'-', digits) => (true, digits),
+        (b'+', digits) => (false, digits),
+        _ => (false, raw),
     };
     if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
         return None;

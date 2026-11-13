@@ -212,13 +212,16 @@ impl Application<'_> {
         }
         if config.notify {
             let seconds = duration.as_secs_f64();
-            let (title, body) = match exit_status {
-                None => ("Command Finished", format!("Command took {seconds:.1}s.")),
-                Some(0) => ("Command Succeeded", format!("Command took {seconds:.1}s.")),
-                Some(code) => (
-                    "Command Failed",
-                    format!("Command took {seconds:.1}s and exited with code {code}."),
-                ),
+            let title = match exit_status {
+                None => "Command Finished",
+                Some(0) => "Command Succeeded",
+                Some(_) => "Command Failed",
+            };
+            let body = match exit_status {
+                None => format!("Command took {seconds:.1}s."),
+                Some(code) => {
+                    format!("Command took {seconds:.1}s and exited with code {code}.")
+                }
             };
             self.handle_desktop_notification(title, &body);
         }

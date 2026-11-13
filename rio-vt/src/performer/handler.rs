@@ -2450,7 +2450,8 @@ mod tests {
         assert_eq!(parse(Some(b"")), None);
         assert_eq!(parse(Some(b"aid=1")), None);
         assert_eq!(parse(Some(b"1_0")), None);
-        assert_eq!(parse(Some(b"+1")), None);
+        assert_eq!(parse(Some(b"+1")), Some(1));
+        assert_eq!(parse(Some(b"+")), None);
         assert_eq!(parse(Some(b"-")), None);
         assert_eq!(parse(Some(b"\xff")), None);
     }
