@@ -182,8 +182,8 @@ impl Application<'_> {
 
     /// A shell command finished on `route_id` (OSC 133). Announced per
     /// `[notify-on-command-finish]`: only past the configured duration,
-    /// and, for `unfocused`, only when the command's tab is not the
-    /// one being looked at.
+    /// and, for `unfocused`, only when the command's pane is not the
+    /// focused one (another window, tab or split is).
     fn handle_command_finished(
         &mut self,
         window_id: rio_backend::event::WindowId,
@@ -193,7 +193,7 @@ impl Application<'_> {
     ) {
         use rio_backend::config::command_finished::NotifyWhen;
 
-        let config = self.config.notify_on_command_finish.clone();
+        let config = self.config.notify_on_command_finish;
         let focused = self.router.routes.get(&window_id).is_some_and(|route| {
             route.window.is_focused
                 && route.window.screen.ctx().current_route() == route_id

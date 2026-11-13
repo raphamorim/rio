@@ -8,7 +8,8 @@ pub enum NotifyWhen {
     /// Never announce.
     #[default]
     Never,
-    /// Only when the window or tab the command ran in is not focused.
+    /// Only when the pane the command ran in is not the focused one:
+    /// another window has focus, or another tab or split is active.
     Unfocused,
     /// Every time.
     Always,
@@ -17,7 +18,7 @@ pub enum NotifyWhen {
 /// `[notify-on-command-finish]`: announce a shell command that ran
 /// longer than `after` milliseconds, through the bell, a desktop
 /// notification, or both.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct NotifyOnCommandFinish {
     #[serde(default)]
     pub when: NotifyWhen,

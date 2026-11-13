@@ -3610,6 +3610,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn prompt_start(&mut self) {
+        // A new prompt means no command is running: a `C` whose `D`
+        // never came (the command was interrupted, or a nested shell
+        // took over) must not pair with a later unrelated `D`.
+        self.command_started_at = None;
         if !self.program_status_seen {
             return;
         }
@@ -3620,18 +3624,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn command_start(&mut self) {
-        // A prompt row with the cursor at column zero is being
-        // overwritten by output: shells without a continuation prompt
-        // (fish) mark no `k=s` lines, so a newline from a prompt row
-        // is taken to continue the prompt until the output mark says
-        // otherwise.
-        use crate::crosswords::grid::row::SemanticPrompt;
-        let row = self.grid.cursor.pos.row;
-        if self.grid[row].semantic_prompt != SemanticPrompt::None
-            && self.grid.cursor.pos.col == Column(0)
-        {
-            self.grid[row].semantic_prompt = SemanticPrompt::None;
-        }
+        // A repeated `C` restarts the clock: the latest output mark is
+        // the one whose `D` will follow.
         self.command_started_at = Some(crate::time::Instant::now());
     }
 
@@ -6113,25 +6107,33 @@ mod tests {
         assert_eq!(finished(&events).len(), 3);
     }
 
-    /// OSC 133 `C` at column zero of a prompt row means the output is
-    /// overwriting what was taken for a prompt continuation, so the
-    /// row's prompt mark goes; with the cursor past column zero the
-    /// prompt mark stays.
+    /// A new prompt forgets a `C` whose `D` never came, so a later
+    /// lone `D` is not reported as that command.
     #[test]
-    fn osc_133_output_start_unmarks_an_empty_prompt_row() {
-        use crate::crosswords::grid::row::SemanticPrompt;
-        let mut cw = make_crosswords();
+    fn osc_133_new_prompt_forgets_an_unfinished_command() {
+        let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(20, 4),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
         let mut parser = crate::performer::handler::Processor::default();
 
-        parser.advance(&mut cw, b"\x1b]133;A\x07$ \r\n");
-        assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);
-        cw.grid[Line(1)].semantic_prompt = SemanticPrompt::PromptContinuation;
-        parser.advance(&mut cw, b"\x1b]133;C\x07");
-        assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);
-        assert_eq!(cw.grid[Line(1)].semantic_prompt, SemanticPrompt::None);
-
-        parser.advance(&mut cw, b"\x1b]133;A\x07$ \x1b]133;C\x07");
-        assert_eq!(cw.grid[Line(1)].semantic_prompt, SemanticPrompt::Prompt);
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;A\x07$ \x1b]133;D;130\x07");
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;N\x07$ \x1b]133;D;1\x07");
+        assert!(
+            !events
+                .borrow()
+                .iter()
+                .any(|e| matches!(e, RioEvent::CommandFinished { .. })),
+            "{:?}",
+            events.borrow()
+        );
     }
 
     #[test]

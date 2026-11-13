@@ -75,13 +75,26 @@ pub(super) fn parse_semantic_prompt(
 
 /// The exit status of an OSC 133 `D` (command finished): its first
 /// option, when that is a bare integer (`D;0`, `D;127`). Exit codes
-/// are a byte, so a value outside 0..=255 counts as a generic failure.
-/// `None` when the shell sent no status, as it does for a command line
-/// that was abandoned rather than run, or when the first option is a
-/// `key=value` pair.
+/// are a byte, so any integer outside 0..=255, however long or
+/// negative, counts as a generic failure. `None` when the shell sent
+/// no status, as it does for a command line that was abandoned rather
+/// than run, or when the first option is a `key=value` pair.
 pub(super) fn parse_exit_status(option: Option<&[u8]>) -> Option<u8> {
-    let raw: i32 = simd_utf8::from_utf8_fast(option?).ok()?.parse().ok()?;
-    Some(u8::try_from(raw).unwrap_or(1))
+    let raw = option?;
+    let (negative, digits) = match raw.strip_prefix(b"-") {
+        Some(digits) => (true, digits),
+        None => (false, raw),
+    };
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    // Digits only, so this is UTF-8; a parse failure is an overflow.
+    let status = std::str::from_utf8(digits).ok()?.parse::<u8>().ok();
+    Some(match status {
+        Some(0) => 0,
+        Some(code) if !negative => code,
+        _ => 1,
+    })
 }
 
 /// Parse an `xterm`-style color value (`#rgb`, `#rrggbb`, `rgb:r/g/b`).

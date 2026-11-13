@@ -2443,11 +2443,15 @@ mod tests {
         // Outside a byte: a failure, whatever the number.
         assert_eq!(parse(Some(b"256")), Some(1));
         assert_eq!(parse(Some(b"-1")), Some(1));
+        assert_eq!(parse(Some(b"99999999999999999999999")), Some(1));
+        assert_eq!(parse(Some(b"-0")), Some(0));
         // No status sent, or the first option is not one.
         assert_eq!(parse(None), None);
         assert_eq!(parse(Some(b"")), None);
         assert_eq!(parse(Some(b"aid=1")), None);
         assert_eq!(parse(Some(b"1_0")), None);
+        assert_eq!(parse(Some(b"+1")), None);
+        assert_eq!(parse(Some(b"-")), None);
         assert_eq!(parse(Some(b"\xff")), None);
     }
 
