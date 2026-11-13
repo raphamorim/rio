@@ -72,8 +72,14 @@ pub(super) fn parse_semantic_prompt(
     }
 }
 
+/// Most bytes one user variable may take, name and value together.
+/// Variables are kept for the session, so each is bounded here and
+/// their number in the terminal.
+pub(super) const MAX_USER_VAR_BYTES: usize = 64 * 1024;
+
 /// Parse `OSC 1337 ; SetUserVar=name=<base64 value>`. The value is
-/// base64 per iTerm2's spec; anything undecodable is dropped.
+/// base64 per iTerm2's spec; anything undecodable or over
+/// [`MAX_USER_VAR_BYTES`] is dropped.
 pub(super) fn parse_set_user_var(params: &[&[u8]]) -> Option<(String, String)> {
     let payload = params.get(1)?.strip_prefix(b"SetUserVar=")?;
     let mut parts = payload.splitn(2, |byte| *byte == b'=');
@@ -82,7 +88,25 @@ pub(super) fn parse_set_user_var(params: &[&[u8]]) -> Option<(String, String)> {
         return None;
     }
     let encoded = parts.next()?;
+    let too_big = |value_len: usize| {
+        let over = name.len() + value_len > MAX_USER_VAR_BYTES;
+        if over {
+            tracing::warn!("ignoring user var {name:?} over {MAX_USER_VAR_BYTES} bytes");
+        }
+        over
+    };
+    // Base64 decodes to at most 3/4 of its non-space length (the
+    // decoder skips ASCII spaces) less up to two padding bytes, so a
+    // value past that cannot fit and is refused before any decoding
+    // work; the exact check follows the decode.
+    let dense = encoded.iter().filter(|b| **b != b' ').count();
+    if too_big((dense / 4 * 3).saturating_sub(2)) {
+        return None;
+    }
     let decoded = crate::simd_base64::decode(encoded)?;
+    if too_big(decoded.len()) {
+        return None;
+    }
     let value = String::from_utf8(decoded).ok()?;
     Some((name.to_string(), value))
 }
@@ -388,22 +412,53 @@ fn percent_decode(path: &str) -> Option<String> {
 
 /// OSC 8: extract `id=...` from `key=val:key=val` link params. The id is
 /// an opaque token, so invalid UTF-8 is replaced rather than making the
-/// id vanish (which would turn `id=..;` into a link close).
+/// id vanish (which would turn `id=..;` into a link close). An id over
+/// [`MAX_HYPERLINK_ID_BYTES`] (measured as sent) is dropped: the link
+/// still opens, it just does not group with its namesakes.
 pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<Cow<'_, str>> {
-    link_params
+    let id = link_params
         .split(|&b| b == b':')
-        .find_map(|kv| kv.strip_prefix(b"id="))
-        .map(text_lossy)
+        .find_map(|kv| kv.strip_prefix(b"id="))?;
+    if id.len() > MAX_HYPERLINK_ID_BYTES {
+        tracing::warn!(
+            "dropping OSC 8 id of {} bytes (limit {MAX_HYPERLINK_ID_BYTES})",
+            id.len()
+        );
+        return None;
+    }
+    Some(text_lossy(id))
 }
 
+/// Longest OSC 8 URI accepted, the hyperlink spec's recommended limit
+/// (the classic maximum URL length). A URI is stored for as long as
+/// the cells carrying it live.
+pub(super) const MAX_HYPERLINK_URI_BYTES: usize = 2083;
+
+/// Longest OSC 8 `id=` accepted, from the same spec.
+pub(super) const MAX_HYPERLINK_ID_BYTES: usize = 250;
+
 /// OSC 8: `Some(None)` closes the link, `Some(Some(_))` opens one. An
-/// empty URI with an `id` is invalid and ignored.
+/// empty URI with an `id` is invalid and ignored. A URI over
+/// [`MAX_HYPERLINK_URI_BYTES`] closes the current link instead of
+/// opening one: the text that follows was meant for a link the
+/// terminal will not hold, and leaving the previous link open would
+/// attribute that text to the wrong target.
 pub(super) fn parse_hyperlink(
     link_params: &[u8],
     uri: &[u8],
 ) -> Option<Option<Hyperlink>> {
+    if uri.len() > MAX_HYPERLINK_URI_BYTES {
+        tracing::warn!(
+            "closing link: OSC 8 URI of {} bytes (limit {MAX_HYPERLINK_URI_BYTES})",
+            uri.len()
+        );
+        return Some(None);
+    }
     let id = parse_hyperlink_id(link_params).filter(|id| !id.is_empty());
     if uri.is_empty() {
+        if id.is_some() {
+            tracing::debug!("ignoring OSC 8 with an id and no URI");
+        }
         return id.is_none().then_some(None);
     }
     Some(Some(Hyperlink::new(id.as_deref(), &*text_lossy(uri))))
@@ -1179,6 +1234,37 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(open.id(), "caf\u{FFFD}");
+    }
+
+    #[test]
+    fn hyperlink_bounds_uri_and_id() {
+        let uri = format!("https://x.dev/{}", "a".repeat(MAX_HYPERLINK_URI_BYTES - 14));
+        assert_eq!(uri.len(), MAX_HYPERLINK_URI_BYTES);
+        assert!(parse_hyperlink(b"", uri.as_bytes()).unwrap().is_some());
+        // One byte over: the current link is closed, not left open
+        // over text meant for the oversized one.
+        let uri = format!("{uri}a");
+        assert_eq!(parse_hyperlink(b"", uri.as_bytes()), Some(None));
+
+        // An id at the limit is kept; over it the id is dropped and
+        // the link opens without one. Raw bytes count, not the lossy
+        // decoding (each invalid byte would otherwise count as three).
+        let id = format!("id={}", "i".repeat(MAX_HYPERLINK_ID_BYTES));
+        let open = parse_hyperlink(id.as_bytes(), b"https://x.dev")
+            .unwrap()
+            .unwrap();
+        assert_eq!(open.id().len(), MAX_HYPERLINK_ID_BYTES);
+        let id = format!("{id}i");
+        let open = parse_hyperlink(id.as_bytes(), b"https://x.dev")
+            .unwrap()
+            .unwrap();
+        assert_ne!(open.id(), &id[3..]);
+        let mut raw = b"id=".to_vec();
+        raw.extend(std::iter::repeat_n(0xFF, MAX_HYPERLINK_ID_BYTES));
+        let open = parse_hyperlink(&raw, b"https://x.dev").unwrap().unwrap();
+        assert_eq!(open.id().chars().count(), MAX_HYPERLINK_ID_BYTES);
+        // With the oversized id gone, an empty URI is a plain close.
+        assert_eq!(parse_hyperlink(id.as_bytes(), b""), Some(None));
     }
 
     #[test]

@@ -3428,6 +3428,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
         self.tabs = TabStops::new(self.grid.columns());
         self.title_stack = Vec::new();
+        // RIS starts the session over for the program too: variables a
+        // previous program set no longer describe anything, and the
+        // count cap must not outlive it.
+        self.user_vars = Default::default();
         self.modify_other_keys = 0;
         self.keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
         self.inactive_keyboard_mode_stack = [0; KEYBOARD_MODE_STACK_MAX_DEPTH];
@@ -3616,6 +3620,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn set_user_var(&mut self, name: String, value: String) {
+        /// Most user variables kept per terminal. Each is already
+        /// bounded in size by the parser; this bounds their number so
+        /// a program cannot grow the map for the whole session.
+        const MAX_USER_VARS: usize = 1024;
+
+        if !self.user_vars.contains_key(&name) && self.user_vars.len() >= MAX_USER_VARS {
+            warn!("ignoring user var {name:?}: {MAX_USER_VARS} already stored");
+            return;
+        }
         self.user_vars.insert(name, value);
     }
 
@@ -6583,6 +6596,22 @@ mod tests {
         cw.set_user_var("k".to_string(), "v".to_string());
         cw.set_user_var("k".to_string(), "v2".to_string());
         assert_eq!(cw.user_vars.get("k").map(String::as_str), Some("v2"));
+
+        // The count is capped; existing names can still be updated.
+        for i in 0..2000 {
+            cw.set_user_var(format!("var{i}"), String::new());
+        }
+        assert_eq!(cw.user_vars.len(), 1024);
+        cw.set_user_var("k".to_string(), "v3".to_string());
+        assert_eq!(cw.user_vars.get("k").map(String::as_str), Some("v3"));
+        assert!(!cw.user_vars.contains_key("var1999"));
+
+        // A full reset clears them, so the cap cannot outlive the
+        // program that filled it.
+        cw.reset_state();
+        assert!(cw.user_vars.is_empty());
+        cw.set_user_var("var1999".to_string(), String::new());
+        assert!(cw.user_vars.contains_key("var1999"));
     }
 
     #[cfg(feature = "graphics")]
