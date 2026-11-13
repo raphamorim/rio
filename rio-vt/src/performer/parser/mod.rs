@@ -60,7 +60,20 @@ struct OscBuffer {
     fixed: [u8; OSC_FIXED_LEN],
     fixed_len: usize,
     overflow: Vec<u8>,
+    /// The sequence outgrew [`MAX_OSC_BYTES`]: the rest is discarded
+    /// and the sequence is not dispatched.
+    overflowed: bool,
 }
+
+/// Longest OSC sequence the parser accumulates. OSC 1337 inline images
+/// arrive as one whole base64 image and OSC 52 clipboards can be large
+/// too, so the cap matches the APC one, while an unterminated `ESC ]`
+/// can no longer grow the buffer until the process is killed.
+const MAX_OSC_BYTES: usize = 64 * 1024 * 1024;
+
+/// Heap capacity kept across sequences. One large paste or image must
+/// not pin tens of megabytes for the rest of the session.
+const OSC_RETAIN_BYTES: usize = 1024 * 1024;
 
 impl Default for OscBuffer {
     fn default() -> Self {
@@ -68,6 +81,7 @@ impl Default for OscBuffer {
             fixed: [0; OSC_FIXED_LEN],
             fixed_len: 0,
             overflow: Vec::new(),
+            overflowed: false,
         }
     }
 }
@@ -84,12 +98,20 @@ impl OscBuffer {
 
     #[inline]
     fn push(&mut self, byte: u8) {
+        if self.overflowed {
+            return;
+        }
         if self.overflow.is_empty() {
             if self.fixed_len < OSC_FIXED_LEN {
                 self.fixed[self.fixed_len] = byte;
                 self.fixed_len += 1;
                 return;
             }
+        } else if self.overflow.len() >= MAX_OSC_BYTES {
+            self.overflowed = true;
+            return;
+        }
+        if self.overflow.is_empty() {
             // Spill: promote the current contents to the heap once, then
             // append. After this point, `overflow.len() >= OSC_FIXED_LEN`,
             // so the `is_empty()` check above stays false until `clear`.
@@ -105,6 +127,16 @@ impl OscBuffer {
     /// stale `fixed_len` is never read while `overflow` is non-empty).
     #[inline]
     fn extend_from_slice(&mut self, bytes: &[u8]) {
+        if self.overflowed {
+            return;
+        }
+        if self.len() + bytes.len() > MAX_OSC_BYTES {
+            // Checked before any spill so an oversized run never
+            // allocates. Storage stays where it was; `slice` keeps
+            // working on the recorded param bounds.
+            self.overflowed = true;
+            return;
+        }
         if self.overflow.is_empty() {
             let fits = OSC_FIXED_LEN - self.fixed_len;
             if bytes.len() <= fits {
@@ -131,9 +163,16 @@ impl OscBuffer {
     #[inline]
     fn clear(&mut self) {
         self.fixed_len = 0;
-        // Keep `overflow`'s capacity so a session that hits one large paste
-        // doesn't re-allocate on the next one.
-        self.overflow.clear();
+        self.overflowed = false;
+        if self.overflow.capacity() > OSC_RETAIN_BYTES {
+            // Give the memory back rather than pin a large sequence's
+            // capacity for the session.
+            self.overflow = Vec::new();
+        } else {
+            // Keep a modest capacity so a session that hits one large
+            // paste doesn't re-allocate on the next one.
+            self.overflow.clear();
+        }
     }
 }
 
@@ -831,8 +870,12 @@ impl Parser {
     }
 
     fn osc_end<P: Perform>(&mut self, performer: &mut P, byte: u8) {
-        self.push_osc_param();
-        self.osc_dispatch(performer, byte);
+        if self.osc_raw.overflowed {
+            tracing::warn!("discarding OSC sequence over {MAX_OSC_BYTES} bytes");
+        } else {
+            self.push_osc_param();
+            self.osc_dispatch(performer, byte);
+        }
         self.osc_raw.clear();
         self.osc_num_params = 0;
     }
@@ -2149,6 +2192,43 @@ mod tests {
             }
             _ => panic!("expected osc sequence"),
         }
+    }
+
+    #[test]
+    fn oversized_osc_is_discarded_and_parser_recovers() {
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::default();
+
+        parser.advance(&mut dispatcher, b"\x1b]52;c;");
+        parser.advance(&mut dispatcher, &vec![b'a'; MAX_OSC_BYTES + 1]);
+        assert!(parser.osc_raw.overflowed);
+        parser.advance(&mut dispatcher, b"\x07");
+        assert!(
+            dispatcher.dispatched.is_empty(),
+            "{:?}",
+            dispatcher.dispatched.len()
+        );
+        assert_eq!(
+            parser.osc_raw.overflow.capacity(),
+            0,
+            "buffer must be released, not kept at the cap"
+        );
+
+        // The next sequence is dispatched normally.
+        parser.advance(&mut dispatcher, b"\x1b]2;title\x07");
+        assert_eq!(dispatcher.dispatched.len(), 1);
+        match &dispatcher.dispatched[0] {
+            Sequence::Osc(params, _) => assert_eq!(params[1], b"title"),
+            _ => panic!("expected osc sequence"),
+        }
+
+        // A large but legitimate sequence is dispatched, and its
+        // capacity is not pinned afterwards either.
+        parser.advance(&mut dispatcher, b"\x1b]52;c;");
+        parser.advance(&mut dispatcher, &vec![b'a'; 4 * 1024 * 1024]);
+        parser.advance(&mut dispatcher, b"\x07");
+        assert_eq!(dispatcher.dispatched.len(), 2);
+        assert_eq!(parser.osc_raw.overflow.capacity(), 0);
     }
 
     #[test]

@@ -506,7 +506,22 @@ struct ApcState {
     /// Buffer for accumulating APC data.
     /// Pre-allocated to a reasonable size for Kitty graphics chunks.
     buffer: Vec<u8>,
+    /// The sequence outgrew [`MAX_APC_BYTES`]: the rest is discarded
+    /// and `apc_end` dispatches nothing.
+    overflowed: bool,
 }
+
+/// Longest APC sequence the terminal accumulates. The kitty protocol
+/// asks for 4 KiB chunks but some clients send a whole base64 image in
+/// one APC, so the cap is sized for that while
+/// an unterminated `ESC _` can no longer grow the buffer until the
+/// process is killed. Glyph protocol payloads are capped separately at
+/// 64 KiB.
+const MAX_APC_BYTES: usize = 64 * 1024 * 1024;
+
+/// Heap capacity kept across APC sequences. Kitty chunks are 4 KiB; one
+/// whole-image APC must not pin tens of megabytes for the session.
+const APC_RETAIN_BYTES: usize = 1024 * 1024;
 
 #[derive(Default)]
 pub struct Processor {
@@ -1406,9 +1421,15 @@ impl<U: Handler> Perform for Performer<'_, U> {
     /// OSC-style parameter parsing.
     fn apc_start(&mut self) {
         debug!("[apc_start] Beginning APC accumulation");
-        self.state.apc_state.buffer.clear();
+        let apc = &mut self.state.apc_state;
+        if apc.buffer.capacity() > APC_RETAIN_BYTES {
+            apc.buffer = Vec::new();
+        } else {
+            apc.buffer.clear();
+        }
+        apc.overflowed = false;
         // Pre-allocate reasonable size for Kitty graphics chunks (typically 4KB)
-        self.state.apc_state.buffer.reserve(4096);
+        apc.buffer.reserve(4096);
     }
 
     /// Called for each byte in the APC sequence.
@@ -1416,15 +1437,38 @@ impl<U: Handler> Perform for Performer<'_, U> {
     /// We accumulate all bytes here to handle large sequences that exceed Copa's
     /// default OSC buffer size (1024 bytes).
     fn apc_put(&mut self, byte: u8) {
-        self.state.apc_state.buffer.push(byte);
+        self.apc_put_slice(std::slice::from_ref(&byte));
     }
 
     fn apc_put_slice(&mut self, bytes: &[u8]) {
-        self.state.apc_state.buffer.extend_from_slice(bytes);
+        let apc = &mut self.state.apc_state;
+        if apc.overflowed {
+            return;
+        }
+        if apc.buffer.len() + bytes.len() > MAX_APC_BYTES {
+            warn!(
+                "discarding APC sequence over {MAX_APC_BYTES} bytes ({} so far)",
+                apc.buffer.len()
+            );
+            apc.overflowed = true;
+            // Give the memory back rather than keep a multi-megabyte
+            // buffer around for the next 4 KiB chunk.
+            apc.buffer = Vec::new();
+            return;
+        }
+        apc.buffer.extend_from_slice(bytes);
     }
 
     /// Called when the APC sequence ends. Processes the accumulated APC data.
     fn apc_end(&mut self) {
+        if self.state.apc_state.overflowed {
+            // The sequence is dropped and nothing else changes, as in
+            // kitty: an in-flight upload stays where it is and completes
+            // from the chunks that did arrive (a PNG then fails to
+            // decode; raw pixel data comes out short or shifted).
+            self.state.apc_state.overflowed = false;
+            return;
+        }
         debug!(
             "[apc_end] APC complete, accumulated {} bytes",
             self.state.apc_state.buffer.len()
@@ -2142,6 +2186,64 @@ mod tests {
         assert_eq!(handler.notifications, ["4", "9", "done; 3 warnings"]);
         assert_eq!(handler.progress.len(), 1);
         assert_eq!(handler.cwd.len(), 1);
+    }
+
+    /// An APC that never ends (or is simply enormous) stops being
+    /// accumulated at the cap, dispatches nothing, and leaves the
+    /// processor able to handle the next sequence.
+    #[test]
+    fn oversized_apc_is_discarded_and_parser_recovers() {
+        let mut handler = KittyReplyHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_Ga=T,f=32,s=1,v=1,i=5;");
+        let filler = vec![b'A'; MAX_APC_BYTES + 1];
+        processor.advance(&mut handler, &filler);
+        assert!(processor.state.apc_state.overflowed);
+        assert!(
+            processor.state.apc_state.buffer.capacity() < MAX_APC_BYTES,
+            "buffer must be released, not kept at the cap"
+        );
+        processor.advance(&mut handler, b"\x1b\\");
+        assert!(
+            handler.replies.is_empty(),
+            "nothing dispatched: {:?}",
+            handler.replies
+        );
+        // A large legitimate APC does not pin its capacity either.
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=98;");
+        processor.advance(&mut handler, &vec![b'A'; 8 * 1024 * 1024]);
+        processor.advance(&mut handler, b"\x1b\\\x1b_Ga=p,i=97\x1b\\");
+        assert!(processor.state.apc_state.buffer.capacity() < APC_RETAIN_BYTES);
+        handler.replies.clear();
+
+        // The next APC is handled normally.
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=99\x1b\\");
+        assert_eq!(handler.replies.len(), 1);
+        assert!(handler.replies[0].contains("ENOENT"));
+    }
+
+    /// An oversized chunk is dropped on its own; the upload it belonged
+    /// to stays in flight, as in kitty, and completes from the chunks
+    /// that did arrive (3 + 3 bytes cover a 1x1 RGBA image, so the raw
+    /// path answers OK; the image is whatever those bytes say).
+    #[test]
+    fn oversized_apc_leaves_in_flight_upload_alone() {
+        let mut handler = KittyReplyHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_Ga=T,f=32,s=1,v=1,i=3,m=1;/wAA\x1b\\");
+        assert!(handler.replies.is_empty());
+        processor.advance(&mut handler, b"\x1b_Gm=1,i=3;");
+        processor.advance(&mut handler, &vec![b'A'; MAX_APC_BYTES + 1]);
+        processor.advance(&mut handler, b"\x1b\\");
+        processor.advance(&mut handler, b"\x1b_Gm=0,i=3;/wAA\x1b\\");
+        assert_eq!(handler.replies.len(), 1, "{:?}", handler.replies);
+        assert!(
+            handler.replies[0].contains("OK"),
+            "{:?}",
+            handler.replies[0]
+        );
     }
 
     /// `a=p` referencing an image the terminal does not hold must answer
