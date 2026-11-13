@@ -72,21 +72,6 @@ pub(super) fn parse_semantic_prompt(
     }
 }
 
-/// Parse `OSC 1337 ; SetUserVar=name=<base64 value>`. The value is
-/// base64 per iTerm2's spec; anything undecodable is dropped.
-pub(super) fn parse_set_user_var(params: &[&[u8]]) -> Option<(String, String)> {
-    let payload = params.get(1)?.strip_prefix(b"SetUserVar=")?;
-    let mut parts = payload.splitn(2, |byte| *byte == b'=');
-    let name = simd_utf8::from_utf8_fast(parts.next()?).ok()?;
-    if name.is_empty() {
-        return None;
-    }
-    let encoded = parts.next()?;
-    let decoded = crate::simd_base64::decode(encoded)?;
-    let value = String::from_utf8(decoded).ok()?;
-    Some((name.to_string(), value))
-}
-
 /// Parse an `xterm`-style color value (`#rgb`, `#rrggbb`, `rgb:r/g/b`).
 pub(super) fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
     if !color.is_empty() && color[0] == b'#' {
@@ -386,26 +371,53 @@ fn percent_decode(path: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// OSC 8: extract `id=...` from `key=val:key=val` link params. The id is
-/// an opaque token, so invalid UTF-8 is replaced rather than making the
-/// id vanish (which would turn `id=..;` into a link close).
-pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<Cow<'_, str>> {
+/// OSC 8: the raw `id=...` value from `key=val:key=val` link params.
+/// An empty value is the same as no id, and when the key repeats the
+/// last non-empty value wins.
+fn hyperlink_id_bytes(link_params: &[u8]) -> Option<&[u8]> {
     link_params
         .split(|&b| b == b':')
-        .find_map(|kv| kv.strip_prefix(b"id="))
-        .map(text_lossy)
+        .rev()
+        .filter_map(|kv| kv.strip_prefix(b"id="))
+        .find(|id| !id.is_empty())
 }
 
-/// OSC 8: `Some(None)` closes the link, `Some(Some(_))` opens one. An
-/// empty URI with an `id` is invalid and ignored.
+/// OSC 8: the id to store, if the program sent one. The id is an
+/// opaque token, so invalid UTF-8 is replaced rather than making the
+/// id vanish.
+pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<Cow<'_, str>> {
+    hyperlink_id_bytes(link_params).map(text_lossy)
+}
+
+/// Longest OSC 8 payload accepted: everything after `8;`, that is the
+/// link params, the `;` after them and the URI, as one budget shared
+/// by both parts. The figure is a design cap, 2 KiB less a byte, and
+/// is not tied to this parser's fixed OSC buffer, which also holds the
+/// `8;` prefix. A URI is stored for as long as the cells carrying it
+/// live, so the budget also keeps a link's raw size in the grid bounded.
+pub(crate) const MAX_HYPERLINK_BYTES: usize = 2047;
+
+/// OSC 8: `Some(None)` closes the link, `Some(Some(_))` opens one and
+/// `None` ignores the sequence. Two sequences are ignored: an empty URI
+/// with an `id`, and a payload over [`MAX_HYPERLINK_BYTES`], which
+/// neither opens a link nor closes the current one.
 pub(super) fn parse_hyperlink(
     link_params: &[u8],
     uri: &[u8],
 ) -> Option<Option<Hyperlink>> {
-    let id = parse_hyperlink_id(link_params).filter(|id| !id.is_empty());
-    if uri.is_empty() {
-        return id.is_none().then_some(None);
+    let len = link_params.len() + 1 + uri.len();
+    if len > MAX_HYPERLINK_BYTES {
+        tracing::debug!("ignoring OSC 8 of {len} bytes (limit {MAX_HYPERLINK_BYTES})");
+        return None;
     }
+    if uri.is_empty() {
+        let id_sent = hyperlink_id_bytes(link_params).is_some();
+        if id_sent {
+            tracing::debug!("ignoring OSC 8 with an id and no URI");
+        }
+        return (!id_sent).then_some(None);
+    }
+    let id = parse_hyperlink_id(link_params);
     Some(Some(Hyperlink::new(id.as_deref(), &*text_lossy(uri))))
 }
 
@@ -1172,6 +1184,19 @@ mod tests {
         assert_eq!(parse_hyperlink(b"id=", b""), Some(None));
         assert_eq!(parse_hyperlink(b"id=a", b""), None);
 
+        // A repeated key: the last non-empty value wins, and an empty
+        // value does not unset an earlier one.
+        let open = parse_hyperlink(b"id=a:id=b", b"https://x.dev")
+            .unwrap()
+            .unwrap();
+        assert_eq!(open.id(), "b");
+        let open = parse_hyperlink(b"id=a:id=", b"https://x.dev")
+            .unwrap()
+            .unwrap();
+        assert_eq!(open.id(), "a");
+        assert_eq!(parse_hyperlink(b"id=:id=a", b""), None);
+        assert_eq!(parse_hyperlink(b"id=:other=x", b""), Some(None));
+
         // An id with invalid UTF-8 is still an id: it must not turn an
         // open into a close, and the program's grouping is kept.
         assert_eq!(parse_hyperlink(b"id=caf\xe9", b""), None);
@@ -1179,6 +1204,47 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(open.id(), "caf\u{FFFD}");
+    }
+
+    #[test]
+    fn hyperlink_payload_is_bounded() {
+        const URI: &str = "https://x.dev";
+        // The budget covers the params, the `;` and the URI together.
+        let room = MAX_HYPERLINK_BYTES - 1;
+        let uri = format!("{URI}/{}", "a".repeat(room - URI.len() - 1));
+        assert_eq!(1 + uri.len(), MAX_HYPERLINK_BYTES);
+        let open = parse_hyperlink(b"", uri.as_bytes()).unwrap().unwrap();
+        assert_eq!(open.uri(), uri);
+        // One byte over, in either part: invalid and ignored, so the
+        // sequence neither opens a link nor closes the current one.
+        assert_eq!(parse_hyperlink(b"", format!("{uri}a").as_bytes()), None);
+        assert_eq!(parse_hyperlink(b"a", uri.as_bytes()), None);
+
+        // Params spend the same budget as the URI, and raw bytes count,
+        // not the lossy decoding (each invalid byte would otherwise
+        // count as three).
+        let id_len = room - URI.len() - "id=".len();
+        let id = format!("id={}", "i".repeat(id_len));
+        assert_eq!(id.len() + 1 + URI.len(), MAX_HYPERLINK_BYTES);
+        let open = parse_hyperlink(id.as_bytes(), URI.as_bytes())
+            .unwrap()
+            .unwrap();
+        assert_eq!(open.id().len(), id_len);
+        assert_eq!(
+            parse_hyperlink(format!("{id}i").as_bytes(), URI.as_bytes()),
+            None
+        );
+        let mut raw = b"id=".to_vec();
+        raw.extend(std::iter::repeat_n(0xFF, id_len));
+        let open = parse_hyperlink(&raw, URI.as_bytes()).unwrap().unwrap();
+        assert_eq!(open.id().chars().count(), id_len);
+        raw.push(0xFF);
+        assert_eq!(parse_hyperlink(&raw, URI.as_bytes()), None);
+
+        // An oversized close is ignored as well, not applied.
+        let params = "a".repeat(MAX_HYPERLINK_BYTES);
+        assert_eq!(parse_hyperlink(params.as_bytes(), b""), None);
+        assert_eq!(parse_hyperlink(&params.as_bytes()[1..], b""), Some(None));
     }
 
     #[test]

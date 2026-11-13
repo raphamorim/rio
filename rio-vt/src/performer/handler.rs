@@ -82,9 +82,6 @@ pub trait Handler {
     /// OSC 133: mark the cursor row as a semantic prompt row.
     fn set_semantic_prompt(&mut self, _: crate::crosswords::grid::row::SemanticPrompt) {}
 
-    /// OSC 1337 SetUserVar: record a shell-provided variable.
-    fn set_user_var(&mut self, _name: String, _value: String) {}
-
     /// Set the cursor style.
     fn set_cursor_style(&mut self, _style: Option<CursorShape>, _blinking: bool) {}
 
@@ -494,7 +491,22 @@ struct XtgettcapState {
 
     /// Buffer for collecting hex-encoded capability names.
     buffer: Vec<u8>,
+
+    /// The request outgrew [`MAX_XTGETTCAP_BYTES`]: the rest is
+    /// discarded and the request gets no reply.
+    overflowed: bool,
 }
+
+/// Longest XTGETTCAP request accumulated. A request is a `;`-separated
+/// list of hex-encoded capability names, a few hundred bytes for even
+/// the largest real query, while an unterminated `DCS + q` could grow
+/// the buffer without limit.
+const MAX_XTGETTCAP_BYTES: usize = 1024 * 1024;
+
+/// Largest XTGETTCAP buffer kept between requests. Real requests fit a
+/// few hundred bytes, so a buffer grown past this by one large request
+/// is released rather than pinned for the session.
+const XTGETTCAP_RETAIN_BYTES: usize = 4 * 1024;
 
 /// State for accumulating APC (Application Program Command) sequences.
 ///
@@ -831,9 +843,9 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 self.handler.sixel_graphic_start(params);
             }
             ('q', [b'+']) => {
-                // XTGETTCAP request: DCS + q <hex-encoded-names> ST
+                // XTGETTCAP request: DCS + q <hex-encoded-names> ST.
+                // `unhook` left the buffer empty and the flag clear.
                 self.state.xtgettcap_state.active = true;
-                self.state.xtgettcap_state.buffer.clear();
             }
             // Legacy iTerm2 synchronized updates (`DCS = 1 s ST` begin,
             // `DCS = 2 s ST` end), the form older `Sync` terminfo
@@ -867,7 +879,17 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
         } else if self.state.xtgettcap_state.active {
             // Collect hex-encoded capability names for XTGETTCAP
-            self.state.xtgettcap_state.buffer.push(byte);
+            let request = &mut self.state.xtgettcap_state;
+            if request.overflowed {
+                return;
+            }
+            if request.buffer.len() >= MAX_XTGETTCAP_BYTES {
+                debug!("discarding XTGETTCAP request over {MAX_XTGETTCAP_BYTES} bytes");
+                request.overflowed = true;
+                request.buffer = Vec::new();
+                return;
+            }
+            request.buffer.push(byte);
         } else {
             debug!("[unhandled put] byte={:?}", byte);
         }
@@ -878,13 +900,21 @@ impl<U: Handler> Perform for Performer<'_, U> {
         if self.handler.is_sixel_graphic_active() {
             self.handler.sixel_graphic_finish();
         } else if self.state.xtgettcap_state.active {
-            // Process XTGETTCAP request
-            let response = process_xtgettcap_request(&self.state.xtgettcap_state.buffer);
-            self.handler.xtgettcap_response(response);
+            // Process XTGETTCAP request. An overflowed one was garbage
+            // from the terminal's point of view and gets no reply, as
+            // in other terminals; the state is simply dropped.
+            if !self.state.xtgettcap_state.overflowed {
+                let response =
+                    process_xtgettcap_request(&self.state.xtgettcap_state.buffer);
+                self.handler.xtgettcap_response(response);
+            }
 
-            // Reset state
-            self.state.xtgettcap_state.active = false;
-            self.state.xtgettcap_state.buffer.clear();
+            // Every DCS exit reaches here, so this is the one place the
+            // request state is reset; `hook` only arms it.
+            let request = &mut self.state.xtgettcap_state;
+            request.active = false;
+            request.overflowed = false;
+            super::clear_or_release(&mut request.buffer, XTGETTCAP_RETAIN_BYTES);
         } else {
             debug!("[unhandled dcs_unhook]");
         }
@@ -954,11 +984,12 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 }
             }
 
-            // Hyperlink.
+            // Hyperlink. `parse_hyperlink` logs what it rejects; the
+            // URI can be as large as the OSC cap, so it is not dumped
+            // through `unhandled` as well.
             b"8" if params.len() > 2 => {
-                match osc::parse_hyperlink(params[1], params[2]) {
-                    Some(link) => self.handler.set_hyperlink(link),
-                    None => unhandled(params),
+                if let Some(link) = osc::parse_hyperlink(params[1], params[2]) {
+                    self.handler.set_hyperlink(link);
                 }
             }
 
@@ -1083,15 +1114,29 @@ impl<U: Handler> Perform for Performer<'_, U> {
             b"111" => self.handler.reset_color(NamedColor::Background as usize),
             b"112" => self.handler.reset_color(NamedColor::Cursor as usize),
 
-            // OSC 1337 - iTerm2 user vars and inline image protocol.
+            // OSC 1337 - iTerm2 inline image protocol. The other
+            // iTerm2 commands (SetUserVar, SetMark, ...) are not
+            // implemented; only a short prefix of the command name is
+            // logged, since a payload can be as large as the OSC cap.
+            // A rejected `File=` is the image parser's business and is
+            // not reported as unimplemented.
             b"1337" => {
-                if let Some((name, value)) = osc::parse_set_user_var(params) {
-                    self.handler.set_user_var(name, value);
-                } else if let Some((graphic, cursor_movement)) =
+                if let Some((graphic, cursor_movement)) =
                     iterm2_image_protocol::parse(params)
                 {
                     self.handler
                         .insert_graphic(graphic, None, Some(cursor_movement));
+                } else {
+                    let payload = params.get(1).copied().unwrap_or(b"");
+                    let head = &payload[..payload.len().min(32)];
+                    let key = &head
+                        [..head.iter().position(|&b| b == b'=').unwrap_or(head.len())];
+                    if key != b"File" {
+                        debug!(
+                            "unimplemented OSC 1337 command: {}",
+                            String::from_utf8_lossy(key)
+                        );
+                    }
                 }
             }
 
@@ -1422,11 +1467,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
     fn apc_start(&mut self) {
         debug!("[apc_start] Beginning APC accumulation");
         let apc = &mut self.state.apc_state;
-        if apc.buffer.capacity() > APC_RETAIN_BYTES {
-            apc.buffer = Vec::new();
-        } else {
-            apc.buffer.clear();
-        }
+        super::clear_or_release(&mut apc.buffer, APC_RETAIN_BYTES);
         apc.overflowed = false;
         // Pre-allocate reasonable size for Kitty graphics chunks (typically 4KB)
         apc.buffer.reserve(4096);
@@ -1567,6 +1608,10 @@ fn attrs_from_sgr_parameters(
     }
 }
 
+/// `DCS 0 + r ST`: xterm's reply to an XTGETTCAP request that names
+/// nothing answerable.
+const XTGETTCAP_INVALID_RESPONSE: &str = "\x1bP0+r\x1b\\";
+
 /// Process XTGETTCAP request and return DCS response.
 /// Multiple capability queries can be separated by `;` in a single request.
 /// Each capability gets its own DCS response (like xterm).
@@ -1607,7 +1652,7 @@ fn process_xtgettcap_request(buffer: &[u8]) -> String {
     }
 
     if response.is_empty() {
-        "\x1bP0+r\x1b\\".to_string()
+        XTGETTCAP_INVALID_RESPONSE.to_string()
     } else {
         response
     }
@@ -2404,22 +2449,6 @@ mod tests {
     }
 
     #[test]
-    fn set_user_var_parsing() {
-        use crate::performer::osc::parse_set_user_var as parse;
-
-        // "hello" in base64.
-        assert_eq!(
-            parse(&[b"1337", b"SetUserVar=foo=aGVsbG8="]),
-            Some(("foo".to_string(), "hello".to_string()))
-        );
-        assert_eq!(parse(&[b"1337", b"SetUserVar=foo"]), None);
-        assert_eq!(parse(&[b"1337", b"SetUserVar==aGVsbG8="]), None);
-        assert_eq!(parse(&[b"1337", b"SetUserVar=foo=!!!"]), None);
-        assert_eq!(parse(&[b"1337", b"File=inline=1"]), None);
-        assert_eq!(parse(&[b"1337"]), None);
-    }
-
-    #[test]
     fn test_hex_encoding() {
         assert_eq!(encode_hex_string("TN"), "544E");
         assert_eq!(encode_hex_string("Co"), "436F");
@@ -2431,6 +2460,50 @@ mod tests {
         assert_eq!(decode_hex_string(b"544E").unwrap(), "TN");
         assert_eq!(decode_hex_string(b"436F").unwrap(), "Co");
         assert_eq!(decode_hex_string(b"524742").unwrap(), "RGB");
+    }
+
+    #[derive(Default)]
+    struct XtgettcapHandler {
+        responses: Vec<String>,
+    }
+
+    impl Handler for XtgettcapHandler {
+        fn xtgettcap_response(&mut self, response: String) {
+            self.responses.push(response);
+        }
+    }
+
+    /// A request over the cap gets no reply, its buffer is released,
+    /// and the next request is served normally.
+    #[test]
+    fn oversized_xtgettcap_request_gets_no_reply() {
+        let mut handler = XtgettcapHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1bP+q");
+        processor.advance(&mut handler, &vec![b'5'; MAX_XTGETTCAP_BYTES + 1]);
+        assert!(processor.state.xtgettcap_state.overflowed);
+        assert_eq!(processor.state.xtgettcap_state.buffer.capacity(), 0);
+        processor.advance(&mut handler, b"\x1b\\");
+        assert!(handler.responses.is_empty(), "{:?}", handler.responses);
+
+        processor.advance(&mut handler, b"\x1bP+q544E\x1b\\");
+        assert_eq!(handler.responses.len(), 1);
+        assert!(handler.responses[0].starts_with("\x1bP1+r544E="));
+
+        // A request of exactly the cap is still answered.
+        processor.advance(&mut handler, b"\x1bP+q");
+        processor.advance(&mut handler, &vec![b'5'; MAX_XTGETTCAP_BYTES]);
+        assert!(!processor.state.xtgettcap_state.overflowed);
+        processor.advance(&mut handler, b"\x1b\\");
+        assert_eq!(handler.responses.len(), 2);
+        assert!(handler.responses[1].starts_with("\x1bP0+r"));
+        // The buffer it grew is not pinned for the session, while a
+        // small request keeps its allocation for the next one.
+        assert_eq!(processor.state.xtgettcap_state.buffer.capacity(), 0);
+        processor.advance(&mut handler, b"\x1bP+q544E\x1b\\");
+        let small = processor.state.xtgettcap_state.buffer.capacity();
+        assert!(small > 0 && small <= XTGETTCAP_RETAIN_BYTES);
     }
 
     #[test]

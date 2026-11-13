@@ -467,8 +467,6 @@ where
     pub route_id: usize,
     title_stack: Vec<String>,
     pub current_directory: Option<std::path::PathBuf>,
-    /// Shell state from `OSC 1337 ; SetUserVar` (iTerm2 style).
-    pub user_vars: rustc_hash::FxHashMap<String, String>,
 
     /// Whether a `TerminalDamaged` event is already in flight to the renderer.
     /// Set by PTY thread before sending; cleared by renderer after extracting damage.
@@ -552,7 +550,6 @@ impl<U: EventListener> Crosswords<U> {
             route_id,
             title_stack: Default::default(),
             current_directory: None,
-            user_vars: rustc_hash::FxHashMap::default(),
             damage_event_in_flight: false,
             sync_update_started: None,
             program_status_enabled: false,
@@ -3636,10 +3633,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.grid[row].semantic_prompt = mark;
     }
 
-    fn set_user_var(&mut self, name: String, value: String) {
-        self.user_vars.insert(name, value);
-    }
-
     #[inline]
     fn set_cursor_style(&mut self, style: Option<CursorShape>, blinking: bool) {
         if let Some(cursor_shape) = style {
@@ -6602,9 +6595,9 @@ mod tests {
         );
         let mut processor = Processor::default();
 
-        // A prompt mark, a full A/B/C/D cycle with options, and a
-        // user var ("hello" in base64), bell-terminated like shells
-        // emit them.
+        // A prompt mark, a full A/B/C/D cycle with options, and an
+        // iTerm2 SetUserVar (not implemented, must be ignored without
+        // disturbing the marks), bell-terminated like shells emit them.
         let bytes = b"]133;A;aid=1prompt]133;Bcmd
 ]133;Cout
 ]133;D;0]1337;SetUserVar=foo=aGVsbG8=";
@@ -6612,7 +6605,6 @@ mod tests {
 
         assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);
         assert_eq!(cw.grid[Line(1)].semantic_prompt, SemanticPrompt::None);
-        assert_eq!(cw.user_vars.get("foo").map(String::as_str), Some("hello"));
     }
 
     #[test]
@@ -6632,15 +6624,6 @@ mod tests {
         // iteration instead of panicking.
         let stale = Pos::new(Line(-40), Column(0));
         assert_eq!(cw.grid.iter_from(stale).count(), 0);
-    }
-
-    #[test]
-    fn user_vars_are_stored() {
-        let mut cw = make_crosswords();
-        assert!(cw.user_vars.is_empty());
-        cw.set_user_var("k".to_string(), "v".to_string());
-        cw.set_user_var("k".to_string(), "v2".to_string());
-        assert_eq!(cw.user_vars.get("k").map(String::as_str), Some("v2"));
     }
 
     #[cfg(feature = "graphics")]
@@ -7230,6 +7213,53 @@ mod tests {
         // An empty URI with an id is invalid and leaves the link open.
         let c = cw.cell_hyperlink(Line(0), Column(2)).expect("hyperlink");
         assert_eq!(c.uri(), "file:///caf\u{FFFD}");
+        assert!(cw.cell_hyperlink(Line(0), Column(3)).is_none());
+    }
+
+    /// An OSC 8 over the payload budget is invalid end to end: it does
+    /// not open a link, and it does not close the one already open, so
+    /// the text that follows stays attributed to the open link. A link
+    /// exactly at the budget still opens through the parser's param
+    /// split and its fixed-buffer spill; the budget arithmetic itself
+    /// is pinned by the unit test in `performer::osc`.
+    #[test]
+    fn osc8_oversized_hyperlink_is_ignored() {
+        use crate::performer::handler::Processor;
+        use crate::performer::MAX_HYPERLINK_BYTES;
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = Processor::default();
+
+        let at_limit = format!(
+            "https://x.dev/{}",
+            "a".repeat(MAX_HYPERLINK_BYTES - 1 - "https://x.dev/".len())
+        );
+        let over = format!("{at_limit}a");
+        let mut input = Vec::new();
+        input.extend_from_slice(b"\x1b]8;;https://a.example\x07A");
+        input.extend_from_slice(format!("\x1b]8;;{over}\x07B").as_bytes());
+        input.extend_from_slice(format!("\x1b]8;;{at_limit}\x07C").as_bytes());
+        input.extend_from_slice(b"\x1b]8;;\x07D");
+        processor.advance(&mut cw, &input);
+
+        let a = cw.cell_hyperlink(Line(0), Column(0)).expect("hyperlink");
+        assert_eq!(a.uri(), "https://a.example");
+        // The oversized open is ignored: the first link stays open over
+        // "B".
+        let b = cw.cell_hyperlink(Line(0), Column(1)).expect("hyperlink");
+        assert_eq!(b.uri(), "https://a.example");
+        // Exactly at the budget: opens, with the URI intact.
+        let c = cw.cell_hyperlink(Line(0), Column(2)).expect("hyperlink");
+        assert_eq!(c.uri(), at_limit);
         assert!(cw.cell_hyperlink(Line(0), Column(3)).is_none());
     }
 

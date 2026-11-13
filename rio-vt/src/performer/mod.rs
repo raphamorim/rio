@@ -1,6 +1,20 @@
 pub mod handler;
 mod osc;
+#[cfg(test)]
+pub(crate) use osc::MAX_HYPERLINK_BYTES;
 pub mod parser;
+
+/// Empty an accumulation buffer between uses. A buffer grown past
+/// `retain` by one large sequence gives its memory back rather than
+/// pinning that capacity for the session; a smaller one keeps its
+/// allocation so the next sequence does not reallocate.
+pub(crate) fn clear_or_release(buf: &mut Vec<u8>, retain: usize) {
+    if buf.capacity() > retain {
+        *buf = Vec::new();
+    } else {
+        buf.clear();
+    }
+}
 
 #[cfg(all(test, feature = "pty"))]
 mod tests;

@@ -164,15 +164,7 @@ impl OscBuffer {
     fn clear(&mut self) {
         self.fixed_len = 0;
         self.overflowed = false;
-        if self.overflow.capacity() > OSC_RETAIN_BYTES {
-            // Give the memory back rather than pin a large sequence's
-            // capacity for the session.
-            self.overflow = Vec::new();
-        } else {
-            // Keep a modest capacity so a session that hits one large
-            // paste doesn't re-allocate on the next one.
-            self.overflow.clear();
-        }
+        super::clear_or_release(&mut self.overflow, OSC_RETAIN_BYTES);
     }
 }
 
