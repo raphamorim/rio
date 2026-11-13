@@ -74,8 +74,10 @@ pub trait Handler {
     /// OSC to set window title.
     fn set_title(&mut self, _: Option<String>) {}
 
-    /// OSC to set current directory.
-    fn set_current_directory(&mut self, _: std::path::PathBuf) {}
+    /// OSC 7 / 9;9: the program's working directory. `None` means the
+    /// program reported it no longer knows its directory (an empty
+    /// payload), so any stored one is stale.
+    fn set_current_directory(&mut self, _: Option<std::path::PathBuf>) {}
 
     /// OSC 133: mark the cursor row as a semantic prompt row.
     fn set_semantic_prompt(&mut self, _: crate::crosswords::grid::row::SemanticPrompt) {}
@@ -895,11 +897,14 @@ impl<U: Handler> Perform for Performer<'_, U> {
         }
 
         match params[0] {
-            // Set window title.
-            b"0" | b"2" => match osc::parse_title(params) {
-                Some(title) => self.handler.set_title(Some(title)),
-                None => unhandled(params),
-            },
+            // Set window title. `parse_title` logs why it rejects a
+            // title; the payload can be large, so it is not dumped
+            // through `unhandled` as well.
+            b"0" | b"2" => {
+                if let Some(title) = osc::parse_title(params) {
+                    self.handler.set_title(Some(title));
+                }
+            }
 
             // Set color index.
             b"4" => match osc::parse_palette_entries(params) {
@@ -920,42 +925,54 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 None => unhandled(params),
             },
 
-            // Inform current directory.
+            // Inform current directory. An empty payload means the
+            // program no longer knows its directory, so the stored one
+            // is cleared instead of left stale. The parser logs a
+            // malformed payload itself: a shell on a remote host sends
+            // one at every prompt, so the per-byte `unhandled` dump
+            // would flood the log for the whole session.
             b"7" => {
-                // Rejoined: the kitty-shell-cwd flavor is verbatim, so a
-                // `;` in the directory arrives as extra params.
-                if let Some(payload) = osc::join_params(params, 1) {
-                    if let Some(path) = osc::parse_current_directory(payload.as_bytes()) {
-                        self.handler.set_current_directory(path.into());
-                    }
+                if let Some(dir) =
+                    params.get(1).and_then(|p| osc::parse_current_directory(p))
+                {
+                    self.handler.set_current_directory(dir.map(Into::into));
                 }
             }
 
             // Hyperlink.
             b"8" if params.len() > 2 => {
-                self.handler
-                    .set_hyperlink(osc::parse_hyperlink(params[1], params[2]));
+                match osc::parse_hyperlink(params[1], params[2]) {
+                    Some(link) => self.handler.set_hyperlink(link),
+                    None => unhandled(params),
+                }
             }
 
-            // OSC 9 dispatches on its sub-command: 9;4 progress and 9;9
-            // working directory are consumed even when their payload is
-            // invalid (a malformed known sub-command must not pop a
-            // bogus notification); anything else is a notification.
+            // OSC 9 dispatches on its ConEmu sub-command, which is only
+            // such when a `;` follows it (`9;4` alone is a notification
+            // reading "4"). 9;4 progress and 9;9 working
+            // directory are consumed even when their payload is invalid,
+            // and the ConEmu sub-commands Rio does not implement are
+            // dropped: a malformed or unsupported known sub-command must
+            // not pop a bogus notification. Anything else is an iTerm2
+            // notification.
             b"9" => match params.get(1).copied() {
-                Some(b"4") => {
+                Some(b"4") if params.len() > 2 => {
                     if let Some(report) = osc::parse_progress_report(params) {
                         self.handler.set_progress_report(report);
                     }
                 }
-                Some(b"9") => {
-                    if let Some(path) = osc::parse_conemu_working_directory(params) {
-                        self.handler.set_current_directory(path.into());
+                Some(b"9") if params.len() > 2 => {
+                    if let Some(dir) = osc::parse_conemu_working_directory(params) {
+                        self.handler.set_current_directory(dir.map(Into::into));
                     }
                 }
-                Some(body) => {
-                    let body = std::str::from_utf8(body).unwrap_or_default().to_string();
-                    self.handler.desktop_notification(String::new(), body);
+                Some(sub) if params.len() > 2 && osc::is_conemu_subcommand(sub) => {
+                    unhandled(params)
                 }
+                Some(_) => self.handler.desktop_notification(
+                    String::new(),
+                    osc::parse_notification_body(params),
+                ),
                 None => unhandled(params),
             },
 
@@ -985,13 +1002,10 @@ impl<U: Handler> Perform for Performer<'_, U> {
 
             // OSC 777 - rxvt notification.
             b"777" if params.len() >= 4 && params[1] == b"notify" => {
-                let title = std::str::from_utf8(params[2])
-                    .unwrap_or_default()
-                    .to_string();
-                let body = std::str::from_utf8(params[3])
-                    .unwrap_or_default()
-                    .to_string();
-                self.handler.desktop_notification(title, body);
+                self.handler.desktop_notification(
+                    osc::text_lossy(params[2]).into_owned(),
+                    osc::text_lossy(params[3]).into_owned(),
+                );
             }
 
             // Set or query dynamic colors (foreground/background/cursor).
@@ -2076,6 +2090,58 @@ mod tests {
         ) -> Option<&mut kitty_graphics_protocol::KittyGraphicsState> {
             Some(&mut self.chunking)
         }
+    }
+
+    /// Records what OSC 9 dispatches to, so the ConEmu-versus-iTerm2
+    /// split can be observed.
+    #[derive(Default)]
+    struct Osc9Handler {
+        notifications: Vec<String>,
+        progress: Vec<crate::event::ProgressReport>,
+        cwd: Vec<Option<std::path::PathBuf>>,
+    }
+
+    impl Handler for Osc9Handler {
+        fn desktop_notification(&mut self, _title: String, body: String) {
+            self.notifications.push(body);
+        }
+
+        fn set_progress_report(&mut self, report: crate::event::ProgressReport) {
+            self.progress.push(report);
+        }
+
+        fn set_current_directory(&mut self, path: Option<std::path::PathBuf>) {
+            self.cwd.push(path);
+        }
+    }
+
+    /// A ConEmu sub-command is one only when a `;` follows it; the ones
+    /// Rio does not implement are dropped rather than shown as a toast.
+    #[test]
+    fn osc9_splits_conemu_from_notifications() {
+        let mut handler = Osc9Handler::default();
+        let mut processor = Processor::default();
+
+        // Implemented ConEmu sub-commands.
+        processor.advance(&mut handler, b"\x1b]9;4;1;50\x07");
+        assert_eq!(handler.progress.len(), 1);
+        processor.advance(&mut handler, b"\x1b]9;9;/tmp/x\x07");
+        assert_eq!(handler.cwd, vec![Some("/tmp/x".into())]);
+
+        // Unimplemented ConEmu sub-commands are not notifications.
+        processor.advance(&mut handler, b"\x1b]9;1;500\x07");
+        processor.advance(&mut handler, b"\x1b]9;3;build\x07");
+        processor.advance(&mut handler, b"\x1b]9;10;1\x07");
+        assert!(handler.notifications.is_empty());
+
+        // Without the `;` the digit is just a one-character body.
+        processor.advance(&mut handler, b"\x1b]9;4\x07");
+        processor.advance(&mut handler, b"\x1b]9;9\x07");
+        // A notification body keeps its own `;`.
+        processor.advance(&mut handler, b"\x1b]9;done; 3 warnings\x07");
+        assert_eq!(handler.notifications, ["4", "9", "done; 3 warnings"]);
+        assert_eq!(handler.progress.len(), 1);
+        assert_eq!(handler.cwd.len(), 1);
     }
 
     /// `a=p` referencing an image the terminal does not hold must answer

@@ -3571,12 +3571,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         );
     }
 
-    fn set_current_directory(&mut self, path: std::path::PathBuf) {
+    fn set_current_directory(&mut self, path: Option<std::path::PathBuf>) {
         trace!("Setting working directory {:?}", path);
-        if self.current_directory.as_deref() == Some(path.as_path()) {
+        if self.current_directory == path {
             return;
         }
-        self.current_directory = Some(path);
+        self.current_directory = path;
         self.event_proxy.send_event(
             RioEvent::CurrentDirectoryChanged(self.route_id),
             self.window_id,
@@ -7095,6 +7095,62 @@ mod tests {
         );
     }
 
+    #[test]
+    fn osc8_hyperlink_uri_keeps_semicolons() {
+        use crate::performer::handler::Processor;
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = Processor::default();
+
+        processor.advance(&mut cw, b"\x1b]8;;https://x.dev/a;b;\x07X\x1b]8;;\x07");
+
+        let hl = cw.cell_hyperlink(Line(0), Column(0)).expect("hyperlink");
+        assert_eq!(hl.uri(), "https://x.dev/a;b;");
+    }
+
+    #[test]
+    fn osc8_hyperlink_invalid_utf8_and_empty_uri_with_id() {
+        use crate::performer::handler::Processor;
+
+        let size = CrosswordsSize::new(40, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            window_id,
+            0,
+            10_000,
+        );
+        let mut processor = Processor::default();
+
+        processor.advance(
+            &mut cw,
+            b"\x1b]8;;https://a.example\x07A\
+              \x1b]8;;file:///caf\xe9\x07B\
+              \x1b]8;id=foo;\x07C\
+              \x1b]8;;\x07D",
+        );
+
+        let a = cw.cell_hyperlink(Line(0), Column(0)).expect("hyperlink");
+        assert_eq!(a.uri(), "https://a.example");
+        let b = cw.cell_hyperlink(Line(0), Column(1)).expect("hyperlink");
+        assert_eq!(b.uri(), "file:///caf\u{FFFD}");
+        // An empty URI with an id is invalid and leaves the link open.
+        let c = cw.cell_hyperlink(Line(0), Column(2)).expect("hyperlink");
+        assert_eq!(c.uri(), "file:///caf\u{FFFD}");
+        assert!(cw.cell_hyperlink(Line(0), Column(3)).is_none());
+    }
+
     /// OSC 8 hyperlinks span multiple lines when the parser writes a
     /// linefeed in the middle of the link. The cells on both lines
     /// should carry the same `extras_id` (modulo the cells before /
@@ -8252,24 +8308,33 @@ mod tests {
             10,
         );
 
-        Handler::set_current_directory(&mut term, "/tmp/a".into());
-        Handler::set_current_directory(&mut term, "/tmp/a".into());
+        let changes = || {
+            events
+                .borrow()
+                .iter()
+                .filter(
+                    |e| matches!(e, RioEvent::CurrentDirectoryChanged(route) if *route == 7),
+                )
+                .count()
+        };
 
-        let count = events
-            .borrow()
-            .iter()
-            .filter(
-                |e| matches!(e, RioEvent::CurrentDirectoryChanged(route) if *route == 7),
-            )
-            .count();
+        Handler::set_current_directory(&mut term, Some("/tmp/a".into()));
+        Handler::set_current_directory(&mut term, Some("/tmp/a".into()));
         assert_eq!(
-            count, 1,
+            changes(),
+            1,
             "a repeated OSC 7 for the same directory must not re-emit"
         );
         assert_eq!(
             term.current_directory.as_deref(),
             Some(std::path::Path::new("/tmp/a"))
         );
+
+        // Forgetting the directory is a change too, but only once.
+        Handler::set_current_directory(&mut term, None);
+        Handler::set_current_directory(&mut term, None);
+        assert_eq!(changes(), 2, "clearing a known directory emits once");
+        assert_eq!(term.current_directory, None);
     }
 
     #[test]

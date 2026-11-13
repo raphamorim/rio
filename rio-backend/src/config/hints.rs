@@ -87,7 +87,9 @@ pub struct Hint {
     #[serde(default = "default_bool_false")]
     pub hyperlinks: bool,
 
-    /// Whether to apply post-processing to matches
+    /// Whether to trim trailing punctuation and unbalanced brackets from
+    /// regex matches. OSC 8 hyperlinks carry an explicit URI and are
+    /// never trimmed.
     #[serde(default = "default_bool_true", rename = "post-processing")]
     pub post_processing: bool,
 
