@@ -72,45 +72,6 @@ pub(super) fn parse_semantic_prompt(
     }
 }
 
-/// Most bytes one user variable may take, name and value together.
-/// Variables are kept for the session, so each is bounded here and
-/// their number in the terminal.
-pub(super) const MAX_USER_VAR_BYTES: usize = 64 * 1024;
-
-/// Parse `OSC 1337 ; SetUserVar=name=<base64 value>`. The value is
-/// base64 per iTerm2's spec; anything undecodable or over
-/// [`MAX_USER_VAR_BYTES`] is dropped.
-pub(super) fn parse_set_user_var(params: &[&[u8]]) -> Option<(String, String)> {
-    let payload = params.get(1)?.strip_prefix(b"SetUserVar=")?;
-    let mut parts = payload.splitn(2, |byte| *byte == b'=');
-    let name = simd_utf8::from_utf8_fast(parts.next()?).ok()?;
-    if name.is_empty() {
-        return None;
-    }
-    let encoded = parts.next()?;
-    let too_big = |value_len: usize| {
-        let over = name.len() + value_len > MAX_USER_VAR_BYTES;
-        if over {
-            tracing::warn!("ignoring user var {name:?} over {MAX_USER_VAR_BYTES} bytes");
-        }
-        over
-    };
-    // Base64 decodes to at most 3/4 of its non-space length (the
-    // decoder skips ASCII spaces) less up to two padding bytes, so a
-    // value past that cannot fit and is refused before any decoding
-    // work; the exact check follows the decode.
-    let dense = encoded.iter().filter(|b| **b != b' ').count();
-    if too_big((dense / 4 * 3).saturating_sub(2)) {
-        return None;
-    }
-    let decoded = crate::simd_base64::decode(encoded)?;
-    if too_big(decoded.len()) {
-        return None;
-    }
-    let value = String::from_utf8(decoded).ok()?;
-    Some((name.to_string(), value))
-}
-
 /// Parse an `xterm`-style color value (`#rgb`, `#rrggbb`, `rgb:r/g/b`).
 pub(super) fn xparse_color(color: &[u8]) -> Option<ColorRgb> {
     if !color.is_empty() && color[0] == b'#' {

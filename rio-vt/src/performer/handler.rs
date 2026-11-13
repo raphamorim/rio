@@ -82,9 +82,6 @@ pub trait Handler {
     /// OSC 133: mark the cursor row as a semantic prompt row.
     fn set_semantic_prompt(&mut self, _: crate::crosswords::grid::row::SemanticPrompt) {}
 
-    /// OSC 1337 SetUserVar: record a shell-provided variable.
-    fn set_user_var(&mut self, _name: String, _value: String) {}
-
     /// Set the cursor style.
     fn set_cursor_style(&mut self, _style: Option<CursorShape>, _blinking: bool) {}
 
@@ -1113,15 +1110,27 @@ impl<U: Handler> Perform for Performer<'_, U> {
             b"111" => self.handler.reset_color(NamedColor::Background as usize),
             b"112" => self.handler.reset_color(NamedColor::Cursor as usize),
 
-            // OSC 1337 - iTerm2 user vars and inline image protocol.
+            // OSC 1337 - iTerm2 inline image protocol. The other
+            // iTerm2 commands (SetUserVar, SetMark, ...) are not
+            // implemented; only the command name is logged, since a
+            // payload can be as large as the OSC cap.
             b"1337" => {
-                if let Some((name, value)) = osc::parse_set_user_var(params) {
-                    self.handler.set_user_var(name, value);
-                } else if let Some((graphic, cursor_movement)) =
+                if let Some((graphic, cursor_movement)) =
                     iterm2_image_protocol::parse(params)
                 {
                     self.handler
                         .insert_graphic(graphic, None, Some(cursor_movement));
+                } else {
+                    let key = params
+                        .get(1)
+                        .map(|p| {
+                            &p[..p.iter().position(|&b| b == b'=').unwrap_or(p.len())]
+                        })
+                        .unwrap_or(b"");
+                    debug!(
+                        "unimplemented OSC 1337 command: {}",
+                        String::from_utf8_lossy(key)
+                    );
                 }
             }
 
@@ -2435,45 +2444,6 @@ mod tests {
         assert_eq!(parse(&[b"133", b"D", b"0"]), None);
         assert_eq!(parse(&[b"133"]), None);
         assert_eq!(parse(&[b"133", b""]), None);
-    }
-
-    #[test]
-    fn set_user_var_parsing() {
-        use crate::performer::osc::parse_set_user_var as parse;
-
-        // "hello" in base64.
-        assert_eq!(
-            parse(&[b"1337", b"SetUserVar=foo=aGVsbG8="]),
-            Some(("foo".to_string(), "hello".to_string()))
-        );
-        assert_eq!(parse(&[b"1337", b"SetUserVar=foo"]), None);
-        assert_eq!(parse(&[b"1337", b"SetUserVar==aGVsbG8="]), None);
-        assert_eq!(parse(&[b"1337", b"SetUserVar=foo=!!!"]), None);
-        assert_eq!(parse(&[b"1337", b"File=inline=1"]), None);
-        assert_eq!(parse(&[b"1337"]), None);
-
-        // Name plus value is held to MAX_USER_VAR_BYTES. `over` is
-        // caught by the exact check after decoding; `huge` is refused
-        // before decoding; spaces in the encoding do not count.
-        use crate::performer::osc::MAX_USER_VAR_BYTES;
-        let encode = |n: usize| {
-            use base64::Engine;
-            base64::engine::general_purpose::STANDARD.encode(vec![b'v'; n])
-        };
-        let fits = format!("SetUserVar=foo={}", encode(MAX_USER_VAR_BYTES - 3));
-        assert!(parse(&[b"1337", fits.as_bytes()]).is_some());
-        let over = format!("SetUserVar=foo={}", encode(MAX_USER_VAR_BYTES - 2));
-        assert_eq!(parse(&[b"1337", over.as_bytes()]), None);
-        let huge = format!("SetUserVar=foo={}", "A".repeat(4 * MAX_USER_VAR_BYTES));
-        assert_eq!(parse(&[b"1337", huge.as_bytes()]), None);
-        let spaced: String = encode(MAX_USER_VAR_BYTES - 3)
-            .as_bytes()
-            .chunks(76)
-            .map(|c| std::str::from_utf8(c).unwrap())
-            .collect::<Vec<_>>()
-            .join(" ");
-        let spaced = format!("SetUserVar=foo={spaced}");
-        assert!(parse(&[b"1337", spaced.as_bytes()]).is_some());
     }
 
     #[test]
