@@ -89,8 +89,10 @@ pub(super) fn parse_exit_status(option: Option<&[u8]>) -> Option<u8> {
     if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
         return None;
     }
-    // Digits only, so this is UTF-8; a parse failure is an overflow.
-    let status = std::str::from_utf8(digits).ok()?.parse::<u8>().ok();
+    // `None` here is an overflow: a number too large for a byte.
+    let status = digits.iter().try_fold(0u8, |acc, digit| {
+        acc.checked_mul(10)?.checked_add(digit - b'0')
+    });
     Some(match status {
         Some(0) => 0,
         Some(code) if !negative => code,

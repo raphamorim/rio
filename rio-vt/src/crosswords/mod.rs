@@ -3612,7 +3612,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn prompt_start(&mut self) {
         // A new prompt means no command is running: a `C` whose `D`
         // never came (the command was interrupted, or a nested shell
-        // took over) must not pair with a later unrelated `D`.
+        // took over) is abandoned rather than paired with a later
+        // unrelated `D`. `N` reports it first; `A` does not.
         self.command_started_at = None;
         if !self.program_status_seen {
             return;
@@ -6014,6 +6015,46 @@ mod tests {
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
     }
 
+    /// A 20x4 terminal on `route_id` that records the events it sends.
+    #[allow(clippy::type_complexity)]
+    fn make_crosswords_with_events(
+        route_id: usize,
+    ) -> (
+        Crosswords<TestListener>,
+        std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>,
+    ) {
+        let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let cw = Crosswords::new(
+            CrosswordsSize::new(20, 4),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            crate::event::WindowId::from(0),
+            route_id,
+            10,
+        );
+        (cw, events)
+    }
+
+    /// The `(route_id, exit_status)` of every finished command reported.
+    fn finished_commands(
+        events: &std::cell::RefCell<Vec<RioEvent>>,
+    ) -> Vec<(usize, Option<u8>)> {
+        events
+            .borrow()
+            .iter()
+            .filter_map(|e| match e {
+                RioEvent::CommandFinished {
+                    route_id,
+                    exit_status,
+                    ..
+                } => Some((*route_id, *exit_status)),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[derive(Clone, Default)]
     struct ReplyRecorder(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
 
@@ -6060,80 +6101,54 @@ mod tests {
     /// after a full reset, reports nothing.
     #[test]
     fn osc_133_command_finished_events() {
-        let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-        let mut cw = Crosswords::new(
-            CrosswordsSize::new(20, 4),
-            CursorShape::Block,
-            TestListener {
-                events: events.clone(),
-            },
-            crate::event::WindowId::from(0),
-            7,
-            10,
-        );
+        let (mut cw, events) = make_crosswords_with_events(7);
         let mut parser = crate::performer::handler::Processor::default();
-        let finished = |events: &std::cell::RefCell<Vec<RioEvent>>| {
-            events
-                .borrow()
-                .iter()
-                .filter_map(|e| match e {
-                    RioEvent::CommandFinished {
-                        route_id,
-                        exit_status,
-                        ..
-                    } => Some((*route_id, *exit_status)),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-        };
 
         parser.advance(&mut cw, b"\x1b]133;D;0\x07");
-        assert!(finished(&events).is_empty(), "D without C reports nothing");
+        assert!(
+            finished_commands(&events).is_empty(),
+            "D without C reports nothing"
+        );
 
         parser.advance(&mut cw, b"\x1b]133;C\x07out\r\n\x1b]133;D;3\x07");
-        assert_eq!(finished(&events), vec![(7, Some(3))]);
+        assert_eq!(finished_commands(&events), vec![(7, Some(3))]);
 
         // Repeating `D` does not report the same command twice.
         parser.advance(&mut cw, b"\x1b]133;D;3\x07");
-        assert_eq!(finished(&events).len(), 1);
+        assert_eq!(finished_commands(&events).len(), 1);
 
         // No status, and an option in its place, are both "none".
         parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;D\x07");
         parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;D;aid=1\x07");
-        assert_eq!(finished(&events), vec![(7, Some(3)), (7, None), (7, None)]);
+        assert_eq!(
+            finished_commands(&events),
+            vec![(7, Some(3)), (7, None), (7, None)]
+        );
 
         // A full reset forgets the running command.
         parser.advance(&mut cw, b"\x1b]133;C\x07\x1bc\x1b]133;D;0\x07");
-        assert_eq!(finished(&events).len(), 3);
+        assert_eq!(finished_commands(&events).len(), 3);
     }
 
-    /// A new prompt forgets a `C` whose `D` never came, so a later
-    /// lone `D` is not reported as that command.
+    /// A command still open at the next prompt: `N` terminates it and
+    /// reports it with no status, `A` abandons it, and in both cases a
+    /// later lone `D` is not taken for it.
     #[test]
-    fn osc_133_new_prompt_forgets_an_unfinished_command() {
-        let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-        let mut cw = Crosswords::new(
-            CrosswordsSize::new(20, 4),
-            CursorShape::Block,
-            TestListener {
-                events: events.clone(),
-            },
-            crate::event::WindowId::from(0),
-            0,
-            10,
-        );
+    fn osc_133_new_prompt_closes_an_unfinished_command() {
+        let (mut cw, events) = make_crosswords_with_events(0);
         let mut parser = crate::performer::handler::Processor::default();
 
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;N\x07$ ");
+        assert_eq!(finished_commands(&events), vec![(0, None)]);
+        parser.advance(&mut cw, b"\x1b]133;D;1\x07");
+        assert_eq!(finished_commands(&events).len(), 1);
+
         parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;A\x07$ \x1b]133;D;130\x07");
-        parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;N\x07$ \x1b]133;D;1\x07");
-        assert!(
-            !events
-                .borrow()
-                .iter()
-                .any(|e| matches!(e, RioEvent::CommandFinished { .. })),
-            "{:?}",
-            events.borrow()
-        );
+        assert_eq!(finished_commands(&events).len(), 1);
+
+        // `N` with nothing open is just a prompt.
+        parser.advance(&mut cw, b"\x1b]133;N\x07$ ");
+        assert_eq!(finished_commands(&events).len(), 1);
     }
 
     #[test]

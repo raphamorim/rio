@@ -1038,7 +1038,13 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 // also starts a prompt) begin a prompt; options arrive as
                 // later params, so the mark must be the whole param.
                 match params.get(1).copied() {
-                    Some(b"A" | b"N") => self.handler.prompt_start(),
+                    Some(b"A") => self.handler.prompt_start(),
+                    // `N` first terminates a command still open, with no
+                    // status to report, then begins the prompt.
+                    Some(b"N") => {
+                        self.handler.command_end(None);
+                        self.handler.prompt_start();
+                    }
                     Some(b"C") => self.handler.command_start(),
                     Some(b"D") => {
                         let status = osc::parse_exit_status(params.get(2).copied());
