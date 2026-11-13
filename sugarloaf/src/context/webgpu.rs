@@ -65,6 +65,11 @@ impl<'a> WgpuContext<'a> {
                 let info = candidate.get_info();
                 tracing::info!("available adapter: {info:?}");
                 let device_rank = match info.device_type {
+                    wgpu::DeviceType::IntegratedGpu
+                        if renderer_config.prefer_integrated_gpu =>
+                    {
+                        4
+                    }
                     wgpu::DeviceType::DiscreteGpu => 3,
                     wgpu::DeviceType::IntegratedGpu => 2,
                     wgpu::DeviceType::VirtualGpu => 1,
@@ -109,15 +114,19 @@ impl<'a> WgpuContext<'a> {
         #[cfg(target_arch = "wasm32")]
         let alpha_capable_adapter: Option<wgpu::Adapter> = None;
 
+        let power_preference = if renderer_config.prefer_integrated_gpu {
+            wgpu::PowerPreference::LowPower
+        } else {
+            wgpu::PowerPreference::HighPerformance
+        };
         let default_adapter = |surface: &wgpu::Surface| {
             futures::executor::block_on(instance.request_adapter(
                 &wgpu::RequestAdapterOptions {
-                    // Hard-coded — sugarloaf used to expose a
-                    // `power_preference` knob, but in practice every Rio
-                    // user picks `HighPerformance` (the alternative gives
-                    // visibly worse text on hybrid laptops). Removed from
-                    // the public API.
-                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    // wgpu orders hardware GPUs by this preference and
+                    // keeps software adapters behind both, so asking
+                    // for low power picks the integrated GPU, never a
+                    // software rasterizer while a hardware GPU exists.
+                    power_preference,
                     compatible_surface: Some(surface),
                     force_fallback_adapter: false,
                     apply_limit_buckets: false,

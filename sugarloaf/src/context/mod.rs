@@ -46,9 +46,10 @@ impl Context<'_> {
                 ContextType::Metal(metal::MetalContext::new(sugarloaf_window))
             }
             #[cfg(target_os = "linux")]
-            SugarloafBackend::Vulkan => {
-                ContextType::Vulkan(vulkan::VulkanContext::new(sugarloaf_window))
-            }
+            SugarloafBackend::Vulkan => ContextType::Vulkan(vulkan::VulkanContext::new(
+                sugarloaf_window,
+                renderer_config.prefer_integrated_gpu,
+            )),
             SugarloafBackend::Cpu => {
                 ContextType::Cpu(cpu::CpuContext::new(sugarloaf_window))
             }
