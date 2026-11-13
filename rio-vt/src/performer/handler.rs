@@ -493,7 +493,7 @@ struct XtgettcapState {
     buffer: Vec<u8>,
 
     /// The request outgrew [`MAX_XTGETTCAP_BYTES`]: the rest is
-    /// discarded and the request is answered as invalid.
+    /// discarded and the request gets no reply.
     overflowed: bool,
 }
 
@@ -896,17 +896,14 @@ impl<U: Handler> Perform for Performer<'_, U> {
         if self.handler.is_sixel_graphic_active() {
             self.handler.sixel_graphic_finish();
         } else if self.state.xtgettcap_state.active {
-            // Process XTGETTCAP request. An overflowed one gets xterm's
-            // reply for an invalid request, the same one an empty or
-            // undecodable request gets, so the client is answered
-            // rather than left waiting (some terminals reply with
-            // nothing at all here).
-            let response = if self.state.xtgettcap_state.overflowed {
-                XTGETTCAP_INVALID_RESPONSE.to_string()
-            } else {
-                process_xtgettcap_request(&self.state.xtgettcap_state.buffer)
-            };
-            self.handler.xtgettcap_response(response);
+            // Process XTGETTCAP request. An overflowed one was garbage
+            // from the terminal's point of view and gets no reply, as
+            // in other terminals; the state is simply dropped.
+            if !self.state.xtgettcap_state.overflowed {
+                let response =
+                    process_xtgettcap_request(&self.state.xtgettcap_state.buffer);
+                self.handler.xtgettcap_response(response);
+            }
 
             // Reset state; `hook` clears `overflowed` for the next request.
             self.state.xtgettcap_state.active = false;
@@ -2471,10 +2468,10 @@ mod tests {
         }
     }
 
-    /// A request over the cap is answered as invalid, its buffer is
-    /// released, and the next request is served normally.
+    /// A request over the cap gets no reply, its buffer is released,
+    /// and the next request is served normally.
     #[test]
-    fn oversized_xtgettcap_request_is_answered_as_invalid() {
+    fn oversized_xtgettcap_request_gets_no_reply() {
         let mut handler = XtgettcapHandler::default();
         let mut processor = Processor::default();
 
@@ -2483,11 +2480,11 @@ mod tests {
         assert!(processor.state.xtgettcap_state.overflowed);
         assert_eq!(processor.state.xtgettcap_state.buffer.capacity(), 0);
         processor.advance(&mut handler, b"\x1b\\");
-        assert_eq!(handler.responses, [XTGETTCAP_INVALID_RESPONSE]);
+        assert!(handler.responses.is_empty(), "{:?}", handler.responses);
 
         processor.advance(&mut handler, b"\x1bP+q544E\x1b\\");
-        assert_eq!(handler.responses.len(), 2);
-        assert!(handler.responses[1].starts_with("\x1bP1+r544E="));
+        assert_eq!(handler.responses.len(), 1);
+        assert!(handler.responses[0].starts_with("\x1bP1+r544E="));
     }
 
     #[test]
