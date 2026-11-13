@@ -408,29 +408,37 @@ const PROGRAM_STATUS_MAX_DEPTH: usize = 8;
 /// OSC 7501 — program status (`state=working:app=cargo:progress=40`).
 ///
 /// The body is `key=value` pairs separated by `:`. Malformed pairs and
-/// unknown keys are skipped and a repeated key keeps its last value; a
-/// missing or unknown `state`, an invalid `id`, undecodable base64,
-/// control characters in decoded text, or any size limit exceeded drops
-/// the whole report.
-pub(super) fn parse_program_status(params: &[&[u8]]) -> Option<ProgramStatusRequest> {
+/// unknown keys are skipped and a repeated key keeps its last value. The
+/// report is dropped whole when the final `state` is missing or unknown,
+/// the final `id` fails the grammar, any base64 is undecodable or decodes
+/// to control characters, or any size limit is exceeded.
+///
+/// `terminator_len` is 1 for BEL and 2 for `ESC \`, so the 4096-byte cap
+/// applies to the sequence exactly as it arrived.
+pub(super) fn parse_program_status(
+    params: &[&[u8]],
+    terminator_len: usize,
+) -> Option<ProgramStatusRequest> {
     // Values never contain `;`, but rejoin so a stray one fails the
-    // charset check instead of silently truncating the body.
+    // alphabet check instead of silently truncating the body.
     let body = join_params(params, 1)?;
-    // `ESC ] 7501 ;` plus the longest terminator (`ESC \`).
-    if body.len() + 9 > PROGRAM_STATUS_MAX_SEQUENCE {
+    // `ESC ] 7501 ;` is 7 bytes.
+    if body.len() + 7 + terminator_len > PROGRAM_STATUS_MAX_SEQUENCE {
         return None;
     }
     if body.trim() == "?" {
         return Some(ProgramStatusRequest::Query);
     }
 
-    let mut state = None;
+    // `state` and `id` keep their last value, valid or not, and are
+    // judged once the body is read: `state=bogus:state=idle` is idle.
+    let mut state: Option<Option<ProgramState>> = None;
+    let mut id: Option<Option<String>> = None;
     let mut kind = None;
     let mut app = None;
     let mut msg = None;
     let mut title = None;
     let mut progress = None;
-    let mut id = None;
 
     for pair in body.split(':') {
         let Some((key, value)) = pair.split_once('=') else {
@@ -440,28 +448,32 @@ pub(super) fn parse_program_status(params: &[&[u8]]) -> Option<ProgramStatusRequ
         if key.len() > PROGRAM_STATUS_MAX_KEY {
             return None;
         }
-        if value.is_empty() || !value.bytes().all(is_program_status_value_byte) {
-            // A malformed `id` must not fall back to the root record, so
-            // it drops the report; any other malformed pair is skipped.
-            if key == "id" {
-                return None;
-            }
-            continue;
-        }
+        let well_formed =
+            !value.is_empty() && value.bytes().all(is_program_status_value_byte);
         match key {
             "state" => {
                 state = Some(match value {
-                    "idle" => ProgramState::Idle,
-                    "working" => ProgramState::Working,
-                    "done" => ProgramState::Done,
-                    "blocked" => ProgramState::Blocked,
-                    "error" => ProgramState::Error,
-                    "clear" => ProgramState::Clear,
-                    // An unknown state invalidates the report rather
-                    // than leaving an earlier `state=` in force.
-                    _ => return None,
+                    "idle" => Some(ProgramState::Idle),
+                    "working" => Some(ProgramState::Working),
+                    "done" => Some(ProgramState::Done),
+                    "blocked" => Some(ProgramState::Blocked),
+                    "error" => Some(ProgramState::Error),
+                    "clear" => Some(ProgramState::Clear),
+                    _ => None,
                 })
             }
+            // A malformed `id` must not fall back to the root record.
+            "id" => {
+                if value.len() > PROGRAM_STATUS_MAX_ID {
+                    return None;
+                }
+                id = Some(
+                    (well_formed && is_valid_program_status_id(value))
+                        .then(|| value.to_string()),
+                );
+            }
+            _ if !well_formed => continue,
+            // Unrecognized kinds are treated as absent.
             "kind" => {
                 kind = match value {
                     "permission" => Some(BlockedKind::Permission),
@@ -482,18 +494,21 @@ pub(super) fn parse_program_status(params: &[&[u8]]) -> Option<ProgramStatusRequ
             "title" => {
                 title = Some(decode_program_status_text(value, PROGRAM_STATUS_MAX_TITLE)?)
             }
-            "progress" => progress = value.parse::<u8>().ok().filter(|p| *p <= 100),
-            "id" => {
-                if !is_valid_program_status_id(value) {
-                    return None;
+            // Not an integer in 0..=100: a malformed pair, skipped.
+            "progress" => {
+                if let Some(p) = value.parse::<u8>().ok().filter(|p| *p <= 100) {
+                    progress = Some(p);
                 }
-                id = Some(value.to_string());
             }
             _ => {}
         }
     }
 
-    let state = state?;
+    let state = state??;
+    let id = match id {
+        None => None,
+        Some(valid) => Some(valid?),
+    };
     Some(ProgramStatusRequest::Report(ProgramStatus {
         state,
         kind: kind.filter(|_| state == ProgramState::Blocked),
@@ -533,10 +548,9 @@ fn decode_program_status_text(
 }
 
 /// `seg(/seg)*`, each segment 1-32 bytes of `[A-Za-z0-9_.+-]`, at most
-/// 8 deep and 128 bytes overall.
+/// 8 deep (the 128-byte total is checked by the caller).
 fn is_valid_program_status_id(id: &str) -> bool {
-    id.len() <= PROGRAM_STATUS_MAX_ID
-        && id.split('/').count() <= PROGRAM_STATUS_MAX_DEPTH
+    id.split('/').count() <= PROGRAM_STATUS_MAX_DEPTH
         && id.split('/').all(|segment| {
             (1..=PROGRAM_STATUS_MAX_SEGMENT).contains(&segment.len())
                 && segment
@@ -683,7 +697,7 @@ mod tests {
 
     fn status(body: &str) -> Option<ProgramStatusRequest> {
         let params: Vec<&[u8]> = vec![b"7501", body.as_bytes()];
-        parse_program_status(&params)
+        parse_program_status(&params, 2)
     }
 
     fn report(body: &str) -> ProgramStatus {
@@ -751,6 +765,33 @@ mod tests {
         ] {
             assert_eq!(status(body), None, "{body}");
         }
+    }
+
+    #[test]
+    fn program_status_last_repeat_wins() {
+        assert_eq!(report("state=bogus:state=idle").state, ProgramState::Idle);
+        assert_eq!(status("state=idle:state=bogus"), None);
+        assert_eq!(report("state=idle:id=a//b:id=ok").id.as_deref(), Some("ok"));
+        assert_eq!(status("state=idle:id=ok:id=a//b"), None);
+        // A malformed progress is skipped, not a reset to indeterminate.
+        assert_eq!(
+            report("state=working:progress=40:progress=abc").progress,
+            Some(40)
+        );
+        assert_eq!(
+            report("state=working:progress=40:progress=101").progress,
+            Some(40)
+        );
+    }
+
+    #[test]
+    fn program_status_sequence_cap_counts_the_terminator() {
+        // 7 bytes of `ESC ] 7501 ;` + body + terminator = 4096 exactly.
+        let fill = |len: usize| format!("state=idle:p={}", "a".repeat(len - 13));
+        let bel_max = fill(4096 - 7 - 1);
+        let params: Vec<&[u8]> = vec![b"7501", bel_max.as_bytes()];
+        assert!(parse_program_status(&params, 1).is_some());
+        assert!(parse_program_status(&params, 2).is_none());
     }
 
     #[test]

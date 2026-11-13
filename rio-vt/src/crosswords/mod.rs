@@ -476,6 +476,11 @@ where
 
     /// When the last BSU of the active synchronized update arrived.
     pub sync_update_started: Option<crate::time::Instant>,
+    /// Whether an OSC 7501 report arrived since the last full reset.
+    /// Until one does, prompts and resets send no program-status events,
+    /// so terminals that never use the protocol never wake the embedder
+    /// for it.
+    program_status_seen: bool,
 
     /// What DECRQM callers see after a full reset: the
     /// consumer-configured default for grapheme clustering (mode
@@ -545,6 +550,7 @@ impl<U: EventListener> Crosswords<U> {
             user_vars: rustc_hash::FxHashMap::default(),
             damage_event_in_flight: false,
             sync_update_started: None,
+            program_status_seen: false,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
             keyboard_mode_idx: 0,
@@ -3430,10 +3436,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.event_proxy
             .send_event(RioEvent::CursorBlinkingChange, self.window_id);
         // RIS drops every OSC 7501 record (DECSTR does not).
-        self.event_proxy.send_event(
-            RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::Reset),
-            self.window_id,
-        );
+        if std::mem::take(&mut self.program_status_seen) {
+            self.event_proxy.send_event(
+                RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::Reset),
+                self.window_id,
+            );
+        }
         self.mark_fully_damaged();
     }
 
@@ -3538,6 +3546,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn set_program_status(&mut self, status: crate::event::ProgramStatus) {
+        self.program_status_seen = true;
         self.event_proxy.send_event(
             RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::Report(status)),
             self.window_id,
@@ -3553,6 +3562,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn prompt_start(&mut self) {
+        if !self.program_status_seen {
+            return;
+        }
         self.event_proxy.send_event(
             RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::PromptStart),
             self.window_id,
@@ -5962,21 +5974,28 @@ mod tests {
 
         // Query (BEL-terminated), a report (ST-terminated), a rejected
         // report, a new prompt, and a full reset.
+        // Before any report, prompts and resets are silent.
+        parser.advance(&mut cw, b"\x1b]133;A\x07\x1bc");
         parser.advance(&mut cw, b"\x1b]7501;?\x07");
         parser.advance(
             &mut cw,
             b"\x1b]7501;state=blocked:kind=question:app=claude-code\x1b\\",
         );
         parser.advance(&mut cw, b"\x1b]7501;state=bogus\x07");
-        parser.advance(&mut cw, b"\x1b]133;A\x07");
+        // `Ax` is not a prompt mark; `A;aid=1` and `N` are.
+        parser.advance(&mut cw, b"\x1b]133;Ax\x07");
+        parser.advance(&mut cw, b"\x1b]133;A;aid=1\x07");
+        parser.advance(&mut cw, b"\x1b]133;N\x07");
         parser.advance(&mut cw, b"\x1bc");
+        // The reset clears the flag: the next prompt is silent again.
+        parser.advance(&mut cw, b"\x1b]133;A\x07");
 
         let seen: Vec<RioEvent> = events
             .borrow_mut()
             .drain(..)
             .filter(|e| matches!(e, RioEvent::ProgramStatus(_) | RioEvent::PtyWrite(..)))
             .collect();
-        assert_eq!(seen.len(), 4, "{seen:?}");
+        assert_eq!(seen.len(), 5, "{seen:?}");
         assert!(matches!(&seen[0], RioEvent::PtyWrite(_, t) if t == "\x1b]7501;?\x07"));
         match &seen[1] {
             RioEvent::ProgramStatus(ProgramStatusEvent::Report(r)) => {
@@ -5992,6 +6011,10 @@ mod tests {
         ));
         assert!(matches!(
             seen[3],
+            RioEvent::ProgramStatus(ProgramStatusEvent::PromptStart)
+        ));
+        assert!(matches!(
+            seen[4],
             RioEvent::ProgramStatus(ProgramStatusEvent::Reset)
         ));
     }

@@ -964,13 +964,16 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 if let Some(mark) = osc::parse_semantic_prompt(params) {
                     self.handler.set_semantic_prompt(mark);
                 }
-                if params.get(1).and_then(|p| p.first()) == Some(&b'A') {
+                // `A` (fresh line, new prompt) and `N` (new command, which
+                // also starts a prompt) begin a prompt; options arrive as
+                // later params, so the mark must be the whole param.
+                if matches!(params.get(1).copied(), Some(b"A" | b"N")) {
                     self.handler.prompt_start();
                 }
             }
 
             // OSC 7501 - program status (Program Status Protocol).
-            b"7501" => match osc::parse_program_status(params) {
+            b"7501" => match osc::parse_program_status(params, terminator.len()) {
                 Some(osc::ProgramStatusRequest::Query) => {
                     self.handler.report_program_status_support(terminator)
                 }

@@ -26,8 +26,10 @@ typedef size_t rio_surface_id_t;
    or a lifecycle event after which the host drops records: on
    PROMPT_START (OSC 133 A) drop `working` and `blocked` records (and
    optionally `idle`), keeping `done` and `error`; on RESET (RIS) drop
-   every record. librio validates reports against the spec and keeps no
-   records itself. */
+   every record. When the child process exits (close_surface_cb), the
+   spec also drops `working` and `blocked` records. librio validates
+   reports against the spec and keeps no records itself, and sends
+   lifecycle events only once the surface has reported status. */
 #define RIO_PROGRAM_STATUS_REPORT 0u
 #define RIO_PROGRAM_STATUS_PROMPT_START 1u
 #define RIO_PROGRAM_STATUS_RESET 2u
