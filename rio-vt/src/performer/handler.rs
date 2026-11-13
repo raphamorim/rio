@@ -506,7 +506,17 @@ struct ApcState {
     /// Buffer for accumulating APC data.
     /// Pre-allocated to a reasonable size for Kitty graphics chunks.
     buffer: Vec<u8>,
+    /// The sequence outgrew [`MAX_APC_BYTES`]: the rest is discarded
+    /// and `apc_end` dispatches nothing.
+    overflowed: bool,
 }
+
+/// Longest APC sequence the terminal accumulates. Kitty graphics
+/// chunks are at most 4 KiB of base64 and glyph protocol payloads are
+/// capped at 64 KiB, so this is generous for every real client while
+/// an unterminated `ESC _` can no longer grow the buffer until the
+/// process is killed.
+const MAX_APC_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct Processor {
@@ -1407,6 +1417,7 @@ impl<U: Handler> Perform for Performer<'_, U> {
     fn apc_start(&mut self) {
         debug!("[apc_start] Beginning APC accumulation");
         self.state.apc_state.buffer.clear();
+        self.state.apc_state.overflowed = false;
         // Pre-allocate reasonable size for Kitty graphics chunks (typically 4KB)
         self.state.apc_state.buffer.reserve(4096);
     }
@@ -1416,15 +1427,34 @@ impl<U: Handler> Perform for Performer<'_, U> {
     /// We accumulate all bytes here to handle large sequences that exceed Copa's
     /// default OSC buffer size (1024 bytes).
     fn apc_put(&mut self, byte: u8) {
-        self.state.apc_state.buffer.push(byte);
+        self.apc_put_slice(std::slice::from_ref(&byte));
     }
 
     fn apc_put_slice(&mut self, bytes: &[u8]) {
-        self.state.apc_state.buffer.extend_from_slice(bytes);
+        let apc = &mut self.state.apc_state;
+        if apc.overflowed {
+            return;
+        }
+        if apc.buffer.len() + bytes.len() > MAX_APC_BYTES {
+            warn!(
+                "discarding APC sequence over {MAX_APC_BYTES} bytes ({} so far)",
+                apc.buffer.len()
+            );
+            apc.overflowed = true;
+            // Give the memory back rather than keep a multi-megabyte
+            // buffer around for the next 4 KiB chunk.
+            apc.buffer = Vec::new();
+            return;
+        }
+        apc.buffer.extend_from_slice(bytes);
     }
 
     /// Called when the APC sequence ends. Processes the accumulated APC data.
     fn apc_end(&mut self) {
+        if self.state.apc_state.overflowed {
+            self.state.apc_state.overflowed = false;
+            return;
+        }
         debug!(
             "[apc_end] APC complete, accumulated {} bytes",
             self.state.apc_state.buffer.len()
@@ -2142,6 +2172,35 @@ mod tests {
         assert_eq!(handler.notifications, ["4", "9", "done; 3 warnings"]);
         assert_eq!(handler.progress.len(), 1);
         assert_eq!(handler.cwd.len(), 1);
+    }
+
+    /// An APC that never ends (or is simply enormous) stops being
+    /// accumulated at the cap, dispatches nothing, and leaves the
+    /// processor able to handle the next sequence.
+    #[test]
+    fn oversized_apc_is_discarded_and_parser_recovers() {
+        let mut handler = KittyReplyHandler::default();
+        let mut processor = Processor::default();
+
+        processor.advance(&mut handler, b"\x1b_Ga=T,f=32,s=1,v=1,i=5;");
+        let filler = vec![b'A'; MAX_APC_BYTES + 1];
+        processor.advance(&mut handler, &filler);
+        assert!(processor.state.apc_state.overflowed);
+        assert!(
+            processor.state.apc_state.buffer.capacity() < MAX_APC_BYTES,
+            "buffer must be released, not kept at the cap"
+        );
+        processor.advance(&mut handler, b"\x1b\\");
+        assert!(
+            handler.replies.is_empty(),
+            "nothing dispatched: {:?}",
+            handler.replies
+        );
+
+        // The next APC is handled normally.
+        processor.advance(&mut handler, b"\x1b_Ga=p,i=99\x1b\\");
+        assert_eq!(handler.replies.len(), 1);
+        assert!(handler.replies[0].contains("ENOENT"));
     }
 
     /// `a=p` referencing an image the terminal does not hold must answer

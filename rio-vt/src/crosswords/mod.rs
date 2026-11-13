@@ -1622,6 +1622,14 @@ impl<U: EventListener> Crosswords<U> {
     /// the cursor (legacy zero-width semantics: `saturating_sub`
     /// column math, so a mark at column 0 targets column 0).
     fn attach_to_prev_cell(&mut self, c: char) {
+        /// Most combining marks one cell keeps; later ones are dropped.
+        /// Every attach clones the cell's extras and re-interns them,
+        /// so an unbounded run (`e` U+0301 `ESC[65535b`) costs
+        /// quadratic time and keeps every intermediate slot alive
+        /// until the next sweep. No script stacks anywhere near this
+        /// many marks on one base.
+        const MAX_ZEROWIDTH_PER_CELL: usize = 64;
+
         let mut column = self.grid.cursor.pos.col;
         if !self.grid.cursor.should_wrap {
             column.0 = column.saturating_sub(1);
@@ -1649,10 +1657,14 @@ impl<U: EventListener> Crosswords<U> {
         // mark to the whole hyperlink span. Clone, extend, and
         // re-intern instead; the marked cell gets its own
         // (marks + hyperlink) slot and its neighbors keep theirs.
-        let existing_id = self.grid[row][column].extras_id();
-        let mut extras = existing_id
-            .and_then(|id| self.grid.extras_table.get(id).cloned())
-            .unwrap_or_default();
+        let existing = self.grid[row][column]
+            .extras_id()
+            .and_then(|id| self.grid.extras_table.get(id));
+        if existing.is_some_and(|extras| extras.zerowidth.len() >= MAX_ZEROWIDTH_PER_CELL)
+        {
+            return;
+        }
+        let mut extras = existing.cloned().unwrap_or_default();
         extras.zerowidth.push(c);
         let id = self.grid.alloc_extras(extras);
         if id != 0 {
@@ -9530,6 +9542,27 @@ mod tests {
         cw.input('\u{302}');
         let c = cw.grid[Line(0)][Column(2)].extras_id().unwrap();
         assert_ne!(a, c);
+    }
+
+    /// A run of combining marks on one base stops growing the cell at
+    /// the cap: the extra marks are consumed, not printed as cells, and
+    /// neither time nor the extras table grows with the run length.
+    #[test]
+    fn combining_marks_per_cell_are_capped() {
+        let mut cw = new_term(10, 2);
+        cw.input('e');
+        for _ in 0..4096 {
+            cw.input('\u{301}');
+        }
+        let id = cw.grid[Line(0)][Column(0)].extras_id().unwrap();
+        let marks = cw.grid.extras_table.get(id).unwrap().zerowidth.len();
+        assert_eq!(marks, 64);
+        // Nothing spilled into the next cell and the cursor stayed put.
+        assert_eq!(cw.grid.cursor.pos.col, Column(1));
+        assert_eq!(cw.grid[Line(0)][Column(1)].c(), '\0');
+        // One interned slot per intermediate length at most, so the
+        // final slot's id is bounded by the cap, not by the run.
+        assert!(id <= 64, "slot id {id}");
     }
 
     /// A combining mark typed inside an OSC 8 hyperlink must attach to

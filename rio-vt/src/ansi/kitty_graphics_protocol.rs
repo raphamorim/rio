@@ -21,6 +21,19 @@ const MAX_SIZE: usize = 400 * 1024 * 1024;
 /// mid-stream.
 const CHUNK_STALE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Most chunked uploads kept in flight at once. Staleness eviction only
+/// runs when another graphics command arrives, so without a count cap a
+/// client could park an unbounded number of partial uploads. Real
+/// clients transmit one image at a time; when the cap is hit the least
+/// recently touched upload makes room.
+const MAX_INCOMPLETE_UPLOADS: usize = 16;
+
+/// Largest up-front reservation made from a chunked upload's declared
+/// `S=` size. The declared size is a client claim; a bogus one must not
+/// turn into a multi-gigabyte allocation (which aborts the process)
+/// before a single byte of image data has arrived.
+const MAX_CHUNK_PREALLOC: usize = 16 * 1024 * 1024;
+
 /// Per-terminal state for Kitty graphics protocol.
 /// This stores the accumulated command state for chunked transmissions.
 /// Each terminal instance should have its own state to prevent conflicts between tabs.
@@ -505,11 +518,62 @@ pub fn parse(
         // chunks can simply append their bytes.
         use std::collections::hash_map::Entry;
 
+        // Pending bytes across every upload (this one included) stay
+        // within one image's budget, so parked partial uploads cannot
+        // add up past it however many there are. `incomplete_images`
+        // holds at most MAX_INCOMPLETE_UPLOADS entries, so the sum is
+        // cheap.
+        let pending: usize = state
+            .incomplete_images
+            .values()
+            .map(|stored| stored.payload.len())
+            .sum();
+        if pending.saturating_add(cmd.payload.len()) > MAX_SIZE {
+            debug!(
+                "Dropping chunked upload {}: {} bytes already pending",
+                image_key, pending
+            );
+            state.incomplete_images.remove(&image_key);
+            state.current_transmission_key = 0;
+            return None;
+        }
+
+        if !state.incomplete_images.contains_key(&image_key) {
+            // A new upload. The declared size is checked here, where
+            // the file path already checks it, so a client cannot
+            // announce more than the terminal would ever accept.
+            let expected_size = cmd.size as usize;
+            if expected_size > MAX_SIZE {
+                debug!(
+                    "Dropping chunked upload {}: declared size {} exceeds MAX_SIZE ({})",
+                    image_key, expected_size, MAX_SIZE
+                );
+                state.current_transmission_key = 0;
+                return None;
+            }
+            if state.incomplete_images.len() >= MAX_INCOMPLETE_UPLOADS {
+                let victim = state
+                    .incomplete_images
+                    .iter()
+                    .min_by_key(|(_, stored)| stored.last_touched)
+                    .map(|(key, _)| *key);
+                if let Some(victim) = victim {
+                    debug!(
+                        "Evicting idle chunked upload {} to stay within {} in flight",
+                        victim, MAX_INCOMPLETE_UPLOADS
+                    );
+                    state.incomplete_images.remove(&victim);
+                }
+            }
+        }
+
         match state.incomplete_images.entry(image_key) {
             Entry::Vacant(e) => {
                 // First chunk - move cmd into storage (no clone!)
-                // Pre-allocate capacity if size is known to avoid reallocations
-                let expected_size = cmd.size as usize;
+                // Pre-allocate capacity if size is known to avoid
+                // reallocations, within MAX_CHUNK_PREALLOC; the Vec grows
+                // on its own past that as real bytes arrive.
+                let expected_size = (cmd.size as usize).min(MAX_CHUNK_PREALLOC);
                 if expected_size > 0 && cmd.payload.capacity() < expected_size {
                     cmd.payload
                         .reserve(expected_size.saturating_sub(cmd.payload.len()));
@@ -1699,9 +1763,19 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
 
                 debug!("Opening shared memory: {}", shm_name_str);
 
+                // On Linux the name is a file under /dev/shm, which any
+                // program in the terminal can replace with a FIFO; a
+                // blocking open of one would hang the parser (and the
+                // terminal lock) until a writer shows up. Open without
+                // blocking and insist on a regular file below.
+                #[cfg(target_os = "linux")]
+                let oflag = libc::O_RDONLY | libc::O_NONBLOCK;
+                #[cfg(not(target_os = "linux"))]
+                let oflag = libc::O_RDONLY;
+
                 unsafe {
                     // Open shared memory
-                    let fd: RawFd = libc::shm_open(shm_name.as_ptr(), libc::O_RDONLY, 0);
+                    let fd: RawFd = libc::shm_open(shm_name.as_ptr(), oflag, 0);
 
                     if fd < 0 {
                         let err = std::io::Error::last_os_error();
@@ -1721,6 +1795,13 @@ fn create_graphic_data(cmd: &KittyGraphicsCommand) -> Result<GraphicData, Graphi
                     let mut stat: libc::stat = std::mem::zeroed();
                     if libc::fstat(fd, &mut stat) < 0 {
                         debug!("Failed to fstat shared memory");
+                        return Err(GraphicError::InvalidData);
+                    }
+                    // Only where the name is a filesystem path; macOS
+                    // shm objects do not report S_IFREG.
+                    #[cfg(target_os = "linux")]
+                    if stat.st_mode & libc::S_IFMT != libc::S_IFREG {
+                        debug!("Shared memory '{}' is not a regular file", shm_name_str);
                         return Err(GraphicError::InvalidData);
                     }
 
@@ -2740,6 +2821,49 @@ mod tests {
     }
 
     #[test]
+    fn test_declared_size_over_cap_drops_upload_without_reserving() {
+        // `S=` is a client claim. Over MAX_SIZE the upload is dropped
+        // up front; under it the reservation is still bounded.
+        let mut state = KittyGraphicsState::default();
+
+        let huge = format!("a=t,f=32,s=1,v=1,m=1,i=1,S={}", u32::MAX);
+        let p = vec![b"G".as_ref(), huge.as_bytes(), b"/wAA"];
+        assert!(parse(&p, &mut state).is_none());
+        assert!(state.incomplete_images.is_empty());
+        assert_eq!(state.current_transmission_key, 0);
+
+        let big = format!("a=t,f=32,s=1,v=1,m=1,i=2,S={}", MAX_SIZE);
+        let p = vec![b"G".as_ref(), big.as_bytes(), b"/wAA"];
+        assert!(parse(&p, &mut state).is_some());
+        let stored = state.incomplete_images.get(&2).expect("stored");
+        assert!(
+            stored.payload.capacity() <= MAX_CHUNK_PREALLOC + 4096,
+            "capacity {} must not follow the declared size",
+            stored.payload.capacity()
+        );
+    }
+
+    #[test]
+    fn test_in_flight_uploads_are_capped() {
+        // Parking partial uploads under distinct ids cannot grow the
+        // table past MAX_INCOMPLETE_UPLOADS; the least recently touched
+        // one goes first.
+        let mut state = KittyGraphicsState::default();
+        for i in 1..=(MAX_INCOMPLETE_UPLOADS as u32 + 4) {
+            let ctl = format!("a=t,f=32,s=1,v=1,m=1,i={i}");
+            let p = vec![b"G".as_ref(), ctl.as_bytes(), b"/wAA"];
+            parse(&p, &mut state).expect("pending chunk");
+            assert!(state.incomplete_images.len() <= MAX_INCOMPLETE_UPLOADS);
+        }
+        assert_eq!(state.incomplete_images.len(), MAX_INCOMPLETE_UPLOADS);
+        assert!(!state.incomplete_images.contains_key(&1));
+        assert!(state.incomplete_images.contains_key(&5));
+        assert!(state
+            .incomplete_images
+            .contains_key(&(MAX_INCOMPLETE_UPLOADS as u32 + 4)));
+    }
+
+    #[test]
     fn test_padding_in_middle_of_raw_concat_would_fail() {
         // Sanity check: confirm the exact failure mode we fixed — a
         // naive concat of padded chunks produces a string with `=` in
@@ -2940,6 +3064,25 @@ mod tests {
             payload: SmallVec::from_slice(name.as_bytes()),
             ..Default::default()
         }
+    }
+
+    /// A FIFO planted under /dev/shm must not block the parser: the
+    /// open is non-blocking and the fstat type check rejects it.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_shm_fifo_is_rejected_without_blocking() {
+        if !std::path::Path::new("/dev/shm").is_dir() {
+            return;
+        }
+        let name = format!("/rio-shm-fifo-{}", std::process::id());
+        let path = format!("/dev/shm{name}");
+        let _ = std::fs::remove_file(&path);
+        let cpath = std::ffi::CString::new(path.clone()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(cpath.as_ptr(), 0o600) }, 0);
+
+        let result = create_graphic_data(&shm_command(&name, 0, 4));
+        let _ = std::fs::remove_file(&path);
+        assert!(matches!(result, Err(GraphicError::InvalidData)));
     }
 
     #[cfg(all(unix, not(target_os = "android")))]
