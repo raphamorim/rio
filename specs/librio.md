@@ -35,8 +35,12 @@ our own renderer can be built on it, so can a third-party CPU renderer, a wasm
 canvas, a TUI proxy, or a test harness.
 
 The callback surface is deliberately small: `userdata` + a `wakeup_cb` + a
-single enum-tagged `action_cb` + clipboard and close-surface callbacks. Adding
-a new action never changes the ABI struct. Input is a per-surface set of entry
+single enum-tagged `action_cb` + clipboard, close-surface and program-status
+callbacks. Adding a new action never changes the ABI struct. Program status
+(OSC 7501) is the one payload too rich for `rio_action_s` (four strings plus
+typed fields), so it has its own `program_status_cb`, appended at the end of
+the config struct: a zero-initialized config leaves it NULL and ignores
+OSC 7501. Input is a per-surface set of entry
 points: key (returns a consumed bool), text, preedit (IME), mouse
 button/pos/scroll, set_size, set_content_scale, set_focus, set_occlusion.
 
@@ -109,6 +113,8 @@ typedef struct {
   void (*action_cb)(void *ud, rio_surface_t*, rio_action_s);
   void (*clipboard_write_cb)(void *ud, int kind, const char *utf8);
   void (*close_surface_cb)(void *ud, rio_surface_t*);
+  void (*program_status_cb)(void *ud, rio_surface_t*,
+                            const rio_program_status_s*); /* OSC 7501 */
 } rio_runtime_config_s;
 
 rio_engine_t  *rio_engine_new(const rio_runtime_config_s*, const rio_config_t*);

@@ -16,6 +16,24 @@ pub const RIO_ACTION_CURSOR_BLINKING_CHANGE: u32 = 2;
 /// 2 error, 3 indeterminate, 4 paused), `data_b` the 0-100 value.
 pub const RIO_ACTION_PROGRESS: u32 = 3;
 
+/// `rio_program_status_s::event`: a report, or a lifecycle event after
+/// which the host drops records (see `program_status_cb`).
+pub const RIO_PROGRAM_STATUS_REPORT: u32 = 0;
+pub const RIO_PROGRAM_STATUS_PROMPT_START: u32 = 1;
+pub const RIO_PROGRAM_STATUS_RESET: u32 = 2;
+
+pub const RIO_PROGRAM_STATE_IDLE: u32 = 0;
+pub const RIO_PROGRAM_STATE_WORKING: u32 = 1;
+pub const RIO_PROGRAM_STATE_DONE: u32 = 2;
+pub const RIO_PROGRAM_STATE_BLOCKED: u32 = 3;
+pub const RIO_PROGRAM_STATE_ERROR: u32 = 4;
+pub const RIO_PROGRAM_STATE_CLEAR: u32 = 5;
+
+pub const RIO_PROGRAM_KIND_NONE: u32 = 0;
+pub const RIO_PROGRAM_KIND_PERMISSION: u32 = 1;
+pub const RIO_PROGRAM_KIND_QUESTION: u32 = 2;
+pub const RIO_PROGRAM_KIND_AUTH: u32 = 3;
+
 pub const RIO_COLOR_NAMED: u8 = 0;
 pub const RIO_COLOR_INDEXED: u8 = 1;
 pub const RIO_COLOR_RGB: u8 = 2;
@@ -77,6 +95,25 @@ pub struct rio_action_s {
     pub data_b: u32,
 }
 
+/// One OSC 7501 event. Strings are UTF-8, NULL when absent, and valid
+/// only for the duration of the callback.
+#[repr(C)]
+pub struct rio_program_status_s {
+    /// `RIO_PROGRAM_STATUS_*`. The fields below are set only for REPORT.
+    pub event: u32,
+    /// `RIO_PROGRAM_STATE_*`.
+    pub state: u32,
+    /// `RIO_PROGRAM_KIND_*`; only ever non-NONE when `state` is BLOCKED.
+    pub kind: u32,
+    /// 0-100, or -1 when absent (indeterminate).
+    pub progress: i32,
+    /// Slash-separated record path; NULL addresses the root record.
+    pub id: *const c_char,
+    pub app: *const c_char,
+    pub msg: *const c_char,
+    pub title: *const c_char,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct rio_runtime_config_s {
@@ -85,6 +122,8 @@ pub struct rio_runtime_config_s {
     pub action_cb: Option<extern "C" fn(*mut c_void, usize, rio_action_s)>,
     pub clipboard_write_cb: Option<extern "C" fn(*mut c_void, usize, u8, *const c_char)>,
     pub close_surface_cb: Option<extern "C" fn(*mut c_void, usize)>,
+    pub program_status_cb:
+        Option<extern "C" fn(*mut c_void, usize, *const rio_program_status_s)>,
 }
 
 #[repr(C)]
@@ -192,10 +231,16 @@ impl SurfaceDelegate for CDelegate {
     }
 
     fn action(&self, surface: SurfaceId, action: Action) {
+        if let Action::ProgramStatus(event) = action {
+            self.program_status(surface, event);
+            return;
+        }
         let Some(cb) = self.config.action_cb else {
             return;
         };
         match action {
+            // Has its own callback; routed above.
+            Action::ProgramStatus(_) => {}
             Action::SetTitle { title, subtitle } => {
                 let title = CString::new(title).unwrap_or_default();
                 let subtitle_c = subtitle.map(|s| CString::new(s).unwrap_or_default());
@@ -272,6 +317,70 @@ impl SurfaceDelegate for CDelegate {
         if let Some(cb) = self.config.close_surface_cb {
             cb(self.config.userdata, surface);
         }
+    }
+}
+
+impl CDelegate {
+    fn program_status(&self, surface: SurfaceId, event: crate::ProgramStatusEvent) {
+        use crate::{BlockedKind, ProgramState, ProgramStatusEvent};
+        let Some(cb) = self.config.program_status_cb else {
+            return;
+        };
+        let report = match event {
+            ProgramStatusEvent::PromptStart | ProgramStatusEvent::Reset => {
+                let event = if matches!(event, ProgramStatusEvent::Reset) {
+                    RIO_PROGRAM_STATUS_RESET
+                } else {
+                    RIO_PROGRAM_STATUS_PROMPT_START
+                };
+                let status = rio_program_status_s {
+                    event,
+                    state: 0,
+                    kind: RIO_PROGRAM_KIND_NONE,
+                    progress: -1,
+                    id: std::ptr::null(),
+                    app: std::ptr::null(),
+                    msg: std::ptr::null(),
+                    title: std::ptr::null(),
+                };
+                cb(self.config.userdata, surface, &status);
+                return;
+            }
+            ProgramStatusEvent::Report(report) => report,
+        };
+        // Validated upstream: no control characters, so no interior NUL.
+        let cstr = |s: Option<String>| s.and_then(|s| CString::new(s).ok());
+        let (id, app, msg, title) = (
+            cstr(report.id),
+            cstr(report.app),
+            cstr(report.msg),
+            cstr(report.title),
+        );
+        let ptr =
+            |s: &Option<CString>| s.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+        let status = rio_program_status_s {
+            event: RIO_PROGRAM_STATUS_REPORT,
+            state: match report.state {
+                ProgramState::Idle => RIO_PROGRAM_STATE_IDLE,
+                ProgramState::Working => RIO_PROGRAM_STATE_WORKING,
+                ProgramState::Done => RIO_PROGRAM_STATE_DONE,
+                ProgramState::Blocked => RIO_PROGRAM_STATE_BLOCKED,
+                ProgramState::Error => RIO_PROGRAM_STATE_ERROR,
+                ProgramState::Clear => RIO_PROGRAM_STATE_CLEAR,
+            },
+            kind: match report.kind {
+                None => RIO_PROGRAM_KIND_NONE,
+                Some(BlockedKind::Permission) => RIO_PROGRAM_KIND_PERMISSION,
+                Some(BlockedKind::Question) => RIO_PROGRAM_KIND_QUESTION,
+                Some(BlockedKind::Auth) => RIO_PROGRAM_KIND_AUTH,
+            },
+            progress: report.progress.map_or(-1, i32::from),
+            id: ptr(&id),
+            app: ptr(&app),
+            msg: ptr(&msg),
+            title: ptr(&title),
+        };
+        cb(self.config.userdata, surface, &status);
     }
 }
 

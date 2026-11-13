@@ -22,6 +22,32 @@ typedef size_t rio_surface_id_t;
    3 indeterminate, 4 paused), data_b the 0-100 value. */
 #define RIO_ACTION_PROGRESS 3u
 
+/* OSC 7501 program status (see program_status_cb). `event` is REPORT,
+   or a lifecycle event after which the host drops records: on
+   PROMPT_START (OSC 133 A) drop `working` and `blocked` records (and
+   optionally `idle`), keeping `done` and `error`; on RESET (RIS) drop
+   every record. When the child process exits (close_surface_cb), the
+   spec also drops `working` and `blocked` records. librio validates
+   reports against the spec and keeps no records itself, and sends
+   lifecycle events only once the surface has reported status. */
+#define RIO_PROGRAM_STATUS_REPORT 0u
+#define RIO_PROGRAM_STATUS_PROMPT_START 1u
+#define RIO_PROGRAM_STATUS_RESET 2u
+
+#define RIO_PROGRAM_STATE_IDLE 0u
+#define RIO_PROGRAM_STATE_WORKING 1u
+#define RIO_PROGRAM_STATE_DONE 2u
+#define RIO_PROGRAM_STATE_BLOCKED 3u
+#define RIO_PROGRAM_STATE_ERROR 4u
+/* Remove the record at `id` and everything beneath it; with no `id`,
+   every record on the surface. */
+#define RIO_PROGRAM_STATE_CLEAR 5u
+
+#define RIO_PROGRAM_KIND_NONE 0u
+#define RIO_PROGRAM_KIND_PERMISSION 1u
+#define RIO_PROGRAM_KIND_QUESTION 2u
+#define RIO_PROGRAM_KIND_AUTH 3u
+
 #define RIO_COLOR_NAMED 0u
 #define RIO_COLOR_INDEXED 1u
 #define RIO_COLOR_RGB 2u
@@ -90,6 +116,19 @@ typedef struct {
   uint32_t data_b;
 } rio_action_s;
 
+/* Strings are UTF-8, NULL when absent, and valid only for the duration
+   of the callback. Each report replaces its record wholesale. */
+typedef struct {
+  uint32_t event;    /* RIO_PROGRAM_STATUS_*; fields below for REPORT only */
+  uint32_t state;    /* RIO_PROGRAM_STATE_* */
+  uint32_t kind;     /* RIO_PROGRAM_KIND_*; non-NONE only when BLOCKED */
+  int32_t progress;  /* 0-100, or -1 when absent (indeterminate) */
+  const char *id;    /* slash-separated record path; NULL = root record */
+  const char *app;   /* stable program id, e.g. "cargo", "claude-code" */
+  const char *msg;   /* one human-readable line */
+  const char *title; /* short label for the record */
+} rio_program_status_s;
+
 typedef struct {
   void *userdata;
   /* May fire on librio's PTY IO thread. Callbacks must only flag or
@@ -100,6 +139,9 @@ typedef struct {
   void (*clipboard_write_cb)(void *userdata, rio_surface_id_t surface, uint8_t kind,
                              const char *utf8);
   void (*close_surface_cb)(void *userdata, rio_surface_id_t surface);
+  /* OSC 7501. NULL to ignore program status. */
+  void (*program_status_cb)(void *userdata, rio_surface_id_t surface,
+                            const rio_program_status_s *status);
 } rio_runtime_config_s;
 
 typedef struct {
