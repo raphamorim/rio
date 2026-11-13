@@ -1,5 +1,7 @@
 pub mod handler;
-pub(crate) mod osc;
+mod osc;
+#[cfg(test)]
+pub(crate) use osc::MAX_HYPERLINK_BYTES;
 pub mod parser;
 
 #[cfg(all(test, feature = "pty"))]

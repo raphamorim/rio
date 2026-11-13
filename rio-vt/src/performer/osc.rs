@@ -371,28 +371,30 @@ fn percent_decode(path: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// OSC 8: the raw `id=...` value from `key=val:key=val` link params,
-/// if the program sent one (possibly empty).
+/// OSC 8: the raw `id=...` value from `key=val:key=val` link params.
+/// An empty value is the same as no id, and when the key repeats the
+/// last non-empty value wins.
 fn hyperlink_id_bytes(link_params: &[u8]) -> Option<&[u8]> {
     link_params
         .split(|&b| b == b':')
-        .find_map(|kv| kv.strip_prefix(b"id="))
+        .rev()
+        .filter_map(|kv| kv.strip_prefix(b"id="))
+        .find(|id| !id.is_empty())
 }
 
-/// OSC 8: the id to store, if the program sent a non-empty one. The id
-/// is an opaque token, so invalid UTF-8 is replaced rather than making
-/// the id vanish.
+/// OSC 8: the id to store, if the program sent one. The id is an
+/// opaque token, so invalid UTF-8 is replaced rather than making the
+/// id vanish.
 pub(super) fn parse_hyperlink_id(link_params: &[u8]) -> Option<Cow<'_, str>> {
-    hyperlink_id_bytes(link_params)
-        .filter(|id| !id.is_empty())
-        .map(text_lossy)
+    hyperlink_id_bytes(link_params).map(text_lossy)
 }
 
-/// Longest OSC 8 payload accepted: the link params, the `;` after them
-/// and the URI, as one budget shared by both parts. It is a 2 KiB OSC
-/// buffer, the usual fixed size, less one byte for a terminator. A URI
-/// is stored for as long as the cells carrying it live, so this also
-/// bounds what a link costs in the grid.
+/// Longest OSC 8 payload accepted: everything after `8;`, that is the
+/// link params, the `;` after them and the URI, as one budget shared
+/// by both parts. The figure is what a 2 KiB capture buffer holds once
+/// a terminating byte is set aside for the payload. A URI is stored
+/// for as long as the cells carrying it live, so the budget also keeps
+/// a link's raw size in the grid bounded.
 pub(crate) const MAX_HYPERLINK_BYTES: usize = 2047;
 
 /// OSC 8: `Some(None)` closes the link, `Some(Some(_))` opens one and
@@ -409,7 +411,7 @@ pub(super) fn parse_hyperlink(
         return None;
     }
     if uri.is_empty() {
-        let id_sent = hyperlink_id_bytes(link_params).is_some_and(|id| !id.is_empty());
+        let id_sent = hyperlink_id_bytes(link_params).is_some();
         if id_sent {
             tracing::debug!("ignoring OSC 8 with an id and no URI");
         }
@@ -1181,6 +1183,19 @@ mod tests {
         assert_eq!(parse_hyperlink(b"", b""), Some(None));
         assert_eq!(parse_hyperlink(b"id=", b""), Some(None));
         assert_eq!(parse_hyperlink(b"id=a", b""), None);
+
+        // A repeated key: the last non-empty value wins, and an empty
+        // value does not unset an earlier one.
+        let open = parse_hyperlink(b"id=a:id=b", b"https://x.dev")
+            .unwrap()
+            .unwrap();
+        assert_eq!(open.id(), "b");
+        let open = parse_hyperlink(b"id=a:id=", b"https://x.dev")
+            .unwrap()
+            .unwrap();
+        assert_eq!(open.id(), "a");
+        assert_eq!(parse_hyperlink(b"id=:id=a", b""), None);
+        assert_eq!(parse_hyperlink(b"id=:other=x", b""), Some(None));
 
         // An id with invalid UTF-8 is still an id: it must not turn an
         // open into a close, and the program's grouping is kept.

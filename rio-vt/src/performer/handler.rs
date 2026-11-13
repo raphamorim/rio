@@ -503,6 +503,11 @@ struct XtgettcapState {
 /// the buffer without limit.
 const MAX_XTGETTCAP_BYTES: usize = 1024 * 1024;
 
+/// Largest XTGETTCAP buffer kept between requests. Real requests fit a
+/// few hundred bytes, so a buffer grown past this by one large request
+/// is released rather than pinned for the session.
+const XTGETTCAP_RETAIN_BYTES: usize = 4 * 1024;
+
 /// State for accumulating APC (Application Program Command) sequences.
 ///
 /// APC sequences can be very large (especially for Kitty graphics protocol which can send
@@ -906,8 +911,13 @@ impl<U: Handler> Perform for Performer<'_, U> {
             }
 
             // Reset state; `hook` clears `overflowed` for the next request.
-            self.state.xtgettcap_state.active = false;
-            self.state.xtgettcap_state.buffer.clear();
+            let request = &mut self.state.xtgettcap_state;
+            request.active = false;
+            if request.buffer.capacity() > XTGETTCAP_RETAIN_BYTES {
+                request.buffer = Vec::new();
+            } else {
+                request.buffer.clear();
+            }
         } else {
             debug!("[unhandled dcs_unhook]");
         }
@@ -2495,6 +2505,12 @@ mod tests {
         processor.advance(&mut handler, b"\x1b\\");
         assert_eq!(handler.responses.len(), 2);
         assert!(handler.responses[1].starts_with("\x1bP0+r"));
+        // The buffer it grew is not pinned for the session, while a
+        // small request keeps its allocation for the next one.
+        assert_eq!(processor.state.xtgettcap_state.buffer.capacity(), 0);
+        processor.advance(&mut handler, b"\x1bP+q544E\x1b\\");
+        let small = processor.state.xtgettcap_state.buffer.capacity();
+        assert!(small > 0 && small <= XTGETTCAP_RETAIN_BYTES);
     }
 
     #[test]
