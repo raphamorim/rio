@@ -817,7 +817,10 @@ impl Screen<'_> {
             return;
         }
 
-        let mode = self.get_mode();
+        let (mode, modify_other_keys) = {
+            let terminal = self.ctx().current().terminal.lock();
+            (terminal.mode(), terminal.modify_other_keys())
+        };
         let mods = self.modifiers.state();
 
         if key.state == ElementState::Released {
@@ -943,13 +946,24 @@ impl Screen<'_> {
                 | Mode::DISAMBIGUATE_ESC_CODES
                 | Mode::REPORT_EVENT_TYPES,
         );
-        let ctrl_c0 = if kitty_seq {
+        // xterm modifyOtherKeys (`CSI > 4 ; level m`), from the state
+        // rio-vt keeps for it. Kitty flags take precedence.
+        let other_keys = if kitty_seq {
+            None
+        } else {
+            modify_other_keys.and_then(|level| {
+                crate::bindings::modify_other_keys_seq(&key.logical_key, mods, level)
+            })
+        };
+        let ctrl_c0 = if kitty_seq || other_keys.is_some() {
             None
         } else {
             crate::bindings::ctrl_seq(&key.logical_key, text, mods)
         };
 
-        let bytes = if let Some(c0) = ctrl_c0 {
+        let bytes = if let Some(seq) = other_keys {
+            seq
+        } else if let Some(c0) = ctrl_c0 {
             if mods.alt_key() {
                 vec![b'\x1b', c0]
             } else {
