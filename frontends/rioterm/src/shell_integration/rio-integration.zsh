@@ -119,13 +119,14 @@ _rio_install_hooks() {
                 _rio_clean_ps1=$PS1
                 _rio_clean_ps2=$PS2
 
-                # A prompt ending in an odd run of `%` would pair its
-                # last one with the `{` of the next mark into a `%{`
-                # escape; even the run out first.
+                # zsh drops a lone `%` at the end of a prompt, but with
+                # a mark appended it would pair with the `{` into a
+                # `%{` escape instead. Drop it here so the prompt looks
+                # as it does unmarked.
                 builtin local tail=${PS1##*[^%]}
-                (( ${#tail} % 2 )) && PS1=$PS1%
+                (( ${#tail} % 2 )) && PS1=${PS1[1,-2]}
                 tail=${PS2##*[^%]}
-                (( ${#tail} % 2 )) && PS2=$PS2%
+                (( ${#tail} % 2 )) && PS2=${PS2[1,-2]}
 
                 # Each further line of a multi-line prompt is a
                 # continuation; so is every PS2 line.
@@ -155,8 +156,9 @@ _rio_install_hooks() {
         _rio_report_pwd
     }
 
-    # The command line is complete and about to run: its output starts
-    # after `C`. Hand later preexec hooks the clean prompts.
+    # The command line is complete and about to run. First among the
+    # preexec hooks, so what the others print is output, after `C`,
+    # and they see the clean prompts.
     _rio_preexec() {
         builtin emulate -L zsh -o no_warn_create_global -o no_aliases
         _rio_unmark_prompts
@@ -165,7 +167,7 @@ _rio_install_hooks() {
     }
 
     builtin typeset -ag preexec_functions
-    preexec_functions+=(_rio_preexec)
+    preexec_functions=(_rio_preexec ${preexec_functions:#_rio_preexec})
     builtin local -i was_last=0
     [[ ${precmd_functions[-1]} == _rio_install_hooks ]] && was_last=1
     precmd_functions=(

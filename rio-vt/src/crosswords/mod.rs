@@ -3611,11 +3611,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn prompt_start(&mut self) {
-        // A new prompt means no command is running: a `C` whose `D`
-        // never came (the command was interrupted, or a nested shell
-        // took over) is abandoned rather than paired with a later
-        // unrelated `D`. `N` reports it first; `A` does not.
-        self.command_started_at = None;
+        // A running command stays open across `A`: a program that
+        // draws prompts of its own (a shell on an `ssh` host, a nested
+        // shell) must not make the shell's eventual `D` go unreported.
+        // Its own `C`/`D` pairs restart and close the clock as usual.
         if !self.program_status_seen {
             return;
         }
@@ -6133,8 +6132,9 @@ mod tests {
     }
 
     /// A command still open at the next prompt: `N` terminates it and
-    /// reports it with no status, `A` abandons it, and in both cases a
-    /// later lone `D` is not taken for it.
+    /// reports it with no status, and a later lone `D` is not taken
+    /// for it. `A` leaves it open, so a prompt drawn by a program the
+    /// command runs does not lose the command's own `D`.
     #[test]
     fn osc_133_new_prompt_closes_an_unfinished_command() {
         let (mut cw, events) = make_crosswords_with_events(0);
@@ -6146,11 +6146,12 @@ mod tests {
         assert_eq!(finished_commands(&events).len(), 1);
 
         parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;A\x07$ \x1b]133;D;130\x07");
-        assert_eq!(finished_commands(&events).len(), 1);
+        assert_eq!(finished_commands(&events)[1], (0, Some(130)));
+        assert_eq!(finished_commands(&events).len(), 2);
 
         // `N` with nothing open is just a prompt.
         parser.advance(&mut cw, b"\x1b]133;N\x07$ ");
-        assert_eq!(finished_commands(&events).len(), 1);
+        assert_eq!(finished_commands(&events).len(), 2);
     }
 
     #[test]

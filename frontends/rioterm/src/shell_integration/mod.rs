@@ -529,6 +529,32 @@ mod test {
         );
     }
 
+    /// A prompt ending in a lone `%` renders without it, marked or
+    /// not; and the `C` mark comes before whatever other preexec
+    /// hooks print, which see the clean prompt.
+    #[cfg(unix)]
+    #[test]
+    fn zsh_integration_drops_a_lone_percent_and_marks_before_preexec_hooks() {
+        let rc = "autoload -Uz add-zsh-hook\n\
+                  PS1='x%'\n\
+                  other_preexec() { print -r -- \"PRE:$PS1\" }\n\
+                  add-zsh-hook preexec other_preexec\n";
+        let Some((stdout, stderr)) = run_zsh("percent", rc, b":\nexit\n") else {
+            return;
+        };
+
+        assert!(
+            stderr.contains("\x07x\x1b]133;B\x07"),
+            "lone percent kept or mark lost; stderr: {stderr:?}"
+        );
+        assert!(!stderr.contains("x%"), "stderr: {stderr:?}");
+
+        let c = stdout.find("\x1b]133;C\x07").expect("no C mark");
+        let pre = stdout.find("PRE:").expect("no preexec hook output");
+        assert!(c < pre, "C after the hook's output; stdout: {stdout:?}");
+        assert!(stdout.contains("PRE:x%\n"), "stdout: {stdout:?}");
+    }
+
     /// Same, for fish, via its `vendor_conf.d` loading from
     /// `XDG_DATA_DIRS`, which the script must then RESTORE so the
     /// prepend never leaks to child processes. Skips silently where
