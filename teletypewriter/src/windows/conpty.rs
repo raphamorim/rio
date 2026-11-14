@@ -1,6 +1,7 @@
 use crate::Winsize;
 use std::io::{Error, Result};
 use std::os::windows::io::IntoRawHandle;
+use std::sync::OnceLock;
 use std::{mem, ptr};
 use tracing::*;
 
@@ -8,7 +9,7 @@ use crate::windows::pipes::{EventedAnonRead, EventedAnonWrite};
 
 use windows_sys::core::{HRESULT, PWSTR};
 use windows_sys::s;
-use windows_sys::Win32::Foundation::{HANDLE, S_OK};
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, S_OK};
 use windows_sys::Win32::System::Console::{
     ClosePseudoConsole, CreatePseudoConsole, ResizePseudoConsole, COORD, HPCON,
 };
@@ -54,7 +55,9 @@ use crate::windows::{cmdline, win32_string, Pty};
 /// stale region once the window grows (microsoft/terminal#16911). With
 /// it the host leaves reflow to the terminal. The bundled host behaves
 /// that way regardless and ignores the flag, as every ConPTY ignores
-/// unknown flag bits; it matters for the in-box fallback only.
+/// unknown flag bits; it matters for the in-box fallback only, and
+/// there only on Windows builds whose host knows the flag (Windows 10
+/// builds since 2020); older ones ignore the bit and keep the repaint.
 const PSEUDOCONSOLE_RESIZE_QUIRK: u32 = 0x2;
 
 type CreatePseudoConsoleFn =
@@ -62,6 +65,7 @@ type CreatePseudoConsoleFn =
 type ResizePseudoConsoleFn = unsafe extern "system" fn(HPCON, COORD) -> HRESULT;
 type ClosePseudoConsoleFn = unsafe extern "system" fn(HPCON);
 
+#[derive(Clone, Copy)]
 struct ConptyApi {
     create: CreatePseudoConsoleFn,
     resize: ResizePseudoConsoleFn,
@@ -69,7 +73,15 @@ struct ConptyApi {
 }
 
 impl ConptyApi {
-    fn new() -> Self {
+    /// The API every pseudoconsole of this process uses, resolved on the
+    /// first one: the DLL is loaded once and stays loaded, instead of a
+    /// load (and a reference it never gives back) per tab or split.
+    fn get() -> Self {
+        static API: OnceLock<ConptyApi> = OnceLock::new();
+        *API.get_or_init(Self::load)
+    }
+
+    fn load() -> Self {
         match Self::load_conpty() {
             Some(conpty) => {
                 info!("Using conpty.dll for pseudoconsole");
@@ -92,10 +104,8 @@ impl ConptyApi {
     /// never picked up.
     fn load_conpty() -> Option<Self> {
         type LoadedFn = unsafe extern "system" fn() -> isize;
-        let dll_path: Vec<u16> = std::env::current_exe()
-            .ok()?
-            .parent()?
-            .join("conpty.dll")
+        let dll = std::env::current_exe().ok()?.parent()?.join("conpty.dll");
+        let dll_path: Vec<u16> = dll
             .as_os_str()
             .encode_wide()
             .chain(std::iter::once(0))
@@ -110,6 +120,13 @@ impl ConptyApi {
                 LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32,
             );
             if hmodule.is_null() {
+                let error = Error::last_os_error();
+                if dll.exists() {
+                    warn!(
+                        "conpty.dll at {} could not be loaded: {error}",
+                        dll.display()
+                    );
+                }
                 return None;
             }
             let create_fn = GetProcAddress(hmodule, s!("CreatePseudoConsole"))?;
@@ -181,7 +198,7 @@ pub fn new(
     columns: u16,
     rows: u16,
 ) -> Result<Pty> {
-    let api = ConptyApi::new();
+    let api = ConptyApi::get();
     let mut pty_handle: HPCON = 0;
 
     // Passing 0 as the size parameter allows the "system default" buffer
@@ -200,17 +217,28 @@ pub fn new(
 
     // Create the pseudoconsole on the pipes. The resize quirk keeps the
     // in-box host from repainting its reflowed buffer over Rio's grid.
-    let result = unsafe {
-        (api.create)(
-            winsize.into(),
-            conin_pty_handle.into_raw_handle() as HANDLE,
-            conout_pty_handle.into_raw_handle() as HANDLE,
-            PSEUDOCONSOLE_RESIZE_QUIRK,
-            &mut pty_handle as *mut _,
-        )
+    // No known host rejects the flag; should one, a plain pseudoconsole
+    // beats no terminal.
+    let conin_raw = conin_pty_handle.into_raw_handle() as HANDLE;
+    let conout_raw = conout_pty_handle.into_raw_handle() as HANDLE;
+    let size: COORD = winsize.into();
+    let create = |flags: u32, handle: &mut HPCON| unsafe {
+        (api.create)(size, conin_raw, conout_raw, flags, handle)
     };
-
-    assert_eq!(result, S_OK);
+    let mut result = create(PSEUDOCONSOLE_RESIZE_QUIRK, &mut pty_handle);
+    if result != S_OK {
+        warn!("CreatePseudoConsole refused the resize quirk ({result:#x}); retrying without");
+        result = create(0, &mut pty_handle);
+    }
+    if result != S_OK {
+        unsafe {
+            CloseHandle(conin_raw);
+            CloseHandle(conout_raw);
+        }
+        return Err(Error::other(format!(
+            "CreatePseudoConsole failed: {result:#x}"
+        )));
+    }
 
     let mut success;
 
