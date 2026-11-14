@@ -49,20 +49,39 @@ pub struct Application<'a> {
     quake_previous_app: Option<i32>,
 }
 
-/// A command's running time for a notification: `1h 2m 3s`, `2m 3s`,
-/// or `3.2s` under a minute.
+/// A command's running time for a notification: rounded to the
+/// millisecond, then every non-zero unit from the largest down, as in
+/// `1h 2m 3s`, `6s 200ms` or `1h 3s`.
 fn format_duration(duration: std::time::Duration) -> String {
-    // Decide the form from the rounded tenths, so 59.97s is "1m 0s"
-    // and not "60.0s".
-    let tenths = (duration.as_secs_f64() * 10.0).round() as u64;
-    if tenths < 600 {
-        return format!("{}.{}s", tenths / 10, tenths % 10);
+    use std::fmt::Write as _;
+
+    const MS_PER_DAY: u128 = 24 * 60 * 60 * 1000;
+    const UNITS: [(&str, u128); 7] = [
+        ("y", 365 * MS_PER_DAY),
+        ("w", 7 * MS_PER_DAY),
+        ("d", MS_PER_DAY),
+        ("h", 60 * 60 * 1000),
+        ("m", 60 * 1000),
+        ("s", 1000),
+        ("ms", 1),
+    ];
+
+    let mut left =
+        duration.as_millis() + u128::from(duration.subsec_micros() % 1000 >= 500);
+    let mut out = String::new();
+    for (name, factor) in UNITS {
+        if left >= factor {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            let _ = write!(out, "{}{name}", left / factor);
+            left %= factor;
+        }
     }
-    let secs = tenths / 10;
-    match (secs / 3600, (secs % 3600) / 60, secs % 60) {
-        (0, m, s) => format!("{m}m {s}s"),
-        (h, m, s) => format!("{h}h {m}m {s}s"),
+    if out.is_empty() {
+        out.push_str("0ms");
     }
+    out
 }
 
 impl Application<'_> {
@@ -2605,11 +2624,17 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn durations_read_as_people_say_them() {
-        assert_eq!(format_duration(Duration::from_millis(3_240)), "3.2s");
-        assert_eq!(format_duration(Duration::from_secs(59)), "59.0s");
-        assert_eq!(format_duration(Duration::from_millis(59_970)), "1m 0s");
+    fn durations_list_their_non_zero_units() {
+        assert_eq!(format_duration(Duration::from_millis(3_240)), "3s 240ms");
+        assert_eq!(format_duration(Duration::from_secs(59)), "59s");
+        assert_eq!(format_duration(Duration::from_millis(59_970)), "59s 970ms");
         assert_eq!(format_duration(Duration::from_secs(123)), "2m 3s");
         assert_eq!(format_duration(Duration::from_secs(7_323)), "2h 2m 3s");
+        // A zero unit in the middle is left out.
+        assert_eq!(format_duration(Duration::from_secs(3_603)), "1h 3s");
+        assert_eq!(format_duration(Duration::from_secs(2 * 86_400)), "2d");
+        // Rounded to the millisecond; never empty.
+        assert_eq!(format_duration(Duration::from_micros(1_000_500)), "1s 1ms");
+        assert_eq!(format_duration(Duration::from_micros(400)), "0ms");
     }
 }
