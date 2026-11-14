@@ -19,8 +19,9 @@ use windows_sys::Win32::System::LibraryLoader::{
 };
 
 use windows_sys::Win32::System::Threading::{
-    CreateProcessW, InitializeProcThreadAttributeList, UpdateProcThreadAttribute,
-    CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT, PROCESS_INFORMATION,
+    CreateProcessW, DeleteProcThreadAttributeList, InitializeProcThreadAttributeList,
+    UpdateProcThreadAttribute, CREATE_UNICODE_ENVIRONMENT, EXTENDED_STARTUPINFO_PRESENT,
+    LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
     PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, STARTF_USESTDHANDLES, STARTUPINFOEXW,
     STARTUPINFOW,
 };
@@ -157,6 +158,33 @@ impl ConptyApi {
                 resize: mem::transmute::<LoadedFn, ResizePseudoConsoleFn>(resize_fn),
                 close: mem::transmute::<LoadedFn, ClosePseudoConsoleFn>(close_fn),
             })
+        }
+    }
+}
+
+/// The attribute list of a `STARTUPINFOEXW`, freed with
+/// `DeleteProcThreadAttributeList` once it has been initialized, on
+/// every path out of `new`.
+struct AttributeList {
+    storage: Box<[u8]>,
+    initialized: bool,
+}
+
+impl AttributeList {
+    fn as_mut_ptr(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+        // The list is an opaque blob the system sizes for us; the
+        // pointer type is a formality, so the alignment lint is moot.
+        #[allow(clippy::cast_ptr_alignment)]
+        {
+            self.storage.as_mut_ptr() as LPPROC_THREAD_ATTRIBUTE_LIST
+        }
+    }
+}
+
+impl Drop for AttributeList {
+    fn drop(&mut self) {
+        if self.initialized {
+            unsafe { DeleteProcThreadAttributeList(self.as_mut_ptr()) }
         }
     }
 }
@@ -298,18 +326,11 @@ pub fn new(
         }
     }
 
-    let mut attr_list: Box<[u8]> = vec![0; size].into_boxed_slice();
-
-    // Set startup info's attribute list & initialize it
-    //
-    // Lint failure is spurious; it's because winapi's definition of PROC_THREAD_ATTRIBUTE_LIST
-    // implies it is one pointer in size (32 or 64 bits) but really this is just a dummy value.
-    // Casting a *mut u8 (pointer to 8 bit type) might therefore not be aligned correctly in
-    // the compiler's eyes.
-    #[allow(clippy::cast_ptr_alignment)]
-    {
-        startup_info_ex.lpAttributeList = attr_list.as_mut_ptr() as _;
-    }
+    let mut attr_list = AttributeList {
+        storage: vec![0; size].into_boxed_slice(),
+        initialized: false,
+    };
+    startup_info_ex.lpAttributeList = attr_list.as_mut_ptr();
 
     unsafe {
         success = InitializeProcThreadAttributeList(
@@ -323,6 +344,7 @@ pub fn new(
             return Err(Error::last_os_error());
         }
     }
+    attr_list.initialized = true;
 
     // Set thread attribute list's Pseudo Console to the specified ConPTY.
     unsafe {
