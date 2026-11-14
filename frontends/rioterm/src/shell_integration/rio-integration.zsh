@@ -13,6 +13,15 @@ if [[ -n "${_rio_state+x}" ]]; then
     return 0
 fi
 
+# Control bytes in a directory or host name could end the OSC early
+# and start a sequence of their own, so they are dropped. `print -r`
+# keeps backslashes literal; the frame is real ESC/BEL.
+_rio_report_pwd() {
+    builtin emulate -L zsh -o no_aliases
+    builtin print -rn -- \
+        $'\e]7;kitty-shell-cwd://'"${HOST//[[:cntrl:]]}${PWD//[[:cntrl:]]}"$'\a'
+}
+
 _rio_setup() {
     builtin emulate -L zsh -o no_warn_create_global -o no_aliases
     [[ -o interactive ]] || builtin return 0
@@ -21,6 +30,10 @@ _rio_setup() {
     # 1: a `C` has been written and its `D` is still owed.
     # 2: the last `C` was closed.
     builtin typeset -gi _rio_state=0
+
+    # Known from the start, before any prompt: an rc file may run a
+    # long program first, or drop the hook array altogether.
+    _rio_report_pwd
 
     # The hooks are installed from the first precmd, once every rc file
     # has run, so they sit after the user's own hooks: a prompt theme
@@ -32,14 +45,6 @@ _rio_setup() {
 
 _rio_install_hooks() {
     builtin emulate -L zsh -o no_warn_create_global -o no_aliases
-
-    # Control bytes in a directory or host name could end the OSC
-    # early and start a sequence of their own, so they are dropped.
-    # `print -r` keeps backslashes literal; the frame is real ESC/BEL.
-    _rio_report_pwd() {
-        builtin print -rn -- \
-            $'\e]7;kitty-shell-cwd://'"${HOST//[[:cntrl:]]}${PWD//[[:cntrl:]]}"$'\a'
-    }
 
     # Before each prompt: close the command with its status, then mark
     # the prompt itself.
@@ -66,18 +71,19 @@ _rio_install_hooks() {
             if [[ ${precmd_functions[-1]} == _rio_precmd ]]; then
                 # Marks inside PS1/PS2 are re-emitted whenever zsh
                 # redraws the prompt (reset-prompt, SIGWINCH), which a
-                # bare print cannot do. Put PS1 back to the clean copy
+                # bare print cannot do. Put each back to its clean copy
                 # when it still carries last cycle's marks, so themes
                 # that pattern-match the prompt never see them; a
                 # theme's own change to PS1 wins and is marked as is.
+                # (Comparisons are literal: GLOB_SUBST is off here.)
                 builtin local ps1_changed=0
                 if [[ -n ${_rio_clean_ps1+x} ]]; then
                     if [[ $PS1 == $_rio_marked_ps1 ]]; then
                         PS1=$_rio_clean_ps1
-                        PS2=$_rio_clean_ps2
                     elif [[ $PS1 != $_rio_clean_ps1 ]]; then
                         ps1_changed=1
                     fi
+                    [[ $PS2 == $_rio_marked_ps2 ]] && PS2=$_rio_clean_ps2
                 fi
                 _rio_clean_ps1=$PS1
                 _rio_clean_ps2=$PS2
@@ -97,13 +103,19 @@ _rio_install_hooks() {
                 [[ $PS2 == *[^%]% || $PS2 == % ]] && PS2=$PS2%
                 PS2=${mark_cont}${PS2}${mark_b}
                 _rio_marked_ps1=$PS1
+                _rio_marked_ps2=$PS2
                 (( _rio_state = 2 ))
             else
                 # Another hook took the last slot: a PS1 edit may not
                 # stick, so print the mark instead (unless from zle,
                 # where the cursor is mid-line) and move to the end
-                # for next time.
+                # for next time. Last cycle's marks come out of the
+                # prompts first, or they would print a second `A`.
                 precmd_functions=(${precmd_functions:#_rio_precmd} _rio_precmd)
+                if [[ -n ${_rio_clean_ps1+x} ]]; then
+                    [[ $PS1 == $_rio_marked_ps1 ]] && PS1=$_rio_clean_ps1
+                    [[ $PS2 == $_rio_marked_ps2 ]] && PS2=$_rio_clean_ps2
+                fi
                 if ! builtin zle; then
                     builtin print -rn -- $mark_a[3,-3]
                     (( _rio_state = 2 ))
@@ -119,12 +131,12 @@ _rio_install_hooks() {
     }
 
     # The command line is complete and about to run: its output starts
-    # after `C`. Hand later preexec hooks the clean PS1.
+    # after `C`. Hand later preexec hooks the clean prompts.
     _rio_preexec() {
         builtin emulate -L zsh -o no_warn_create_global -o no_aliases
-        if [[ -n ${_rio_clean_ps1+x} && $PS1 == $_rio_marked_ps1 ]]; then
-            PS1=$_rio_clean_ps1
-            PS2=$_rio_clean_ps2
+        if [[ -n ${_rio_clean_ps1+x} ]]; then
+            [[ $PS1 == $_rio_marked_ps1 ]] && PS1=$_rio_clean_ps1
+            [[ $PS2 == $_rio_marked_ps2 ]] && PS2=$_rio_clean_ps2
         fi
         builtin print -n '\e]133;C\a'
         (( _rio_state = 1 ))
@@ -135,11 +147,24 @@ _rio_install_hooks() {
     builtin typeset -ag chpwd_functions preexec_functions
     chpwd_functions+=(_rio_report_pwd)
     preexec_functions+=(_rio_preexec)
+    builtin local -i was_last=0
+    [[ ${precmd_functions[-1]} == _rio_install_hooks ]] && was_last=1
     precmd_functions=(${precmd_functions:#_rio_install_hooks} _rio_precmd)
     builtin unfunction _rio_install_hooks
 
-    # This first precmd already ran before the hooks existed.
-    _rio_precmd
+    # This first precmd is already under way without the hooks. zsh
+    # runs the hooks that follow this one from its copy of the list,
+    # so when this was not the last one a theme's precmd still has to
+    # set PS1: marking it now would be undone and the wrong PS1 kept
+    # as the clean copy. The mark is printed bare instead, and PS1
+    # carries it from the next prompt on.
+    if (( was_last )); then
+        _rio_precmd
+    else
+        builtin print -n '\e]133;A\a'
+        (( _rio_state = 2 ))
+        _rio_report_pwd
+    fi
 }
 
 _rio_setup

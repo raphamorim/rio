@@ -350,29 +350,27 @@ mod test {
         assert_eq!(args[1], "-EncodedCommand");
     }
 
-    /// Runs a real zsh against the materialized scripts: the pane
-    /// setup (ZDOTDIR redirect plus preserved user ZDOTDIR) must end
-    /// with the integration loaded, the cwd reported at the prompt,
-    /// and every command bracketed by OSC 133 `C` and `D` with its
-    /// status. Commands arrive on a pipe, so zsh prompts without zle;
-    /// the prompt goes to stderr and the hooks' marks to stdout. Skips
-    /// silently where zsh is not installed.
+    /// Drives a real interactive zsh over a pipe against the
+    /// materialized scripts, with `rc` as the user's `.zshrc`, and
+    /// returns `(stdout, stderr)`. Commands arrive on the pipe, so zsh
+    /// prompts without zle: the prompt goes to stderr and the hooks'
+    /// marks to stdout. `None` where zsh is not installed.
     #[cfg(unix)]
-    #[test]
-    fn zsh_integration_marks_prompts_and_commands() {
+    fn run_zsh(tag: &str, rc: &str, input: &[u8]) -> Option<(String, String)> {
         use std::io::Write as _;
         use std::process::Stdio;
 
         let base =
-            std::env::temp_dir().join(format!("rio-si-zsh-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("rio-si-zsh-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         materialize(&base).unwrap();
-        // An empty restored ZDOTDIR keeps the developer's own zsh
-        // config out of the test.
-        let user_zdotdir = base.join("empty-user-config");
+        // The restored user ZDOTDIR holds only `rc`, which keeps the
+        // developer's own zsh config out of the test.
+        let user_zdotdir = base.join("user-config");
         std::fs::create_dir_all(&user_zdotdir).unwrap();
+        std::fs::write(user_zdotdir.join(".zshrc"), rc).unwrap();
 
-        let Ok(mut child) = std::process::Command::new("zsh")
+        let mut child = std::process::Command::new("zsh")
             .arg("-i")
             .env("ZDOTDIR", base.join("zsh"))
             .env("RIO_ZSH_ZDOTDIR", &user_zdotdir)
@@ -380,18 +378,44 @@ mod test {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
+            .ok()?;
+        let _ = child.stdin.take().unwrap().write_all(input);
+        let output = child.wait_with_output().unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+        Some((
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        ))
+    }
+
+    /// Every OSC 133 mark in `text`, without its terminator.
+    #[cfg(unix)]
+    fn osc_133_marks(text: &str) -> Vec<&str> {
+        text.match_indices("\x1b]133;")
+            .map(|(start, _)| {
+                let rest = &text[start..];
+                // BEL or an ESC-started ST ends it; the leading ESC
+                // is the mark's own.
+                let end = rest[1..]
+                    .find(['\x07', '\x1b'].as_slice())
+                    .map_or(rest.len(), |end| end + 1);
+                &rest[..end]
+            })
+            .collect()
+    }
+
+    /// The pane setup (ZDOTDIR redirect plus preserved user ZDOTDIR)
+    /// must end with the integration loaded, the cwd reported, and
+    /// every command bracketed by OSC 133 `C` and `D` with its status.
+    /// Skips silently where zsh is not installed.
+    #[cfg(unix)]
+    #[test]
+    fn zsh_integration_marks_prompts_and_commands() {
+        // A success, a failure, an empty line, then exit.
+        let Some((stdout, stderr)) = run_zsh("plain", "", b"true\nfalse\n\nexit\n")
         else {
             return;
         };
-        // A success, a failure, an empty line, then exit.
-        let _ = child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(b"true\nfalse\n\nexit\n");
-        let output = child.wait_with_output().unwrap();
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
 
         assert!(
             stdout.contains("\x1b]7;kitty-shell-cwd://"),
@@ -401,15 +425,8 @@ mod test {
         // `C` before each command runs and `D` with its status before
         // the next prompt; the empty line closes with no status, and
         // `exit` leaves its `C` open.
-        let marks: Vec<&str> = stdout
-            .match_indices("\x1b]133;")
-            .map(|(start, _)| {
-                let end = stdout[start..].find('\x07').unwrap() + start;
-                &stdout[start..end]
-            })
-            .collect();
         assert_eq!(
-            marks,
+            osc_133_marks(&stdout),
             [
                 "\x1b]133;C",
                 "\x1b]133;D;0",
@@ -421,14 +438,54 @@ mod test {
             "stdout: {stdout:?}, stderr: {stderr:?}"
         );
 
-        // The prompt itself carries `A` and `B`, so a redraw repeats
-        // them.
+        // With no other hook, the prompt itself carries `A` and `B`
+        // from the first one on, so a redraw repeats them.
+        let prompts = stderr.matches("\x1b]133;A\x07").count();
+        assert_eq!(prompts, 4, "stderr: {stderr:?}");
+        assert_eq!(stderr.matches("\x1b]133;B\x07").count(), 4);
+    }
+
+    /// A prompt theme that sets a two-line PS1 from its own precmd
+    /// hook, loaded from `.zshrc` after the integration: its PS1 is
+    /// the one that gets marked, with the second line as a
+    /// continuation, and both prompts are handed back clean to
+    /// commands and hooks, never marked twice. The first prompt is
+    /// marked with a bare `A`, since the theme sets PS1 after the
+    /// integration's first run.
+    #[cfg(unix)]
+    #[test]
+    fn zsh_integration_marks_a_theme_prompt_once() {
+        let rc = "autoload -Uz add-zsh-hook\n\
+                  theme_precmd() { PS1=$'L1\\nL2 %# ' }\n\
+                  add-zsh-hook precmd theme_precmd\n";
+        let input = b":\n:\n\nprint -r -- \"AT_CMD ${(q)PS1} ${(q)PS2}\"\nexit\n";
+        let Some((stdout, stderr)) = run_zsh("theme", rc, input) else {
+            return;
+        };
+
+        // The command sees the theme's own PS1 and the default PS2.
         assert!(
-            stderr.contains("\x1b]133;A\x07") && stderr.contains("\x1b]133;B\x07"),
-            "prompt marks missing; stderr: {stderr:?}"
+            stdout.contains("AT_CMD L1$'\\n'L2\\ %\\#\\  %_\\>\\ \n"),
+            "prompts not clean at command time; stdout: {stdout:?}"
         );
 
-        let _ = std::fs::remove_dir_all(&base);
+        // Five prompts: the first with a bare `A` (no `B`), the other
+        // four marked in PS1 with one `A`, one continuation and one
+        // `B` each.
+        assert_eq!(
+            osc_133_marks(&stdout)
+                .iter()
+                .filter(|mark| mark.ends_with(";A"))
+                .count(),
+            1,
+            "stdout: {stdout:?}"
+        );
+        let marked: Vec<&str> = osc_133_marks(&stderr);
+        assert_eq!(
+            marked,
+            ["\x1b]133;A", "\x1b]133;P;k=s", "\x1b]133;B"].repeat(4),
+            "stderr: {stderr:?}"
+        );
     }
 
     /// Same, for fish, via its `vendor_conf.d` loading from
@@ -468,6 +525,102 @@ mod test {
             "XDG_DATA_DIRS not restored; stdout: {stdout:?}"
         );
 
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The whole path, as a pane runs it: zsh on a real PTY (so zle is
+    /// active and the prompt is drawn the way a user sees it) with the
+    /// integration environment, its output fed through rio's own
+    /// parser, which must report each command once with its status.
+    /// Skips silently where zsh is not installed.
+    #[cfg(unix)]
+    #[test]
+    fn zsh_integration_reports_finished_commands_through_the_parser() {
+        use rio_backend::ansi::CursorShape;
+        use rio_backend::crosswords::{Crosswords, CrosswordsSize};
+        use rio_backend::event::{EventListener, RioEvent, WindowId};
+        use rio_backend::performer::handler::Processor;
+        use std::cell::RefCell;
+        use std::io::{Read as _, Write as _};
+        use std::rc::Rc;
+        use std::time::{Duration, Instant};
+
+        #[derive(Clone, Default)]
+        struct Finished(Rc<RefCell<Vec<Option<i32>>>>);
+        impl EventListener for Finished {
+            fn send_event(&self, event: RioEvent, _: WindowId) {
+                if let RioEvent::CommandFinished { exit_status, .. } = event {
+                    self.0.borrow_mut().push(exit_status);
+                }
+            }
+        }
+
+        let base =
+            std::env::temp_dir().join(format!("rio-si-zsh-pty-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        materialize(&base).unwrap();
+        let user_zdotdir = base.join("empty-user-config");
+        std::fs::create_dir_all(&user_zdotdir).unwrap();
+        let mut env = env_pairs(
+            "zsh",
+            &base,
+            Some(user_zdotdir.to_string_lossy().into_owned()),
+            None,
+        );
+        env.push(("TERM".to_string(), "xterm-256color".to_string()));
+
+        let Ok(mut pty) = teletypewriter::create_pty_with_spawn(
+            Some("zsh"),
+            vec!["-i".to_string()],
+            &Some(base.to_string_lossy().into_owned()),
+            Some(env),
+            80,
+            24,
+            800,
+            480,
+        ) else {
+            return;
+        };
+
+        let finished = Finished::default();
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(80, 24),
+            CursorShape::Block,
+            finished.clone(),
+            WindowId::from(0),
+            0,
+            100,
+        );
+        let mut parser = Processor::default();
+
+        // Typed ahead: zle takes them one line at a time.
+        pty.write_all(b"true\rfalse\rexit\r").unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut buf = [0u8; 4096];
+        let mut transcript = Vec::new();
+        while Instant::now() < deadline && finished.0.borrow().len() < 2 {
+            match pty.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    transcript.extend_from_slice(&buf[..n]);
+                    parser.advance(&mut term, &buf[..n]);
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(_) => break,
+            }
+        }
+
+        assert_eq!(
+            *finished.0.borrow(),
+            [Some(0), Some(1)],
+            "transcript: {:?}",
+            String::from_utf8_lossy(&transcript)
+        );
+
+        drop(pty);
         let _ = std::fs::remove_dir_all(&base);
     }
 

@@ -983,10 +983,17 @@ impl<U: Handler> Perform for Performer<'_, U> {
             // malformed payload itself: a shell on a remote host sends
             // one at every prompt, so the per-byte `unhandled` dump
             // would flood the log for the whole session.
+            // The `kitty-shell-cwd://` flavor carries the path verbatim,
+            // so a `;` in it splits the parameter: the pieces are joined
+            // back before parsing.
             b"7" => {
-                if let Some(dir) =
-                    params.get(1).and_then(|p| osc::parse_current_directory(p))
-                {
+                let dir = match params {
+                    [_] => None,
+                    [_, payload] => osc::parse_current_directory(payload),
+                    [_, rest @ ..] => osc::parse_current_directory(&rest.join(&b';')),
+                    [] => None,
+                };
+                if let Some(dir) = dir {
                     self.handler.set_current_directory(dir.map(Into::into));
                 }
             }
@@ -2241,6 +2248,14 @@ mod tests {
         processor.advance(&mut handler, b"\x1b]9;3;build\x07");
         processor.advance(&mut handler, b"\x1b]9;10;1\x07");
         assert!(handler.notifications.is_empty());
+
+        // A `;` inside a verbatim OSC 7 path is part of the path.
+        processor.advance(
+            &mut handler,
+            b"\x1b]7;kitty-shell-cwd://localhost/tmp/a;b\x07",
+        );
+        assert_eq!(handler.cwd.last(), Some(&Some("/tmp/a;b".into())));
+        handler.cwd.pop();
 
         // Without the `;` the digit is just a one-character body.
         processor.advance(&mut handler, b"\x1b]9;4\x07");

@@ -210,6 +210,11 @@ impl Application<'_> {
         use rio_backend::config::command_finished::NotifyWhen;
 
         let config = self.config.notify_on_command_finish;
+        if config.when == NotifyWhen::Never
+            || duration.as_millis() <= u128::from(config.after)
+        {
+            return;
+        }
         // The window or the pane may be gone by the time the event is
         // handled; a closed one has nothing to announce.
         let Some(route) = self.router.routes.get_mut(&window_id) else {
@@ -220,12 +225,7 @@ impl Application<'_> {
             return;
         }
         let focused = route.window.is_focused && manager.current_route() == route_id;
-        match config.when {
-            NotifyWhen::Never => return,
-            NotifyWhen::Unfocused if focused => return,
-            NotifyWhen::Unfocused | NotifyWhen::Always => {}
-        }
-        if duration.as_millis() <= u128::from(config.after) {
+        if config.when == NotifyWhen::Unfocused && focused {
             return;
         }
 
