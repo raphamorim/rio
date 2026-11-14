@@ -135,14 +135,18 @@ pub struct ImagePlacement {
 #[derive(Debug, Clone, PartialEq)]
 enum ImageEntry {
     Kitty(KittyEntry),
-    Inline(AtlasPlacement),
+    Inline {
+        placement: AtlasPlacement,
+        /// 0 when the pixels have not reached the store.
+        image_stamp: u64,
+    },
 }
 
 impl ImageEntry {
     fn z_index(&self) -> i32 {
         match self {
             ImageEntry::Kitty(entry) => entry.z_index(),
-            ImageEntry::Inline(_) => INLINE_Z_INDEX,
+            ImageEntry::Inline { .. } => INLINE_Z_INDEX,
         }
     }
 
@@ -150,7 +154,7 @@ impl ImageEntry {
     /// the kitty ones.
     fn order(&self) -> (i32, u8) {
         let rank = match self {
-            ImageEntry::Inline(_) => 0,
+            ImageEntry::Inline { .. } => 0,
             ImageEntry::Kitty(_) => 1,
         };
         (self.z_index(), rank)
@@ -297,18 +301,21 @@ impl RenderState {
                 }));
             }
         }
-        images.extend(
-            self.collect_virtual_runs(&term)
-                .into_iter()
-                .map(ImageEntry::Kitty),
-        );
-        images.extend(
-            term.graphics
-                .atlas_placements
-                .iter()
-                .cloned()
-                .map(ImageEntry::Inline),
-        );
+        self.collect_virtual_runs(&term, &mut images);
+        if !term.graphics.atlas_placements.is_empty() {
+            // One lock per update; the accessors then read the stamp
+            // from the entry.
+            let inline_images = self.inline_images.lock().unwrap();
+            images.extend(term.graphics.atlas_placements.iter().map(|placement| {
+                let image_stamp = inline_images
+                    .get(&placement.image_key)
+                    .map_or(0, |image| self.stamp(image.transmit_time));
+                ImageEntry::Inline {
+                    placement: placement.clone(),
+                    image_stamp,
+                }
+            }));
+        }
         // Under-background placements (z < i32::MIN / 2) first, then
         // under-text (z < 0), then over-text: drawing in order layers
         // correctly, and the host can split the list at those bounds.
@@ -564,21 +571,18 @@ impl RenderState {
                     geometry,
                 })
             }
-            ImageEntry::Inline(placement) => {
+            ImageEntry::Inline {
+                placement,
+                image_stamp,
+            } => {
                 let geometry = atlas_overlay_geometry(
                     placement,
                     &self.viewport(cell_width, cell_height),
                 )?;
-                let image_stamp = self
-                    .inline_images
-                    .lock()
-                    .unwrap()
-                    .get(&placement.image_key)
-                    .map_or(0, |image| self.stamp(image.transmit_time));
                 Some(ImagePlacement {
                     protocol: ImageProtocol::Inline,
                     image_id: placement.image_key,
-                    image_stamp,
+                    image_stamp: *image_stamp,
                     layer: ImageLayer::BelowText,
                     z_index: INLINE_Z_INDEX,
                     geometry,
@@ -639,14 +643,17 @@ impl RenderState {
     /// The walk mirrors rioterm's renderer: a cell with missing
     /// diacritics inherits from its left neighbour, and consecutive cells
     /// showing sequential image columns collapse into one run.
-    fn collect_virtual_runs(&self, term: &Crosswords<Listener>) -> Vec<KittyEntry> {
-        let mut entries = Vec::new();
+    fn collect_virtual_runs(
+        &self,
+        term: &Crosswords<Listener>,
+        entries: &mut Vec<ImageEntry>,
+    ) {
         let graphics = &term.graphics;
         if graphics.kitty_virtual_placements.is_empty() {
-            return entries;
+            return;
         }
 
-        let flush = |entries: &mut Vec<KittyEntry>,
+        let flush = |entries: &mut Vec<ImageEntry>,
                      run: PlaceholderRun,
                      line: usize,
                      start_col: usize| {
@@ -659,7 +666,7 @@ impl RenderState {
             let Some(image) = graphics.get_kitty_image(run.image_id) else {
                 return;
             };
-            entries.push(KittyEntry::Virtual {
+            entries.push(ImageEntry::Kitty(KittyEntry::Virtual {
                 run,
                 line,
                 start_col,
@@ -667,7 +674,7 @@ impl RenderState {
                 image_width: image.data.width,
                 image_height: image.data.height,
                 image_stamp: self.stamp(image.transmission_time),
-            });
+            }));
         };
 
         for (line, row) in self.rows.iter().enumerate() {
@@ -678,7 +685,7 @@ impl RenderState {
             for (col, square) in row.inner.iter().enumerate() {
                 if square.c() != PLACEHOLDER {
                     if let Some((p, start_col)) = run.take() {
-                        flush(&mut entries, p.complete(), line, start_col);
+                        flush(entries, p.complete(), line, start_col);
                     }
                     continue;
                 }
@@ -701,7 +708,7 @@ impl RenderState {
                     }
                     _ => {
                         if let Some((p, start_col)) = run.take() {
-                            flush(&mut entries, p.complete(), line, start_col);
+                            flush(entries, p.complete(), line, start_col);
                         }
                         // Default missing row/col on the FIRST cell of a
                         // run, so a later cell with an explicit column can
@@ -717,10 +724,9 @@ impl RenderState {
                 }
             }
             if let Some((p, start_col)) = run {
-                flush(&mut entries, p.complete(), line, start_col);
+                flush(entries, p.complete(), line, start_col);
             }
         }
-        entries
     }
 
     /// Viewport geometry for the kitty placement at `index` (counting
@@ -736,7 +742,7 @@ impl RenderState {
             ImageEntry::Kitty(entry) => {
                 self.kitty_entry_geometry(entry, cell_width, cell_height)
             }
-            ImageEntry::Inline(_) => None,
+            ImageEntry::Inline { .. } => None,
         }
     }
 
@@ -883,11 +889,11 @@ fn copy_rgba(data: &GraphicData, buf: &mut [u8]) -> usize {
             if data.pixels.len() < source {
                 return 0;
             }
-            for i in 0..width * height {
-                buf[i * 4] = data.pixels[i * 3];
-                buf[i * 4 + 1] = data.pixels[i * 3 + 1];
-                buf[i * 4 + 2] = data.pixels[i * 3 + 2];
-                buf[i * 4 + 3] = 0xFF;
+            let (source, _) = data.pixels[..source].as_chunks::<3>();
+            let (target, _) = buf[..expected].as_chunks_mut::<4>();
+            for (rgb, rgba) in source.iter().zip(target.iter_mut()) {
+                rgba[..3].copy_from_slice(rgb);
+                rgba[3] = 0xFF;
             }
         }
     }
