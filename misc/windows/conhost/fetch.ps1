@@ -9,6 +9,8 @@
 #
 # To bump: set $Version to the new package version, run the script
 # with -SkipHash to download it, and put the printed SHA-256 in $Sha256.
+# Off Windows that only prints the hash; the files are laid out, and
+# their signatures checked, on Windows (the Windows test job does it).
 [CmdletBinding()]
 param(
     [string]$Version = "1.25.261109001",
@@ -27,11 +29,21 @@ $archive = Join-Path $work "conpty.zip"
 
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 Write-Host "Downloading $url"
-Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing `
+    -MaximumRetryCount 3 -RetryIntervalSec 5
+
+# Get-AuthenticodeSignature exists on Windows only.
+$checkSignature = $env:OS -eq "Windows_NT"
 
 $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
 if ($SkipHash) {
     Write-Host "SHA-256 $hash"
+    if (-not $checkSignature) {
+        # Nothing has been verified: lay out no files.
+        Remove-Item -Recurse -Force $work
+        Write-Host "Pin this hash, then run on Windows to lay out and check the files"
+        exit 0
+    }
 } elseif ($hash -ne $Sha256.ToLowerInvariant()) {
     throw "SHA-256 of $archive is $hash, expected $Sha256"
 }
@@ -53,8 +65,7 @@ $files = @(
 )
 # The hash pins the package; the signature check is independent of it,
 # so a bump done with -SkipHash still refuses anything Microsoft did
-# not sign. Get-AuthenticodeSignature exists on Windows only.
-$checkSignature = $env:OS -eq "Windows_NT"
+# not sign.
 if (-not $checkSignature) {
     Write-Warning "Not on Windows: Authenticode signatures not checked"
 }

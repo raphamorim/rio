@@ -17,7 +17,9 @@ each file carries a valid Microsoft Authenticode signature, and lays out
 one install tree per Rio build in `amd64/` and `arm64/` here, which git
 ignores. The release pipeline runs it before packaging (`.goreleaser.yaml`); run it
 yourself to build a package locally. The binaries keep Microsoft's
-Authenticode signature and must not be re-signed.
+Authenticode signature and must not be re-signed. `LICENSE` here is
+the project's MIT notice and ships beside the files as
+`LICENSE-ConPTY.txt`, as the license requires.
 
 ## Layout
 
@@ -49,8 +51,8 @@ Authenticode signature and must not be re-signed.
    and check on a Windows machine that images render in a program such
    as yazi and that leaving a TUI restores the screen.
 
-Versions below 1.24.2607 are known bad: early 1.22 builds did not
-restore the main screen when a TUI exited and repainted stale content
-on resize (microsoft/terminal #17817, #16879), and 1.24.260710001 still
-broke yazi previews for one reporter. 1.25.260930003 and later fixed
-every report so far.
+Pin nothing below 1.25.260930003. Early 1.22 builds did not restore
+the main screen when a TUI exited and repainted stale content on
+resize (microsoft/terminal #17817, #16879); 1.24.260710001 still broke
+yazi previews for one reporter; 1.25.260930003 and later fixed every
+report so far.
