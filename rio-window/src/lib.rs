@@ -182,6 +182,7 @@ pub mod event_loop;
 mod icon;
 pub mod keyboard;
 pub mod monitor;
+pub mod notification;
 mod platform_impl;
 mod utils;
 pub mod window;

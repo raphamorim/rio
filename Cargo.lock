@@ -3958,19 +3958,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rio-notifier"
-version = "0.5.31"
-dependencies = [
- "block2 0.5.1",
- "objc-rs 0.3.2",
- "objc2 0.5.3",
- "objc2-foundation 0.2.2",
- "objc2-user-notifications",
- "windows 0.62.2",
- "zbus",
-]
-
-[[package]]
 name = "rio-unicode"
 version = "0.5.31"
 dependencies = [
@@ -4019,6 +4006,7 @@ dependencies = [
  "atomic-waker",
  "bindgen 0.70.1",
  "bitflags 2.13.2",
+ "block2 0.5.1",
  "bytemuck",
  "calloop 0.13.0",
  "cfg_aliases",
@@ -4036,6 +4024,7 @@ dependencies = [
  "objc2 0.5.3",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
+ "objc2-user-notifications",
  "orbclient",
  "percent-encoding",
  "pin-project",
@@ -4058,6 +4047,7 @@ dependencies = [
  "wayland-protocols-plasma",
  "web-sys",
  "web-time",
+ "windows 0.62.2",
  "windows-sys 0.59.0",
  "x11-dl",
  "x11rb",
@@ -4095,7 +4085,6 @@ dependencies = [
  "regex",
  "rio-backend",
  "rio-grid",
- "rio-notifier",
  "rio-unicode",
  "rio-window",
  "rustc-hash 2.1.3",

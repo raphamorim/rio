@@ -10,7 +10,6 @@ members = [
     "rio-grapheme-width",
     "rio-unicode",
     "rio-window",
-    "rio-notifier",
     "rio-grid",
     "frontends/rioterm",
     "librio",
@@ -35,7 +34,6 @@ readme = "README.md"
 teletypewriter = { path = "teletypewriter", version = "0.5.31" }
 rio-backend = { path = "rio-backend", version = "0.5.31" }
 rio-window = { path = "rio-window", version = "0.5.31", default-features = false }
-rio-notifier = { path = "rio-notifier", version = "0.5.31" }
 rio-grapheme-width = { path = "rio-grapheme-width", version = "0.5.31" }
 sugarloaf = { path = "sugarloaf", version = "0.5.31" }
 corcovado = { path = "corcovado", version = "0.5.31" }
