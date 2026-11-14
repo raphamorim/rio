@@ -1,0 +1,58 @@
+#!/usr/bin/env pwsh
+# Fetches the ConPTY pair Rio ships beside rio.exe on Windows:
+# conpty.dll and OpenConsole.exe from the Windows Terminal project,
+# published by Microsoft as the Microsoft.Windows.Console.ConPTY NuGet
+# package (MIT). The release pipeline runs this before packaging; the
+# files land in amd64/ and arm64/ next to this script, which git
+# ignores. See README.md here for why and how to update.
+#
+# To bump: set $Version to the new package version, run the script
+# with -SkipHash to download it, and put the printed SHA-256 in $Sha256.
+[CmdletBinding()]
+param(
+    [string]$Version = "1.25.261109001",
+    [string]$Sha256 = "3d77f535df848e44225c2a8912ac844fecb23f3057732b639f3034b587496f09",
+    [switch]$SkipHash
+)
+
+$ErrorActionPreference = "Stop"
+
+$here = $PSScriptRoot
+$package = "microsoft.windows.console.conpty"
+$url = "https://api.nuget.org/v3-flatcontainer/$package/$Version/$package.$Version.nupkg"
+$work = Join-Path $here "nupkg"
+# Expand-Archive only opens .zip, and a .nupkg is a zip.
+$archive = Join-Path $work "conpty.zip"
+
+New-Item -ItemType Directory -Force -Path $work | Out-Null
+Write-Host "Downloading $url"
+Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing
+
+$hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+if ($SkipHash) {
+    Write-Host "SHA-256 $hash"
+} elseif ($hash -ne $Sha256.ToLowerInvariant()) {
+    throw "SHA-256 of $archive is $hash, expected $Sha256"
+}
+
+$extracted = Join-Path $work "x"
+if (Test-Path $extracted) { Remove-Item -Recurse -Force $extracted }
+Expand-Archive -Path $archive -DestinationPath $extracted
+
+# conpty.dll matches the application; OpenConsole.exe matches the
+# machine. Each Rio build gets the pair of its own architecture.
+$files = @(
+    @{ src = "runtimes/win-x64/native/conpty.dll";          dst = "amd64/conpty.dll" },
+    @{ src = "build/native/runtimes/x64/OpenConsole.exe";   dst = "amd64/OpenConsole.exe" },
+    @{ src = "runtimes/win-arm64/native/conpty.dll";        dst = "arm64/conpty.dll" },
+    @{ src = "build/native/runtimes/arm64/OpenConsole.exe"; dst = "arm64/OpenConsole.exe" }
+)
+foreach ($file in $files) {
+    $dst = Join-Path $here $file.dst
+    New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+    Copy-Item -Force (Join-Path $extracted $file.src) $dst
+    Write-Host "  $($file.dst)"
+}
+
+Remove-Item -Recurse -Force $work
+Write-Host "ConPTY $Version ready"

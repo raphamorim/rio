@@ -53,6 +53,11 @@ jobs:
         run: cargo fmt -- --check --color always
       - run: cargo clippy --all-targets --all-features
       - run: cargo test --features wgpu ${{ runner.os == 'Linux' && '--timings' || '' }}
+      - name: Fetch the bundled ConPTY
+        # The release pipeline runs this script before packaging; a
+        # stale pin or a changed package layout should fail here first.
+        if: runner.os == 'Windows'
+        run: pwsh -NoProfile -File misc/windows/conhost/fetch.ps1
       - name: Upload build timings
         # One HTML per run showing which crates dominated and whether the
         # cache actually hit; download it when CI feels slow.

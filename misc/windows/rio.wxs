@@ -16,6 +16,7 @@
       <ui:WixUI Id="WixUI_Minimal" />
       <Feature Id="ProductFeature" Title="ConsoleApp" Level="1">
          <ComponentRef Id="RioExe" />
+         <ComponentRef Id="ConPty" />
          <ComponentRef Id="RioShortcut" />
          <ComponentRef Id="ModifyPathEnv" />
          <ComponentRef Id="ContextMenu" />
@@ -24,6 +25,15 @@
       <DirectoryRef Id="RioProgramFiles">
          <Component Id="RioExe">
             <File Id="RioExeFile" Source="{{ .Binary }}.exe" Name="rio.exe" KeyPath="yes" />
+         </Component>
+      </DirectoryRef>
+      <!-- Bundled ConPTY (conpty.dll + OpenConsole.exe), matched pair
+           per architecture, installed next to rio.exe so Rio uses the
+           modern pseudoconsole. See misc/windows/conhost/README.md. -->
+      <DirectoryRef Id="RioProgramFiles">
+         <Component Id="ConPty" Guid="b8f5b1e2-0c4a-4d9f-9a2b-7f3e1c6d8a40">
+            <File Id="ConPtyDll" Source=".\misc\windows\conhost\{{ .Arch }}\conpty.dll" Name="conpty.dll" KeyPath="yes" />
+            <File Id="OpenConsoleExe" Source=".\misc\windows\conhost\{{ .Arch }}\OpenConsole.exe" Name="OpenConsole.exe" />
          </Component>
       </DirectoryRef>
       <DirectoryRef Id="RioProgramMenu">
