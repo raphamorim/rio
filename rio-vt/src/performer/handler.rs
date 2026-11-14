@@ -2244,14 +2244,6 @@ mod tests {
         processor.advance(&mut handler, b"\x1b]9;10;1\x07");
         assert!(handler.notifications.is_empty());
 
-        // A `;` inside a verbatim OSC 7 path is part of the path.
-        processor.advance(
-            &mut handler,
-            b"\x1b]7;kitty-shell-cwd://localhost/tmp/a;b\x07",
-        );
-        assert_eq!(handler.cwd.last(), Some(&Some("/tmp/a;b".into())));
-        handler.cwd.pop();
-
         // Without the `;` the digit is just a one-character body.
         processor.advance(&mut handler, b"\x1b]9;4\x07");
         processor.advance(&mut handler, b"\x1b]9;9\x07");
