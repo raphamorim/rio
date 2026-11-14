@@ -15,8 +15,11 @@ Microsoft, <https://www.nuget.org/packages/Microsoft.Windows.Console.ConPTY>),
 checks its SHA-256 against the one pinned in the script, checks that
 each file carries a valid Microsoft Authenticode signature, and lays out
 one install tree per Rio build in `amd64/` and `arm64/` here, which git
-ignores. The release pipeline runs it before packaging (`.goreleaser.yaml`); run it
-yourself to build a package locally. The binaries keep Microsoft's
+ignores. The release pipeline runs it before packaging (`.goreleaser.yaml`), and
+the ConPTY workflow runs it on every change to the script. Run it
+yourself on Windows to build a package locally; elsewhere it checks
+the hash and lays out nothing, since signatures cannot be checked
+there. The binaries keep Microsoft's
 Authenticode signature and must not be re-signed. `LICENSE` here is
 the project's MIT notice and ships beside the files as
 `LICENSE-ConPTY.txt`, as the license requires.

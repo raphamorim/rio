@@ -9,8 +9,8 @@
 #
 # To bump: set $Version to the new package version, run the script
 # with -SkipHash to download it, and put the printed SHA-256 in $Sha256.
-# Off Windows that only prints the hash; the files are laid out, and
-# their signatures checked, on Windows (the Windows test job does it).
+# Off Windows the script stops after the hash: files are laid out only
+# where their signatures can be checked (the conpty workflow does it).
 [CmdletBinding()]
 param(
     [string]$Version = "1.25.261109001",
@@ -32,20 +32,19 @@ Write-Host "Downloading $url"
 Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing `
     -MaximumRetryCount 3 -RetryIntervalSec 5
 
-# Get-AuthenticodeSignature exists on Windows only.
-$checkSignature = $env:OS -eq "Windows_NT"
-
 $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
 if ($SkipHash) {
     Write-Host "SHA-256 $hash"
-    if (-not $checkSignature) {
-        # Nothing has been verified: lay out no files.
-        Remove-Item -Recurse -Force $work
-        Write-Host "Pin this hash, then run on Windows to lay out and check the files"
-        exit 0
-    }
 } elseif ($hash -ne $Sha256.ToLowerInvariant()) {
     throw "SHA-256 of $archive is $hash, expected $Sha256"
+}
+
+# Get-AuthenticodeSignature exists on Windows only, and no package is
+# built anywhere else, so elsewhere the script ends here.
+if ($env:OS -ne "Windows_NT") {
+    Remove-Item -Recurse -Force $work
+    Write-Host "Not on Windows: signatures cannot be checked, nothing laid out"
+    exit 0
 }
 
 $extracted = Join-Path $work "x"
@@ -65,20 +64,17 @@ $files = @(
 )
 # The hash pins the package; the signature check is independent of it,
 # so a bump done with -SkipHash still refuses anything Microsoft did
-# not sign.
-if (-not $checkSignature) {
-    Write-Warning "Not on Windows: Authenticode signatures not checked"
-}
+# not sign. The signer must be Microsoft Corporation itself: Microsoft
+# also runs certificates that sign other vendors' code, and those
+# carry a different CN under the same O.
 foreach ($file in $files) {
     $dst = Join-Path $here $file.dst
     New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
     Copy-Item -Force (Join-Path $extracted $file.src) $dst
-    if ($checkSignature) {
-        $signature = Get-AuthenticodeSignature $dst
-        if ($signature.Status -ne "Valid" -or
-            $signature.SignerCertificate.Subject -notmatch "O=Microsoft Corporation") {
-            throw "$($file.dst) is not signed by Microsoft (status $($signature.Status))"
-        }
+    $signature = Get-AuthenticodeSignature $dst
+    if ($signature.Status -ne "Valid" -or
+        $signature.SignerCertificate.Subject -notmatch "(^|, )CN=Microsoft Corporation(,|$)") {
+        throw "$($file.dst) is not signed by Microsoft Corporation (status $($signature.Status))"
     }
     Write-Host "  $($file.dst)"
 }
