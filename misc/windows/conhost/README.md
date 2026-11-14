@@ -36,8 +36,7 @@ the project's MIT notice and ships beside the files as
   `arm64/` folder named for the machine, and without one it silently
   falls back to the in-box `conhost.exe`. Rio ships the host in those
   folders: the x64 build carries both, since it also runs on ARM64
-  machines; the arm64 build carries `arm64/` only. This is the layout
-  Zed ships.
+  machines; the arm64 build carries `arm64/` only.
 - The installer puts `C:\Program Files\Rio` first on the system
   PATH, so a program that loads `conpty.dll` by name and ships none of
   its own may pick up Rio's copy. That gives it the same modern host,
