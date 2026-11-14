@@ -7,7 +7,9 @@ mod render_state;
 pub use key::{
     encode as encode_key, EncodeContext, Key, KeyAction, KeyEvent, KittyFlags, Modifiers,
 };
-pub use render_state::{RenderState, ViewportSelection};
+pub use render_state::{
+    ImageLayer, ImagePlacement, ImageProtocol, RenderState, ViewportSelection,
+};
 pub use rio_vt::clipboard::ClipboardType;
 pub use rio_vt::config::colors::term::TermColors;
 pub use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
@@ -174,10 +176,57 @@ pub trait SurfaceDelegate: MaybeSendSync + 'static {
     fn output(&self, _surface: SurfaceId, _bytes: &[u8]) {}
 }
 
+/// The pixels of the sixel/iTerm2 images on screen, by image key. The
+/// terminal hands new pixels to its renderer once, through its upload
+/// queues; here that renderer is the host, so the surface keeps them
+/// (kitty images stay in the terminal's own store) until the terminal
+/// says an image's last placement is gone. The listener applies each
+/// queue as it arrives, and every render state of the surface reads it.
+pub(crate) struct InlineImageStore {
+    images: std::sync::Mutex<rustc_hash::FxHashMap<u64, Arc<rio_graphics::GraphicData>>>,
+    /// Baseline for image change stamps (Instants aren't representable
+    /// over the C ABI; nanoseconds relative to this are). One per
+    /// surface, so all of its render states give an image the same
+    /// stamp.
+    epoch: rio_vt::time::Instant,
+}
+
+impl Default for InlineImageStore {
+    fn default() -> Self {
+        Self {
+            images: std::sync::Mutex::default(),
+            epoch: rio_vt::time::Instant::now(),
+        }
+    }
+}
+
+impl InlineImageStore {
+    /// Every write is one insert or remove, so a thread that panicked
+    /// while holding the lock left the map whole: a poisoned lock is
+    /// taken all the same rather than taking the PTY thread down.
+    pub(crate) fn lock(
+        &self,
+    ) -> std::sync::MutexGuard<
+        '_,
+        rustc_hash::FxHashMap<u64, Arc<rio_graphics::GraphicData>>,
+    > {
+        self.images
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub(crate) fn epoch(&self) -> rio_vt::time::Instant {
+        self.epoch
+    }
+}
+
+pub(crate) type InlineImages = Arc<InlineImageStore>;
+
 #[derive(Clone)]
 pub(crate) struct Listener {
     surface_id: SurfaceId,
     delegate: Arc<dyn SurfaceDelegate>,
+    inline_images: InlineImages,
     #[cfg(feature = "pty")]
     pty_writer: Arc<Mutex<Option<corcovado::channel::Sender<Msg>>>>,
 }
@@ -249,6 +298,10 @@ impl Listener {
             RioEvent::ProgramStatus(event) => {
                 self.delegate
                     .action(self.surface_id, Action::ProgramStatus(event));
+            }
+            RioEvent::UpdateGraphics { queues, .. } => {
+                render_state::apply_graphics_updates(&self.inline_images, queues);
+                self.delegate.wakeup(self.surface_id);
             }
             RioEvent::CommandFinished {
                 exit_status,
@@ -383,6 +436,8 @@ pub struct Surface {
     /// mis-parsing (and so its sync buffer is allocated once, not per
     /// write).
     processor: std::sync::Mutex<Option<rio_vt::performer::handler::Processor>>,
+    /// Sixel/iTerm2 pixels for the render states to read.
+    inline_images: InlineImages,
     /// Non-pty transport: `write` hands the bytes to the delegate instead
     /// of a PTY channel.
     #[cfg(not(feature = "pty"))]
@@ -454,9 +509,11 @@ impl Surface {
         let id = engine.next_surface_id.fetch_add(1, Ordering::SeqCst);
         #[cfg(feature = "pty")]
         let pty_writer = Arc::new(Mutex::new(None));
+        let inline_images = InlineImages::default();
         let listener = Listener {
             surface_id: id,
             delegate: engine.delegate.clone(),
+            inline_images: inline_images.clone(),
             #[cfg(feature = "pty")]
             pty_writer: pty_writer.clone(),
         };
@@ -490,6 +547,7 @@ impl Surface {
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
+                inline_images,
                 delegate: engine.delegate.clone(),
             })
         }
@@ -573,6 +631,7 @@ impl Surface {
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
+                inline_images,
                 channel,
                 shell_pid,
                 #[cfg(not(target_os = "windows"))]
@@ -1235,6 +1294,10 @@ impl Surface {
 
     pub(crate) fn terminal(&self) -> Arc<FairMutex<Crosswords<Listener>>> {
         self.terminal.clone()
+    }
+
+    pub(crate) fn inline_images(&self) -> InlineImages {
+        self.inline_images.clone()
     }
 }
 
@@ -2327,5 +2390,265 @@ mod tests {
         // The RGBA copy path serves virtual images the same way.
         let mut buf = [0u8; 16];
         assert_eq!(state.kitty_image_rgba(7, &mut buf), 16);
+    }
+
+    fn image_surface() -> (Surface, RenderState) {
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate);
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+        let state = RenderState::new(&surface);
+        (surface, state)
+    }
+
+    // The default surface is 720x432 pixels for 80x24 cells.
+    const CELL_W: f32 = 9.0;
+    const CELL_H: f32 = 18.0;
+
+    // A 2x2 sixel: raster attributes fix the size, color register 0 is
+    // red, and `B` (sixel value 3, bits 0 and 1) paints the two rows of
+    // each of its two columns.
+    const SIXEL_2X2_RED: &[u8] = b"\x1bPq\"1;1;2;2#0;2;100;0;0#0BB\x1b\\";
+
+    // A sixel image lands in the unified placement list with its
+    // geometry, layer and pixels, the way a kitty image does; the kitty
+    // accessors do not see it.
+    #[test]
+    fn sixel_image_reaches_render_state() {
+        let (surface, mut state) = image_surface();
+        state.update();
+        assert_eq!(state.image_placements_generation(), 0);
+
+        surface.inject_output(b"\x1b[6;5H");
+        surface.inject_output(SIXEL_2X2_RED);
+        state.update();
+
+        assert_eq!(state.image_count(), 1);
+        assert_eq!(state.kitty_count(), 0);
+        assert_eq!(state.image_placements_generation(), 1);
+        let placement = state
+            .image_placement(0, CELL_W, CELL_H)
+            .expect("placement in view");
+        assert_eq!(placement.protocol, ImageProtocol::Inline);
+        assert_eq!(placement.layer, ImageLayer::BelowText);
+        assert_eq!(placement.z_index, -1);
+        assert_eq!(placement.geometry.x, 4.0 * CELL_W);
+        assert_eq!(placement.geometry.y, 5.0 * CELL_H);
+        assert_eq!(placement.geometry.width, 2.0);
+        assert_eq!(placement.geometry.height, 2.0);
+        assert_eq!(placement.geometry.source_rect, [0.0, 0.0, 1.0, 1.0]);
+
+        let (width, height, stamp) = state
+            .image_info(ImageProtocol::Inline, placement.image_id)
+            .expect("stored image");
+        assert_eq!((width, height), (2, 2));
+        assert_eq!(stamp, placement.image_stamp);
+        let mut buf = [0u8; 16];
+        assert_eq!(
+            state.image_rgba(ImageProtocol::Inline, placement.image_id, &mut buf),
+            16
+        );
+        assert_eq!(buf, [0xFF, 0x00, 0x00, 0xFF].repeat(4).as_slice());
+        let mut small = [0u8; 4];
+        assert_eq!(
+            state.image_rgba(ImageProtocol::Inline, placement.image_id, &mut small),
+            0
+        );
+        // Kitty ids are a different namespace.
+        assert_eq!(
+            state.image_info(ImageProtocol::Kitty, placement.image_id),
+            None
+        );
+    }
+
+    // An iTerm2 inline image (OSC 1337 File=) takes the same path; its
+    // PNG is decoded to RGBA for the host.
+    #[test]
+    fn iterm2_image_reaches_render_state() {
+        let (surface, mut state) = image_surface();
+        // 2x2 RGBA PNG: red, green / blue, white.
+        surface.inject_output(
+            b"\x1b]1337;File=inline=1;size=75:iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEklEQVR42mP4z8DwHwyBNBgAAEnICfcD2WTxAAAAAElFTkSuQmCC\x07",
+        );
+        state.update();
+
+        assert_eq!(state.image_count(), 1);
+        let placement = state
+            .image_placement(0, CELL_W, CELL_H)
+            .expect("placement in view");
+        assert_eq!(placement.protocol, ImageProtocol::Inline);
+        assert_eq!((placement.geometry.x, placement.geometry.y), (0.0, 0.0));
+        let (width, height, _) = state
+            .image_info(ImageProtocol::Inline, placement.image_id)
+            .expect("stored image");
+        assert_eq!((width, height), (2, 2));
+        let mut buf = [0u8; 16];
+        assert_eq!(
+            state.image_rgba(ImageProtocol::Inline, placement.image_id, &mut buf),
+            16
+        );
+        assert_eq!(
+            buf,
+            [
+                0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, //
+                0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            ]
+        );
+    }
+
+    // Sixel and iTerm2 images sit on the grid plane, under a kitty
+    // image at the same z; the list is in draw order and the kitty
+    // accessors index the kitty subset.
+    #[test]
+    fn image_list_orders_inline_under_kitty() {
+        let (surface, mut state) = image_surface();
+        surface.inject_output(b"\x1b[6;5H");
+        surface.inject_output(SIXEL_2X2_RED);
+        surface.inject_output(
+            b"\x1b[2;2H\x1b_Gf=32,s=2,v=2,i=7,a=T,z=-1;/wAA/wD/AP8AAP///////w==\x1b\\",
+        );
+        state.update();
+
+        assert_eq!(state.image_count(), 2);
+        let first = state.image_placement(0, CELL_W, CELL_H).unwrap();
+        let second = state.image_placement(1, CELL_W, CELL_H).unwrap();
+        assert_eq!(first.protocol, ImageProtocol::Inline);
+        assert_eq!(second.protocol, ImageProtocol::Kitty);
+        assert_eq!(second.image_id, 7);
+        assert_eq!((second.layer, second.z_index), (ImageLayer::BelowText, -1));
+        assert_eq!(second.geometry.x, 1.0 * CELL_W);
+
+        assert_eq!(state.kitty_count(), 1);
+        let (image_id, _, geometry) = state.kitty_geometry(0, CELL_W, CELL_H).unwrap();
+        assert_eq!(image_id, 7);
+        assert_eq!(geometry, second.geometry);
+        let (_, _, stamp) = state.image_info(ImageProtocol::Kitty, 7).unwrap();
+        assert_eq!(stamp, second.image_stamp);
+        let mut buf = [0u8; 16];
+        assert_eq!(state.image_rgba(ImageProtocol::Kitty, 7, &mut buf), 16);
+    }
+
+    // Pixels stay for as long as a placement shows the image and leave
+    // with it; quiet frames keep the placements generation, a change
+    // bumps it.
+    #[test]
+    fn inline_images_leave_with_their_placements() {
+        let (surface, mut state) = image_surface();
+        surface.inject_output(SIXEL_2X2_RED);
+        state.update();
+        let placement = state.image_placement(0, CELL_W, CELL_H).unwrap();
+        let generation = state.image_placements_generation();
+
+        // Output away from the image changes nothing about it.
+        surface.inject_output(b"\x1b[10;1Hquiet frame");
+        state.update();
+        assert_eq!(state.image_placements_generation(), generation);
+        assert!(state
+            .image_info(ImageProtocol::Inline, placement.image_id)
+            .is_some());
+
+        // A full reset drops every placement, and the store follows.
+        surface.inject_output(b"\x1bc");
+        state.update();
+        assert_eq!(state.image_count(), 0);
+        assert_ne!(state.image_placements_generation(), generation);
+        assert_eq!(
+            state.image_info(ImageProtocol::Inline, placement.image_id),
+            None
+        );
+        let mut buf = [0u8; 16];
+        assert_eq!(
+            state.image_rgba(ImageProtocol::Inline, placement.image_id, &mut buf),
+            0
+        );
+    }
+
+    // The pixels belong to the surface: a render state made after the
+    // image arrived, or a second one, reads them too, and a surface no
+    // one renders still drops them with their placements.
+    #[test]
+    fn inline_pixels_are_shared_by_render_states() {
+        let (surface, mut first) = image_surface();
+        surface.inject_output(SIXEL_2X2_RED);
+        assert_eq!(surface.inline_images().lock().len(), 1);
+
+        let mut second = RenderState::new(&surface);
+        first.update();
+        second.update();
+        let placement = first.image_placement(0, CELL_W, CELL_H).unwrap();
+        assert_ne!(placement.image_stamp, 0);
+        // Stamps count from the surface's epoch, so a texture cache
+        // shared by the two states sees one stamp per image.
+        for state in [&first, &second] {
+            let (width, height, stamp) = state
+                .image_info(ImageProtocol::Inline, placement.image_id)
+                .expect("pixels shared");
+            assert_eq!((width, height), (2, 2));
+            assert_eq!(stamp, placement.image_stamp);
+        }
+
+        drop(first);
+        drop(second);
+        surface.inject_output(b"\x1bc");
+        assert!(surface.inline_images().lock().is_empty());
+    }
+
+    // The alternate screen has placements of its own: a program running
+    // there hides the main screen's image without dropping its pixels,
+    // and leaving brings the image back.
+    #[test]
+    fn inline_placement_waits_out_the_alternate_screen() {
+        let (surface, mut state) = image_surface();
+        surface.inject_output(SIXEL_2X2_RED);
+        state.update();
+        let placement = state.image_placement(0, CELL_W, CELL_H).unwrap();
+        let generation = state.image_placements_generation();
+
+        surface.inject_output(b"\x1b[?1049h");
+        state.update();
+        assert_eq!(state.image_count(), 0);
+        assert_ne!(state.image_placements_generation(), generation);
+        assert!(state
+            .image_info(ImageProtocol::Inline, placement.image_id)
+            .is_some());
+
+        surface.inject_output(b"\x1b[?1049l");
+        state.update();
+        assert_eq!(state.image_count(), 1);
+        assert_eq!(state.image_placement(0, CELL_W, CELL_H).unwrap(), placement);
+    }
+
+    // A placement scrolled into history stays in the list but does not
+    // resolve; scrolling the view back brings it in and moves the
+    // generation, since the host's draw list has to move too.
+    #[test]
+    fn inline_placement_follows_scrollback() {
+        let (surface, mut state) = image_surface();
+        surface.inject_output(SIXEL_2X2_RED);
+        state.update();
+        let generation = state.image_placements_generation();
+
+        surface.inject_output(&b"\n".repeat(30));
+        state.update();
+        assert_eq!(state.image_count(), 1);
+        assert!(state.image_placement(0, CELL_W, CELL_H).is_none());
+        assert_ne!(state.image_placements_generation(), generation);
+
+        // Output that scrolls the screen while the image is out of view
+        // moves nothing the host can see.
+        let generation = state.image_placements_generation();
+        surface.inject_output(&b"\n".repeat(5));
+        state.update();
+        assert_eq!(state.image_placements_generation(), generation);
+
+        surface.scroll(35);
+        state.update();
+        let placement = state
+            .image_placement(0, CELL_W, CELL_H)
+            .expect("back in view");
+        assert_eq!(placement.geometry.y, 0.0);
     }
 }
