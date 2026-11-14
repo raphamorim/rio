@@ -9,7 +9,9 @@ use crate::windows::pipes::{EventedAnonRead, EventedAnonWrite};
 
 use windows_sys::core::{HRESULT, PWSTR};
 use windows_sys::s;
-use windows_sys::Win32::Foundation::{CloseHandle, FreeLibrary, HANDLE, S_OK};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, FreeLibrary, E_INVALIDARG, HANDLE, S_OK,
+};
 use windows_sys::Win32::System::Console::{
     ClosePseudoConsole, CreatePseudoConsole, ResizePseudoConsole, COORD, HPCON,
 };
@@ -106,11 +108,7 @@ impl ConptyApi {
     fn load_conpty() -> Option<Self> {
         type LoadedFn = unsafe extern "system" fn() -> isize;
         let dll = std::env::current_exe().ok()?.parent()?.join("conpty.dll");
-        let dll_path: Vec<u16> = dll
-            .as_os_str()
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect();
+        let dll_path = win32_string(&dll);
         unsafe {
             // The DLL's own imports resolve from its directory and
             // System32 only, so neither the working directory nor PATH
@@ -263,21 +261,24 @@ pub fn new(
 
     // Create the pseudoconsole on the pipes. The resize quirk keeps the
     // in-box host from repainting its reflowed buffer over Rio's grid.
-    // No known host rejects the flag; should one, a plain pseudoconsole
-    // beats no terminal, so a failure is retried once without it.
+    // No known host rejects the flag; should one, it would say so with
+    // E_INVALIDARG, and a plain pseudoconsole beats no terminal, so that
+    // one failure is retried without it.
     let conin_raw = conin_pty_handle.into_raw_handle() as HANDLE;
     let conout_raw = conout_pty_handle.into_raw_handle() as HANDLE;
     let size: COORD = winsize.into();
-    let mut result = S_OK;
-    for flags in [PSEUDOCONSOLE_RESIZE_QUIRK, 0] {
-        result =
-            unsafe { (api.create)(size, conin_raw, conout_raw, flags, &mut pty_handle) };
-        if result == S_OK {
-            break;
-        }
-        if flags != 0 {
-            warn!("CreatePseudoConsole failed with flags {flags:#x} ({result:#x}); retrying without them");
-        }
+    let mut result = unsafe {
+        (api.create)(
+            size,
+            conin_raw,
+            conout_raw,
+            PSEUDOCONSOLE_RESIZE_QUIRK,
+            &mut pty_handle,
+        )
+    };
+    if result == E_INVALIDARG {
+        warn!("CreatePseudoConsole rejected flags {PSEUDOCONSOLE_RESIZE_QUIRK:#x}; retrying without them");
+        result = unsafe { (api.create)(size, conin_raw, conout_raw, 0, &mut pty_handle) };
     }
     // The host holds duplicates of the pipe ends it was given and
     // releases them when the pseudoconsole closes, so ours go now:
@@ -398,21 +399,30 @@ pub fn new(
         CloseHandle(proc_info.hThread);
     }
 
+    // Before the pipe ends are wrapped: a failure here must drop the
+    // pseudoconsole while the raw read end is still open, the order
+    // `Pty` keeps as well, and must not leak the process handle.
+    let child_watcher =
+        ChildExitWatcher::new(proc_info.hProcess).inspect_err(|_| unsafe {
+            CloseHandle(proc_info.hProcess);
+        })?;
+
     let conin = EventedAnonWrite::new(conin);
     let conout = EventedAnonRead::new(conout);
-
-    let child_watcher = ChildExitWatcher::new(proc_info.hProcess)?;
 
     Ok(Pty::new(conpty, conout, conin, child_watcher))
 }
 
 impl Conpty {
     pub fn on_resize(&mut self, window_size: Winsize) {
+        // A collapsed window reports no columns or rows; the host would
+        // refuse that, so keep its last size instead.
+        if window_size.ws_col == 0 || window_size.ws_row == 0 {
+            return;
+        }
         let result =
             unsafe { (ConptyApi::get().resize)(self.handle, window_size.into()) };
         if result != S_OK {
-            // A refused size (zero columns or rows while the window is
-            // collapsed, say) is not worth the process.
             warn!("ResizePseudoConsole failed: {result:#x}");
         }
     }
