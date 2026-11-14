@@ -1749,7 +1749,8 @@ pub const RIO_IMAGE_LAYER_ABOVE_TEXT: u8 = 2;
 /// pixels. `x`/`y` are relative to the grid origin (add your padding);
 /// `src_*` is the normalized source rectangle within the image. Cache
 /// textures by (`protocol`, `image_id`, `image_stamp`): the stamp
-/// changes whenever the image's pixels do.
+/// changes whenever the image's pixels do, and is never 0 while they
+/// are available, so 0 can stand for "no texture yet".
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct rio_image_placement_s {
@@ -1780,7 +1781,10 @@ fn image_protocol(protocol: u8) -> Option<ImageProtocol> {
 /// (visible or not), in draw order: by z-index, lowest first, with
 /// sixel/iTerm2 images under kitty ones at the same z. Resolve each
 /// with [`rio_render_state_image_placement`], which filters to the
-/// viewport. The kitty-only calls above remain as a subset of this.
+/// viewport. The kitty-only calls above remain as a subset of this:
+/// draw from one or the other, never both, or kitty images are drawn
+/// twice. Later versions may add protocols; skip a placement whose
+/// protocol you don't know.
 #[no_mangle]
 pub unsafe extern "C" fn rio_render_state_image_count(
     state: *const RenderState,

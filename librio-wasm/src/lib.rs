@@ -213,7 +213,7 @@ impl RioTerm {
         })
     }
 
-    // ------------------------------------------------------------- events
+    // Events
 
     pub fn on_output(&mut self, callback: js_sys::Function) {
         self.on_output = Some(callback);
@@ -288,7 +288,7 @@ impl RioTerm {
         }
     }
 
-    // -------------------------------------------------------------- input
+    // Input
 
     /// Child output: bytes from the program the terminal is showing.
     /// (xterm.js calls this `write`.)
@@ -422,7 +422,7 @@ impl RioTerm {
         self.flush();
     }
 
-    // ---------------------------------------------------------- selection
+    // Selection
 
     /// `kind`: 0 simple, 1 word, 2 line, 3 block (the C ABI's values).
     pub fn selection_begin(
@@ -460,7 +460,7 @@ impl RioTerm {
         self.surface.selection_text()
     }
 
-    // ------------------------------------------------------- render state
+    // Render state
 
     /// Pull a fresh snapshot of the grid. Call once per animation frame
     /// (after a wakeup), then read cells/cursor/selection from it.
@@ -624,7 +624,7 @@ impl RioTerm {
         }
     }
 
-    // ------------------------------------------------------ kitty images
+    // Kitty images
 
     pub fn kitty_count(&self) -> u32 {
         self.state.kitty_count() as u32
@@ -678,9 +678,9 @@ impl RioTerm {
         self.state.kitty_image_rgba(image_id, out)
     }
 
-    // ------------------------------------------------- image placements
-    // Every protocol (kitty, and sixel/iTerm2 inline images) in one
-    // list, in draw order. The kitty_* calls above are its kitty subset.
+    // Image placements: every protocol (kitty, and sixel/iTerm2 inline
+    // images) in one list, in draw order. The kitty_* calls above are
+    // its kitty subset; draw from one or the other, never both.
     // Protocols: 0 kitty, 1 inline. Layers: 0 below background, 1 below
     // text, 2 above text.
 

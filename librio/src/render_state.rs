@@ -1,8 +1,8 @@
-use crate::{GraphicsUpdates, Listener, Surface};
+use crate::{InlineImages, Listener, Surface};
 use rio_graphics::{atlas_image_key, ColorType, GraphicData};
 use rio_vt::ansi::graphics::{
     atlas_overlay_geometry, kitty_overlay_geometry, AtlasPlacement, KittyOverlayGeometry,
-    KittyPlacement, OverlayViewport, VirtualPlacement,
+    KittyPlacement, OverlayViewport, UpdateQueues, VirtualPlacement,
 };
 use rio_vt::ansi::kitty_virtual::{
     compute_run_geometry, resolve_virtual_placement, IncompletePlacement, PlaceholderRun,
@@ -123,7 +123,8 @@ pub struct ImagePlacement {
     pub protocol: ImageProtocol,
     pub image_id: u64,
     /// Changes whenever the image's pixels change, so a texture cached
-    /// by (protocol, id, stamp) never goes stale.
+    /// by (protocol, id, stamp) never goes stale. Never 0 while the
+    /// pixels are available, so 0 can stand for "no texture yet".
     pub image_stamp: u64,
     pub layer: ImageLayer,
     pub z_index: i32,
@@ -156,12 +157,17 @@ impl ImageEntry {
     }
 }
 
-/// The pixels of a sixel/iTerm2 image. The terminal hands them to its
-/// renderer once, through the upload queue, so this snapshot keeps them
-/// for as long as a placement shows the image.
-struct InlineImage {
-    data: GraphicData,
-    stamp: u64,
+/// Apply one upload queue to the surface's sixel/iTerm2 pixel store:
+/// new images in, images whose last placement is gone out. Kitty
+/// uploads in the queue are skipped; those stay in the terminal.
+pub(crate) fn apply_graphics_updates(images: &InlineImages, queues: UpdateQueues) {
+    let mut images = images.lock().unwrap();
+    for data in queues.pending {
+        images.insert(atlas_image_key(data.id.get()), data);
+    }
+    for key in queues.remove_queue {
+        images.remove(&key);
+    }
 }
 
 pub struct RenderState {
@@ -188,11 +194,9 @@ pub struct RenderState {
     /// captured under the same lock as the grid snapshot and sorted in
     /// draw order: by z-index, lowest first.
     images: Vec<ImageEntry>,
-    /// The upload queues the terminal sent since the last update.
-    graphics: GraphicsUpdates,
-    /// Sixel/iTerm2 pixels by image key, taken from those queues; an
-    /// image leaves when its last placement does.
-    inline_images: FxHashMap<u64, InlineImage>,
+    /// The surface's sixel/iTerm2 pixels by image key, kept while a
+    /// placement shows the image.
+    inline_images: InlineImages,
     /// Bumped by an update that changes the placement list or moves it
     /// (a scroll), so a host can keep its draw list between frames.
     placements_generation: u64,
@@ -227,8 +231,7 @@ impl RenderState {
             history_size: 0,
             alt_screen: false,
             images: Vec::new(),
-            graphics: surface.graphics_updates(),
-            inline_images: FxHashMap::default(),
+            inline_images: surface.inline_images(),
             placements_generation: 0,
             images_view: (0, 0, 0),
             epoch: rio_vt::time::Instant::now(),
@@ -267,23 +270,12 @@ impl RenderState {
         // so a full scrollback must not shift placements off-screen.
         self.history_size = term.lines_evicted() as i64 + term.history_size() as i64;
         self.alt_screen = term.mode().contains(rio_vt::crosswords::Mode::ALT_SCREEN);
-        // The terminal hands new pixels to its renderer once, through
-        // the upload queues; here that renderer is the host, so this
-        // snapshot keeps the sixel/iTerm2 pixels (kitty ones stay in
-        // the terminal's own store) and drops an image once the
-        // terminal says its last placement is gone. The queues arrive
-        // as events; anything not yet sent is taken here as well.
-        let mut batches = std::mem::take(&mut *self.graphics.lock().unwrap());
-        batches.extend(term.graphics.take_queues());
-        for queues in batches {
-            for data in queues.pending {
-                let stamp = self.stamp(data.transmit_time);
-                self.inline_images
-                    .insert(atlas_image_key(data.id.get()), InlineImage { data, stamp });
-            }
-            for key in queues.remove_queue {
-                self.inline_images.remove(&key);
-            }
+        // The terminal sends its upload queues as events, which the
+        // listener applies to the surface's pixel store; anything not
+        // sent yet is applied here, so the placements below never run
+        // ahead of their pixels.
+        if let Some(queues) = term.graphics.take_queues() {
+            apply_graphics_updates(&self.inline_images, queues);
         }
         let mut images = Vec::new();
         for placement in term.graphics.kitty_placements.values() {
@@ -496,10 +488,11 @@ impl RenderState {
 
     /// Nanoseconds since this state's epoch: a change stamp that can
     /// cross the C ABI. A time before the epoch lands at the top of
-    /// the range, still distinct from anything after it.
+    /// the range, still distinct from anything after it; a time equal
+    /// to it gives 1, keeping 0 free to mean "no image".
     fn stamp(&self, at: rio_vt::time::Instant) -> u64 {
         match at.checked_duration_since(self.epoch) {
-            Some(duration) => duration.as_nanos() as u64,
+            Some(duration) => (duration.as_nanos() as u64).max(1),
             None => u64::MAX - self.epoch.duration_since(at).as_nanos() as u64,
         }
     }
@@ -565,8 +558,10 @@ impl RenderState {
                 )?;
                 let image_stamp = self
                     .inline_images
+                    .lock()
+                    .unwrap()
                     .get(&placement.image_key)
-                    .map_or(0, |image| image.stamp);
+                    .map_or(0, |image| self.stamp(image.transmit_time));
                 Some(ImagePlacement {
                     protocol: ImageProtocol::Inline,
                     image_id: placement.image_key,
@@ -590,8 +585,12 @@ impl RenderState {
             ImageProtocol::Kitty => self.kitty_image_info(u32::try_from(image_id).ok()?),
             ImageProtocol::Inline => self
                 .inline_images
+                .lock()
+                .unwrap()
                 .get(&image_id)
-                .map(|image| (image.data.width, image.data.height, image.stamp)),
+                .map(|image| {
+                    (image.width, image.height, self.stamp(image.transmit_time))
+                }),
         }
     }
 
@@ -608,8 +607,10 @@ impl RenderState {
                 .map_or(0, |image_id| self.kitty_image_rgba(image_id, buf)),
             ImageProtocol::Inline => self
                 .inline_images
+                .lock()
+                .unwrap()
                 .get(&image_id)
-                .map_or(0, |image| copy_rgba(&image.data, buf)),
+                .map_or(0, |image| copy_rgba(image, buf)),
         }
     }
 

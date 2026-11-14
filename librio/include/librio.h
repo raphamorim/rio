@@ -482,7 +482,8 @@ size_t rio_render_state_kitty_image_rgba(const rio_render_state_t *state,
  * pixels. x/y are relative to the grid origin (add your padding); src_*
  * is the normalized source rectangle (origin + size) to crop from the
  * image. Cache textures by (protocol, image_id, image_stamp): the stamp
- * changes whenever the image's pixels do. */
+ * changes whenever the image's pixels do, and is never 0 while they are
+ * available, so 0 can stand for "no texture yet". */
 typedef struct {
   uint64_t image_id;
   uint64_t image_stamp;
@@ -501,7 +502,10 @@ typedef struct {
 
 /* Every image placement in the last snapshot, visible or not, in draw
  * order (by z-index, lowest first; sixel/iTerm2 under kitty at the same
- * z). The kitty-only calls above are a subset of this list. */
+ * z). The kitty-only calls above are a subset of this list: draw from
+ * one or the other, never both, or kitty images are drawn twice. Later
+ * versions may add protocols; skip a placement whose protocol you don't
+ * know. */
 size_t rio_render_state_image_count(const rio_render_state_t *state);
 /* Changes when an update changes the placement list or moves it on
  * screen; compare for equality to skip rebuilding a draw list. */

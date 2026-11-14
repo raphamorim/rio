@@ -176,17 +176,20 @@ pub trait SurfaceDelegate: MaybeSendSync + 'static {
     fn output(&self, _surface: SurfaceId, _bytes: &[u8]) {}
 }
 
-/// Pixels the terminal hands to its renderer once, through the upload
-/// queues: new sixel/iTerm2 images, kitty uploads, and the keys whose
-/// last placement is gone. The render state drains it on each update.
-pub(crate) type GraphicsUpdates =
-    Arc<std::sync::Mutex<Vec<rio_vt::ansi::graphics::UpdateQueues>>>;
+/// The pixels of the sixel/iTerm2 images on screen, by image key. The
+/// terminal hands new pixels to its renderer once, through its upload
+/// queues; here that renderer is the host, so the surface keeps them
+/// (kitty images stay in the terminal's own store) until the terminal
+/// says an image's last placement is gone. The listener applies each
+/// queue as it arrives, and every render state of the surface reads it.
+pub(crate) type InlineImages =
+    Arc<std::sync::Mutex<rustc_hash::FxHashMap<u64, rio_graphics::GraphicData>>>;
 
 #[derive(Clone)]
 pub(crate) struct Listener {
     surface_id: SurfaceId,
     delegate: Arc<dyn SurfaceDelegate>,
-    graphics: GraphicsUpdates,
+    inline_images: InlineImages,
     #[cfg(feature = "pty")]
     pty_writer: Arc<Mutex<Option<corcovado::channel::Sender<Msg>>>>,
 }
@@ -260,7 +263,7 @@ impl Listener {
                     .action(self.surface_id, Action::ProgramStatus(event));
             }
             RioEvent::UpdateGraphics { queues, .. } => {
-                self.graphics.lock().unwrap().push(queues);
+                render_state::apply_graphics_updates(&self.inline_images, queues);
                 self.delegate.wakeup(self.surface_id);
             }
             RioEvent::CommandFinished {
@@ -396,8 +399,8 @@ pub struct Surface {
     /// mis-parsing (and so its sync buffer is allocated once, not per
     /// write).
     processor: std::sync::Mutex<Option<rio_vt::performer::handler::Processor>>,
-    /// Image pixels in flight from the terminal to the render state.
-    graphics: GraphicsUpdates,
+    /// Sixel/iTerm2 pixels for the render states to read.
+    inline_images: InlineImages,
     /// Non-pty transport: `write` hands the bytes to the delegate instead
     /// of a PTY channel.
     #[cfg(not(feature = "pty"))]
@@ -469,11 +472,11 @@ impl Surface {
         let id = engine.next_surface_id.fetch_add(1, Ordering::SeqCst);
         #[cfg(feature = "pty")]
         let pty_writer = Arc::new(Mutex::new(None));
-        let graphics: GraphicsUpdates = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let inline_images = InlineImages::default();
         let listener = Listener {
             surface_id: id,
             delegate: engine.delegate.clone(),
-            graphics: graphics.clone(),
+            inline_images: inline_images.clone(),
             #[cfg(feature = "pty")]
             pty_writer: pty_writer.clone(),
         };
@@ -507,7 +510,7 @@ impl Surface {
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
-                graphics: graphics.clone(),
+                inline_images,
                 delegate: engine.delegate.clone(),
             })
         }
@@ -591,7 +594,7 @@ impl Surface {
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
-                graphics: graphics.clone(),
+                inline_images,
                 channel,
                 shell_pid,
                 #[cfg(not(target_os = "windows"))]
@@ -1256,8 +1259,8 @@ impl Surface {
         self.terminal.clone()
     }
 
-    pub(crate) fn graphics_updates(&self) -> GraphicsUpdates {
-        self.graphics.clone()
+    pub(crate) fn inline_images(&self) -> InlineImages {
+        self.inline_images.clone()
     }
 }
 
@@ -2524,6 +2527,34 @@ mod tests {
             state.image_rgba(ImageProtocol::Inline, placement.image_id, &mut buf),
             0
         );
+    }
+
+    // The pixels belong to the surface: a render state made after the
+    // image arrived, or a second one, reads them too, and a surface no
+    // one renders still drops them with their placements.
+    #[test]
+    fn inline_pixels_are_shared_by_render_states() {
+        let (surface, mut first) = image_surface();
+        surface.inject_output(SIXEL_2X2_RED);
+        assert_eq!(surface.inline_images().lock().unwrap().len(), 1);
+
+        let mut second = RenderState::new(&surface);
+        first.update();
+        second.update();
+        let placement = first.image_placement(0, CELL_W, CELL_H).unwrap();
+        assert_ne!(placement.image_stamp, 0);
+        for state in [&first, &second] {
+            let (width, height, stamp) = state
+                .image_info(ImageProtocol::Inline, placement.image_id)
+                .expect("pixels shared");
+            assert_eq!((width, height), (2, 2));
+            assert_ne!(stamp, 0);
+        }
+
+        drop(first);
+        drop(second);
+        surface.inject_output(b"\x1bc");
+        assert!(surface.inline_images().lock().unwrap().is_empty());
     }
 
     // A placement scrolled into history stays in the list but does not
