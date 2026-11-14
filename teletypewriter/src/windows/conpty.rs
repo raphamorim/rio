@@ -7,14 +7,15 @@ use tracing::*;
 use crate::windows::pipes::{EventedAnonRead, EventedAnonWrite};
 
 use windows_sys::core::{HRESULT, PWSTR};
+use windows_sys::s;
 use windows_sys::Win32::Foundation::{HANDLE, S_OK};
 use windows_sys::Win32::System::Console::{
     ClosePseudoConsole, CreatePseudoConsole, ResizePseudoConsole, COORD, HPCON,
 };
 use windows_sys::Win32::System::LibraryLoader::{
-    GetModuleFileNameW, GetProcAddress, LoadLibraryExW, LOAD_WITH_ALTERED_SEARCH_PATH,
+    GetProcAddress, LoadLibraryExW, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
+    LOAD_LIBRARY_SEARCH_SYSTEM32,
 };
-use windows_sys::s;
 
 use windows_sys::Win32::System::Threading::{
     CreateProcessW, InitializeProcThreadAttributeList, UpdateProcThreadAttribute,
@@ -28,39 +29,32 @@ use std::os::windows::ffi::OsStrExt;
 use crate::windows::child::ChildExitWatcher;
 use crate::windows::{cmdline, win32_string, Pty};
 
-/// Load the pseudoconsole API from a sideloaded `conpty.dll` if one sits
-/// next to `rio.exe`, otherwise fall back to the in-box Windows API.
+/// Load the pseudoconsole API from the `conpty.dll` Rio ships next to
+/// `rio.exe`, otherwise fall back to the in-box Windows API.
 ///
-/// A modern `conpty.dll` from the Windows Terminal project (ConPTY 1.22+)
-/// does synchronous VT passthrough: the child's output, including sixel
-/// (DCS), iTerm2 (OSC 1337), and kitty graphics (APC) escape sequences,
-/// reaches Rio unmodified, so image protocols work. The in-box ConPTY
-/// that ships with most Windows builds is older and rewrites/strips those
-/// sequences, which is why terminal graphics are broken on stock Windows
-/// (issues #729, #1759).
+/// Rio's Windows packages carry `conpty.dll` and `OpenConsole.exe` from
+/// the Windows Terminal project (see `misc/windows/conhost/README.md`).
+/// That host passes the child's output through unchanged: sixel, iTerm2
+/// and kitty graphics reach Rio, and so does the cursor position a TUI
+/// leaves behind. The pseudoconsole built into most Windows builds
+/// rewrites that output, which is why images never rendered on stock
+/// Windows (#729, #1759) and the IME candidate window sat in the wrong
+/// place (#2031).
 ///
-/// `conpty.dll` locates its console host (`OpenConsole.exe`) in **its own
-/// directory**; without a matching `OpenConsole.exe` it silently reverts
-/// to the in-box `conhost.exe` and the passthrough benefit is lost. So the
-/// two files must be deployed together next to `rio.exe`, architecture
-/// matched (`conpty.dll` = app arch, `OpenConsole.exe` = system arch).
-/// Both are redistributable (MIT) via the `Microsoft.Windows.Console.ConPTY`
-/// NuGet package.
+/// The DLL is loaded by absolute path from `rio.exe`'s own directory,
+/// never by the default search order, which also walks the working
+/// directory and `PATH`: when the bundled copy is missing (a build that
+/// does not package it, a user who removed it) Rio uses the in-box API
+/// rather than whatever `conpty.dll` happens to be on the way.
 ///
-/// Loaded by absolute path from `rio.exe`'s own directory, never by the
-/// default search order: a bare-name load also walks the working directory
-/// and `PATH`, so a stray or hostile `conpty.dll` there could be preloaded.
-/// Resolving the path ourselves keeps the choice deterministic — the DLL we
-/// bundled next to `rio.exe`, or the in-box API, and nothing else.
-/// `PSEUDOCONSOLE_RESIZE_QUIRK`, an internal ConPTY flag (not in the public
-/// SDK header, so not exported by `windows-sys`; defined here). Without it,
-/// on resize ConPTY re-emits its reflowed buffer sized to the buffer's own
-/// line count and overwrites what is on screen, so after the window grows
-/// the child's content stays confined to a stale sub-region
-/// (microsoft/terminal#16911; rio#1759). With it, ConPTY skips that repaint
-/// and defers reflow to the terminal, which owns its grid. Honored by both
-/// the in-box and the sideloaded 1.22+ ConPTY; being folded into the
-/// default upstream, so it is a no-op on the newest hosts.
+/// `PSEUDOCONSOLE_RESIZE_QUIRK` is a ConPTY flag absent from the public
+/// SDK header, so not in `windows-sys`. Without it the in-box
+/// pseudoconsole re-emits its own reflowed buffer after a resize, over
+/// the grid Rio has already reflowed, so content ends up confined to a
+/// stale region once the window grows (microsoft/terminal#16911). With
+/// it the host leaves reflow to the terminal. The bundled host behaves
+/// that way regardless and ignores the flag, as every ConPTY ignores
+/// unknown flag bits; it matters for the in-box fallback only.
 const PSEUDOCONSOLE_RESIZE_QUIRK: u32 = 0x2;
 
 type CreatePseudoConsoleFn =
@@ -93,33 +87,27 @@ impl ConptyApi {
         }
     }
 
-    /// Try loading ConptyApi from a `conpty.dll` sitting next to `rio.exe`,
-    /// resolved by absolute path so PATH / working-directory copies are never
-    /// picked up.
+    /// Try loading the API from the `conpty.dll` next to `rio.exe`, by
+    /// absolute path, so copies on `PATH` or in the working directory are
+    /// never picked up.
     fn load_conpty() -> Option<Self> {
         type LoadedFn = unsafe extern "system" fn() -> isize;
+        let dll_path: Vec<u16> = std::env::current_exe()
+            .ok()?
+            .parent()?
+            .join("conpty.dll")
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
         unsafe {
-            // Path to `rio.exe`, then swap its file name for `conpty.dll`.
-            let mut buf = [0u16; 4096];
-            let len =
-                GetModuleFileNameW(ptr::null_mut(), buf.as_mut_ptr(), buf.len() as u32);
-            // 0 on failure; == buf.len() means the path was truncated.
-            if len == 0 || len as usize >= buf.len() {
-                return None;
-            }
-            let dir_end = buf[..len as usize]
-                .iter()
-                .rposition(|&c| c == b'\\' as u16)?;
-            let mut dll_path: Vec<u16> = buf[..=dir_end].to_vec();
-            dll_path.extend("conpty.dll".encode_utf16());
-            dll_path.push(0);
-
-            // Absolute path + ALTERED_SEARCH_PATH also roots conpty.dll's own
-            // dependency lookup at its (the exe's) directory.
+            // The DLL's own imports resolve from its directory and
+            // System32 only, so neither the working directory nor PATH
+            // takes part in the load.
             let hmodule = LoadLibraryExW(
                 dll_path.as_ptr(),
                 ptr::null_mut(),
-                LOAD_WITH_ALTERED_SEARCH_PATH,
+                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32,
             );
             if hmodule.is_null() {
                 return None;
@@ -210,10 +198,8 @@ pub fn new(
         ws_ypixel: 0 as libc::c_ushort,
     };
 
-    // Create the Pseudo Console, using the pipes. RESIZE_QUIRK makes
-    // ConPTY defer resize repaints to Rio (which lays out its own grid),
-    // avoiding the content-confined-to-a-stale-region artifact after the
-    // window grows (pronounced with the sideloaded 1.22+ ConPTY, #1759).
+    // Create the pseudoconsole on the pipes. The resize quirk keeps the
+    // in-box host from repainting its reflowed buffer over Rio's grid.
     let result = unsafe {
         (api.create)(
             winsize.into(),
