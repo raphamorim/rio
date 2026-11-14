@@ -37,7 +37,7 @@ pub struct ViewportSelection {
 const VIRTUAL_Z_INDEX: i32 = -1;
 
 /// Sixel and iTerm2 images sit on the grid plane: under the text, and
-/// under a kitty image at the same z, as rio's renderer draws them.
+/// under a kitty image at the same z, as rio's GPU renderer draws them.
 const INLINE_Z_INDEX: i32 = -1;
 
 /// One drawable kitty item: a direct overlay placement, or one row-run
@@ -159,15 +159,33 @@ impl ImageEntry {
         };
         (self.z_index(), rank)
     }
+
+    /// Whether a row of the placement is inside `view`, `(history
+    /// size, display offset, screen lines)`: the cut the geometry
+    /// functions make before any pixel math, so it needs no cell
+    /// metrics. Virtual runs are rows of the snapshot, always in view.
+    fn in_view(&self, view: (i64, usize, usize)) -> bool {
+        let (top, rows) = match self {
+            ImageEntry::Kitty(KittyEntry::Direct { placement, .. }) => {
+                (placement.dest_row, placement.rows as i64)
+            }
+            ImageEntry::Kitty(KittyEntry::Virtual { .. }) => return true,
+            ImageEntry::Inline { placement, .. } => {
+                (placement.abs_row, placement.rows as i64)
+            }
+        };
+        let screen_row = top - (view.0 - view.1 as i64);
+        screen_row + rows > 0 && screen_row < view.2 as i64
+    }
 }
 
 /// Apply one upload queue to the surface's sixel/iTerm2 pixel store:
 /// new images in, images whose last placement is gone out. Kitty
 /// uploads in the queue are skipped; those stay in the terminal.
 pub(crate) fn apply_graphics_updates(images: &InlineImages, queues: UpdateQueues) {
-    let mut images = images.lock().unwrap();
+    let mut images = images.lock();
     for data in queues.pending {
-        images.insert(atlas_image_key(data.id.get()), data);
+        images.insert(atlas_image_key(data.id.get()), Arc::new(data));
     }
     for key in queues.remove_queue {
         images.remove(&key);
@@ -213,14 +231,14 @@ pub struct RenderState {
     /// The viewport the placements were last resolved against:
     /// (history size, display offset, screen lines).
     images_view: (i64, usize, usize),
-    /// Baseline for image change stamps (Instants aren't representable
-    /// over the C ABI; nanoseconds relative to this are).
+    /// The surface's baseline for image change stamps.
     epoch: rio_vt::time::Instant,
 }
 
 impl RenderState {
     pub fn new(surface: &Surface) -> Self {
         let terminal = surface.terminal();
+        let inline_images = surface.inline_images();
         let (columns, term_colors) = {
             let term = terminal.lock();
             (term.grid.columns(), *term.colors())
@@ -243,10 +261,10 @@ impl RenderState {
             images: Vec::new(),
             images_scratch: Vec::new(),
             kitty_indices: Vec::new(),
-            inline_images: surface.inline_images(),
+            epoch: inline_images.epoch(),
+            inline_images,
             placements_generation: 0,
             images_view: (0, 0, 0),
-            epoch: rio_vt::time::Instant::now(),
         }
     }
 
@@ -305,7 +323,7 @@ impl RenderState {
         if !term.graphics.atlas_placements.is_empty() {
             // One lock per update; the accessors then read the stamp
             // from the entry.
-            let inline_images = self.inline_images.lock().unwrap();
+            let inline_images = self.inline_images.lock();
             images.extend(term.graphics.atlas_placements.iter().map(|placement| {
                 let image_stamp = inline_images
                     .get(&placement.image_key)
@@ -322,7 +340,14 @@ impl RenderState {
         images.sort_by_key(ImageEntry::order);
         let view = (self.history_size, self.display_offset, self.rows.len());
         let list_changed = images != self.images;
-        if list_changed || (!images.is_empty() && view != self.images_view) {
+        // A scroll only moves what was or is in view: an image deep in
+        // the scrollback must not make every line of output a new
+        // generation.
+        let moved = view != self.images_view
+            && images
+                .iter()
+                .any(|entry| entry.in_view(self.images_view) || entry.in_view(view));
+        if list_changed || moved {
             self.placements_generation = self.placements_generation.wrapping_add(1);
         }
         if list_changed {
@@ -600,14 +625,11 @@ impl RenderState {
     ) -> Option<(usize, usize, u64)> {
         match protocol {
             ImageProtocol::Kitty => self.kitty_image_info(u32::try_from(image_id).ok()?),
-            ImageProtocol::Inline => self
-                .inline_images
-                .lock()
-                .unwrap()
-                .get(&image_id)
-                .map(|image| {
+            ImageProtocol::Inline => {
+                self.inline_images.lock().get(&image_id).map(|image| {
                     (image.width, image.height, self.stamp(image.transmit_time))
-                }),
+                })
+            }
         }
     }
 
@@ -622,12 +644,12 @@ impl RenderState {
         match protocol {
             ImageProtocol::Kitty => u32::try_from(image_id)
                 .map_or(0, |image_id| self.kitty_image_rgba(image_id, buf)),
-            ImageProtocol::Inline => self
-                .inline_images
-                .lock()
-                .unwrap()
-                .get(&image_id)
-                .map_or(0, |image| copy_rgba(image, buf)),
+            ImageProtocol::Inline => {
+                // The copy runs outside the lock: the PTY thread takes
+                // it to apply uploads and must not wait on it.
+                let image = self.inline_images.lock().get(&image_id).cloned();
+                image.map_or(0, |image| copy_rgba(&image, buf))
+            }
         }
     }
 

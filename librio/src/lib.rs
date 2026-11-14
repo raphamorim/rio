@@ -182,8 +182,45 @@ pub trait SurfaceDelegate: MaybeSendSync + 'static {
 /// (kitty images stay in the terminal's own store) until the terminal
 /// says an image's last placement is gone. The listener applies each
 /// queue as it arrives, and every render state of the surface reads it.
-pub(crate) type InlineImages =
-    Arc<std::sync::Mutex<rustc_hash::FxHashMap<u64, rio_graphics::GraphicData>>>;
+pub(crate) struct InlineImageStore {
+    images: std::sync::Mutex<rustc_hash::FxHashMap<u64, Arc<rio_graphics::GraphicData>>>,
+    /// Baseline for image change stamps (Instants aren't representable
+    /// over the C ABI; nanoseconds relative to this are). One per
+    /// surface, so all of its render states give an image the same
+    /// stamp.
+    epoch: rio_vt::time::Instant,
+}
+
+impl Default for InlineImageStore {
+    fn default() -> Self {
+        Self {
+            images: std::sync::Mutex::default(),
+            epoch: rio_vt::time::Instant::now(),
+        }
+    }
+}
+
+impl InlineImageStore {
+    /// Every write is one insert or remove, so a thread that panicked
+    /// while holding the lock left the map whole: a poisoned lock is
+    /// taken all the same rather than taking the PTY thread down.
+    pub(crate) fn lock(
+        &self,
+    ) -> std::sync::MutexGuard<
+        '_,
+        rustc_hash::FxHashMap<u64, Arc<rio_graphics::GraphicData>>,
+    > {
+        self.images
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub(crate) fn epoch(&self) -> rio_vt::time::Instant {
+        self.epoch
+    }
+}
+
+pub(crate) type InlineImages = Arc<InlineImageStore>;
 
 #[derive(Clone)]
 pub(crate) struct Listener {
@@ -2536,25 +2573,52 @@ mod tests {
     fn inline_pixels_are_shared_by_render_states() {
         let (surface, mut first) = image_surface();
         surface.inject_output(SIXEL_2X2_RED);
-        assert_eq!(surface.inline_images().lock().unwrap().len(), 1);
+        assert_eq!(surface.inline_images().lock().len(), 1);
 
         let mut second = RenderState::new(&surface);
         first.update();
         second.update();
         let placement = first.image_placement(0, CELL_W, CELL_H).unwrap();
         assert_ne!(placement.image_stamp, 0);
+        // Stamps count from the surface's epoch, so a texture cache
+        // shared by the two states sees one stamp per image.
         for state in [&first, &second] {
             let (width, height, stamp) = state
                 .image_info(ImageProtocol::Inline, placement.image_id)
                 .expect("pixels shared");
             assert_eq!((width, height), (2, 2));
-            assert_ne!(stamp, 0);
+            assert_eq!(stamp, placement.image_stamp);
         }
 
         drop(first);
         drop(second);
         surface.inject_output(b"\x1bc");
-        assert!(surface.inline_images().lock().unwrap().is_empty());
+        assert!(surface.inline_images().lock().is_empty());
+    }
+
+    // The alternate screen has placements of its own: a program running
+    // there hides the main screen's image without dropping its pixels,
+    // and leaving brings the image back.
+    #[test]
+    fn inline_placement_waits_out_the_alternate_screen() {
+        let (surface, mut state) = image_surface();
+        surface.inject_output(SIXEL_2X2_RED);
+        state.update();
+        let placement = state.image_placement(0, CELL_W, CELL_H).unwrap();
+        let generation = state.image_placements_generation();
+
+        surface.inject_output(b"\x1b[?1049h");
+        state.update();
+        assert_eq!(state.image_count(), 0);
+        assert_ne!(state.image_placements_generation(), generation);
+        assert!(state
+            .image_info(ImageProtocol::Inline, placement.image_id)
+            .is_some());
+
+        surface.inject_output(b"\x1b[?1049l");
+        state.update();
+        assert_eq!(state.image_count(), 1);
+        assert_eq!(state.image_placement(0, CELL_W, CELL_H).unwrap(), placement);
     }
 
     // A placement scrolled into history stays in the list but does not
@@ -2573,7 +2637,14 @@ mod tests {
         assert!(state.image_placement(0, CELL_W, CELL_H).is_none());
         assert_ne!(state.image_placements_generation(), generation);
 
-        surface.scroll(30);
+        // Output that scrolls the screen while the image is out of view
+        // moves nothing the host can see.
+        let generation = state.image_placements_generation();
+        surface.inject_output(&b"\n".repeat(5));
+        state.update();
+        assert_eq!(state.image_placements_generation(), generation);
+
+        surface.scroll(35);
         state.update();
         let placement = state
             .image_placement(0, CELL_W, CELL_H)

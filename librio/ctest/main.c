@@ -122,7 +122,8 @@ int main(void) {
   rio_engine_free(engine);
 
   if (!found || !found_paste || !found_bracketed ||
-      atomic_load(&wakeups) == 0 || images != 0 || image_resolved) {
+      atomic_load(&wakeups) == 0 || images != 0 || images_generation != 0 ||
+      image_resolved) {
     fprintf(stderr, "gate failed\n");
     return 1;
   }
