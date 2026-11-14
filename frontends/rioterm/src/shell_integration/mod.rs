@@ -2,7 +2,11 @@
 //!
 //! Rio embeds small per-shell scripts that report the working
 //! directory to the terminal (OSC 7, `kitty-shell-cwd://` flavor) on
-//! every prompt and directory change. At spawn time the scripts are
+//! every prompt and directory change; the zsh one also marks prompts
+//! and commands with OSC 133 (`A`/`B` around the prompt, `C` before a
+//! command runs, `D` with its status when it ends), which drives
+//! `[notify-on-command-finish]`. fish 4 sends those marks itself. At
+//! spawn time the scripts are
 //! written under the user's cache directory (once per rio version)
 //! and the child is pointed at them. zsh and fish load through the
 //! environment alone: `ZDOTDIR` for zsh (the user's value is preserved
@@ -348,11 +352,17 @@ mod test {
 
     /// Runs a real zsh against the materialized scripts: the pane
     /// setup (ZDOTDIR redirect plus preserved user ZDOTDIR) must end
-    /// with the integration loaded and one cwd report emitted. Skips
+    /// with the integration loaded, the cwd reported at the prompt,
+    /// and every command bracketed by OSC 133 `C` and `D` with its
+    /// status. Commands arrive on a pipe, so zsh prompts without zle;
+    /// the prompt goes to stderr and the hooks' marks to stdout. Skips
     /// silently where zsh is not installed.
     #[cfg(unix)]
     #[test]
-    fn zsh_integration_emits_a_cwd_report() {
+    fn zsh_integration_marks_prompts_and_commands() {
+        use std::io::Write as _;
+        use std::process::Stdio;
+
         let base =
             std::env::temp_dir().join(format!("rio-si-zsh-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
@@ -362,19 +372,60 @@ mod test {
         let user_zdotdir = base.join("empty-user-config");
         std::fs::create_dir_all(&user_zdotdir).unwrap();
 
-        let Ok(output) = std::process::Command::new("zsh")
-            .args(["-ic", ":"])
+        let Ok(mut child) = std::process::Command::new("zsh")
+            .arg("-i")
             .env("ZDOTDIR", base.join("zsh"))
             .env("RIO_ZSH_ZDOTDIR", &user_zdotdir)
-            .output()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
         else {
             return;
         };
+        // A success, a failure, an empty line, then exit.
+        let _ = child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"true\nfalse\n\nexit\n");
+        let output = child.wait_with_output().unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
         assert!(
             stdout.contains("\x1b]7;kitty-shell-cwd://"),
-            "no OSC 7 in zsh output; stdout: {stdout:?}, stderr: {:?}",
-            String::from_utf8_lossy(&output.stderr)
+            "no OSC 7 in zsh output; stdout: {stdout:?}, stderr: {stderr:?}"
+        );
+
+        // `C` before each command runs and `D` with its status before
+        // the next prompt; the empty line closes with no status, and
+        // `exit` leaves its `C` open.
+        let marks: Vec<&str> = stdout
+            .match_indices("\x1b]133;")
+            .map(|(start, _)| {
+                let end = stdout[start..].find('\x07').unwrap() + start;
+                &stdout[start..end]
+            })
+            .collect();
+        assert_eq!(
+            marks,
+            [
+                "\x1b]133;C",
+                "\x1b]133;D;0",
+                "\x1b]133;C",
+                "\x1b]133;D;1",
+                "\x1b]133;D",
+                "\x1b]133;C",
+            ],
+            "stdout: {stdout:?}, stderr: {stderr:?}"
+        );
+
+        // The prompt itself carries `A` and `B`, so a redraw repeats
+        // them.
+        assert!(
+            stderr.contains("\x1b]133;A\x07") && stderr.contains("\x1b]133;B\x07"),
+            "prompt marks missing; stderr: {stderr:?}"
         );
 
         let _ = std::fs::remove_dir_all(&base);
