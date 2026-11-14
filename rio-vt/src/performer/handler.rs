@@ -983,17 +983,12 @@ impl<U: Handler> Perform for Performer<'_, U> {
             // malformed payload itself: a shell on a remote host sends
             // one at every prompt, so the per-byte `unhandled` dump
             // would flood the log for the whole session.
-            // The `kitty-shell-cwd://` flavor carries the path verbatim,
-            // so a `;` in it splits the parameter: the pieces are joined
-            // back before parsing.
+            // One verbatim payload: the parser keeps every `;` after
+            // the `7`, since a `kitty-shell-cwd://` path is not encoded.
             b"7" => {
-                let dir = match params {
-                    [_] => None,
-                    [_, payload] => osc::parse_current_directory(payload),
-                    [_, rest @ ..] => osc::parse_current_directory(&rest.join(&b';')),
-                    [] => None,
-                };
-                if let Some(dir) = dir {
+                if let Some(dir) =
+                    params.get(1).and_then(|p| osc::parse_current_directory(p))
+                {
                     self.handler.set_current_directory(dir.map(Into::into));
                 }
             }

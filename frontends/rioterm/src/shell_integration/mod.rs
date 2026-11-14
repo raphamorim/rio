@@ -350,38 +350,79 @@ mod test {
         assert_eq!(args[1], "-EncodedCommand");
     }
 
+    /// The materialized scripts plus a user ZDOTDIR holding only the
+    /// given `.zshrc`, which keeps the developer's own zsh config out
+    /// of a test. Removed on drop, so a failed assertion leaves
+    /// nothing behind.
+    #[cfg(unix)]
+    struct ZshFixture {
+        base: PathBuf,
+        user_zdotdir: PathBuf,
+    }
+
+    #[cfg(unix)]
+    impl ZshFixture {
+        fn new(tag: &str, rc: &str) -> Self {
+            let base = std::env::temp_dir()
+                .join(format!("rio-si-zsh-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&base);
+            materialize(&base).unwrap();
+            let user_zdotdir = base.join("user-config");
+            std::fs::create_dir_all(&user_zdotdir).unwrap();
+            std::fs::write(user_zdotdir.join(".zshrc"), rc).unwrap();
+            Self { base, user_zdotdir }
+        }
+
+        /// The pane's environment for zsh: the integration redirect
+        /// with the user ZDOTDIR preserved.
+        fn env(&self) -> Vec<(String, String)> {
+            env_pairs(
+                "zsh",
+                &self.base,
+                Some(self.user_zdotdir.to_string_lossy().into_owned()),
+                None,
+            )
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for ZshFixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.base);
+        }
+    }
+
+    /// `zsh -i` without the system-wide rc files, whose hooks (macOS
+    /// adds one per terminal program) would change what the test sees.
+    #[cfg(unix)]
+    const ZSH_ARGS: [&str; 3] = ["-i", "-o", "NO_GLOBAL_RCS"];
+
     /// Drives a real interactive zsh over a pipe against the
     /// materialized scripts, with `rc` as the user's `.zshrc`, and
     /// returns `(stdout, stderr)`. Commands arrive on the pipe, so zsh
     /// prompts without zle: the prompt goes to stderr and the hooks'
-    /// marks to stdout. `None` where zsh is not installed.
+    /// marks to stdout. `None` where zsh is not installed; any other
+    /// spawn failure is a test failure.
     #[cfg(unix)]
     fn run_zsh(tag: &str, rc: &str, input: &[u8]) -> Option<(String, String)> {
         use std::io::Write as _;
         use std::process::Stdio;
 
-        let base =
-            std::env::temp_dir().join(format!("rio-si-zsh-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        materialize(&base).unwrap();
-        // The restored user ZDOTDIR holds only `rc`, which keeps the
-        // developer's own zsh config out of the test.
-        let user_zdotdir = base.join("user-config");
-        std::fs::create_dir_all(&user_zdotdir).unwrap();
-        std::fs::write(user_zdotdir.join(".zshrc"), rc).unwrap();
-
-        let mut child = std::process::Command::new("zsh")
-            .arg("-i")
-            .env("ZDOTDIR", base.join("zsh"))
-            .env("RIO_ZSH_ZDOTDIR", &user_zdotdir)
+        let fixture = ZshFixture::new(tag, rc);
+        let mut child = match std::process::Command::new("zsh")
+            .args(ZSH_ARGS)
+            .envs(fixture.env())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .ok()?;
+        {
+            Ok(child) => child,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(e) => panic!("spawning zsh: {e}"),
+        };
         let _ = child.stdin.take().unwrap().write_all(input);
         let output = child.wait_with_output().unwrap();
-        let _ = std::fs::remove_dir_all(&base);
         Some((
             String::from_utf8_lossy(&output.stdout).into_owned(),
             String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -528,6 +569,40 @@ mod test {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    /// A hook that edits PS1 in place rather than setting it, the way
+    /// a venv or conda prefix does. On a prompt with no command before
+    /// it (Enter on an empty line) no preexec ran, so the hook sees
+    /// the marked PS1 and wraps the marks; they must still come out,
+    /// and the hook's prefix must stay, once.
+    #[cfg(unix)]
+    #[test]
+    fn zsh_integration_unmarks_a_prompt_a_hook_edited() {
+        let rc = "autoload -Uz add-zsh-hook\n\
+                  venvish() { [[ $PS1 == '(v) '* ]] || PS1=\"(v) $PS1\" }\n\
+                  add-zsh-hook precmd venvish\n";
+        let Some((stdout, stderr)) = run_zsh("venv", rc, b":\n\n\n:\nexit\n") else {
+            return;
+        };
+
+        // Five prompts: a bare `A` for the first, then one `A` and one
+        // `B` in each of the other four, never doubled.
+        assert_eq!(
+            osc_133_marks(&stdout)
+                .iter()
+                .filter(|mark| mark.ends_with(";A"))
+                .count(),
+            1,
+            "stdout: {stdout:?}"
+        );
+        assert_eq!(
+            osc_133_marks(&stderr),
+            ["\x1b]133;A", "\x1b]133;B"].repeat(4),
+            "stderr: {stderr:?}"
+        );
+        assert_eq!(stderr.matches("(v) ").count(), 5, "stderr: {stderr:?}");
+        assert!(!stderr.contains("(v) (v)"), "stderr: {stderr:?}");
+    }
+
     /// The whole path, as a pane runs it: zsh on a real PTY (so zle is
     /// active and the prompt is drawn the way a user sees it) with the
     /// integration environment, its output fed through rio's own
@@ -555,31 +630,23 @@ mod test {
             }
         }
 
-        let base =
-            std::env::temp_dir().join(format!("rio-si-zsh-pty-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        materialize(&base).unwrap();
-        let user_zdotdir = base.join("empty-user-config");
-        std::fs::create_dir_all(&user_zdotdir).unwrap();
-        let mut env = env_pairs(
-            "zsh",
-            &base,
-            Some(user_zdotdir.to_string_lossy().into_owned()),
-            None,
-        );
+        let fixture = ZshFixture::new("pty", "");
+        let mut env = fixture.env();
         env.push(("TERM".to_string(), "xterm-256color".to_string()));
 
-        let Ok(mut pty) = teletypewriter::create_pty_with_spawn(
+        let mut pty = match teletypewriter::create_pty_with_spawn(
             Some("zsh"),
-            vec!["-i".to_string()],
-            &Some(base.to_string_lossy().into_owned()),
+            ZSH_ARGS.iter().map(|arg| arg.to_string()).collect(),
+            &Some(fixture.base.to_string_lossy().into_owned()),
             Some(env),
             80,
             24,
             800,
             480,
-        ) else {
-            return;
+        ) {
+            Ok(pty) => pty,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+            Err(e) => panic!("spawning zsh on a pty: {e}"),
         };
 
         let finished = Finished::default();
@@ -613,15 +680,13 @@ mod test {
             }
         }
 
+        drop(pty);
         assert_eq!(
             *finished.0.borrow(),
             [Some(0), Some(1)],
             "transcript: {:?}",
             String::from_utf8_lossy(&transcript)
         );
-
-        drop(pty);
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
