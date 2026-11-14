@@ -9,7 +9,7 @@ use crate::windows::pipes::{EventedAnonRead, EventedAnonWrite};
 
 use windows_sys::core::{HRESULT, PWSTR};
 use windows_sys::s;
-use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, S_OK};
+use windows_sys::Win32::Foundation::{CloseHandle, FreeLibrary, HANDLE, S_OK};
 use windows_sys::Win32::System::Console::{
     ClosePseudoConsole, CreatePseudoConsole, ResizePseudoConsole, COORD, HPCON,
 };
@@ -129,9 +129,28 @@ impl ConptyApi {
                 }
                 return None;
             }
-            let create_fn = GetProcAddress(hmodule, s!("CreatePseudoConsole"))?;
-            let resize_fn = GetProcAddress(hmodule, s!("ResizePseudoConsole"))?;
-            let close_fn = GetProcAddress(hmodule, s!("ClosePseudoConsole"))?;
+            let export = |name: &str, address: Option<LoadedFn>| {
+                if address.is_none() {
+                    warn!(
+                        "conpty.dll at {} has no {name} export, using the Windows API",
+                        dll.display()
+                    );
+                    FreeLibrary(hmodule);
+                }
+                address
+            };
+            let create_fn = export(
+                "CreatePseudoConsole",
+                GetProcAddress(hmodule, s!("CreatePseudoConsole")),
+            )?;
+            let resize_fn = export(
+                "ResizePseudoConsole",
+                GetProcAddress(hmodule, s!("ResizePseudoConsole")),
+            )?;
+            let close_fn = export(
+                "ClosePseudoConsole",
+                GetProcAddress(hmodule, s!("ClosePseudoConsole")),
+            )?;
 
             Some(Self {
                 create: mem::transmute::<LoadedFn, CreatePseudoConsoleFn>(create_fn),
@@ -145,7 +164,6 @@ impl ConptyApi {
 /// RAII Pseudoconsole.
 pub struct Conpty {
     pub handle: HPCON,
-    api: ConptyApi,
 }
 
 impl Drop for Conpty {
@@ -154,7 +172,7 @@ impl Drop for Conpty {
         // conout pipe has already been dropped by this point.
         //
         // See PR #3084 and https://docs.microsoft.com/en-us/windows/console/closepseudoconsole.
-        unsafe { (self.api.close)(self.handle) }
+        unsafe { (ConptyApi::get().close)(self.handle) }
     }
 }
 
@@ -218,17 +236,20 @@ pub fn new(
     // Create the pseudoconsole on the pipes. The resize quirk keeps the
     // in-box host from repainting its reflowed buffer over Rio's grid.
     // No known host rejects the flag; should one, a plain pseudoconsole
-    // beats no terminal.
+    // beats no terminal, so a failure is retried once without it.
     let conin_raw = conin_pty_handle.into_raw_handle() as HANDLE;
     let conout_raw = conout_pty_handle.into_raw_handle() as HANDLE;
     let size: COORD = winsize.into();
-    let create = |flags: u32, handle: &mut HPCON| unsafe {
-        (api.create)(size, conin_raw, conout_raw, flags, handle)
-    };
-    let mut result = create(PSEUDOCONSOLE_RESIZE_QUIRK, &mut pty_handle);
-    if result != S_OK {
-        warn!("CreatePseudoConsole refused the resize quirk ({result:#x}); retrying without");
-        result = create(0, &mut pty_handle);
+    let mut result = S_OK;
+    for flags in [PSEUDOCONSOLE_RESIZE_QUIRK, 0] {
+        result =
+            unsafe { (api.create)(size, conin_raw, conout_raw, flags, &mut pty_handle) };
+        if result == S_OK {
+            break;
+        }
+        if flags != 0 {
+            warn!("CreatePseudoConsole failed with flags {flags:#x} ({result:#x}); retrying without them");
+        }
     }
     if result != S_OK {
         unsafe {
@@ -352,7 +373,6 @@ pub fn new(
     let child_watcher = ChildExitWatcher::new(proc_info.hProcess)?;
     let conpty = Conpty {
         handle: pty_handle as HPCON,
-        api,
     };
 
     Ok(Pty::new(conpty, conout, conin, child_watcher))
@@ -360,8 +380,13 @@ pub fn new(
 
 impl Conpty {
     pub fn on_resize(&mut self, window_size: Winsize) {
-        let result = unsafe { (self.api.resize)(self.handle, window_size.into()) };
-        assert_eq!(result, S_OK);
+        let result =
+            unsafe { (ConptyApi::get().resize)(self.handle, window_size.into()) };
+        if result != S_OK {
+            // A refused size (zero columns or rows while the window is
+            // collapsed, say) is not worth the process.
+            warn!("ResizePseudoConsole failed: {result:#x}");
+        }
     }
 }
 

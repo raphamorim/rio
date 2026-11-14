@@ -32,7 +32,8 @@ the project's MIT notice and ships beside the files as
   back to the Windows API. The log line `Using conpty.dll for
   pseudoconsole` confirms the bundled host is in use; a DLL that is
   there but cannot be loaded (wrong architecture, say) is logged with
-  the reason.
+  the reason. A bare `rio.exe` that used to find a `conpty.dll` on
+  `PATH` no longer does: the portable zip carries the files instead.
 - `OpenConsole.exe` matches the machine, not the application.
   `conpty.dll` looks for it beside itself, then in an `x64/` or
   `arm64/` folder named for the machine, and without one it silently
