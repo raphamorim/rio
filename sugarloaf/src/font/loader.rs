@@ -10,16 +10,30 @@ use font_kit::source::SystemSource;
 pub struct ID {
     #[cfg(not(target_arch = "wasm32"))]
     handle: Option<font_kit::handle::Handle>,
+    /// What `Database::query` matched beyond the base face.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) matched: MatchedFace,
     // TODO: Fix wasm32
     #[cfg(target_arch = "wasm32")]
     _dummy: u32,
 }
 
+/// The named instance the query picked. Reopening a file by path+index
+/// only gives its default, so `FontData::from_data` replays these values.
+#[derive(Clone, Debug, Default)]
+pub struct MatchedFace {
+    /// Weight the match resolves to.
+    pub weight: f32,
+    /// Coordinates off their axis defaults (axis tag as big-endian `u32`).
+    pub coords: Vec<(u32, f32)>,
+}
+
 impl ID {
     #[cfg(not(target_arch = "wasm32"))]
-    fn from_handle(handle: font_kit::handle::Handle) -> Self {
+    fn from_handle(handle: font_kit::handle::Handle, matched: MatchedFace) -> Self {
         Self {
             handle: Some(handle),
+            matched,
         }
     }
 
@@ -47,6 +61,9 @@ pub struct Query<'a> {
     pub weight: Weight,
     pub stretch: Stretch,
     pub style: Style,
+    /// Exact style name from `fonts.*.style = "Light"`; beats plain
+    /// weight/style matching.
+    pub style_name: Option<&'a str>,
 }
 
 /// Font family
@@ -165,6 +182,10 @@ struct FontCandidate {
     weight: Weight,
     stretch: Stretch,
     style: Style,
+    /// Instance coordinates the reopened base face cannot reproduce.
+    instance: Option<Vec<(u32, f32)>>,
+    postscript: Option<String>,
+    full_name: String,
 }
 
 /// Load every face of `family_name` from `source` into `candidates`.
@@ -194,23 +215,194 @@ fn family_candidates(
         tracing::debug!("no family match for '{family_name}'");
         return;
     };
+    // Patterns of one family share files; read each at most once here.
+    let mut files: std::collections::HashMap<PathBuf, Option<Vec<u8>>> =
+        std::collections::HashMap::new();
     for handle in family_handle.fonts() {
         if let Ok(font) = handle.load() {
             let props = font.properties();
+            let mut weight = Weight(props.weight.0 as u16);
+            let mut instance = None;
+            // A reopened file only gives its default instance, so recover the
+            // real one: fontconfig hides the 1-based `fvar` id in the high
+            // bits of `FC_INDEX`; DirectWrite reports properties at index 0.
+            if let font_kit::handle::Handle::Path { path, font_index } = handle.clone() {
+                let data = files
+                    .entry(path.clone())
+                    .or_insert_with(|| read_font_file(family_name, &path));
+                if let Some(data) = data.as_deref() {
+                    let face = font_index & 0xFFFF;
+                    let want_italic = props.style != font_kit::properties::Style::Normal;
+                    match font_index >> 16 {
+                        0 => {
+                            instance =
+                                match_instance(data, face, weight.0 as f32, want_italic)
+                        }
+                        instance_id => {
+                            if let Some(coords) =
+                                named_instance_coords(data, face, instance_id - 1)
+                            {
+                                if let Some(w) = fvar_wght(&coords) {
+                                    weight = Weight(
+                                        w.round().clamp(0.0, u16::MAX as f32) as u16,
+                                    );
+                                }
+                                instance = pin_coords(&coords);
+                            }
+                        }
+                    }
+                }
+            }
             tracing::debug!(
                 "found candidate: weight={}, stretch={:?}, style={:?}",
-                props.weight.0,
+                weight.0,
                 props.stretch,
                 props.style
             );
             candidates.push(FontCandidate {
                 handle: handle.clone(),
-                weight: Weight(props.weight.0 as u16),
+                weight,
                 stretch: Stretch::from_font_kit(props.stretch),
                 style: Style::from_font_kit(props.style),
+                instance,
+                postscript: font.postscript_name(),
+                full_name: font.full_name(),
             });
         }
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read_font_file(family_name: &str, path: &std::path::Path) -> Option<Vec<u8>> {
+    std::fs::read(path)
+        .inspect_err(|err| {
+            tracing::debug!("cannot read '{family_name}' at {}: {err}", path.display())
+        })
+        .ok()
+}
+
+/// One instance axis: (tag big-endian `u32`, user coordinate, default).
+type AxisTriple = (u32, f32, f32);
+
+/// User-space coordinates of named instance `instance_index`, in axis
+/// order; `None` for static fonts or a bad index.
+#[cfg(not(target_arch = "wasm32"))]
+fn named_instance_coords(
+    data: &[u8],
+    face_index: u32,
+    instance_index: u32,
+) -> Option<Vec<AxisTriple>> {
+    let font = skrifa::FontRef::from_index(data, face_index).ok()?;
+    let axes = skrifa::AxisCollection::new(&font);
+    let instance =
+        skrifa::NamedInstanceCollection::new(&font).get(instance_index as usize)?;
+    Some(instance_triples(&axes, &instance))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn instance_triples(
+    axes: &skrifa::AxisCollection<'_>,
+    instance: &skrifa::NamedInstance<'_>,
+) -> Vec<AxisTriple> {
+    axes.iter()
+        .zip(instance.user_coords())
+        .map(|(axis, coord)| {
+            (
+                u32::from_be_bytes(axis.tag().to_be_bytes()),
+                coord,
+                axis.default_value(),
+            )
+        })
+        .collect()
+}
+
+/// The `wght` coordinate among `coords`, if the font has that axis.
+#[cfg(not(target_arch = "wasm32"))]
+fn fvar_wght(coords: &[AxisTriple]) -> Option<f32> {
+    let wght = u32::from_be_bytes(*b"wght");
+    coords
+        .iter()
+        .find(|(tag, ..)| *tag == wght)
+        .map(|&(_, value, _)| value)
+}
+
+/// Only the coordinates off their axis default; `None` for the file
+/// default itself.
+#[cfg(not(target_arch = "wasm32"))]
+fn pin_coords(coords: &[AxisTriple]) -> Option<Vec<(u32, f32)>> {
+    let pinned: Vec<(u32, f32)> = coords
+        .iter()
+        .filter(|(_, value, default)| (value - default).abs() > 0.01)
+        .map(|(tag, value, _)| (*tag, *value))
+        .collect();
+    (!pinned.is_empty()).then_some(pinned)
+}
+
+/// Whether coordinates lean on a slant/italic axis.
+#[cfg(not(target_arch = "wasm32"))]
+fn triple_italic(coords: &[AxisTriple]) -> bool {
+    coords.iter().any(|&(tag, value, default)| {
+        let tag = tag.to_be_bytes();
+        (tag == *b"ital" && value > default + 0.5) || (tag == *b"slnt" && value < default)
+    })
+}
+
+/// The instance `want_wght`/`want_italic` describe. DirectWrite reports
+/// per-instance properties but keeps every instance at the base index.
+#[cfg(not(target_arch = "wasm32"))]
+fn match_instance(
+    data: &[u8],
+    face_index: u32,
+    want_wght: f32,
+    want_italic: bool,
+) -> Option<Vec<(u32, f32)>> {
+    let font = skrifa::FontRef::from_index(data, face_index).ok()?;
+    let axes = skrifa::AxisCollection::new(&font);
+    if axes.is_empty() {
+        return None;
+    }
+    let instances = skrifa::NamedInstanceCollection::new(&font);
+    let mut best: Option<(f32, Vec<AxisTriple>)> = None;
+    for i in 0..instances.len() {
+        let Some(instance) = instances.get(i) else {
+            continue;
+        };
+        let coords = instance_triples(&axes, &instance);
+        if triple_italic(&coords) != want_italic {
+            continue;
+        }
+        let dist = (fvar_wght(&coords).unwrap_or(want_wght) - want_wght).abs();
+        if best.as_ref().is_none_or(|(best_dist, _)| dist < *best_dist) {
+            best = Some((dist, coords));
+        }
+    }
+    pin_coords(best?.1.as_slice())
+}
+
+/// Exact style-name match: PostScript name suffix or trailing full-name
+/// words, e.g. "JetBrainsMono-ExtraLight" answers to "ExtraLight".
+#[cfg(not(target_arch = "wasm32"))]
+fn style_name_matches(cand: &FontCandidate, want: &str) -> bool {
+    fn normalize(s: &str) -> String {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    }
+    let want = normalize(want);
+    if want.is_empty() {
+        return false;
+    }
+    if let Some((_, suffix)) = cand
+        .postscript
+        .as_deref()
+        .and_then(|ps| ps.rsplit_once('-'))
+    {
+        return normalize(suffix) == want;
+    }
+    let words: Vec<&str> = cand.full_name.split_whitespace().collect();
+    (1..=words.len())
+        .any(|tail| normalize(words[words.len() - tail..].join(" ").as_str()) == want)
 }
 
 /// CSS-spec compliant font matching algorithm
@@ -473,10 +665,24 @@ impl Database {
 
             tracing::debug!("Total candidates found: {}", candidates.len());
 
-            // Step 3: apply CSS-spec matching algorithm to select the best face
-            if let Some(index) = find_best_match(&candidates, query) {
+            // Step 3: an exact style-name request wins over CSS matching.
+            let chosen = query.style_name.and_then(|want| {
+                let index = candidates
+                    .iter()
+                    .position(|c| style_name_matches(c, want))?;
+                tracing::debug!("style name '{want}' matched candidate {index}");
+                Some(index)
+            });
+            let chosen = chosen.or_else(|| find_best_match(&candidates, query));
+            if let Some(index) = chosen {
                 tracing::debug!("Best match selected at index {}", index);
-                return Some(ID::from_handle(candidates[index].handle.clone()));
+                return Some(ID::from_handle(
+                    candidates[index].handle.clone(),
+                    MatchedFace {
+                        weight: candidates[index].weight.0 as f32,
+                        coords: candidates[index].instance.clone().unwrap_or_default(),
+                    },
+                ));
             } else {
                 tracing::debug!("No best match found from candidates");
             }
