@@ -98,9 +98,18 @@ int main(void) {
   }
 
   rio_cursor_s cursor = rio_render_state_cursor(state);
-  printf("wakeups=%d cursor=%u,%u found=%d found_paste=%d found_bracketed=%d\n",
+  /* No program drew an image: the placement list is empty and its
+   * generation unchanged. Links the image API in the process. */
+  size_t images = rio_render_state_image_count(state);
+  uint64_t images_generation = rio_render_state_image_placements_generation(state);
+  rio_image_placement_s image_placement;
+  int image_resolved =
+      rio_render_state_image_placement(state, 0, 8.0f, 16.0f, &image_placement);
+  printf("wakeups=%d cursor=%u,%u found=%d found_paste=%d found_bracketed=%d "
+         "images=%zu images_generation=%llu image_resolved=%d\n",
          atomic_load(&wakeups), cursor.line, cursor.column, found,
-         found_paste, found_bracketed);
+         found_paste, found_bracketed, images,
+         (unsigned long long)images_generation, image_resolved);
 
   if (paste_state) {
     rio_render_state_free(paste_state);
@@ -113,7 +122,7 @@ int main(void) {
   rio_engine_free(engine);
 
   if (!found || !found_paste || !found_bracketed ||
-      atomic_load(&wakeups) == 0) {
+      atomic_load(&wakeups) == 0 || images != 0 || image_resolved) {
     fprintf(stderr, "gate failed\n");
     return 1;
   }

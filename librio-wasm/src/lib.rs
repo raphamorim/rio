@@ -678,6 +678,83 @@ impl RioTerm {
         self.state.kitty_image_rgba(image_id, out)
     }
 
+    // ------------------------------------------------- image placements
+    // Every protocol (kitty, and sixel/iTerm2 inline images) in one
+    // list, in draw order. The kitty_* calls above are its kitty subset.
+    // Protocols: 0 kitty, 1 inline. Layers: 0 below background, 1 below
+    // text, 2 above text.
+
+    pub fn image_count(&self) -> u32 {
+        self.state.image_count() as u32
+    }
+
+    /// Changes when an update changes the placement list or moves it
+    /// on screen; compare for equality to skip rebuilding a draw list.
+    pub fn image_placements_generation(&self) -> f64 {
+        self.state.image_placements_generation() as f64
+    }
+
+    /// The placement at `index` resolved against the viewport:
+    /// `[protocol, layer, image_id, image_stamp, z_index, x, y, width,
+    /// height, src_x0, src_y0, src_x1, src_y1]`. Empty when scrolled
+    /// out of view.
+    pub fn image_placement(
+        &self,
+        index: u32,
+        cell_width: f32,
+        cell_height: f32,
+    ) -> Vec<f64> {
+        match self
+            .state
+            .image_placement(index as usize, cell_width, cell_height)
+        {
+            Some(placement) => vec![
+                image_protocol_code(placement.protocol) as f64,
+                match placement.layer {
+                    librio::ImageLayer::BelowBackground => 0.0,
+                    librio::ImageLayer::BelowText => 1.0,
+                    librio::ImageLayer::AboveText => 2.0,
+                },
+                placement.image_id as f64,
+                placement.image_stamp as f64,
+                placement.z_index as f64,
+                placement.geometry.x as f64,
+                placement.geometry.y as f64,
+                placement.geometry.width as f64,
+                placement.geometry.height as f64,
+                placement.geometry.source_rect[0] as f64,
+                placement.geometry.source_rect[1] as f64,
+                placement.geometry.source_rect[2] as f64,
+                placement.geometry.source_rect[3] as f64,
+            ],
+            None => Vec::new(),
+        }
+    }
+
+    /// `[width, height, stamp]` for an image of either protocol, empty
+    /// if unknown.
+    pub fn image_info(&self, protocol: u8, image_id: f64) -> Vec<f64> {
+        let Some(protocol) = image_protocol(protocol) else {
+            return Vec::new();
+        };
+        match self.state.image_info(protocol, image_id as u64) {
+            Some((width, height, stamp)) => {
+                vec![width as f64, height as f64, stamp as f64]
+            }
+            None => Vec::new(),
+        }
+    }
+
+    /// Copy an image's RGBA pixels into `out` (needs `width * height *
+    /// 4` bytes). Returns bytes written, 0 when unknown or `out` too
+    /// small.
+    pub fn image_rgba(&self, protocol: u8, image_id: f64, out: &mut [u8]) -> usize {
+        match image_protocol(protocol) {
+            Some(protocol) => self.state.image_rgba(protocol, image_id as u64, out),
+            None => 0,
+        }
+    }
+
     /// The full text of a cell flagged [`CELL_HAS_CLUSTER`]: the base
     /// codepoint followed by its attached cluster codepoints
     /// (combining marks, or a mode-2027 grapheme cluster). Draw this
@@ -686,6 +763,21 @@ impl RioTerm {
     /// `undefined` for cells without attachments.
     pub fn cluster_text(&self, line: usize, column: usize) -> Option<String> {
         self.state.cell_cluster_text(line, column)
+    }
+}
+
+fn image_protocol(code: u8) -> Option<librio::ImageProtocol> {
+    match code {
+        0 => Some(librio::ImageProtocol::Kitty),
+        1 => Some(librio::ImageProtocol::Inline),
+        _ => None,
+    }
+}
+
+fn image_protocol_code(protocol: librio::ImageProtocol) -> u8 {
+    match protocol {
+        librio::ImageProtocol::Kitty => 0,
+        librio::ImageProtocol::Inline => 1,
     }
 }
 

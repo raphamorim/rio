@@ -465,6 +465,60 @@ size_t rio_render_state_kitty_image_rgba(const rio_render_state_t *state,
                                          uint32_t image_id, uint8_t *buf,
                                          size_t cap);
 
+/* Image protocols, for rio_image_placement_s.protocol and the
+ * rio_render_state_image_* lookups. Ids are only unique within one. */
+#define RIO_IMAGE_PROTOCOL_KITTY 0u
+/* Sixel and iTerm2 inline images, which share one store. */
+#define RIO_IMAGE_PROTOCOL_INLINE 1u
+
+/* Image layers, for rio_image_placement_s.layer. Draw in this order:
+ * images below the background, cell backgrounds, images below the text,
+ * text, images above the text; within a layer by z-index. */
+#define RIO_IMAGE_LAYER_BELOW_BACKGROUND 0u
+#define RIO_IMAGE_LAYER_BELOW_TEXT 1u
+#define RIO_IMAGE_LAYER_ABOVE_TEXT 2u
+
+/* One rectangle of one image, of any protocol, resolved to viewport
+ * pixels. x/y are relative to the grid origin (add your padding); src_*
+ * is the normalized source rectangle (origin + size) to crop from the
+ * image. Cache textures by (protocol, image_id, image_stamp): the stamp
+ * changes whenever the image's pixels do. */
+typedef struct {
+  uint64_t image_id;
+  uint64_t image_stamp;
+  int32_t z_index;
+  uint8_t protocol;
+  uint8_t layer;
+  float x;
+  float y;
+  float width;
+  float height;
+  float src_x;
+  float src_y;
+  float src_w;
+  float src_h;
+} rio_image_placement_s;
+
+/* Every image placement in the last snapshot, visible or not, in draw
+ * order (by z-index, lowest first; sixel/iTerm2 under kitty at the same
+ * z). The kitty-only calls above are a subset of this list. */
+size_t rio_render_state_image_count(const rio_render_state_t *state);
+/* Changes when an update changes the placement list or moves it on
+ * screen; compare for equality to skip rebuilding a draw list. */
+uint64_t
+rio_render_state_image_placements_generation(const rio_render_state_t *state);
+bool rio_render_state_image_placement(const rio_render_state_t *state,
+                                      size_t index, float cell_width,
+                                      float cell_height,
+                                      rio_image_placement_s *out);
+bool rio_render_state_image_info(const rio_render_state_t *state,
+                                 uint8_t protocol, uint64_t image_id,
+                                 uint32_t *out_width, uint32_t *out_height,
+                                 uint64_t *out_stamp);
+size_t rio_render_state_image_rgba(const rio_render_state_t *state,
+                                   uint8_t protocol, uint64_t image_id,
+                                   uint8_t *buf, size_t cap);
+
 typedef struct {
   double x;
   double y;

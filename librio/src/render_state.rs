@@ -1,7 +1,8 @@
-use crate::{Listener, Surface};
+use crate::{GraphicsUpdates, Listener, Surface};
+use rio_graphics::{atlas_image_key, ColorType, GraphicData};
 use rio_vt::ansi::graphics::{
-    kitty_overlay_geometry, KittyOverlayGeometry, KittyPlacement, OverlayViewport,
-    VirtualPlacement,
+    atlas_overlay_geometry, kitty_overlay_geometry, AtlasPlacement, KittyOverlayGeometry,
+    KittyPlacement, OverlayViewport, VirtualPlacement,
 };
 use rio_vt::ansi::kitty_virtual::{
     compute_run_geometry, resolve_virtual_placement, IncompletePlacement, PlaceholderRun,
@@ -35,14 +36,20 @@ pub struct ViewportSelection {
 /// them there (see `frontends/rioterm/src/renderer/mod.rs`).
 const VIRTUAL_Z_INDEX: i32 = -1;
 
+/// Sixel and iTerm2 images sit on the grid plane: under the text, and
+/// under a kitty image at the same z, as rio's renderer draws them.
+const INLINE_Z_INDEX: i32 = -1;
+
 /// One drawable kitty item: a direct overlay placement, or one row-run
 /// of U+10EEEE placeholder cells from a virtual placement (`U=1`, what
 /// `kitten icat --transfer-mode` emits under multiplexers).
+#[derive(Debug, Clone, PartialEq)]
 enum KittyEntry {
     Direct {
         placement: KittyPlacement,
         image_width: usize,
         image_height: usize,
+        image_stamp: u64,
     },
     Virtual {
         run: PlaceholderRun,
@@ -51,6 +58,7 @@ enum KittyEntry {
         placement: VirtualPlacement,
         image_width: usize,
         image_height: usize,
+        image_stamp: u64,
     },
 }
 
@@ -61,6 +69,99 @@ impl KittyEntry {
             KittyEntry::Virtual { .. } => VIRTUAL_Z_INDEX,
         }
     }
+
+    fn image_stamp(&self) -> u64 {
+        match self {
+            KittyEntry::Direct { image_stamp, .. }
+            | KittyEntry::Virtual { image_stamp, .. } => *image_stamp,
+        }
+    }
+}
+
+/// The protocol an image came from. Ids are only unique within one, so
+/// an image is always looked up by protocol and id together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageProtocol {
+    /// Kitty graphics: the id is the protocol's own `i=` image id.
+    Kitty,
+    /// Sixel and iTerm2 inline images, which share one store: the id is
+    /// the key the terminal gave the image when it arrived.
+    Inline,
+}
+
+/// Where an image is drawn relative to the text. Draw in this order:
+/// images below the background, cell backgrounds, images below the
+/// text, text, images above the text; within a layer by z-index,
+/// lowest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageLayer {
+    BelowBackground,
+    BelowText,
+    AboveText,
+}
+
+impl ImageLayer {
+    /// The layer a kitty z-index selects, as kitty defines the ranges:
+    /// below `i32::MIN / 2` under the background, negative under the
+    /// text, zero and above over it.
+    pub fn from_z(z_index: i32) -> Self {
+        if z_index < i32::MIN / 2 {
+            ImageLayer::BelowBackground
+        } else if z_index < 0 {
+            ImageLayer::BelowText
+        } else {
+            ImageLayer::AboveText
+        }
+    }
+}
+
+/// One rectangle of one image, resolved against the viewport: what to
+/// draw (protocol, id and the normalized source rectangle), where
+/// (pixels from the grid origin) and in which order (layer, then z).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ImagePlacement {
+    pub protocol: ImageProtocol,
+    pub image_id: u64,
+    /// Changes whenever the image's pixels change, so a texture cached
+    /// by (protocol, id, stamp) never goes stale.
+    pub image_stamp: u64,
+    pub layer: ImageLayer,
+    pub z_index: i32,
+    pub geometry: KittyOverlayGeometry,
+}
+
+/// One snapshotted placement of either protocol.
+#[derive(Debug, Clone, PartialEq)]
+enum ImageEntry {
+    Kitty(KittyEntry),
+    Inline(AtlasPlacement),
+}
+
+impl ImageEntry {
+    fn z_index(&self) -> i32 {
+        match self {
+            ImageEntry::Kitty(entry) => entry.z_index(),
+            ImageEntry::Inline(_) => INLINE_Z_INDEX,
+        }
+    }
+
+    /// Draw order: by z, and at the same z inline images first, under
+    /// the kitty ones.
+    fn order(&self) -> (i32, u8) {
+        let rank = match self {
+            ImageEntry::Inline(_) => 0,
+            ImageEntry::Kitty(_) => 1,
+        };
+        (self.z_index(), rank)
+    }
+}
+
+/// The pixels of a sixel/iTerm2 image. The terminal hands them to its
+/// renderer once, through the upload queue, so this snapshot keeps them
+/// for as long as a placement shows the image.
+struct InlineImage {
+    data: GraphicData,
+    stamp: u64,
 }
 
 pub struct RenderState {
@@ -82,10 +183,22 @@ pub struct RenderState {
     selection: Option<ViewportSelection>,
     history_size: i64,
     alt_screen: bool,
-    /// Kitty graphics placements (direct overlays and virtual
-    /// placeholder runs), captured under the same lock as the grid
-    /// snapshot and sorted by z-index, lowest first.
-    kitty: Vec<KittyEntry>,
+    /// Every image placement on the active screen (kitty direct
+    /// overlays and virtual placeholder runs, sixel/iTerm2 images),
+    /// captured under the same lock as the grid snapshot and sorted in
+    /// draw order: by z-index, lowest first.
+    images: Vec<ImageEntry>,
+    /// The upload queues the terminal sent since the last update.
+    graphics: GraphicsUpdates,
+    /// Sixel/iTerm2 pixels by image key, taken from those queues; an
+    /// image leaves when its last placement does.
+    inline_images: FxHashMap<u64, InlineImage>,
+    /// Bumped by an update that changes the placement list or moves it
+    /// (a scroll), so a host can keep its draw list between frames.
+    placements_generation: u64,
+    /// The viewport the placements were last resolved against:
+    /// (history size, display offset, screen lines).
+    images_view: (i64, usize, usize),
     /// Baseline for image change stamps (Instants aren't representable
     /// over the C ABI; nanoseconds relative to this are).
     epoch: rio_vt::time::Instant,
@@ -113,7 +226,11 @@ impl RenderState {
             selection: None,
             history_size: 0,
             alt_screen: false,
-            kitty: Vec::new(),
+            images: Vec::new(),
+            graphics: surface.graphics_updates(),
+            inline_images: FxHashMap::default(),
+            placements_generation: 0,
+            images_view: (0, 0, 0),
             epoch: rio_vt::time::Instant::now(),
         }
     }
@@ -150,22 +267,57 @@ impl RenderState {
         // so a full scrollback must not shift placements off-screen.
         self.history_size = term.lines_evicted() as i64 + term.history_size() as i64;
         self.alt_screen = term.mode().contains(rio_vt::crosswords::Mode::ALT_SCREEN);
-        self.kitty.clear();
+        // The terminal hands new pixels to its renderer once, through
+        // the upload queues; here that renderer is the host, so this
+        // snapshot keeps the sixel/iTerm2 pixels (kitty ones stay in
+        // the terminal's own store) and drops an image once the
+        // terminal says its last placement is gone. The queues arrive
+        // as events; anything not yet sent is taken here as well.
+        let mut batches = std::mem::take(&mut *self.graphics.lock().unwrap());
+        batches.extend(term.graphics.take_queues());
+        for queues in batches {
+            for data in queues.pending {
+                let stamp = self.stamp(data.transmit_time);
+                self.inline_images
+                    .insert(atlas_image_key(data.id.get()), InlineImage { data, stamp });
+            }
+            for key in queues.remove_queue {
+                self.inline_images.remove(&key);
+            }
+        }
+        let mut images = Vec::new();
         for placement in term.graphics.kitty_placements.values() {
             if let Some(image) = term.graphics.get_kitty_image(placement.image_id) {
-                self.kitty.push(KittyEntry::Direct {
+                images.push(ImageEntry::Kitty(KittyEntry::Direct {
                     placement: placement.clone(),
                     image_width: image.data.width,
                     image_height: image.data.height,
-                });
+                    image_stamp: self.stamp(image.transmission_time),
+                }));
             }
         }
-        let virtual_runs = self.collect_virtual_runs(&term);
-        self.kitty.extend(virtual_runs);
+        images.extend(
+            self.collect_virtual_runs(&term)
+                .into_iter()
+                .map(ImageEntry::Kitty),
+        );
+        images.extend(
+            term.graphics
+                .atlas_placements
+                .iter()
+                .cloned()
+                .map(ImageEntry::Inline),
+        );
         // Under-background placements (z < i32::MIN / 2) first, then
         // under-text (z < 0), then over-text: drawing in order layers
         // correctly, and the host can split the list at those bounds.
-        self.kitty.sort_by_key(KittyEntry::z_index);
+        images.sort_by_key(ImageEntry::order);
+        let view = (self.history_size, self.display_offset, self.rows.len());
+        if images != self.images || (!images.is_empty() && view != self.images_view) {
+            self.placements_generation = self.placements_generation.wrapping_add(1);
+        }
+        self.images = images;
+        self.images_view = view;
         self.term_colors = *term.colors();
         let cursor = term.cursor();
         self.cursor_line = cursor.pos.row.0.max(0) as usize;
@@ -342,8 +494,129 @@ impl RenderState {
         self.selection
     }
 
+    /// Nanoseconds since this state's epoch: a change stamp that can
+    /// cross the C ABI. A time before the epoch lands at the top of
+    /// the range, still distinct from anything after it.
+    fn stamp(&self, at: rio_vt::time::Instant) -> u64 {
+        match at.checked_duration_since(self.epoch) {
+            Some(duration) => duration.as_nanos() as u64,
+            None => u64::MAX - self.epoch.duration_since(at).as_nanos() as u64,
+        }
+    }
+
+    fn viewport(&self, cell_width: f32, cell_height: f32) -> OverlayViewport {
+        OverlayViewport {
+            cell_width,
+            cell_height,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            history_size: self.history_size,
+            display_offset: self.display_offset as i64,
+            screen_lines: self.rows.len() as i64,
+        }
+    }
+
+    fn kitty_entries(&self) -> impl Iterator<Item = &KittyEntry> {
+        self.images.iter().filter_map(|entry| match entry {
+            ImageEntry::Kitty(entry) => Some(entry),
+            ImageEntry::Inline(_) => None,
+        })
+    }
+
+    /// Image placements of every protocol in the last snapshot, visible
+    /// or not, in draw order. Resolve each with [`Self::image_placement`].
+    pub fn image_count(&self) -> usize {
+        self.images.len()
+    }
+
+    /// Changes whenever an update changes the placement list or moves
+    /// it on screen. A host that keeps a draw list rebuilds it only
+    /// when this differs from the value it last built against. Compare
+    /// for equality only; it is 0 until the first image appears.
+    pub fn image_placements_generation(&self) -> u64 {
+        self.placements_generation
+    }
+
+    /// The placement at `index` resolved against the viewport with the
+    /// host's cell metrics. `None` when it is scrolled out of view.
+    pub fn image_placement(
+        &self,
+        index: usize,
+        cell_width: f32,
+        cell_height: f32,
+    ) -> Option<ImagePlacement> {
+        match self.images.get(index)? {
+            ImageEntry::Kitty(entry) => {
+                let (image_id, z_index, geometry) =
+                    self.kitty_entry_geometry(entry, cell_width, cell_height)?;
+                Some(ImagePlacement {
+                    protocol: ImageProtocol::Kitty,
+                    image_id: u64::from(image_id),
+                    image_stamp: entry.image_stamp(),
+                    layer: ImageLayer::from_z(z_index),
+                    z_index,
+                    geometry,
+                })
+            }
+            ImageEntry::Inline(placement) => {
+                let geometry = atlas_overlay_geometry(
+                    placement,
+                    &self.viewport(cell_width, cell_height),
+                )?;
+                let image_stamp = self
+                    .inline_images
+                    .get(&placement.image_key)
+                    .map_or(0, |image| image.stamp);
+                Some(ImagePlacement {
+                    protocol: ImageProtocol::Inline,
+                    image_id: placement.image_key,
+                    image_stamp,
+                    layer: ImageLayer::BelowText,
+                    z_index: INLINE_Z_INDEX,
+                    geometry,
+                })
+            }
+        }
+    }
+
+    /// Pixel dimensions and the change stamp of an image of either
+    /// protocol; `None` when it is unknown.
+    pub fn image_info(
+        &self,
+        protocol: ImageProtocol,
+        image_id: u64,
+    ) -> Option<(usize, usize, u64)> {
+        match protocol {
+            ImageProtocol::Kitty => self.kitty_image_info(u32::try_from(image_id).ok()?),
+            ImageProtocol::Inline => self
+                .inline_images
+                .get(&image_id)
+                .map(|image| (image.data.width, image.data.height, image.stamp)),
+        }
+    }
+
+    /// Copy an image of either protocol into `buf` as RGBA8. Returns
+    /// bytes written; 0 when unknown or `buf` is too small.
+    pub fn image_rgba(
+        &self,
+        protocol: ImageProtocol,
+        image_id: u64,
+        buf: &mut [u8],
+    ) -> usize {
+        match protocol {
+            ImageProtocol::Kitty => u32::try_from(image_id)
+                .map_or(0, |image_id| self.kitty_image_rgba(image_id, buf)),
+            ImageProtocol::Inline => self
+                .inline_images
+                .get(&image_id)
+                .map_or(0, |image| copy_rgba(&image.data, buf)),
+        }
+    }
+
+    /// Kitty placements only, in draw order; the kitty subset of
+    /// [`Self::image_count`].
     pub fn kitty_count(&self) -> usize {
-        self.kitty.len()
+        self.kitty_entries().count()
     }
 
     /// Scan the snapshot rows for U+10EEEE placeholder cells and collapse
@@ -379,6 +652,7 @@ impl RenderState {
                 placement: placement.clone(),
                 image_width: image.data.width,
                 image_height: image.data.height,
+                image_stamp: self.stamp(image.transmission_time),
             });
         };
 
@@ -435,34 +709,37 @@ impl RenderState {
         entries
     }
 
-    /// Viewport geometry for the placement at `index`, in pixels relative
-    /// to the grid origin. `None` when it's scrolled out of view.
+    /// Viewport geometry for the kitty placement at `index` (counting
+    /// kitty placements only), in pixels relative to the grid origin.
+    /// `None` when it's scrolled out of view.
     pub fn kitty_geometry(
         &self,
         index: usize,
         cell_width: f32,
         cell_height: f32,
     ) -> Option<(u32, i32, KittyOverlayGeometry)> {
-        match self.kitty.get(index)? {
+        let entry = self.kitty_entries().nth(index)?;
+        self.kitty_entry_geometry(entry, cell_width, cell_height)
+    }
+
+    fn kitty_entry_geometry(
+        &self,
+        entry: &KittyEntry,
+        cell_width: f32,
+        cell_height: f32,
+    ) -> Option<(u32, i32, KittyOverlayGeometry)> {
+        match entry {
             KittyEntry::Direct {
                 placement,
                 image_width,
                 image_height,
+                ..
             } => {
-                let viewport = OverlayViewport {
-                    cell_width,
-                    cell_height,
-                    origin_x: 0.0,
-                    origin_y: 0.0,
-                    history_size: self.history_size,
-                    display_offset: self.display_offset as i64,
-                    screen_lines: self.rows.len() as i64,
-                };
                 let geometry = kitty_overlay_geometry(
                     placement,
                     *image_width,
                     *image_height,
-                    &viewport,
+                    &self.viewport(cell_width, cell_height),
                 )?;
                 Some((placement.image_id, placement.z_index, geometry))
             }
@@ -473,6 +750,7 @@ impl RenderState {
                 placement,
                 image_width,
                 image_height,
+                ..
             } => {
                 let geometry = compute_run_geometry(
                     run,
@@ -508,16 +786,7 @@ impl RenderState {
     pub fn kitty_image_info(&self, image_id: u32) -> Option<(usize, usize, u64)> {
         let term = self.terminal.lock();
         let image = term.graphics.get_kitty_image(image_id)?;
-        let stamp = match image.transmission_time.checked_duration_since(self.epoch) {
-            Some(duration) => duration.as_nanos() as u64,
-            None => {
-                u64::MAX
-                    - self
-                        .epoch
-                        .duration_since(image.transmission_time)
-                        .as_nanos() as u64
-            }
-        };
+        let stamp = self.stamp(image.transmission_time);
         Some((image.data.width, image.data.height, stamp))
     }
 
@@ -528,34 +797,7 @@ impl RenderState {
         let Some(image) = term.graphics.get_kitty_image(image_id) else {
             return 0;
         };
-        let width = image.data.width;
-        let height = image.data.height;
-        let expected = width * height * 4;
-        if buf.len() < expected {
-            return 0;
-        }
-        use rio_graphics::ColorType;
-        match image.data.color_type {
-            ColorType::Rgba => {
-                if image.data.pixels.len() < expected {
-                    return 0;
-                }
-                buf[..expected].copy_from_slice(&image.data.pixels[..expected]);
-            }
-            ColorType::Rgb => {
-                let source = width * height * 3;
-                if image.data.pixels.len() < source {
-                    return 0;
-                }
-                for i in 0..width * height {
-                    buf[i * 4] = image.data.pixels[i * 3];
-                    buf[i * 4 + 1] = image.data.pixels[i * 3 + 1];
-                    buf[i * 4 + 2] = image.data.pixels[i * 3 + 2];
-                    buf[i * 4 + 3] = 0xFF;
-                }
-            }
-        }
-        expected
+        copy_rgba(&image.data, buf)
     }
 
     /// The OSC 8 hyperlink under a viewport cell, if any.
@@ -599,4 +841,37 @@ impl RenderState {
         }
         text.trim_end().to_string()
     }
+}
+
+/// Copy an image into `buf` as tightly packed RGBA8 (RGB sources gain
+/// an opaque alpha). Returns bytes written; 0 when `buf` is too small
+/// or the image holds fewer pixels than its size says.
+fn copy_rgba(data: &GraphicData, buf: &mut [u8]) -> usize {
+    let width = data.width;
+    let height = data.height;
+    let expected = width * height * 4;
+    if buf.len() < expected {
+        return 0;
+    }
+    match data.color_type {
+        ColorType::Rgba => {
+            if data.pixels.len() < expected {
+                return 0;
+            }
+            buf[..expected].copy_from_slice(&data.pixels[..expected]);
+        }
+        ColorType::Rgb => {
+            let source = width * height * 3;
+            if data.pixels.len() < source {
+                return 0;
+            }
+            for i in 0..width * height {
+                buf[i * 4] = data.pixels[i * 3];
+                buf[i * 4 + 1] = data.pixels[i * 3 + 1];
+                buf[i * 4 + 2] = data.pixels[i * 3 + 2];
+                buf[i * 4 + 3] = 0xFF;
+            }
+        }
+    }
+    expected
 }

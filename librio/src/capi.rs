@@ -1,8 +1,9 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::{
-    Action, Engine, Key, KeyAction, KeyEvent, Modifiers, RenderState, SelectionKind,
-    Side, Square, Style, StyleFlags, Surface, SurfaceDelegate, SurfaceDesc, SurfaceId,
+    Action, Engine, ImageLayer, ImageProtocol, Key, KeyAction, KeyEvent, Modifiers,
+    RenderState, SelectionKind, Side, Square, Style, StyleFlags, Surface,
+    SurfaceDelegate, SurfaceDesc, SurfaceId,
 };
 use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
 use std::ffi::{c_char, c_void, CStr, CString};
@@ -1727,6 +1728,197 @@ pub unsafe extern "C" fn rio_render_state_kitty_image_rgba(
         }
         let slice = unsafe { std::slice::from_raw_parts_mut(buf, cap) };
         unsafe { &*state }.kitty_image_rgba(image_id, slice)
+    }))
+    .unwrap_or(0)
+}
+
+/// Image protocols, for `rio_image_placement_s.protocol` and the
+/// `rio_render_state_image_*` lookups. Ids are only unique within one.
+pub const RIO_IMAGE_PROTOCOL_KITTY: u8 = 0;
+/// Sixel and iTerm2 inline images, which share one store.
+pub const RIO_IMAGE_PROTOCOL_INLINE: u8 = 1;
+
+/// Image layers, for `rio_image_placement_s.layer`. Draw in this order:
+/// images below the background, cell backgrounds, images below the
+/// text, text, images above the text; within a layer by z-index.
+pub const RIO_IMAGE_LAYER_BELOW_BACKGROUND: u8 = 0;
+pub const RIO_IMAGE_LAYER_BELOW_TEXT: u8 = 1;
+pub const RIO_IMAGE_LAYER_ABOVE_TEXT: u8 = 2;
+
+/// One rectangle of one image, of any protocol, resolved to viewport
+/// pixels. `x`/`y` are relative to the grid origin (add your padding);
+/// `src_*` is the normalized source rectangle within the image. Cache
+/// textures by (`protocol`, `image_id`, `image_stamp`): the stamp
+/// changes whenever the image's pixels do.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct rio_image_placement_s {
+    pub image_id: u64,
+    pub image_stamp: u64,
+    pub z_index: i32,
+    pub protocol: u8,
+    pub layer: u8,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub src_x: f32,
+    pub src_y: f32,
+    pub src_w: f32,
+    pub src_h: f32,
+}
+
+fn image_protocol(protocol: u8) -> Option<ImageProtocol> {
+    match protocol {
+        RIO_IMAGE_PROTOCOL_KITTY => Some(ImageProtocol::Kitty),
+        RIO_IMAGE_PROTOCOL_INLINE => Some(ImageProtocol::Inline),
+        _ => None,
+    }
+}
+
+/// Number of image placements of every protocol in the last snapshot
+/// (visible or not), in draw order: by z-index, lowest first, with
+/// sixel/iTerm2 images under kitty ones at the same z. Resolve each
+/// with [`rio_render_state_image_placement`], which filters to the
+/// viewport. The kitty-only calls above remain as a subset of this.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_image_count(
+    state: *const RenderState,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return 0;
+        }
+        unsafe { &*state }.image_count()
+    }))
+    .unwrap_or(0)
+}
+
+/// Changes whenever an update changes the placement list or moves it
+/// on screen (a scroll). A host that keeps a draw list rebuilds it only
+/// when this differs from the value it last built against. Compare for
+/// equality only; it is 0 until the first image appears.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_image_placements_generation(
+    state: *const RenderState,
+) -> u64 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return 0;
+        }
+        unsafe { &*state }.image_placements_generation()
+    }))
+    .unwrap_or(0)
+}
+
+/// Resolve placement `index` against the current viewport with the
+/// renderer's cell metrics. Returns false when it's scrolled out of view.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_image_placement(
+    state: *const RenderState,
+    index: usize,
+    cell_width: f32,
+    cell_height: f32,
+    out: *mut rio_image_placement_s,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() || out.is_null() {
+            return false;
+        }
+        let Some(placement) =
+            unsafe { &*state }.image_placement(index, cell_width, cell_height)
+        else {
+            return false;
+        };
+        let geometry = placement.geometry;
+        unsafe {
+            *out = rio_image_placement_s {
+                image_id: placement.image_id,
+                image_stamp: placement.image_stamp,
+                z_index: placement.z_index,
+                protocol: match placement.protocol {
+                    ImageProtocol::Kitty => RIO_IMAGE_PROTOCOL_KITTY,
+                    ImageProtocol::Inline => RIO_IMAGE_PROTOCOL_INLINE,
+                },
+                layer: match placement.layer {
+                    ImageLayer::BelowBackground => RIO_IMAGE_LAYER_BELOW_BACKGROUND,
+                    ImageLayer::BelowText => RIO_IMAGE_LAYER_BELOW_TEXT,
+                    ImageLayer::AboveText => RIO_IMAGE_LAYER_ABOVE_TEXT,
+                },
+                x: geometry.x,
+                y: geometry.y,
+                width: geometry.width,
+                height: geometry.height,
+                src_x: geometry.source_rect[0],
+                src_y: geometry.source_rect[1],
+                src_w: geometry.source_rect[2] - geometry.source_rect[0],
+                src_h: geometry.source_rect[3] - geometry.source_rect[1],
+            };
+        }
+        true
+    }))
+    .unwrap_or(false)
+}
+
+/// Pixel dimensions and change stamp of an image of either protocol;
+/// false when it is unknown. Each out pointer may be NULL.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_image_info(
+    state: *const RenderState,
+    protocol: u8,
+    image_id: u64,
+    out_width: *mut u32,
+    out_height: *mut u32,
+    out_stamp: *mut u64,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return false;
+        }
+        let Some(protocol) = image_protocol(protocol) else {
+            return false;
+        };
+        let Some((width, height, stamp)) =
+            unsafe { &*state }.image_info(protocol, image_id)
+        else {
+            return false;
+        };
+        unsafe {
+            if !out_width.is_null() {
+                *out_width = width as u32;
+            }
+            if !out_height.is_null() {
+                *out_height = height as u32;
+            }
+            if !out_stamp.is_null() {
+                *out_stamp = stamp;
+            }
+        }
+        true
+    }))
+    .unwrap_or(false)
+}
+
+/// Copy an image of either protocol into `buf` as tightly-packed
+/// RGBA8. Returns the bytes written (width * height * 4), or 0 when the
+/// image is unknown or `cap` is too small.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_image_rgba(
+    state: *const RenderState,
+    protocol: u8,
+    image_id: u64,
+    buf: *mut u8,
+    cap: usize,
+) -> usize {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() || buf.is_null() {
+            return 0;
+        }
+        let Some(protocol) = image_protocol(protocol) else {
+            return 0;
+        };
+        let slice = unsafe { std::slice::from_raw_parts_mut(buf, cap) };
+        unsafe { &*state }.image_rgba(protocol, image_id, slice)
     }))
     .unwrap_or(0)
 }
