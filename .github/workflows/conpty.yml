@@ -1,0 +1,27 @@
+name: ConPTY
+
+# The release pipeline fetches the ConPTY pair with this script before
+# packaging; a stale pin, a changed package layout or a signature the
+# check rejects should fail here first, not in a release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'misc/windows/conhost/fetch.ps1'
+      - '.github/workflows/conpty.yml'
+  pull_request:
+    paths:
+      - 'misc/windows/conhost/fetch.ps1'
+      - '.github/workflows/conpty.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  fetch:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - run: pwsh -NoProfile -File misc/windows/conhost/fetch.ps1
