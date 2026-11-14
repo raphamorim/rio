@@ -47,9 +47,10 @@ pub(super) enum PaletteReset {
 
 /// Parse an OSC 133 semantic prompt sequence into the row mark it
 /// should set, if any. `A` and `P` mark the cursor row as a prompt
-/// (`P;k=c` / `P;k=s` as a continuation); the remaining subcommands
-/// (`B`, `C`, `D`, `I`, `L`, `N`) and all `key=value` options are
-/// accepted and ignored, matching the spec's leniency.
+/// (`P;k=c` / `P;k=s` as a continuation). `C` and `D` set no row mark
+/// and are dispatched separately as command start and end; the
+/// remaining subcommands (`B`, `I`, `L`, `N`) and all `key=value`
+/// options are accepted and ignored, matching the spec's leniency.
 pub(super) fn parse_semantic_prompt(
     params: &[&[u8]],
 ) -> Option<crate::crosswords::grid::row::SemanticPrompt> {
@@ -70,6 +71,26 @@ pub(super) fn parse_semantic_prompt(
         }
         _ => None,
     }
+}
+
+/// The exit status of an OSC 133 `D` (command finished): its first
+/// option, when that is a bare integer (`D;0`, `D;127`, `D;-1`). A
+/// number too large for 32 bits saturates. `None` when the shell sent
+/// no status, as it does for a command line that was abandoned rather
+/// than run, or when the first option is a `key=value` pair.
+pub(super) fn parse_exit_status(option: Option<&[u8]>) -> Option<i32> {
+    let raw = option?;
+    let (negative, digits) = match raw.split_first()? {
+        (b'-', digits) => (true, digits),
+        (b'+', digits) => (false, digits),
+        _ => (false, raw),
+    };
+    let magnitude = parse_digits(digits)?;
+    Some(if negative {
+        i32::try_from(magnitude).map_or(i32::MIN, |m| -m)
+    } else {
+        i32::try_from(magnitude).unwrap_or(i32::MAX)
+    })
 }
 
 /// Parse an `xterm`-style color value (`#rgb`, `#rrggbb`, `rgb:r/g/b`).
@@ -131,20 +152,19 @@ fn parse_legacy_color(color: &[u8]) -> Option<ColorRgb> {
 }
 
 pub(super) fn parse_number(input: &[u8]) -> Option<u8> {
-    if input.is_empty() {
+    u8::try_from(parse_digits(input)?).ok()
+}
+
+/// A non-empty run of ASCII digits as a number, saturating at
+/// `u32::MAX` so an absurdly long one still parses.
+fn parse_digits(digits: &[u8]) -> Option<u32> {
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
         return None;
     }
-    let mut num: u8 = 0;
-    for c in input {
-        let c = *c as char;
-        {
-            let digit = c.to_digit(10)?;
-            num = num
-                .checked_mul(10)
-                .and_then(|v| v.checked_add(digit as u8))?
-        }
-    }
-    Some(num)
+    Some(digits.iter().fold(0u32, |acc, digit| {
+        acc.saturating_mul(10)
+            .saturating_add(u32::from(digit - b'0'))
+    }))
 }
 
 /// Decodes a free-text payload, replacing invalid UTF-8.

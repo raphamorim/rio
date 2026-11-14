@@ -1,5 +1,6 @@
 pub mod bell;
 pub mod bindings;
+pub mod command_finished;
 // `colors` and `ConfigError` moved to the `rio-vt` core crate; re-export
 // so `rio_backend::config::{colors, ConfigError}` keep resolving.
 pub use rio_vt::config::{colors, ConfigError};
@@ -18,6 +19,7 @@ pub mod window;
 use crate::ansi::CursorShape;
 use crate::config::bell::Bell;
 use crate::config::bindings::Bindings;
+use crate::config::command_finished::NotifyOnCommandFinish;
 use crate::config::defaults::*;
 use crate::config::hints::Hints;
 use crate::config::keyboard::Keyboard;
@@ -242,6 +244,11 @@ pub struct Config {
     pub hints: Hints,
     #[serde(default = "Bell::default")]
     pub bell: Bell,
+    #[serde(
+        default = "NotifyOnCommandFinish::default",
+        rename = "notify-on-command-finish"
+    )]
+    pub notify_on_command_finish: NotifyOnCommandFinish,
     #[serde(default = "default_bool_true", rename = "enable-scroll-bar")]
     pub enable_scroll_bar: bool,
     #[serde(
@@ -753,6 +760,7 @@ impl Default for Config {
             draw_bold_text_with_light_colors: false,
             hints: Hints::default(),
             bell: Bell::default(),
+            notify_on_command_finish: NotifyOnCommandFinish::default(),
             enable_scroll_bar: true,
             scrollback_history_limit: default_scrollback_history_limit(),
             effects: effects::Effects::default(),
@@ -880,6 +888,41 @@ mod tests {
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
         assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_notify_on_command_finish_section() {
+        use crate::config::command_finished::{NotifyOnCommandFinish, NotifyWhen};
+
+        let config: Config = toml::from_str("").unwrap();
+        assert_eq!(
+            config.notify_on_command_finish,
+            NotifyOnCommandFinish {
+                when: NotifyWhen::Never,
+                bell: true,
+                notify: false,
+                after: 5000,
+            }
+        );
+
+        let config: Config = toml::from_str(
+            r#"
+            [notify-on-command-finish]
+            when = "unfocused"
+            notify = true
+            after = 250
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            config.notify_on_command_finish,
+            NotifyOnCommandFinish {
+                when: NotifyWhen::Unfocused,
+                bell: true,
+                notify: true,
+                after: 250,
+            }
+        );
     }
 
     #[test]

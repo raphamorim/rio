@@ -392,6 +392,13 @@ pub trait Handler {
     /// OSC 133 `A`: a shell prompt began.
     fn prompt_start(&mut self) {}
 
+    /// OSC 133 `C`: the command line ended and its output begins.
+    fn command_start(&mut self) {}
+
+    /// OSC 133 `D`: the command finished, with its exit status when
+    /// the shell sent one.
+    fn command_end(&mut self, _exit_status: Option<i32>) {}
+
     /// Report current keyboard mode.
     fn report_keyboard_mode(&mut self) {}
 
@@ -976,6 +983,8 @@ impl<U: Handler> Perform for Performer<'_, U> {
             // malformed payload itself: a shell on a remote host sends
             // one at every prompt, so the per-byte `unhandled` dump
             // would flood the log for the whole session.
+            // One verbatim payload: the parser keeps every `;` after
+            // the `7`, since a `kitty-shell-cwd://` path is not encoded.
             b"7" => {
                 if let Some(dir) =
                     params.get(1).and_then(|p| osc::parse_current_directory(p))
@@ -1030,8 +1039,20 @@ impl<U: Handler> Perform for Performer<'_, U> {
                 // `A` (fresh line, new prompt) and `N` (new command, which
                 // also starts a prompt) begin a prompt; options arrive as
                 // later params, so the mark must be the whole param.
-                if matches!(params.get(1).copied(), Some(b"A" | b"N")) {
-                    self.handler.prompt_start();
+                match params.get(1).copied() {
+                    Some(b"A") => self.handler.prompt_start(),
+                    // `N` first terminates a command still open, with no
+                    // status to report, then begins the prompt.
+                    Some(b"N") => {
+                        self.handler.command_end(None);
+                        self.handler.prompt_start();
+                    }
+                    Some(b"C") => self.handler.command_start(),
+                    Some(b"D") => {
+                        let status = osc::parse_exit_status(params.get(2).copied());
+                        self.handler.command_end(status);
+                    }
+                    _ => {}
                 }
             }
 
@@ -2418,6 +2439,29 @@ mod tests {
         processor.advance(&mut handler, b"s\x1b\\after");
         assert!(!handler.synced);
         assert_eq!(handler.printed, "xafter");
+    }
+
+    #[test]
+    fn exit_status_parsing() {
+        use crate::performer::osc::parse_exit_status as parse;
+
+        assert_eq!(parse(Some(b"0")), Some(0));
+        assert_eq!(parse(Some(b"127")), Some(127));
+        assert_eq!(parse(Some(b"256")), Some(256));
+        assert_eq!(parse(Some(b"-1")), Some(-1));
+        assert_eq!(parse(Some(b"+1")), Some(1));
+        assert_eq!(parse(Some(b"-0")), Some(0));
+        // Too large for the type: saturates rather than vanishing.
+        assert_eq!(parse(Some(b"99999999999999999999999")), Some(i32::MAX));
+        assert_eq!(parse(Some(b"-99999999999999999999999")), Some(i32::MIN));
+        // No status sent, or the first option is not one.
+        assert_eq!(parse(None), None);
+        assert_eq!(parse(Some(b"")), None);
+        assert_eq!(parse(Some(b"aid=1")), None);
+        assert_eq!(parse(Some(b"1_0")), None);
+        assert_eq!(parse(Some(b"+")), None);
+        assert_eq!(parse(Some(b"-")), None);
+        assert_eq!(parse(Some(b"\xff")), None);
     }
 
     #[test]

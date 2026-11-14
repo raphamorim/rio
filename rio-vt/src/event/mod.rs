@@ -265,6 +265,16 @@ pub enum RioEvent {
     /// Terminal bell ring, from the PTY identified by `route_id`.
     Bell(usize),
 
+    /// OSC 133 `D` after a `C` on the PTY identified by `route_id`: a
+    /// shell command finished. `exit_status` is `None` when the shell
+    /// sent none; `duration` is measured from the `C` that started the
+    /// command's output.
+    CommandFinished {
+        route_id: usize,
+        exit_status: Option<i32>,
+        duration: crate::time::Duration,
+    },
+
     /// Desktop notification from OSC 9 or OSC 777.
     DesktopNotification {
         title: String,
@@ -360,6 +370,14 @@ impl Debug for RioEvent {
             }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell(route_id) => write!(f, "Bell route {route_id}"),
+            RioEvent::CommandFinished {
+                route_id,
+                exit_status,
+                duration,
+            } => write!(
+                f,
+                "CommandFinished route {route_id} status {exit_status:?} after {duration:?}"
+            ),
             RioEvent::DesktopNotification { title, body } => {
                 write!(f, "DesktopNotification({title}, {body})")
             }

@@ -485,6 +485,10 @@ where
     /// for it.
     program_status_seen: bool,
 
+    /// When the running shell command started its output (OSC 133 `C`),
+    /// so `D` can report how long it ran. `None` between commands.
+    command_started_at: Option<crate::time::Instant>,
+
     /// What DECRQM callers see after a full reset: the
     /// consumer-configured default for grapheme clustering (mode
     /// 2027). On by default; embedders serving legacy wcwidth
@@ -554,6 +558,7 @@ impl<U: EventListener> Crosswords<U> {
             sync_update_started: None,
             program_status_enabled: false,
             program_status_seen: false,
+            command_started_at: None,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
             keyboard_mode_idx: 0,
@@ -3468,6 +3473,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         self.event_proxy
             .send_event(RioEvent::CursorBlinkingChange, self.window_id);
+        // A running command survives the reset: a program that ends
+        // with RIS still gets its `D` from the shell afterwards.
         // RIS drops every OSC 7501 record (DECSTR does not).
         if std::mem::take(&mut self.program_status_seen) {
             self.event_proxy.send_event(
@@ -3604,11 +3611,37 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn prompt_start(&mut self) {
+        // A running command stays open across `A`: a program that
+        // draws prompts of its own (a shell on an `ssh` host, a nested
+        // shell) must not make the shell's eventual `D` go unreported.
+        // Its own `C`/`D` pairs restart and close the clock as usual.
         if !self.program_status_seen {
             return;
         }
         self.event_proxy.send_event(
             RioEvent::ProgramStatus(crate::event::ProgramStatusEvent::PromptStart),
+            self.window_id,
+        );
+    }
+
+    fn command_start(&mut self) {
+        // A repeated `C` restarts the clock: the latest output mark is
+        // the one whose `D` will follow.
+        self.command_started_at = Some(crate::time::Instant::now());
+    }
+
+    fn command_end(&mut self, exit_status: Option<i32>) {
+        // Without a `C` there is no command to report: the shell is
+        // closing a command line it never ran, or marks only ends.
+        let Some(started) = self.command_started_at.take() else {
+            return;
+        };
+        self.event_proxy.send_event(
+            RioEvent::CommandFinished {
+                route_id: self.route_id,
+                exit_status,
+                duration: started.elapsed(),
+            },
             self.window_id,
         );
     }
@@ -5982,6 +6015,46 @@ mod tests {
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
     }
 
+    /// A 20x4 terminal on `route_id` that records the events it sends.
+    #[allow(clippy::type_complexity)]
+    fn make_crosswords_with_events(
+        route_id: usize,
+    ) -> (
+        Crosswords<TestListener>,
+        std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>,
+    ) {
+        let events = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let cw = Crosswords::new(
+            CrosswordsSize::new(20, 4),
+            CursorShape::Block,
+            TestListener {
+                events: events.clone(),
+            },
+            crate::event::WindowId::from(0),
+            route_id,
+            10,
+        );
+        (cw, events)
+    }
+
+    /// The `(route_id, exit_status)` of every finished command reported.
+    fn finished_commands(
+        events: &std::cell::RefCell<Vec<RioEvent>>,
+    ) -> Vec<(usize, Option<i32>)> {
+        events
+            .borrow()
+            .iter()
+            .filter_map(|e| match e {
+                RioEvent::CommandFinished {
+                    route_id,
+                    exit_status,
+                    ..
+                } => Some((*route_id, *exit_status)),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[derive(Clone, Default)]
     struct ReplyRecorder(std::sync::Arc<std::sync::Mutex<Vec<String>>>);
 
@@ -6021,6 +6094,64 @@ mod tests {
             "{:?}",
             events.borrow()
         );
+    }
+
+    /// OSC 133 `C` then `D` reports one finished command with its
+    /// status and how long it ran; a `D` with no `C` before it reports
+    /// nothing, and a full reset in between does not lose the command.
+    #[test]
+    fn osc_133_command_finished_events() {
+        let (mut cw, events) = make_crosswords_with_events(7);
+        let mut parser = crate::performer::handler::Processor::default();
+
+        parser.advance(&mut cw, b"\x1b]133;D;0\x07");
+        assert!(
+            finished_commands(&events).is_empty(),
+            "D without C reports nothing"
+        );
+
+        parser.advance(&mut cw, b"\x1b]133;C\x07out\r\n\x1b]133;D;3\x07");
+        assert_eq!(finished_commands(&events), vec![(7, Some(3))]);
+
+        // Repeating `D` does not report the same command twice.
+        parser.advance(&mut cw, b"\x1b]133;D;3\x07");
+        assert_eq!(finished_commands(&events).len(), 1);
+
+        // No status, and an option in its place, are both "none".
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;D\x07");
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;D;aid=1\x07");
+        assert_eq!(
+            finished_commands(&events),
+            vec![(7, Some(3)), (7, None), (7, None)]
+        );
+
+        // A program that ends with a full reset is still reported.
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1bc\x1b]133;D;0\x07");
+        assert_eq!(finished_commands(&events).len(), 4);
+        assert_eq!(finished_commands(&events)[3], (7, Some(0)));
+    }
+
+    /// A command still open at the next prompt: `N` terminates it and
+    /// reports it with no status, and a later lone `D` is not taken
+    /// for it. `A` leaves it open, so a prompt drawn by a program the
+    /// command runs does not lose the command's own `D`.
+    #[test]
+    fn osc_133_new_prompt_closes_an_unfinished_command() {
+        let (mut cw, events) = make_crosswords_with_events(0);
+        let mut parser = crate::performer::handler::Processor::default();
+
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;N\x07$ ");
+        assert_eq!(finished_commands(&events), vec![(0, None)]);
+        parser.advance(&mut cw, b"\x1b]133;D;1\x07");
+        assert_eq!(finished_commands(&events).len(), 1);
+
+        parser.advance(&mut cw, b"\x1b]133;C\x07\x1b]133;A\x07$ \x1b]133;D;130\x07");
+        assert_eq!(finished_commands(&events)[1], (0, Some(130)));
+        assert_eq!(finished_commands(&events).len(), 2);
+
+        // `N` with nothing open is just a prompt.
+        parser.advance(&mut cw, b"\x1b]133;N\x07$ ");
+        assert_eq!(finished_commands(&events).len(), 2);
     }
 
     #[test]

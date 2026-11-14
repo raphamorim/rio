@@ -49,6 +49,40 @@ pub struct Application<'a> {
     quake_previous_app: Option<i32>,
 }
 
+/// A command's running time for a notification: rounded to the
+/// millisecond, then every non-zero unit from the largest down, as in
+/// `1h 2m 3s`, `6s 200ms` or `1h 3s`.
+fn format_duration(duration: std::time::Duration) -> String {
+    use std::fmt::Write as _;
+
+    const MS_PER_DAY: u128 = 24 * 60 * 60 * 1000;
+    const UNITS: [(&str, u128); 7] = [
+        ("y", 365 * MS_PER_DAY),
+        ("w", 7 * MS_PER_DAY),
+        ("d", MS_PER_DAY),
+        ("h", 60 * 60 * 1000),
+        ("m", 60 * 1000),
+        ("s", 1000),
+        ("ms", 1),
+    ];
+
+    let mut left = (duration.as_nanos() + 500_000) / 1_000_000;
+    let mut out = String::new();
+    for (name, factor) in UNITS {
+        if left >= factor {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            let _ = write!(out, "{}{name}", left / factor);
+            left %= factor;
+        }
+    }
+    if out.is_empty() {
+        out.push_str("0ms");
+    }
+    out
+}
+
 impl Application<'_> {
     pub fn new<'app>(
         config: rio_backend::config::Config,
@@ -156,6 +190,81 @@ impl Application<'_> {
 
     fn handle_desktop_notification(&self, title: &str, body: &str) {
         rio_notifier::send_notification(title, body);
+    }
+
+    /// BEL from `route_id`: the audio bell, and the tab indicator when
+    /// the tab is not the one being looked at.
+    fn ring_bell(&mut self, window_id: rio_backend::event::WindowId, route_id: usize) {
+        if self.config.bell.audio {
+            self.handle_audio_bell();
+        }
+
+        if self.config.bell.tab_indicator {
+            if let Some(route) = self.router.routes.get_mut(&window_id) {
+                let focused = route.window.is_focused;
+                if route
+                    .window
+                    .screen
+                    .context_manager
+                    .ring_bell(route_id, focused)
+                {
+                    route.request_overlay_redraw();
+                }
+            }
+        }
+    }
+
+    /// A shell command finished on `route_id` (OSC 133). Announced per
+    /// `[notify-on-command-finish]`: only past the configured duration,
+    /// and, for `unfocused`, only when the command's pane is not the
+    /// focused one (another window, tab or split is).
+    fn handle_command_finished(
+        &mut self,
+        window_id: rio_backend::event::WindowId,
+        route_id: usize,
+        exit_status: Option<i32>,
+        duration: std::time::Duration,
+    ) {
+        use rio_backend::config::command_finished::NotifyWhen;
+
+        let config = self.config.notify_on_command_finish;
+        if config.when == NotifyWhen::Never
+            || duration <= std::time::Duration::from_millis(config.after)
+        {
+            return;
+        }
+        // The window or the pane may be gone by the time the event is
+        // handled; a closed one has nothing to announce.
+        let Some(route) = self.router.routes.get_mut(&window_id) else {
+            return;
+        };
+        let manager = &mut route.window.screen.context_manager;
+        if manager.tab_index_for_route(route_id).is_none() {
+            return;
+        }
+        let focused = route.window.is_focused && manager.current_route() == route_id;
+        if config.when == NotifyWhen::Unfocused && focused {
+            return;
+        }
+
+        if config.bell {
+            self.ring_bell(window_id, route_id);
+        }
+        if config.notify {
+            let took = format_duration(duration);
+            let (title, body) = match exit_status {
+                None => ("Command Finished", format!("Command took {took}.")),
+                Some(code) => (
+                    if code == 0 {
+                        "Command Succeeded"
+                    } else {
+                        "Command Failed"
+                    },
+                    format!("Command took {took} and exited with code {code}."),
+                ),
+            };
+            self.handle_desktop_notification(title, &body);
+        }
     }
 
     pub fn run(
@@ -818,24 +927,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             RioEventType::Rio(RioEvent::Bell(route_id)) => {
-                // Handle audio bell
-                if self.config.bell.audio {
-                    self.handle_audio_bell();
-                }
-
-                if self.config.bell.tab_indicator {
-                    if let Some(route) = self.router.routes.get_mut(&window_id) {
-                        let focused = route.window.is_focused;
-                        if route
-                            .window
-                            .screen
-                            .context_manager
-                            .ring_bell(route_id, focused)
-                        {
-                            route.request_overlay_redraw();
-                        }
-                    }
-                }
+                self.ring_bell(window_id, route_id);
+            }
+            RioEventType::Rio(RioEvent::CommandFinished {
+                route_id,
+                exit_status,
+                duration,
+            }) => {
+                self.handle_command_finished(window_id, route_id, exit_status, duration);
             }
             RioEventType::Rio(RioEvent::DesktopNotification { title, body }) => {
                 self.handle_desktop_notification(&title, &body);
@@ -2516,4 +2615,30 @@ where
     std::thread::sleep(crate::constants::BELL_DURATION);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_duration;
+    use std::time::Duration;
+
+    #[test]
+    fn durations_list_their_non_zero_units() {
+        assert_eq!(format_duration(Duration::from_millis(3_240)), "3s 240ms");
+        assert_eq!(format_duration(Duration::from_secs(59)), "59s");
+        assert_eq!(format_duration(Duration::from_millis(59_970)), "59s 970ms");
+        assert_eq!(format_duration(Duration::from_secs(123)), "2m 3s");
+        assert_eq!(format_duration(Duration::from_secs(7_323)), "2h 2m 3s");
+        // Milliseconds stay, whatever the magnitude.
+        assert_eq!(
+            format_duration(Duration::from_millis(7_323_417)),
+            "2h 2m 3s 417ms"
+        );
+        // A zero unit in the middle is left out.
+        assert_eq!(format_duration(Duration::from_secs(3_603)), "1h 3s");
+        assert_eq!(format_duration(Duration::from_secs(2 * 86_400)), "2d");
+        // Rounded to the millisecond; never empty.
+        assert_eq!(format_duration(Duration::from_micros(1_000_500)), "1s 1ms");
+        assert_eq!(format_duration(Duration::from_micros(400)), "0ms");
+    }
 }

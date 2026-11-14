@@ -133,6 +133,13 @@ pub enum Action {
     /// (new prompt, full reset) after which the embedder must drop
     /// records. Records themselves live in the embedder.
     ProgramStatus(ProgramStatusEvent),
+    /// A shell command finished (OSC 133 `D` after a `C`). `exit_status`
+    /// is `None` when the shell sent none; `duration` runs from the
+    /// start of the command's output.
+    CommandFinished {
+        exit_status: Option<i32>,
+        duration: std::time::Duration,
+    },
 }
 
 /// `Send + Sync` everywhere threads exist. On wasm there is one thread and
@@ -242,6 +249,19 @@ impl Listener {
             RioEvent::ProgramStatus(event) => {
                 self.delegate
                     .action(self.surface_id, Action::ProgramStatus(event));
+            }
+            RioEvent::CommandFinished {
+                exit_status,
+                duration,
+                ..
+            } => {
+                self.delegate.action(
+                    self.surface_id,
+                    Action::CommandFinished {
+                        exit_status,
+                        duration,
+                    },
+                );
             }
             _ => {}
         }
@@ -2032,6 +2052,33 @@ mod tests {
                 &ProgramStatusEvent::PromptStart,
             ]
         );
+    }
+
+    // OSC 133 C then D reaches the embedder as one finished command with
+    // its exit status; a D with no C before it is not a command.
+    #[test]
+    fn command_finished_reaches_the_delegate() {
+        let delegate = Arc::new(ActionRecorder {
+            actions: Mutex::new(Vec::new()),
+        });
+        let engine = Engine::new(delegate.clone());
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+
+        surface.inject_output(b"\x1b]133;D;0\x07");
+        surface.inject_output(b"\x1b]133;C\x07out\r\n\x1b]133;D;2\x07");
+        surface.inject_output(b"\x1b]133;C\x07\x1b]133;D\x07");
+
+        let actions = delegate.actions.lock().unwrap();
+        let finished: Vec<Option<i32>> = actions
+            .iter()
+            .filter_map(|a| match a {
+                Action::CommandFinished { exit_status, .. } => Some(*exit_status),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(finished, vec![Some(2), None]);
     }
 
     #[test]
