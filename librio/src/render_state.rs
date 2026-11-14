@@ -194,6 +194,12 @@ pub struct RenderState {
     /// captured under the same lock as the grid snapshot and sorted in
     /// draw order: by z-index, lowest first.
     images: Vec<ImageEntry>,
+    /// Last frame's list, kept so the next one is built without
+    /// allocating.
+    images_scratch: Vec<ImageEntry>,
+    /// Positions of the kitty entries in `images`, so the kitty-only
+    /// accessors index in constant time.
+    kitty_indices: Vec<usize>,
     /// The surface's sixel/iTerm2 pixels by image key, kept while a
     /// placement shows the image.
     inline_images: InlineImages,
@@ -231,6 +237,8 @@ impl RenderState {
             history_size: 0,
             alt_screen: false,
             images: Vec::new(),
+            images_scratch: Vec::new(),
+            kitty_indices: Vec::new(),
             inline_images: surface.inline_images(),
             placements_generation: 0,
             images_view: (0, 0, 0),
@@ -277,7 +285,8 @@ impl RenderState {
         if let Some(queues) = term.graphics.take_queues() {
             apply_graphics_updates(&self.inline_images, queues);
         }
-        let mut images = Vec::new();
+        let mut images = std::mem::take(&mut self.images_scratch);
+        images.clear();
         for placement in term.graphics.kitty_placements.values() {
             if let Some(image) = term.graphics.get_kitty_image(placement.image_id) {
                 images.push(ImageEntry::Kitty(KittyEntry::Direct {
@@ -305,10 +314,21 @@ impl RenderState {
         // correctly, and the host can split the list at those bounds.
         images.sort_by_key(ImageEntry::order);
         let view = (self.history_size, self.display_offset, self.rows.len());
-        if images != self.images || (!images.is_empty() && view != self.images_view) {
+        let list_changed = images != self.images;
+        if list_changed || (!images.is_empty() && view != self.images_view) {
             self.placements_generation = self.placements_generation.wrapping_add(1);
         }
-        self.images = images;
+        if list_changed {
+            self.kitty_indices.clear();
+            self.kitty_indices.extend(
+                images
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, entry)| matches!(entry, ImageEntry::Kitty(_)))
+                    .map(|(index, _)| index),
+            );
+        }
+        self.images_scratch = std::mem::replace(&mut self.images, images);
         self.images_view = view;
         self.term_colors = *term.colors();
         let cursor = term.cursor();
@@ -509,13 +529,6 @@ impl RenderState {
         }
     }
 
-    fn kitty_entries(&self) -> impl Iterator<Item = &KittyEntry> {
-        self.images.iter().filter_map(|entry| match entry {
-            ImageEntry::Kitty(entry) => Some(entry),
-            ImageEntry::Inline(_) => None,
-        })
-    }
-
     /// Image placements of every protocol in the last snapshot, visible
     /// or not, in draw order. Resolve each with [`Self::image_placement`].
     pub fn image_count(&self) -> usize {
@@ -617,7 +630,7 @@ impl RenderState {
     /// Kitty placements only, in draw order; the kitty subset of
     /// [`Self::image_count`].
     pub fn kitty_count(&self) -> usize {
-        self.kitty_entries().count()
+        self.kitty_indices.len()
     }
 
     /// Scan the snapshot rows for U+10EEEE placeholder cells and collapse
@@ -719,8 +732,12 @@ impl RenderState {
         cell_width: f32,
         cell_height: f32,
     ) -> Option<(u32, i32, KittyOverlayGeometry)> {
-        let entry = self.kitty_entries().nth(index)?;
-        self.kitty_entry_geometry(entry, cell_width, cell_height)
+        match self.images.get(*self.kitty_indices.get(index)?)? {
+            ImageEntry::Kitty(entry) => {
+                self.kitty_entry_geometry(entry, cell_width, cell_height)
+            }
+            ImageEntry::Inline(_) => None,
+        }
     }
 
     fn kitty_entry_geometry(
