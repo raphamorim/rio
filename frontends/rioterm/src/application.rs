@@ -66,8 +66,7 @@ fn format_duration(duration: std::time::Duration) -> String {
         ("ms", 1),
     ];
 
-    let mut left =
-        duration.as_millis() + u128::from(duration.subsec_micros() % 1000 >= 500);
+    let mut left = (duration.as_nanos() + 500_000) / 1_000_000;
     let mut out = String::new();
     for (name, factor) in UNITS {
         if left >= factor {
@@ -2630,6 +2629,11 @@ mod tests {
         assert_eq!(format_duration(Duration::from_millis(59_970)), "59s 970ms");
         assert_eq!(format_duration(Duration::from_secs(123)), "2m 3s");
         assert_eq!(format_duration(Duration::from_secs(7_323)), "2h 2m 3s");
+        // Milliseconds stay, whatever the magnitude.
+        assert_eq!(
+            format_duration(Duration::from_millis(7_323_417)),
+            "2h 2m 3s 417ms"
+        );
         // A zero unit in the middle is left out.
         assert_eq!(format_duration(Duration::from_secs(3_603)), "1h 3s");
         assert_eq!(format_duration(Duration::from_secs(2 * 86_400)), "2d");
