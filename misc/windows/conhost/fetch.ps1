@@ -51,10 +51,24 @@ $files = @(
     @{ src = "runtimes/win-arm64/native/conpty.dll";        dst = "arm64/conpty.dll" },
     @{ src = "build/native/runtimes/arm64/OpenConsole.exe"; dst = "arm64/arm64/OpenConsole.exe" }
 )
+# The hash pins the package; the signature check is independent of it,
+# so a bump done with -SkipHash still refuses anything Microsoft did
+# not sign. Get-AuthenticodeSignature exists on Windows only.
+$checkSignature = $env:OS -eq "Windows_NT"
+if (-not $checkSignature) {
+    Write-Warning "Not on Windows: Authenticode signatures not checked"
+}
 foreach ($file in $files) {
     $dst = Join-Path $here $file.dst
     New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
     Copy-Item -Force (Join-Path $extracted $file.src) $dst
+    if ($checkSignature) {
+        $signature = Get-AuthenticodeSignature $dst
+        if ($signature.Status -ne "Valid" -or
+            $signature.SignerCertificate.Subject -notmatch "O=Microsoft Corporation") {
+            throw "$($file.dst) is not signed by Microsoft (status $($signature.Status))"
+        }
+    }
     Write-Host "  $($file.dst)"
 }
 
