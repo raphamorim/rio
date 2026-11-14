@@ -107,8 +107,9 @@ checksum:
   name_template: checksums.txt
 
 archives:
-  # Portable builds ship as a zip so the bundled ConPTY (conpty.dll +
-  # OpenConsole.exe) sits next to rio.exe, matching the installer.
+  # Portable builds ship as a zip so the bundled ConPTY (conpty.dll,
+  # and OpenConsole.exe in a folder named for the machine) sits next
+  # to rio.exe, matching the installer.
   - id: win-x64
     formats: [zip]
     ids: [windows-x86_64]
@@ -116,8 +117,10 @@ archives:
     files:
       - src: ./misc/windows/conhost/amd64/conpty.dll
         dst: conpty.dll
-      - src: ./misc/windows/conhost/amd64/OpenConsole.exe
-        dst: OpenConsole.exe
+      - src: ./misc/windows/conhost/amd64/x64/OpenConsole.exe
+        dst: x64/OpenConsole.exe
+      - src: ./misc/windows/conhost/amd64/arm64/OpenConsole.exe
+        dst: arm64/OpenConsole.exe
   - id: win-arm64
     formats: [zip]
     ids: [windows-arm64]
@@ -125,8 +128,8 @@ archives:
     files:
       - src: ./misc/windows/conhost/arm64/conpty.dll
         dst: conpty.dll
-      - src: ./misc/windows/conhost/arm64/OpenConsole.exe
-        dst: OpenConsole.exe
+      - src: ./misc/windows/conhost/arm64/arm64/OpenConsole.exe
+        dst: arm64/OpenConsole.exe
 
 universal_binaries:
   - id: rio
@@ -269,7 +272,8 @@ msi:
       - ./misc/windows/rio.ico
       - ./misc/windows/License.rtf
       - ./misc/windows/conhost/amd64/conpty.dll
-      - ./misc/windows/conhost/amd64/OpenConsole.exe
+      - ./misc/windows/conhost/amd64/x64/OpenConsole.exe
+      - ./misc/windows/conhost/amd64/arm64/OpenConsole.exe
   - id: win-arm64
     name: "{{ .ProjectName }}-installer-aarch64"
     wxs: ./misc/windows/rio.wxs
@@ -279,7 +283,7 @@ msi:
       - ./misc/windows/rio.ico
       - ./misc/windows/License.rtf
       - ./misc/windows/conhost/arm64/conpty.dll
-      - ./misc/windows/conhost/arm64/OpenConsole.exe
+      - ./misc/windows/conhost/arm64/arm64/OpenConsole.exe
 
 winget:
   - use: msi

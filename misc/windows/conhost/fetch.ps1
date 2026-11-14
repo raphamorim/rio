@@ -3,8 +3,9 @@
 # conpty.dll and OpenConsole.exe from the Windows Terminal project,
 # published by Microsoft as the Microsoft.Windows.Console.ConPTY NuGet
 # package (MIT). The release pipeline runs this before packaging; the
-# files land in amd64/ and arm64/ next to this script, which git
-# ignores. See README.md here for why and how to update.
+# files land in amd64/ and arm64/ next to this script, one install
+# layout per Rio build, which git ignores. See README.md here for why
+# and how to update.
 #
 # To bump: set $Version to the new package version, run the script
 # with -SkipHash to download it, and put the printed SHA-256 in $Sha256.
@@ -39,13 +40,16 @@ $extracted = Join-Path $work "x"
 if (Test-Path $extracted) { Remove-Item -Recurse -Force $extracted }
 Expand-Archive -Path $archive -DestinationPath $extracted
 
-# conpty.dll matches the application; OpenConsole.exe matches the
-# machine. Each Rio build gets the pair of its own architecture.
+# conpty.dll matches the application. OpenConsole.exe matches the
+# machine: conpty.dll looks for it in a subfolder named for the
+# machine's architecture. An x64 Rio also runs on ARM64 machines, so
+# it carries both hosts; an arm64 Rio only runs on ARM64.
 $files = @(
     @{ src = "runtimes/win-x64/native/conpty.dll";          dst = "amd64/conpty.dll" },
-    @{ src = "build/native/runtimes/x64/OpenConsole.exe";   dst = "amd64/OpenConsole.exe" },
+    @{ src = "build/native/runtimes/x64/OpenConsole.exe";   dst = "amd64/x64/OpenConsole.exe" },
+    @{ src = "build/native/runtimes/arm64/OpenConsole.exe"; dst = "amd64/arm64/OpenConsole.exe" },
     @{ src = "runtimes/win-arm64/native/conpty.dll";        dst = "arm64/conpty.dll" },
-    @{ src = "build/native/runtimes/arm64/OpenConsole.exe"; dst = "arm64/OpenConsole.exe" }
+    @{ src = "build/native/runtimes/arm64/OpenConsole.exe"; dst = "arm64/arm64/OpenConsole.exe" }
 )
 foreach ($file in $files) {
     $dst = Join-Path $here $file.dst

@@ -20,18 +20,22 @@ Authenticode signature and must not be re-signed.
 
 ## Layout
 
-- `conpty.dll` matches the application architecture, `OpenConsole.exe`
-  the machine's. Each Rio build ships the pair of its own
-  architecture: an x64 Rio on an ARM64 machine runs its x64
-  `OpenConsole.exe` emulated, which works.
-- `conpty.dll` looks for `OpenConsole.exe` in its own directory, then
-  in an `x64/` or `arm64/` subdirectory named for the machine, and
-  without one it silently falls back to the in-box `conhost.exe`, so
-  the two files must always travel together.
-- Rio loads `conpty.dll` by name, so the Windows loader looks in
-  `rio.exe`'s directory first and falls back to the Windows API when
-  there is none. The log line `Using conpty.dll for pseudoconsole`
-  confirms the bundled host is in use.
+- `conpty.dll` sits next to `rio.exe` and matches its architecture.
+  Rio loads it by name, so the Windows loader looks in `rio.exe`'s
+  directory first and falls back to the Windows API when there is
+  none. The log line `Using conpty.dll for pseudoconsole` confirms the
+  bundled host is in use.
+- `OpenConsole.exe` matches the machine, not the application.
+  `conpty.dll` looks for it beside itself, then in an `x64/` or
+  `arm64/` folder named for the machine, and without one it silently
+  falls back to the in-box `conhost.exe`. Rio ships the host in those
+  folders: the x64 build carries both, since it also runs on ARM64
+  machines; the arm64 build carries `arm64/` only. This is the layout
+  Zed ships.
+- The installer puts `C:\Program Files\Rio` first on the system
+  PATH, so a program that loads `conpty.dll` by name and ships none of
+  its own may pick up Rio's copy. That gives it the same modern host,
+  and it falls back to the Windows API when Rio is uninstalled.
 
 ## Updating
 
