@@ -251,15 +251,21 @@ pub fn new(
             warn!("CreatePseudoConsole failed with flags {flags:#x} ({result:#x}); retrying without them");
         }
     }
+    // The host holds duplicates of the pipe ends it was given and
+    // releases them when the pseudoconsole closes, so ours go now:
+    // kept open, they would hold the output pipe open after the host
+    // is gone and the reader would never see it end.
+    unsafe {
+        CloseHandle(conin_raw);
+        CloseHandle(conout_raw);
+    }
     if result != S_OK {
-        unsafe {
-            CloseHandle(conin_raw);
-            CloseHandle(conout_raw);
-        }
         return Err(Error::other(format!(
             "CreatePseudoConsole failed: {result:#x}"
         )));
     }
+    // Owned from here on, so every early return below closes it.
+    let conpty = Conpty { handle: pty_handle };
 
     let mut success;
 
@@ -324,7 +330,7 @@ pub fn new(
             startup_info_ex.lpAttributeList,
             0,
             PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE as usize,
-            pty_handle as *mut std::ffi::c_void,
+            conpty.handle as *mut std::ffi::c_void,
             mem::size_of::<HPCON>(),
             ptr::null_mut(),
             ptr::null_mut(),
@@ -365,15 +371,15 @@ pub fn new(
         if !success {
             return Err(Error::last_os_error());
         }
+        // The exit watcher takes the process handle; the thread handle
+        // has no further use.
+        CloseHandle(proc_info.hThread);
     }
 
     let conin = EventedAnonWrite::new(conin);
     let conout = EventedAnonRead::new(conout);
 
     let child_watcher = ChildExitWatcher::new(proc_info.hProcess)?;
-    let conpty = Conpty {
-        handle: pty_handle as HPCON,
-    };
 
     Ok(Pty::new(conpty, conout, conin, child_watcher))
 }
