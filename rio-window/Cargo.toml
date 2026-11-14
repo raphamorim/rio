@@ -61,6 +61,14 @@ objc2 = { version = "0.5.2", features = ["relax-sign-encoding"] }
 objc = { workspace = true }
 libc = { workspace = true }
 core-graphics = "0.24.0"
+block2 = "0.5.1"
+objc2-user-notifications = { version = "0.2.2", features = [
+    "UNUserNotificationCenter",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationTrigger",
+    "block2",
+] }
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
 version = "0.2.2"
@@ -72,6 +80,7 @@ features = [
     "NSDictionary",
     "NSDistributedNotificationCenter",
     "NSEnumerator",
+    "NSError",
     "NSNotification",
     "NSObjCRuntime",
     "NSPathUtilities",
@@ -119,6 +128,13 @@ features = [
 
 [target.'cfg(target_os = "windows")'.dependencies]
 unicode-segmentation = "1.7.1"
+# Toast notifications are WinRT, which `windows-sys` does not cover. Kept at
+# the version sugarloaf pins so the tree holds one copy of the `windows` crate
+# (see `sugarloaf/Cargo.toml`).
+windows = { version = "0.62", features = [
+    "Data_Xml_Dom",
+    "UI_Notifications",
+] }
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
 version = "0.59.0"

@@ -25,6 +25,17 @@ mod platform;
 
 pub use self::platform::*;
 
+// Backends of `crate::notification`. Web and Orbital have none.
+#[cfg(windows_platform)]
+#[path = "windows/notification.rs"]
+pub(crate) mod notification;
+#[cfg(any(x11_platform, wayland_platform))]
+#[path = "linux/common/notification.rs"]
+pub(crate) mod notification;
+#[cfg(macos_platform)]
+#[path = "macos/notification.rs"]
+pub(crate) mod notification;
+
 /// Helper for converting between platform-specific and generic
 /// [`VideoModeHandle`]/[`MonitorHandle`]
 #[derive(Clone, Debug, PartialEq, Eq)]
