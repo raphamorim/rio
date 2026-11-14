@@ -32,8 +32,7 @@ The application: **Rio** (Linux, macOS, Windows, BSD).
 
 The published crates, whose embedders inherit anything wrong in them:
 `rio-vt`, `librio`, `sugarloaf`, `rio-backend`, `rio-window`, `rio-graphics`,
-`rio-fonts`, `rio-grapheme-width`, `rio-notifier`, `teletypewriter`,
-`corcovado`.
+`rio-fonts`, `rio-grapheme-width`, `teletypewriter`, `corcovado`.
 
 A terminal's central risk is that the bytes it renders are not trusted: they
 arrive from remote hosts, from programs, from files someone else wrote. So the
