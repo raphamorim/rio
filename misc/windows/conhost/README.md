@@ -12,9 +12,9 @@ modern host passes the output through unchanged (rio#1759, rio#2031).
 The files are not in the repository. `fetch.ps1` downloads the
 `Microsoft.Windows.Console.ConPTY` NuGet package (MIT, published by
 Microsoft, <https://www.nuget.org/packages/Microsoft.Windows.Console.ConPTY>),
-checks its SHA-256 against the one pinned in the script, and puts the
-four files in `amd64/` and `arm64/` here, which git ignores. The
-release pipeline runs it before packaging (`.goreleaser.yaml`); run it
+checks its SHA-256 against the one pinned in the script, and lays out
+one install tree per Rio build in `amd64/` and `arm64/` here, which git
+ignores. The release pipeline runs it before packaging (`.goreleaser.yaml`); run it
 yourself to build a package locally. The binaries keep Microsoft's
 Authenticode signature and must not be re-signed.
 
