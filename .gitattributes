@@ -1,0 +1,2 @@
+misc/windows/conhost/**/*.dll binary
+misc/windows/conhost/**/*.exe binary
