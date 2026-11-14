@@ -14,6 +14,28 @@ fn cvt(i: libc::c_int) -> io::Result<libc::c_int> {
     }
 }
 
+// Writers must get EPIPE back instead of SIGPIPE: these sockets are
+// written from signal handlers (teletypewriter's signal self-pipe),
+// and non-Rust hosts embedding librio do not ignore SIGPIPE, so the
+// default disposition would kill their process during fd teardown.
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
+unsafe fn set_nosigpipe(fd: c_int) -> io::Result<()> {
+    let on: c_int = 1;
+    cvt(libc::setsockopt(
+        fd,
+        libc::SOL_SOCKET,
+        libc::SO_NOSIGPIPE,
+        &on as *const c_int as *const libc::c_void,
+        mem::size_of::<c_int>() as libc::socklen_t,
+    ))?;
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
+unsafe fn set_nosigpipe(_fd: c_int) -> io::Result<()> {
+    Ok(())
+}
+
 // See below for the usage of SOCK_CLOEXEC, but this constant is only defined on
 // Linux currently (e.g. support doesn't exist on other platforms). In order to
 // get name resolution to work and things to compile we just define a dummy
@@ -73,6 +95,7 @@ impl Socket {
             cvt(libc::ioctl(fd.fd, libc::FIOCLEX))?;
             let mut nonblocking = 1 as c_ulong;
             cvt(libc::ioctl(fd.fd, libc::FIONBIO, &mut nonblocking))?;
+            set_nosigpipe(fd.fd)?;
             Ok(fd)
         }
     }
@@ -104,6 +127,8 @@ impl Socket {
             let mut nonblocking = 1 as c_ulong;
             cvt(libc::ioctl(a.fd, libc::FIONBIO, &mut nonblocking))?;
             cvt(libc::ioctl(b.fd, libc::FIONBIO, &mut nonblocking))?;
+            set_nosigpipe(a.fd)?;
+            set_nosigpipe(b.fd)?;
             Ok((a, b))
         }
     }

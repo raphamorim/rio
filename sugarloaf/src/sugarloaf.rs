@@ -9,7 +9,7 @@ use crate::font::{fonts::SugarloafFont, FontLibrary};
 use crate::font_cache::{compute_advance, resolve_with, FontCache, ResolvedGlyph};
 use crate::layout::RootStyle;
 use crate::renderer::Renderer;
-use crate::sugarloaf::graphics::{GraphicDataEntry, Graphics};
+use crate::sugarloaf::graphics::{image_key_route, GraphicDataEntry, Graphics};
 use swash::Attributes;
 
 use crate::context::Context;
@@ -38,6 +38,9 @@ pub struct Sugarloaf<'a> {
     pub graphics: Graphics,
     #[cfg(feature = "wgpu")]
     filters_brush: Option<FiltersBrush>,
+    /// One-shot notice that active filters defeat `window.opacity`.
+    #[cfg(feature = "wgpu")]
+    warned_filters_opacity: bool,
     /// Pixel data for standalone image textures, keyed by image key
     /// (`graphics::kitty_image_key` / `graphics::atlas_image_key`).
     pub image_data: rustc_hash::FxHashMap<u64, GraphicDataEntry>,
@@ -116,68 +119,22 @@ pub enum SugarloafBackend {
     Cpu,
 }
 
-/// RGBA color in linear-light 0..1 space. Mirrors `wgpu::Color`'s
-/// shape so callers don't have to depend on `wgpu`. Sugarloaf's
-/// public API takes/returns this type; the wgpu render path
-/// converts at the boundary.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Color {
-    pub r: f64,
-    pub g: f64,
-    pub b: f64,
-    pub a: f64,
-}
-
-impl Color {
-    pub const TRANSPARENT: Self = Self {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: 0.0,
-    };
-    pub const BLACK: Self = Self {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const WHITE: Self = Self {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    };
-}
-
-#[cfg(feature = "wgpu")]
-impl From<Color> for wgpu::Color {
-    fn from(c: Color) -> Self {
-        wgpu::Color {
-            r: c.r,
-            g: c.g,
-            b: c.b,
-            a: c.a,
-        }
-    }
-}
-
-#[cfg(feature = "wgpu")]
-impl From<wgpu::Color> for Color {
-    fn from(c: wgpu::Color) -> Self {
-        Color {
-            r: c.r,
-            g: c.g,
-            b: c.b,
-            a: c.a,
-        }
-    }
-}
+// `Color` (the trivial `{r,g,b,a: f64}` POD) now lives in `rio-graphics`
+// so config/color code can use it without depending on sugarloaf. The
+// wgpu `From` conversions live alongside it there under the crate's
+// `wgpu` feature (orphan rule: both sides would be foreign here).
+pub use rio_graphics::Color;
 
 pub struct SugarloafRenderer {
     pub backend: SugarloafBackend,
     pub font_features: Option<Vec<String>>,
     pub colorspace: Colorspace,
+    /// The window wants per-pixel alpha (`window.opacity < 1`). On wgpu
+    /// this prefers an adapter whose surface offers an alpha-carrying
+    /// composite mode: on Windows, DX12 HWND swapchains expose only
+    /// `Opaque`, while Vulkan exposes `PreMultiplied`, so which adapter
+    /// wgpu happens to pick decides whether transparency works at all.
+    pub prefer_alpha_capable_adapter: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -235,6 +192,7 @@ impl Default for SugarloafRenderer {
             backend: default_backend,
             font_features: None,
             colorspace: Colorspace::default(),
+            prefer_alpha_capable_adapter: false,
         }
     }
 }
@@ -298,6 +256,8 @@ impl Sugarloaf<'_> {
             graphics: Graphics::default(),
             #[cfg(feature = "wgpu")]
             filters_brush: None,
+            #[cfg(feature = "wgpu")]
+            warned_filters_opacity: false,
             image_data: rustc_hash::FxHashMap::default(),
             cpu_cache: crate::renderer::cpu::CpuCache::new(),
             font_cache,
@@ -913,6 +873,14 @@ impl Sugarloaf<'_> {
         self.renderer.evict_image_texture(key);
     }
 
+    /// Drop every image a closed terminal uploaded (keys namespaced
+    /// with `graphics::route_image_key`), pixel store and GPU textures.
+    pub fn remove_route_images(&mut self, route_id: usize) {
+        self.image_data
+            .retain(|key, _| image_key_route(*key) != route_id);
+        self.renderer.evict_route_textures(route_id);
+    }
+
     /// Drop everything this frame's immediate-mode producers pushed
     /// without submitting a draw. Callers use this when they
     /// decided mid-frame to skip `render` / `render_with_grids`
@@ -929,6 +897,14 @@ impl Sugarloaf<'_> {
     }
 
     #[inline]
+    /// Whether the last frame failed to present (drawable acquisition
+    /// failure, common right after sleep/wake). Reading clears the flag.
+    /// Embedders should mark content dirty and schedule another frame,
+    /// since the dropped frame's damage was already consumed.
+    pub fn take_frame_dropped(&mut self) -> bool {
+        std::mem::take(&mut self.renderer.frame_dropped)
+    }
+
     pub fn render(&mut self) {
         self.render_with_grids(&mut []);
     }
@@ -1180,7 +1156,31 @@ impl Sugarloaf<'_> {
 
         {
             let load = if let Some(background_color) = self.background_color {
-                wgpu::LoadOp::Clear(background_color.into())
+                // The grid bg pass emits `(0,0,0,0)` for default-bg cells (see
+                // `cell_bg` in `frontends/rioterm/src/grid_emit.rs`) and blends
+                // premultiplied-over the cleared color, so the framebuffer alpha
+                // for any cell that didn't get an explicit bg ends up = the clear
+                // alpha. When the user sets `window.opacity < 1` we want the
+                // compositor to treat that cleared color as a translucent overlay
+                // over the desktop.
+                //
+                // Only a surface in `PreMultiplied` mode (DWM via the Windows
+                // wgpu Vulkan path, Wayland) reads the RGB as already
+                // multiplied by alpha, so only there may the clear be
+                // premultiplied. `PostMultiplied` wants the straight value,
+                // and everything else (`Opaque`, and `Auto` resolving to it)
+                // ignores the alpha byte entirely: premultiplying would just
+                // darken the window with no transparency in return.
+                let clear = match ctx.alpha_mode {
+                    wgpu::CompositeAlphaMode::PreMultiplied => wgpu::Color {
+                        r: background_color.r * background_color.a,
+                        g: background_color.g * background_color.a,
+                        b: background_color.b * background_color.a,
+                        a: background_color.a,
+                    },
+                    _ => background_color.into(),
+                };
+                wgpu::LoadOp::Clear(clear)
             } else {
                 wgpu::LoadOp::Load
             };
@@ -1237,6 +1237,19 @@ impl Sugarloaf<'_> {
         }
 
         if let Some(ref mut filters_brush) = self.filters_brush {
+            // The filter chain's final pass writes with blending disabled,
+            // so whatever alpha the shader outputs (1.0 for CRT shaders)
+            // replaces the frame's: the window snaps back to opaque. Say
+            // so once instead of letting the two settings cancel silently.
+            if !self.warned_filters_opacity
+                && self.background_color.is_some_and(|c| c.a < 1.0)
+            {
+                self.warned_filters_opacity = true;
+                tracing::warn!(
+                    "[renderer] filters overwrite the frame's alpha channel; \
+                     window.opacity < 1 has no effect while filters are active"
+                );
+            }
             filters_brush.render(ctx, &mut encoder, &frame.texture, &frame.texture);
         }
         ctx.queue.submit(Some(encoder.finish()));

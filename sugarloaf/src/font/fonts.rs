@@ -3,7 +3,7 @@ use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 use std::fmt;
 
-/// Per-slot font style override. Mirrors Ghostty's `FontStyle` enum:
+/// Per-slot font style override:
 ///   - `Default`: let font discovery pick the face implied by the slot
 ///     (regular / bold / italic / bold+italic traits).
 ///   - `Disabled`: skip this slot entirely; the regular face is reused

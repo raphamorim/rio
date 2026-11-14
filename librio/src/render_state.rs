@@ -1,0 +1,923 @@
+use crate::{InlineImages, Listener, Surface};
+use rio_graphics::{atlas_image_key, ColorType, GraphicData};
+use rio_vt::ansi::graphics::{
+    atlas_overlay_geometry, kitty_overlay_geometry, AtlasPlacement, KittyOverlayGeometry,
+    KittyPlacement, OverlayViewport, UpdateQueues, VirtualPlacement,
+};
+use rio_vt::ansi::kitty_virtual::{
+    compute_run_geometry, resolve_virtual_placement, IncompletePlacement, PlaceholderRun,
+    PLACEHOLDER,
+};
+use rio_vt::ansi::CursorShape;
+use rio_vt::config::colors::term::TermColors;
+use rio_vt::config::colors::{AnsiColor, ColorRgb};
+use rio_vt::crosswords::grid::row::Row;
+use rio_vt::crosswords::grid::Dimensions;
+use rio_vt::crosswords::pos::Column;
+use rio_vt::crosswords::square::{ContentTag, Extras, Square};
+use rio_vt::crosswords::style::Style;
+use rio_vt::crosswords::Crosswords;
+use rio_vt::event::sync::FairMutex;
+use rio_vt::event::TerminalDamage;
+use rustc_hash::FxHashMap;
+use std::sync::Arc;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewportSelection {
+    pub start_line: u16,
+    pub start_col: u16,
+    pub end_line: u16,
+    pub end_col: u16,
+    pub is_block: bool,
+}
+
+/// Virtual placements have no z of their own; kitty draws them under
+/// text unless the application says otherwise, and rio's renderer pins
+/// them there (see `frontends/rioterm/src/renderer/mod.rs`).
+const VIRTUAL_Z_INDEX: i32 = -1;
+
+/// Sixel and iTerm2 images sit on the grid plane: under the text, and
+/// under a kitty image at the same z, as rio's GPU renderer draws them.
+const INLINE_Z_INDEX: i32 = -1;
+
+/// One drawable kitty item: a direct overlay placement, or one row-run
+/// of U+10EEEE placeholder cells from a virtual placement (`U=1`, what
+/// `kitten icat --transfer-mode` emits under multiplexers).
+#[derive(Debug, Clone, PartialEq)]
+enum KittyEntry {
+    Direct {
+        placement: KittyPlacement,
+        image_width: usize,
+        image_height: usize,
+        image_stamp: u64,
+    },
+    Virtual {
+        run: PlaceholderRun,
+        line: usize,
+        start_col: usize,
+        placement: VirtualPlacement,
+        image_width: usize,
+        image_height: usize,
+        image_stamp: u64,
+    },
+}
+
+impl KittyEntry {
+    fn z_index(&self) -> i32 {
+        match self {
+            KittyEntry::Direct { placement, .. } => placement.z_index,
+            KittyEntry::Virtual { .. } => VIRTUAL_Z_INDEX,
+        }
+    }
+
+    fn image_stamp(&self) -> u64 {
+        match self {
+            KittyEntry::Direct { image_stamp, .. }
+            | KittyEntry::Virtual { image_stamp, .. } => *image_stamp,
+        }
+    }
+}
+
+/// The protocol an image came from. Ids are only unique within one, so
+/// an image is always looked up by protocol and id together.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageProtocol {
+    /// Kitty graphics: the id is the protocol's own `i=` image id.
+    Kitty,
+    /// Sixel and iTerm2 inline images, which share one store: the id is
+    /// the key the terminal gave the image when it arrived.
+    Inline,
+}
+
+/// Where an image is drawn relative to the text. Draw in this order:
+/// images below the background, cell backgrounds, images below the
+/// text, text, images above the text; within a layer by z-index,
+/// lowest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageLayer {
+    BelowBackground,
+    BelowText,
+    AboveText,
+}
+
+impl ImageLayer {
+    /// The layer a kitty z-index selects, as kitty defines the ranges:
+    /// below `i32::MIN / 2` under the background, negative under the
+    /// text, zero and above over it.
+    pub fn from_z(z_index: i32) -> Self {
+        if z_index < i32::MIN / 2 {
+            ImageLayer::BelowBackground
+        } else if z_index < 0 {
+            ImageLayer::BelowText
+        } else {
+            ImageLayer::AboveText
+        }
+    }
+}
+
+/// One rectangle of one image, resolved against the viewport: what to
+/// draw (protocol, id and the normalized source rectangle), where
+/// (pixels from the grid origin) and in which order (layer, then z).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ImagePlacement {
+    pub protocol: ImageProtocol,
+    pub image_id: u64,
+    /// Changes whenever the image's pixels change, so a texture cached
+    /// by (protocol, id, stamp) never goes stale. Never 0 while the
+    /// pixels are available, so 0 can stand for "no texture yet".
+    pub image_stamp: u64,
+    pub layer: ImageLayer,
+    pub z_index: i32,
+    pub geometry: KittyOverlayGeometry,
+}
+
+/// One snapshotted placement of either protocol.
+#[derive(Debug, Clone, PartialEq)]
+enum ImageEntry {
+    Kitty(KittyEntry),
+    Inline {
+        placement: AtlasPlacement,
+        /// 0 when the pixels have not reached the store.
+        image_stamp: u64,
+    },
+}
+
+impl ImageEntry {
+    fn z_index(&self) -> i32 {
+        match self {
+            ImageEntry::Kitty(entry) => entry.z_index(),
+            ImageEntry::Inline { .. } => INLINE_Z_INDEX,
+        }
+    }
+
+    /// Draw order: by z, and at the same z inline images first, under
+    /// the kitty ones.
+    fn order(&self) -> (i32, u8) {
+        let rank = match self {
+            ImageEntry::Inline { .. } => 0,
+            ImageEntry::Kitty(_) => 1,
+        };
+        (self.z_index(), rank)
+    }
+
+    /// Whether a row of the placement is inside `view`, `(history
+    /// size, display offset, screen lines)`: the cut the geometry
+    /// functions make before any pixel math, so it needs no cell
+    /// metrics. Virtual runs are rows of the snapshot, always in view.
+    fn in_view(&self, view: (i64, usize, usize)) -> bool {
+        let (top, rows) = match self {
+            ImageEntry::Kitty(KittyEntry::Direct { placement, .. }) => {
+                (placement.dest_row, placement.rows as i64)
+            }
+            ImageEntry::Kitty(KittyEntry::Virtual { .. }) => return true,
+            ImageEntry::Inline { placement, .. } => {
+                (placement.abs_row, placement.rows as i64)
+            }
+        };
+        let screen_row = top - (view.0 - view.1 as i64);
+        screen_row + rows > 0 && screen_row < view.2 as i64
+    }
+}
+
+/// Apply one upload queue to the surface's sixel/iTerm2 pixel store:
+/// new images in, images whose last placement is gone out. Kitty
+/// uploads in the queue are skipped; those stay in the terminal.
+pub(crate) fn apply_graphics_updates(images: &InlineImages, queues: UpdateQueues) {
+    let mut images = images.lock();
+    for data in queues.pending {
+        images.insert(atlas_image_key(data.id.get()), Arc::new(data));
+    }
+    for key in queues.remove_queue {
+        images.remove(&key);
+    }
+}
+
+pub struct RenderState {
+    terminal: Arc<FairMutex<Crosswords<Listener>>>,
+    rows: Vec<Row<Square>>,
+    /// Per-row resolved cell styles, index-parallel to `rows`.
+    row_styles: Vec<Vec<Style>>,
+    extras: FxHashMap<u16, Extras>,
+    columns: usize,
+    cursor_line: usize,
+    cursor_column: usize,
+    cursor_visible: bool,
+    cursor_shape: CursorShape,
+    /// Terminal palette (OSC-set / dynamic colors), snapshotted under
+    /// the same lock as the grid so the GPU emit path resolves indexed
+    /// and named colors against the exact frame it draws.
+    term_colors: TermColors,
+    display_offset: usize,
+    selection: Option<ViewportSelection>,
+    history_size: i64,
+    alt_screen: bool,
+    /// Every image placement on the active screen (kitty direct
+    /// overlays and virtual placeholder runs, sixel/iTerm2 images),
+    /// captured under the same lock as the grid snapshot and sorted in
+    /// draw order: by z-index, lowest first.
+    images: Vec<ImageEntry>,
+    /// Last frame's list, kept so the next one is built without
+    /// allocating.
+    images_scratch: Vec<ImageEntry>,
+    /// Positions of the kitty entries in `images`, so the kitty-only
+    /// accessors index in constant time.
+    kitty_indices: Vec<usize>,
+    /// The surface's sixel/iTerm2 pixels by image key, kept while a
+    /// placement shows the image.
+    inline_images: InlineImages,
+    /// Bumped by an update that changes the placement list or moves it
+    /// (a scroll), so a host can keep its draw list between frames.
+    placements_generation: u64,
+    /// The viewport the placements were last resolved against:
+    /// (history size, display offset, screen lines).
+    images_view: (i64, usize, usize),
+    /// The surface's baseline for image change stamps.
+    epoch: rio_vt::time::Instant,
+}
+
+impl RenderState {
+    pub fn new(surface: &Surface) -> Self {
+        let terminal = surface.terminal();
+        let inline_images = surface.inline_images();
+        let (columns, term_colors) = {
+            let term = terminal.lock();
+            (term.grid.columns(), *term.colors())
+        };
+        Self {
+            terminal,
+            rows: Vec::new(),
+            row_styles: Vec::new(),
+            extras: FxHashMap::default(),
+            columns,
+            cursor_line: 0,
+            cursor_column: 0,
+            cursor_visible: true,
+            cursor_shape: CursorShape::Block,
+            term_colors,
+            display_offset: 0,
+            selection: None,
+            history_size: 0,
+            alt_screen: false,
+            images: Vec::new(),
+            images_scratch: Vec::new(),
+            kitty_indices: Vec::new(),
+            epoch: inline_images.epoch(),
+            inline_images,
+            placements_generation: 0,
+            images_view: (0, 0, 0),
+        }
+    }
+
+    pub fn update(&mut self) {
+        let mut term = self.terminal.lock();
+        if term.synchronized_output() {
+            if !term.sync_update_expired(rio_vt::time::Instant::now()) {
+                term.damage_event_in_flight = false;
+                return;
+            }
+            term.end_sync_update();
+        }
+        let damage = if self.rows.is_empty() {
+            TerminalDamage::Full
+        } else {
+            match term.peek_damage_event() {
+                Some(damage) => damage,
+                None => TerminalDamage::Full,
+            }
+        };
+        term.snapshot_visible(
+            &damage,
+            &mut self.rows,
+            &mut self.row_styles,
+            &mut self.extras,
+        );
+        term.reset_damage();
+        term.damage_event_in_flight = false;
+        self.columns = term.grid.columns();
+        self.display_offset = term.display_offset();
+        // Kitty dest_rows live in absolute row space: rows evicted from
+        // the ring still count (rio-vt anchors placements the same way),
+        // so a full scrollback must not shift placements off-screen.
+        self.history_size = term.lines_evicted() as i64 + term.history_size() as i64;
+        self.alt_screen = term.mode().contains(rio_vt::crosswords::Mode::ALT_SCREEN);
+        // The terminal sends its upload queues as events, which the
+        // listener applies to the surface's pixel store; anything not
+        // sent yet is applied here, so the placements below never run
+        // ahead of their pixels.
+        if let Some(queues) = term.graphics.take_queues() {
+            apply_graphics_updates(&self.inline_images, queues);
+        }
+        let mut images = std::mem::take(&mut self.images_scratch);
+        images.clear();
+        for placement in term.graphics.kitty_placements.values() {
+            if let Some(image) = term.graphics.get_kitty_image(placement.image_id) {
+                images.push(ImageEntry::Kitty(KittyEntry::Direct {
+                    placement: placement.clone(),
+                    image_width: image.data.width,
+                    image_height: image.data.height,
+                    image_stamp: self.stamp(image.transmission_time),
+                }));
+            }
+        }
+        self.collect_virtual_runs(&term, &mut images);
+        if !term.graphics.atlas_placements.is_empty() {
+            // One lock per update; the accessors then read the stamp
+            // from the entry.
+            let inline_images = self.inline_images.lock();
+            images.extend(term.graphics.atlas_placements.iter().map(|placement| {
+                let image_stamp = inline_images
+                    .get(&placement.image_key)
+                    .map_or(0, |image| self.stamp(image.transmit_time));
+                ImageEntry::Inline {
+                    placement: placement.clone(),
+                    image_stamp,
+                }
+            }));
+        }
+        // Under-background placements (z < i32::MIN / 2) first, then
+        // under-text (z < 0), then over-text: drawing in order layers
+        // correctly, and the host can split the list at those bounds.
+        images.sort_by_key(ImageEntry::order);
+        let view = (self.history_size, self.display_offset, self.rows.len());
+        let list_changed = images != self.images;
+        // A scroll only moves what was or is in view: an image deep in
+        // the scrollback must not make every line of output a new
+        // generation.
+        let moved = view != self.images_view
+            && images
+                .iter()
+                .any(|entry| entry.in_view(self.images_view) || entry.in_view(view));
+        if list_changed || moved {
+            self.placements_generation = self.placements_generation.wrapping_add(1);
+        }
+        if list_changed {
+            self.kitty_indices.clear();
+            self.kitty_indices.extend(
+                images
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, entry)| matches!(entry, ImageEntry::Kitty(_)))
+                    .map(|(index, _)| index),
+            );
+        }
+        self.images_scratch = std::mem::replace(&mut self.images, images);
+        self.images_view = view;
+        self.term_colors = *term.colors();
+        let cursor = term.cursor();
+        self.cursor_line = cursor.pos.row.0.max(0) as usize;
+        self.cursor_column = cursor.pos.col.0;
+        self.cursor_shape = cursor.content;
+        // Hidden covers both DECTCEM (CSI ?25l) and a scrolled viewport;
+        // renderers must not paint a cursor in either case.
+        self.cursor_visible = cursor.content != CursorShape::Hidden;
+        self.selection = term
+            .selection
+            .as_ref()
+            .and_then(|selection| selection.to_range(&term))
+            .and_then(|range| {
+                let offset = term.display_offset() as i32;
+                let lines = self.rows.len() as i32;
+                let start = range.start.row.0 + offset;
+                let end = range.end.row.0 + offset;
+                if end < 0 || start >= lines {
+                    return None;
+                }
+                let clamped_start = start.max(0);
+                let clamped_end = end.min(lines - 1);
+                Some(ViewportSelection {
+                    start_line: clamped_start as u16,
+                    start_col: if start < 0 {
+                        0
+                    } else {
+                        range.start.col.0 as u16
+                    },
+                    end_line: clamped_end as u16,
+                    end_col: if end >= lines {
+                        (self.columns.saturating_sub(1)) as u16
+                    } else {
+                        range.end.col.0 as u16
+                    },
+                    is_block: range.is_block,
+                })
+            });
+    }
+
+    pub fn columns(&self) -> usize {
+        self.columns
+    }
+
+    pub fn lines(&self) -> usize {
+        self.rows.len()
+    }
+
+    pub fn row_dirty(&self, line: usize) -> bool {
+        self.rows.get(line).map(|row| row.dirty).unwrap_or(false)
+    }
+
+    pub fn reset_dirty(&mut self) {
+        for row in &mut self.rows {
+            row.dirty = false;
+        }
+    }
+
+    /// The codepoints attached to a square's grapheme cluster
+    /// (combining marks, or a full mode-2027 cluster tail) when it
+    /// carries any. Bg-only squares reuse the extras-id bits for
+    /// color and never report a cluster.
+    pub fn cluster_of(&self, square: &Square) -> Option<&[char]> {
+        if !square.has_grapheme()
+            || !matches!(
+                square.content_tag(),
+                rio_vt::crosswords::square::ContentTag::Codepoint
+            )
+        {
+            return None;
+        }
+        let extras = square.extras_id().and_then(|eid| self.extras.get(&eid))?;
+        if extras.zerowidth.is_empty() {
+            None
+        } else {
+            Some(&extras.zerowidth)
+        }
+    }
+
+    /// The cell's full text (base codepoint plus attached cluster
+    /// codepoints), or `None` for cells with no attachments.
+    pub fn cell_cluster_text(&self, line: usize, column: usize) -> Option<String> {
+        let square = self.square(line, column)?;
+        let cluster = self.cluster_of(square)?;
+        let mut text = String::with_capacity(4 * (1 + cluster.len()));
+        text.push(square.c());
+        text.extend(cluster.iter());
+        Some(text)
+    }
+
+    pub fn square(&self, line: usize, column: usize) -> Option<&Square> {
+        let row = self.rows.get(line)?;
+        if column >= self.columns {
+            return None;
+        }
+        Some(&row[Column(column)])
+    }
+
+    pub fn style_at(&self, line: usize, column: usize, square: &Square) -> Style {
+        // Bg-only cells (erase fills, blank lines after `clear`) encode
+        // their background inline instead of carrying a style id; the
+        // resolved per-row styles hold the default for them.
+        match square.content_tag() {
+            ContentTag::Codepoint => self
+                .row_styles(line)
+                .get(column)
+                .copied()
+                .unwrap_or_default(),
+            ContentTag::BgPalette => Style {
+                bg: AnsiColor::Indexed(square.bg_palette_index()),
+                ..Style::default()
+            },
+            ContentTag::BgRgb => {
+                let (r, g, b) = square.bg_rgb();
+                Style {
+                    bg: AnsiColor::Spec(ColorRgb { r, g, b }),
+                    ..Style::default()
+                }
+            }
+        }
+    }
+
+    /// Resolved styles for one visible row, index-parallel to its
+    /// cells. Empty for an out-of-range line.
+    pub fn row_styles(&self, line: usize) -> &[Style] {
+        self.row_styles.get(line).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// The snapshot's visible rows. Index-parallel to the resolved
+    /// per-row styles served by `style_at` / `row_styles`, and to
+    /// `extras()`: the GPU emit path (rio-grid) walks these.
+    pub fn rows(&self) -> &[Row<Square>] {
+        &self.rows
+    }
+
+    /// Per-frame extras (grapheme clusters, hyperlinks), keyed by a
+    /// cell's `extras_id`.
+    pub fn extras(&self) -> &FxHashMap<u16, Extras> {
+        &self.extras
+    }
+
+    /// Terminal palette captured with this frame's grid snapshot.
+    pub fn term_colors(&self) -> &TermColors {
+        &self.term_colors
+    }
+
+    /// The terminal-side configured cursor shape (block / underline /
+    /// beam / hidden) for this frame.
+    pub fn cursor_shape(&self) -> CursorShape {
+        self.cursor_shape
+    }
+
+    pub fn cursor(&self) -> (usize, usize) {
+        (self.cursor_line, self.cursor_column)
+    }
+
+    /// False when the program hid the cursor (DECTCEM, `CSI ?25l`) or the
+    /// view is scrolled into history; renderers skip painting it then.
+    pub fn cursor_visible(&self) -> bool {
+        self.cursor_visible
+    }
+
+    pub fn display_offset(&self) -> usize {
+        self.display_offset
+    }
+
+    /// Whether the alternate screen (full-screen TUIs) is active. Hosts
+    /// use it to gate prompt-output affordances like table skins.
+    pub fn alt_screen(&self) -> bool {
+        self.alt_screen
+    }
+
+    pub fn selection(&self) -> Option<ViewportSelection> {
+        self.selection
+    }
+
+    /// Nanoseconds since this state's epoch: a change stamp that can
+    /// cross the C ABI. A time before the epoch lands at the top of
+    /// the range, still distinct from anything after it; a time equal
+    /// to it gives 1, keeping 0 free to mean "no image".
+    fn stamp(&self, at: rio_vt::time::Instant) -> u64 {
+        match at.checked_duration_since(self.epoch) {
+            Some(duration) => (duration.as_nanos() as u64).max(1),
+            None => u64::MAX - self.epoch.duration_since(at).as_nanos() as u64,
+        }
+    }
+
+    fn viewport(&self, cell_width: f32, cell_height: f32) -> OverlayViewport {
+        OverlayViewport {
+            cell_width,
+            cell_height,
+            origin_x: 0.0,
+            origin_y: 0.0,
+            history_size: self.history_size,
+            display_offset: self.display_offset as i64,
+            screen_lines: self.rows.len() as i64,
+        }
+    }
+
+    /// Image placements of every protocol in the last snapshot, visible
+    /// or not, in draw order. Resolve each with [`Self::image_placement`].
+    pub fn image_count(&self) -> usize {
+        self.images.len()
+    }
+
+    /// Changes whenever an update changes the placement list or moves
+    /// it on screen. A host that keeps a draw list rebuilds it only
+    /// when this differs from the value it last built against. Compare
+    /// for equality only; it is 0 until the first image appears.
+    pub fn image_placements_generation(&self) -> u64 {
+        self.placements_generation
+    }
+
+    /// The placement at `index` resolved against the viewport with the
+    /// host's cell metrics. `None` when it is scrolled out of view.
+    pub fn image_placement(
+        &self,
+        index: usize,
+        cell_width: f32,
+        cell_height: f32,
+    ) -> Option<ImagePlacement> {
+        match self.images.get(index)? {
+            ImageEntry::Kitty(entry) => {
+                let (image_id, z_index, geometry) =
+                    self.kitty_entry_geometry(entry, cell_width, cell_height)?;
+                Some(ImagePlacement {
+                    protocol: ImageProtocol::Kitty,
+                    image_id: u64::from(image_id),
+                    image_stamp: entry.image_stamp(),
+                    layer: ImageLayer::from_z(z_index),
+                    z_index,
+                    geometry,
+                })
+            }
+            ImageEntry::Inline {
+                placement,
+                image_stamp,
+            } => {
+                let geometry = atlas_overlay_geometry(
+                    placement,
+                    &self.viewport(cell_width, cell_height),
+                )?;
+                Some(ImagePlacement {
+                    protocol: ImageProtocol::Inline,
+                    image_id: placement.image_key,
+                    image_stamp: *image_stamp,
+                    layer: ImageLayer::BelowText,
+                    z_index: INLINE_Z_INDEX,
+                    geometry,
+                })
+            }
+        }
+    }
+
+    /// Pixel dimensions and the change stamp of an image of either
+    /// protocol; `None` when it is unknown.
+    pub fn image_info(
+        &self,
+        protocol: ImageProtocol,
+        image_id: u64,
+    ) -> Option<(usize, usize, u64)> {
+        match protocol {
+            ImageProtocol::Kitty => self.kitty_image_info(u32::try_from(image_id).ok()?),
+            ImageProtocol::Inline => {
+                self.inline_images.lock().get(&image_id).map(|image| {
+                    (image.width, image.height, self.stamp(image.transmit_time))
+                })
+            }
+        }
+    }
+
+    /// Copy an image of either protocol into `buf` as RGBA8. Returns
+    /// bytes written; 0 when unknown or `buf` is too small.
+    pub fn image_rgba(
+        &self,
+        protocol: ImageProtocol,
+        image_id: u64,
+        buf: &mut [u8],
+    ) -> usize {
+        match protocol {
+            ImageProtocol::Kitty => u32::try_from(image_id)
+                .map_or(0, |image_id| self.kitty_image_rgba(image_id, buf)),
+            ImageProtocol::Inline => {
+                // The copy runs outside the lock: the PTY thread takes
+                // it to apply uploads and must not wait on it.
+                let image = self.inline_images.lock().get(&image_id).cloned();
+                image.map_or(0, |image| copy_rgba(&image, buf))
+            }
+        }
+    }
+
+    /// Kitty placements only, in draw order; the kitty subset of
+    /// [`Self::image_count`].
+    pub fn kitty_count(&self) -> usize {
+        self.kitty_indices.len()
+    }
+
+    /// Scan the snapshot rows for U+10EEEE placeholder cells and collapse
+    /// them into row-runs (kitty virtual placements). One entry per run,
+    /// resolved against the virtual placement registry and image store.
+    /// The walk mirrors rioterm's renderer: a cell with missing
+    /// diacritics inherits from its left neighbour, and consecutive cells
+    /// showing sequential image columns collapse into one run.
+    fn collect_virtual_runs(
+        &self,
+        term: &Crosswords<Listener>,
+        entries: &mut Vec<ImageEntry>,
+    ) {
+        let graphics = &term.graphics;
+        if graphics.kitty_virtual_placements.is_empty() {
+            return;
+        }
+
+        let flush = |entries: &mut Vec<ImageEntry>,
+                     run: PlaceholderRun,
+                     line: usize,
+                     start_col: usize| {
+            let placement = resolve_virtual_placement(
+                &graphics.kitty_virtual_placements,
+                run.image_id,
+                run.placement_id,
+            );
+            let Some(placement) = placement else { return };
+            let Some(image) = graphics.get_kitty_image(run.image_id) else {
+                return;
+            };
+            entries.push(ImageEntry::Kitty(KittyEntry::Virtual {
+                run,
+                line,
+                start_col,
+                placement: placement.clone(),
+                image_width: image.data.width,
+                image_height: image.data.height,
+                image_stamp: self.stamp(image.transmission_time),
+            }));
+        };
+
+        for (line, row) in self.rows.iter().enumerate() {
+            if !row.kitty_virtual_placeholder {
+                continue;
+            }
+            let mut run: Option<(IncompletePlacement, usize)> = None;
+            for (col, square) in row.inner.iter().enumerate() {
+                if square.c() != PLACEHOLDER {
+                    if let Some((p, start_col)) = run.take() {
+                        flush(entries, p.complete(), line, start_col);
+                    }
+                    continue;
+                }
+
+                let style = self.style_at(line, col, square);
+                let combining: &[char] = square
+                    .extras_id()
+                    .and_then(|eid| self.extras.get(&eid))
+                    .map(|extras| extras.zerowidth.as_slice())
+                    .unwrap_or(&[]);
+                let mut cell = IncompletePlacement::from_cell(
+                    style.fg,
+                    style.underline_color,
+                    combining,
+                );
+
+                match &mut run {
+                    Some((current, _)) if current.can_append(&cell) => {
+                        current.append();
+                    }
+                    _ => {
+                        if let Some((p, start_col)) = run.take() {
+                            flush(entries, p.complete(), line, start_col);
+                        }
+                        // Default missing row/col on the FIRST cell of a
+                        // run, so a later cell with an explicit column can
+                        // still extend it sequentially.
+                        if cell.row.is_none() {
+                            cell.row = Some(0);
+                        }
+                        if cell.col.is_none() {
+                            cell.col = Some(0);
+                        }
+                        run = Some((cell, col));
+                    }
+                }
+            }
+            if let Some((p, start_col)) = run {
+                flush(entries, p.complete(), line, start_col);
+            }
+        }
+    }
+
+    /// Viewport geometry for the kitty placement at `index` (counting
+    /// kitty placements only), in pixels relative to the grid origin.
+    /// `None` when it's scrolled out of view.
+    pub fn kitty_geometry(
+        &self,
+        index: usize,
+        cell_width: f32,
+        cell_height: f32,
+    ) -> Option<(u32, i32, KittyOverlayGeometry)> {
+        match self.images.get(*self.kitty_indices.get(index)?)? {
+            ImageEntry::Kitty(entry) => {
+                self.kitty_entry_geometry(entry, cell_width, cell_height)
+            }
+            ImageEntry::Inline { .. } => None,
+        }
+    }
+
+    fn kitty_entry_geometry(
+        &self,
+        entry: &KittyEntry,
+        cell_width: f32,
+        cell_height: f32,
+    ) -> Option<(u32, i32, KittyOverlayGeometry)> {
+        match entry {
+            KittyEntry::Direct {
+                placement,
+                image_width,
+                image_height,
+                ..
+            } => {
+                let geometry = kitty_overlay_geometry(
+                    placement,
+                    *image_width,
+                    *image_height,
+                    &self.viewport(cell_width, cell_height),
+                )?;
+                Some((placement.image_id, placement.z_index, geometry))
+            }
+            KittyEntry::Virtual {
+                run,
+                line,
+                start_col,
+                placement,
+                image_width,
+                image_height,
+                ..
+            } => {
+                let geometry = compute_run_geometry(
+                    run,
+                    placement.columns,
+                    placement.rows,
+                    *image_width as u32,
+                    *image_height as u32,
+                    (placement.x, placement.y, placement.width, placement.height),
+                    cell_width,
+                    cell_height,
+                    0.0,
+                    0.0,
+                    *line,
+                    *start_col,
+                )?;
+                Some((
+                    run.image_id,
+                    VIRTUAL_Z_INDEX,
+                    KittyOverlayGeometry {
+                        x: geometry.x,
+                        y: geometry.y,
+                        width: geometry.width,
+                        height: geometry.height,
+                        source_rect: geometry.source_rect,
+                    },
+                ))
+            }
+        }
+    }
+
+    /// Pixel dimensions and a change stamp for a kitty image. The stamp
+    /// changes on retransmission, so renderers can cache decoded bitmaps.
+    pub fn kitty_image_info(&self, image_id: u32) -> Option<(usize, usize, u64)> {
+        let term = self.terminal.lock();
+        let image = term.graphics.get_kitty_image(image_id)?;
+        let stamp = self.stamp(image.transmission_time);
+        Some((image.data.width, image.data.height, stamp))
+    }
+
+    /// Copy a kitty image into `buf` as RGBA8 (RGB sources gain an opaque
+    /// alpha). Returns bytes written; 0 when unknown or `buf` is too small.
+    pub fn kitty_image_rgba(&self, image_id: u32, buf: &mut [u8]) -> usize {
+        let term = self.terminal.lock();
+        let Some(image) = term.graphics.get_kitty_image(image_id) else {
+            return 0;
+        };
+        copy_rgba(&image.data, buf)
+    }
+
+    /// The OSC 8 hyperlink under a viewport cell, if any.
+    pub fn link_at(&self, line: usize, column: usize) -> Option<&str> {
+        let square = self.square(line, column)?;
+        let eid = square.extras_id_checked()?;
+        self.extras
+            .get(&eid)?
+            .hyperlink
+            .as_ref()
+            .map(|link| link.uri())
+    }
+
+    /// The contiguous run of cells on `line` carrying the hyperlink under
+    /// `column`: what a renderer underlines on hover. Runs are per-row on
+    /// purpose; a link that wraps is two runs sharing one URI.
+    pub fn link_run(&self, line: usize, column: usize) -> Option<(usize, usize)> {
+        let uri = self.link_at(line, column)?;
+        let mut start = column;
+        while start > 0 && self.link_at(line, start - 1) == Some(uri) {
+            start -= 1;
+        }
+        let mut end = column;
+        while end + 1 < self.columns() && self.link_at(line, end + 1) == Some(uri) {
+            end += 1;
+        }
+        Some((start, end))
+    }
+
+    pub fn text_row(&self, line: usize) -> String {
+        let Some(row) = self.rows.get(line) else {
+            return String::new();
+        };
+        let mut text = String::with_capacity(self.columns);
+        for column in 0..self.columns {
+            let square = row[Column(column)];
+            // Bg-only and never-written cells have no codepoint; save them
+            // as spaces so scrollback text doesn't accumulate NULs.
+            let c = if square.is_bg_only() { ' ' } else { square.c() };
+            text.push(if c == '\0' { ' ' } else { c });
+        }
+        text.trim_end().to_string()
+    }
+}
+
+/// Copy an image into `buf` as tightly packed RGBA8 (RGB sources gain
+/// an opaque alpha). Returns bytes written; 0 when `buf` is too small
+/// or the image holds fewer pixels than its size says.
+fn copy_rgba(data: &GraphicData, buf: &mut [u8]) -> usize {
+    let width = data.width;
+    let height = data.height;
+    let expected = width * height * 4;
+    if buf.len() < expected {
+        return 0;
+    }
+    match data.color_type {
+        ColorType::Rgba => {
+            if data.pixels.len() < expected {
+                return 0;
+            }
+            buf[..expected].copy_from_slice(&data.pixels[..expected]);
+        }
+        ColorType::Rgb => {
+            let source = width * height * 3;
+            if data.pixels.len() < source {
+                return 0;
+            }
+            let (source, _) = data.pixels[..source].as_chunks::<3>();
+            let (target, _) = buf[..expected].as_chunks_mut::<4>();
+            for (rgb, rgba) in source.iter().zip(target.iter_mut()) {
+                rgba[..3].copy_from_slice(rgb);
+                rgba[3] = 0xFF;
+            }
+        }
+    }
+    expected
+}

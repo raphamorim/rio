@@ -12,6 +12,7 @@ use rio_backend::clipboard::Clipboard;
 use rio_backend::config::Config as RioConfig;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 
+use rio_backend::event::WindowId;
 use rio_window::dpi::{PhysicalPosition, PhysicalSize};
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::keyboard::{Key, NamedKey};
@@ -19,7 +20,7 @@ use rio_window::keyboard::{Key, NamedKey};
 use rio_window::platform::startup_notify::{
     self, EventLoopExtStartupNotify, WindowAttributesExtStartupNotify,
 };
-use rio_window::window::{Window, WindowId};
+use rio_window::window::Window;
 use routes::{assistant, RoutePath};
 use rustc_hash::FxHashMap;
 use std::time::{Duration, Instant};
@@ -31,10 +32,31 @@ use std::time::{Duration, Instant};
 // #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 const RIO_TITLE: &str = "▲";
 
+/// The modal overlays that can own keyboard/IME input, in dispatch
+/// priority order (see [`Route::active_modal`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Modal {
+    /// The island tab-rename input (a text sink).
+    IslandRename,
+    /// The command palette (a text sink).
+    CommandPalette,
+    /// The quit confirmation dialog.
+    ConfirmQuit,
+    /// The error assistant; `report_error` can activate it WITHOUT
+    /// leaving `RoutePath::Terminal`.
+    Assistant,
+    /// A non-terminal route (the welcome / config screens).
+    Route,
+}
+
 pub struct Route<'a> {
     pub assistant: assistant::Assistant,
     pub path: RoutePath,
     pub window: RouteWindow<'a>,
+    /// Set by `quit`; the application polls it in `about_to_wait` and
+    /// answers with an event loop exit so `exiting` drops every route
+    /// (hanging up each PTY child) before the process exits.
+    pub quit_requested: bool,
 }
 
 impl Route<'_> {
@@ -49,6 +71,7 @@ impl Route<'_> {
             assistant,
             path,
             window,
+            quit_requested: false,
         }
     }
 }
@@ -102,9 +125,29 @@ impl Route<'_> {
         self.window.winit_window.set_subtitle(subtitle);
     }
 
+    /// Set the native window title, deduplicating against the last
+    /// value: every upstream producer may poke redundantly (the whole
+    /// design converges instead of change-detecting), so the OS call
+    /// happens only when the text really changed.
     #[inline]
     pub fn set_window_title(&mut self, title: &str) {
+        if self.window.last_window_title == title {
+            return;
+        }
+        self.window.last_window_title = title.to_string();
         self.window.winit_window.set_title(title);
+    }
+
+    /// Refresh the native titlebar from the displayed pane, through the
+    /// same fallback chain the tab strip renders.
+    #[inline]
+    pub fn sync_window_title(&mut self) {
+        let title = self
+            .window
+            .screen
+            .context_manager
+            .displayed_title_for_current_tab();
+        self.set_window_title(&title);
     }
 
     #[inline]
@@ -135,9 +178,90 @@ impl Route<'_> {
         self.request_overlay_redraw();
     }
 
+    /// The modal overlay currently owning keyboard/IME input, in
+    /// dispatch priority order. THE roster for KEYBOARD AND IME
+    /// dispatch: `has_key_wait`, `modal_owns_input`, and
+    /// `overlay_commit_text` all derive from this, so a new overlay
+    /// added here is key/IME-gated at once. Mouse paths (hint
+    /// hover/click, the application.rs pointer handlers) still walk
+    /// their own overlay checks and need separate wiring.
+    pub fn active_modal(&self) -> Option<Modal> {
+        if self
+            .window
+            .screen
+            .renderer
+            .island
+            .as_ref()
+            .is_some_and(|island| island.is_color_picker_open())
+        {
+            return Some(Modal::IslandRename);
+        }
+        if self.window.screen.renderer.command_palette.is_enabled() {
+            return Some(Modal::CommandPalette);
+        }
+        if self.window.screen.renderer.confirm_quit.is_active() {
+            return Some(Modal::ConfirmQuit);
+        }
+        // Only hard errors are modal: a warning toast (font not
+        // found on live reload, say) renders over a WORKING terminal
+        // and must never swallow typing or Ctrl+C.
+        if self.window.screen.renderer.assistant.is_error() {
+            return Some(Modal::Assistant);
+        }
+        if self.path != RoutePath::Terminal {
+            return Some(Modal::Route);
+        }
+        None
+    }
+
+    /// Route committed IME text (dead keys, CJK) into the overlay that
+    /// owns input, when it is a text sink. Composed characters arrive
+    /// ONLY as commits, never as key text, so without this the
+    /// overlays would be ASCII-only. Returns whether the text was
+    /// consumed (an open text sink swallows even rejected text, the
+    /// way `has_key_wait` blocks all keys for it).
+    pub fn overlay_commit_text(&mut self, text: &str) -> bool {
+        match self.active_modal() {
+            Some(Modal::IslandRename) => {
+                if let Some(ref mut island) = self.window.screen.renderer.island {
+                    if island.append_rename_text(text) {
+                        self.request_overlay_redraw();
+                    }
+                }
+                true
+            }
+            Some(Modal::CommandPalette) => {
+                if self
+                    .window
+                    .screen
+                    .renderer
+                    .command_palette
+                    .append_query(text)
+                {
+                    self.request_overlay_redraw();
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether a modal overlay currently owns keyboard input, so IME
+    /// composition must not reach the terminal behind it. Derived from
+    /// the same roster as `has_key_wait`, so keys and IME are gated
+    /// identically (the welcome screen blocks both: its PTY is live
+    /// but invisible).
+    #[inline]
+    pub fn modal_owns_input(&self) -> bool {
+        self.active_modal().is_some()
+    }
+
     #[inline]
     pub fn quit(&mut self) {
-        std::process::exit(0);
+        // A direct process::exit here would skip every destructor: no
+        // Msg::Shutdown, no hangup, and PTY children ignoring the
+        // kernel's HUP-on-master-close would be orphaned.
+        self.quit_requested = true;
     }
 
     #[inline]
@@ -148,215 +272,218 @@ impl Route<'_> {
     ) -> bool {
         use rio_window::event::ElementState;
 
-        // Handle island color picker / rename input
-        if let Some(ref mut island) = self.window.screen.renderer.island {
-            if island.is_color_picker_open() {
-                let consumed = island.handle_rename_input(
-                    key_event,
-                    &mut self.window.screen.context_manager,
-                );
-                if consumed {
-                    self.request_overlay_redraw();
-                    return true;
+        // One dispatch on THE modal roster; each arm keeps its
+        // existing handling. `active_modal` already checked each
+        // overlay's open state.
+        let Some(modal) = self.active_modal() else {
+            return false;
+        };
+        match modal {
+            Modal::IslandRename => {
+                if let Some(ref mut island) = self.window.screen.renderer.island {
+                    island.handle_rename_input(
+                        key_event,
+                        &mut self.window.screen.context_manager,
+                    );
                 }
+                self.request_overlay_redraw();
+                true
             }
-        }
 
-        // Handle command palette input first (works in all routes)
-        if self.window.screen.renderer.command_palette.is_enabled() {
-            if key_event.state == ElementState::Pressed {
-                match &key_event.logical_key {
-                    Key::Named(NamedKey::Escape) => {
-                        self.window
-                            .screen
-                            .renderer
-                            .command_palette
-                            .set_enabled(false);
-                        self.request_overlay_redraw();
-                    }
-                    Key::Named(NamedKey::ArrowUp) => {
-                        self.window
-                            .screen
-                            .renderer
-                            .command_palette
-                            .move_selection_up();
-                        self.request_overlay_redraw();
-                    }
-                    Key::Named(NamedKey::ArrowDown) => {
-                        self.window
-                            .screen
-                            .renderer
-                            .command_palette
-                            .move_selection_down();
-                        self.request_overlay_redraw();
-                    }
-                    Key::Named(NamedKey::Tab) => {
-                        self.window
-                            .screen
-                            .renderer
-                            .command_palette
-                            .move_selection_down();
-                        self.request_overlay_redraw();
-                    }
-                    Key::Named(NamedKey::Enter) => {
-                        // Snapshot what the palette wants to do FIRST,
-                        // before taking a mut-borrow on it, so we can
-                        // freely call other `self.window.screen.*`
-                        // methods in the match arms without tripping
-                        // the borrow checker on nested disjoint borrows.
-                        let selected_font = self
-                            .window
-                            .screen
-                            .renderer
-                            .command_palette
-                            .get_selected_font();
-                        let selected_action = self
-                            .window
-                            .screen
-                            .renderer
-                            .command_palette
-                            .get_selected_action();
-                        use crate::renderer::command_palette::PaletteAction;
-
-                        // Fonts-mode Enter: copy the family name to
-                        // the system clipboard and close. The copy
-                        // icon on each row advertises this.
-                        if let Some(font) = selected_font {
-                            clipboard.set(
-                                rio_backend::clipboard::ClipboardType::Clipboard,
-                                font,
-                            );
+            Modal::CommandPalette => {
+                if key_event.state == ElementState::Pressed {
+                    match &key_event.logical_key {
+                        Key::Named(NamedKey::Escape) => {
                             self.window
                                 .screen
                                 .renderer
                                 .command_palette
                                 .set_enabled(false);
                             self.request_overlay_redraw();
-                            return true;
                         }
-
-                        match selected_action {
-                            // `ListFonts` stays inside the palette —
-                            // swap the palette's contents from the
-                            // command list to the registered font
-                            // family names and keep it open.
-                            Some(PaletteAction::ListFonts) => {
-                                let fonts =
-                                    self.window.screen.sugarloaf.font_family_names();
-                                self.window
-                                    .screen
-                                    .renderer
-                                    .command_palette
-                                    .enter_fonts_mode(fonts);
-                            }
-                            // Any other command is a one-shot: close
-                            // the palette first, then dispatch.
-                            Some(action) => {
-                                self.window
-                                    .screen
-                                    .renderer
-                                    .command_palette
-                                    .set_enabled(false);
-                                self.window
-                                    .screen
-                                    .execute_palette_action(action, clipboard);
-                            }
-                            // No match at all — Enter just closes.
-                            None => {
-                                self.window
-                                    .screen
-                                    .renderer
-                                    .command_palette
-                                    .set_enabled(false);
-                            }
-                        }
-                        self.request_overlay_redraw();
-                    }
-                    Key::Named(NamedKey::Backspace) => {
-                        let current_query =
-                            self.window.screen.renderer.command_palette.query.clone();
-                        if !current_query.is_empty() {
-                            let mut chars = current_query.chars().collect::<Vec<_>>();
-                            chars.pop();
+                        Key::Named(NamedKey::ArrowUp) => {
                             self.window
                                 .screen
                                 .renderer
                                 .command_palette
-                                .set_query(chars.into_iter().collect());
+                                .move_selection_up();
                             self.request_overlay_redraw();
                         }
-                    }
-                    _ => {
-                        if let Some(text) = key_event.text.as_ref() {
-                            // Filter out control characters
-                            let text_str = text.as_str();
-                            if !text_str.is_empty()
-                                && text_str.chars().all(|c| !c.is_control())
-                            {
-                                let current_query = self
-                                    .window
-                                    .screen
-                                    .renderer
-                                    .command_palette
-                                    .query
-                                    .clone();
+                        Key::Named(NamedKey::ArrowDown) => {
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .move_selection_down();
+                            self.request_overlay_redraw();
+                        }
+                        Key::Named(NamedKey::Tab) => {
+                            self.window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .move_selection_down();
+                            self.request_overlay_redraw();
+                        }
+                        Key::Named(NamedKey::Enter) => {
+                            // Snapshot what the palette wants to do FIRST,
+                            // before taking a mut-borrow on it, so we can
+                            // freely call other `self.window.screen.*`
+                            // methods in the match arms without tripping
+                            // the borrow checker on nested disjoint borrows.
+                            let selected_font = self
+                                .window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .get_selected_font();
+                            let selected_action = self
+                                .window
+                                .screen
+                                .renderer
+                                .command_palette
+                                .get_selected_action();
+                            use crate::renderer::command_palette::PaletteAction;
+
+                            // Fonts-mode Enter: copy the family name to
+                            // the system clipboard and close. The copy
+                            // icon on each row advertises this.
+                            if let Some(font) = selected_font {
+                                clipboard.set(
+                                    rio_backend::clipboard::ClipboardType::Clipboard,
+                                    font,
+                                );
                                 self.window
                                     .screen
                                     .renderer
                                     .command_palette
-                                    .set_query(format!("{}{}", current_query, text_str));
+                                    .set_enabled(false);
                                 self.request_overlay_redraw();
+                                return true;
+                            }
+
+                            match selected_action {
+                                // `ListFonts` stays inside the palette:
+                                // swap the palette's contents from the
+                                // command list to the registered font
+                                // family names and keep it open.
+                                Some(PaletteAction::ListFonts) => {
+                                    let fonts =
+                                        self.window.screen.sugarloaf.font_family_names();
+                                    self.window
+                                        .screen
+                                        .renderer
+                                        .command_palette
+                                        .enter_fonts_mode(fonts);
+                                }
+                                // Any other command is a one-shot: close
+                                // the palette first, then dispatch.
+                                Some(action) => {
+                                    self.window
+                                        .screen
+                                        .renderer
+                                        .command_palette
+                                        .set_enabled(false);
+                                    self.window
+                                        .screen
+                                        .execute_palette_action(action, clipboard);
+                                }
+                                // No match at all: Enter just closes.
+                                None => {
+                                    self.window
+                                        .screen
+                                        .renderer
+                                        .command_palette
+                                        .set_enabled(false);
+                                }
+                            }
+                            self.request_overlay_redraw();
+                        }
+                        Key::Named(NamedKey::Backspace) => {
+                            let current_query =
+                                self.window.screen.renderer.command_palette.query.clone();
+                            if !current_query.is_empty() {
+                                let mut chars = current_query.chars().collect::<Vec<_>>();
+                                chars.pop();
+                                self.window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .set_query(chars.into_iter().collect());
+                                self.request_overlay_redraw();
+                            }
+                        }
+                        _ => {
+                            if let Some(text) = key_event.text.as_ref() {
+                                if self
+                                    .window
+                                    .screen
+                                    .renderer
+                                    .command_palette
+                                    .append_query(text.as_str())
+                                {
+                                    self.request_overlay_redraw();
+                                }
                             }
                         }
                     }
                 }
+                true // Block all input when command palette is active
             }
-            return true; // Block all input when command palette is active
-        }
 
-        if self.window.screen.renderer.confirm_quit.is_active() {
-            if key_event.state == rio_window::event::ElementState::Pressed {
-                match &key_event.logical_key {
-                    Key::Character(c) if c.as_str() == "n" || c.as_str() == "N" => {
-                        self.window.screen.renderer.confirm_quit.set_active(false);
-                        self.request_overlay_redraw();
+            Modal::ConfirmQuit => {
+                if key_event.state == rio_window::event::ElementState::Pressed {
+                    match &key_event.logical_key {
+                        Key::Character(c) if c.as_str() == "n" || c.as_str() == "N" => {
+                            self.window.screen.renderer.confirm_quit.set_active(false);
+                            self.request_overlay_redraw();
+                        }
+                        Key::Named(NamedKey::Escape) => {
+                            self.window.screen.renderer.confirm_quit.set_active(false);
+                            self.request_overlay_redraw();
+                        }
+                        Key::Character(c) if c.as_str() == "y" || c.as_str() == "Y" => {
+                            self.quit();
+                            return true;
+                        }
+                        _ => {}
                     }
-                    Key::Named(NamedKey::Escape) => {
-                        self.window.screen.renderer.confirm_quit.set_active(false);
-                        self.request_overlay_redraw();
-                    }
-                    Key::Character(c) if c.as_str() == "y" || c.as_str() == "Y" => {
-                        self.quit();
-                        return true;
-                    }
-                    _ => {}
                 }
+                true
             }
-            return true;
-        }
 
-        if self.path == RoutePath::Terminal {
-            return false;
-        }
-
-        let is_enter = key_event.logical_key == Key::Named(NamedKey::Enter);
-
-        // Handle assistant overlay dismiss
-        if self.window.screen.renderer.assistant.is_active() {
-            if is_enter {
-                self.assistant.clear();
-                self.window.screen.renderer.assistant.clear();
-                self.request_overlay_redraw();
+            // Path-independent, so a `report_error` toast raised at
+            // `RoutePath::Terminal` blocks keys symmetrically with the
+            // IME gate and Enter can dismiss it (previously only a mouse
+            // click could, while plain keys leaked to the shell). Only
+            // the press dismisses: acting on the release would let a
+            // toast appearing mid-keystroke vanish unseen, and would
+            // send the orphaned release to the PTY under kitty's
+            // report-event-types mode.
+            Modal::Assistant => {
+                if key_event.state == ElementState::Pressed
+                    && key_event.logical_key == Key::Named(NamedKey::Enter)
+                {
+                    self.assistant.clear();
+                    self.window.screen.renderer.assistant.clear();
+                    self.request_overlay_redraw();
+                }
+                true
             }
-            return true;
-        }
 
-        if self.path == RoutePath::Welcome && is_enter {
-            rio_backend::config::create_config_file(None);
-            self.path = RoutePath::Terminal;
+            Modal::Route => {
+                let is_enter = key_event.state == ElementState::Pressed
+                    && key_event.logical_key == Key::Named(NamedKey::Enter);
+                if self.path == RoutePath::Welcome && is_enter {
+                    rio_backend::config::create_config_file(None);
+                    self.path = RoutePath::Terminal;
+                }
+                // Block everything else: the PTY behind the welcome
+                // screen is live, and keys reaching it would execute
+                // invisibly once the terminal appears.
+                true
+            }
         }
-
-        false
     }
 }
 
@@ -404,10 +531,13 @@ impl Router<'_> {
     }
 
     #[inline]
+    /// Full title re-render across every window, used on config reload
+    /// (the template may have changed). Panes the walk skips are marked
+    /// dirty and re-render when they surface.
     pub fn update_titles(&mut self) {
         for route in self.routes.values_mut() {
-            if route.window.is_focused {
-                route.window.screen.context_manager.update_titles();
+            if route.window.screen.refresh_titles() {
+                route.request_overlay_redraw();
             }
         }
     }
@@ -467,7 +597,7 @@ impl Router<'_> {
             None,
             false,
         );
-        let id = window.winit_window.id();
+        let id: WindowId = window.winit_window.id().into();
         let route = Route::new(Assistant::new(), RoutePath::Terminal, window);
         self.routes.insert(id, route);
         self.config_route = Some(id);
@@ -531,12 +661,13 @@ impl Router<'_> {
             app_id,
             false,
         );
-        let id = window.winit_window.id();
+        let id: WindowId = window.winit_window.id().into();
 
         let mut route = Route {
             window,
             path: RoutePath::Terminal,
             assistant: Assistant::new(),
+            quit_requested: false,
         };
 
         if let Some(err) = &self.propagated_report {
@@ -567,13 +698,14 @@ impl Router<'_> {
             None,
             true,
         );
-        let id = window.winit_window.id();
+        let id: WindowId = window.winit_window.id().into();
         self.routes.insert(
             id,
             Route {
                 window,
                 path: RoutePath::Terminal,
                 assistant: Assistant::new(),
+                quit_requested: false,
             },
         );
         self.quake_window_id = Some(id);
@@ -601,11 +733,12 @@ impl Router<'_> {
             false,
         );
         self.routes.insert(
-            window.winit_window.id(),
+            window.winit_window.id().into(),
             Route {
                 window,
                 path: RoutePath::Terminal,
                 assistant: Assistant::new(),
+                quit_requested: false,
             },
         );
     }
@@ -613,8 +746,17 @@ impl Router<'_> {
 
 pub struct RouteWindow<'a> {
     pub is_focused: bool,
+    /// Whether a real Focused event has ever arrived. A window created
+    /// in the background starts `is_focused: false` and may never get
+    /// a correcting event; render gating must not freeze it before its
+    /// first focus.
+    pub focus_seen: bool,
+    /// Last title pushed to the OS, for `set_window_title` dedup.
+    pub last_window_title: String,
     pub is_occluded: bool,
     pub needs_render_after_occlusion: bool,
+    #[cfg(target_os = "windows")]
+    pub initial_frame_rendered: bool,
     pub render_timestamp: Instant,
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     pub vblank_interval: Duration,
@@ -748,8 +890,9 @@ impl<'a> RouteWindow<'a> {
             window_id: winit_window.id(),
         };
 
-        let screen = Screen::new(properties, config, event_proxy, font_library, open_url)
-            .expect("Screen not created");
+        let mut screen =
+            Screen::new(properties, config, event_proxy, font_library, open_url)
+                .expect("Screen not created");
 
         if config.window.columns.is_some() || config.window.rows.is_some() {
             let (physical_width, physical_height) = compute_window_size_from_grid(
@@ -768,14 +911,6 @@ impl<'a> RouteWindow<'a> {
             {
                 winit_window.set_outer_position(pos);
             }
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            // On windows cloak (hide) the window initially, we later reveal it after the first draw.
-            // This is a workaround to hide the "white flash" that occurs during application startup.
-            use rio_window::platform::windows::WindowExtWindows;
-            winit_window.set_cloaked(false);
         }
 
         // Get the display refresh rate and convert to frame interval
@@ -797,12 +932,24 @@ impl<'a> RouteWindow<'a> {
             Duration::from_micros(frame_time_us)
         };
 
+        // A window can be created without focus (`open -g`, spawned
+        // behind another app) and may never receive a Focused(false)
+        // correcting a hardcoded `true`; a stale-true default makes
+        // focus-gated paths (the bell mark, its clear) treat an
+        // invisible window as watched.
+        let is_focused = winit_window.has_focus();
+        screen.renderer.is_window_focused = is_focused;
+
         Self {
             vblank_interval: monitor_vblank_interval,
             render_timestamp: Instant::now(),
-            is_focused: true,
+            is_focused,
+            focus_seen: false,
+            last_window_title: String::new(),
             is_occluded: false,
             needs_render_after_occlusion: false,
+            #[cfg(target_os = "windows")]
+            initial_frame_rendered: false,
             winit_window,
             screen,
         }

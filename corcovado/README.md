@@ -1,5 +1,10 @@
 # Corcovado
 
-Corcovado is a maintained fork of mio 0.6.x along mio-signal-hook, mio-extras and using Windows API that works in Windows 11. It uses Rust edition 2021 instead of 2018.
+Corcovado is a maintained fork of mio 0.6.x (along mio-signal-hook and mio-extras) trimmed down to what Rio's PTY event loop needs:
 
-Corcovado also uses Rust standard library for net and io instead of Mio 0.6.x.
+- `Poll`/`Events` readiness polling backed by epoll, kqueue, and IOCP (works on Windows 11).
+- A pollable cross-thread `channel`.
+- User-space readiness via `Registration`/`SetReadiness`.
+- `EventedFd` and a Unix-domain `stream::UnixStream` (used for signal handling).
+
+Compared to mio 0.6.x, the networking types (TCP/UDP), the timer, and the Fuchsia backend were removed, it uses the Rust standard library for net and io, and it builds with Rust edition 2021.

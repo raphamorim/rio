@@ -44,7 +44,7 @@ pub fn default_shell() -> crate::config::Shell {
     #[cfg(not(target_os = "windows"))]
     {
         crate::config::Shell {
-            program: String::from(""),
+            program: None,
             args: vec![String::from("--login")],
         }
     }
@@ -52,7 +52,7 @@ pub fn default_shell() -> crate::config::Shell {
     #[cfg(target_os = "windows")]
     {
         crate::config::Shell {
-            program: String::from("powershell"),
+            program: Some(String::from("powershell")),
             args: vec![],
         }
     }
@@ -106,7 +106,7 @@ pub fn default_editor() -> Shell {
     #[cfg(not(target_os = "windows"))]
     {
         Shell {
-            program: String::from("vi"),
+            program: Some(String::from("vi")),
             args: vec![],
         }
     }
@@ -114,7 +114,7 @@ pub fn default_editor() -> Shell {
     #[cfg(target_os = "windows")]
     {
         Shell {
-            program: String::from("notepad"),
+            program: Some(String::from("notepad")),
             args: vec![],
         }
     }
@@ -146,6 +146,16 @@ pub fn default_disable_ctlseqs_alt() -> bool {
 #[inline]
 pub fn default_ime_cursor_positioning() -> bool {
     true
+}
+
+#[inline]
+pub fn default_forward_to_ime_modifier_mask() -> Vec<String> {
+    vec![
+        String::from("shift"),
+        String::from("ctrl"),
+        String::from("alt"),
+        String::from("super"),
+    ]
 }
 
 pub fn default_config_file_content() -> String {

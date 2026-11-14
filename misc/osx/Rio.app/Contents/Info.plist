@@ -145,6 +145,8 @@
   <string>An application in Rio would like to access your location information.</string>
   <key>NSLocationWhenInUseUsageDescription</key>
   <string>An application in Rio would like to access your location information while active.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>A program running inside Rio would like to access the local network.</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>An application in Rio would like to access your microphone.</string>
   <key>NSLocationTemporaryUsageDescriptionDictionary</key>

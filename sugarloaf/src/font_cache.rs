@@ -5,9 +5,9 @@
 
 use crate::sugarloaf::primitives::is_private_user_area;
 use crate::SpanStyle;
+use rio_unicode::UnicodeWidthChar;
 use rustc_hash::FxHashMap;
 use swash::Attributes;
-use unicode_width::UnicodeWidthChar;
 
 /// Unscaled horizontal advance for a glyph + the font's units-per-em,
 /// stored together so callers can recover pixels at any font size:
@@ -179,7 +179,9 @@ pub(crate) fn compute_advance(
     ch: char,
 ) -> Option<AdvanceInfo> {
     let font = font_ctx.try_get(&font_id)?;
-    let handle = if let Some(path) = font.path() {
+    let handle = if let Some(handle) = font.handle() {
+        Some(handle.clone())
+    } else if let Some(path) = font.path() {
         crate::font::macos::FontHandle::from_path(path)
     } else if let Some(bytes) = font.data() {
         crate::font::macos::FontHandle::from_bytes(bytes.as_ref())

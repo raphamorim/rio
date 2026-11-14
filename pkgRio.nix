@@ -15,13 +15,13 @@
   libGL,
   vulkan-loader,
   libxkbcommon,
-  withX11 ? !stdenv.isDarwin,
+  withX11 ? stdenv.hostPlatform.isLinux,
   libX11,
   libXcursor,
   libXi,
   libXrandr,
   libxcb,
-  withWayland ? !stdenv.isDarwin,
+  withWayland ? stdenv.hostPlatform.isLinux,
   wayland,
   shaderc,
   ...
@@ -34,7 +34,7 @@
     rustc = rust-toolchain;
   };
   rlinkLibs =
-    lib.optionals stdenv.isLinux [
+    lib.optionals stdenv.hostPlatform.isLinux [
       (lib.getLib gcc-unwrapped)
       fontconfig
       libGL
@@ -70,7 +70,7 @@ in
 
     cargoBuildFlags = "-p rioterm";
 
-    buildInputs = rlinkLibs ++ (lib.optionals stdenv.isDarwin [darwin.libutil]);
+    buildInputs = rlinkLibs ++ (lib.optionals stdenv.hostPlatform.isDarwin [darwin.libutil]);
     runtimeDependencies = rlinkLibs;
 
     nativeBuildInputs =
@@ -79,7 +79,7 @@ in
         ncurses
         shaderc
       ]
-      ++ lib.optionals stdenv.isLinux [
+      ++ lib.optionals stdenv.hostPlatform.isLinux [
         cmake
         pkg-config
         autoPatchelfHook
@@ -119,7 +119,7 @@ in
       homepage = cargoToml.workspace.package.homepage;
       license = lib.licenses.mit;
       platforms = lib.platforms.unix;
-      changelog = "https://github.com/raphamorim/rio/blob/master/CHANGELOG.md";
+      changelog = "https://github.com/raphamorim/rio/releases/tag/v${cargoToml.workspace.package.version}";
       mainProgram = "rio";
     };
   }

@@ -76,7 +76,7 @@ fn system_locale() -> String {
             let country_code_str = nsstring_as_str(country_code).to_owned();
             let _: () = msg_send![country_code, release];
 
-            format!("{}_{}.UTF-8", &language_code_str, &country_code_str)
+            format!("{}_{}.UTF-8", language_code_str, country_code_str)
         } else {
             let identifier: *const Object = msg_send![locale, localeIdentifier];
             let identifier_str = nsstring_as_str(identifier).to_owned();

@@ -4,6 +4,7 @@ pub mod font;
 mod font_cache;
 pub mod grid;
 pub mod layout;
+mod premul;
 pub mod renderer;
 pub mod sprite;
 mod sugarloaf;
@@ -15,11 +16,11 @@ pub mod text;
 /// downstream crates have one stable place to import from.
 pub mod glyph_protocol {
     pub use crate::font::glyph_registry::{
-        is_pua, pack_atlas_glyph_id, GlyphRegistry, RegisterRejection, RegisteredGlyph,
-        StoredPayload, CUSTOM_GLYPH_FONT_ID, CUSTOM_GLYPH_FONT_ID_U32, GLOSSARY_CAPACITY,
+        is_pua, GlyphRegistry, RegisterRejection, RegisteredGlyph, StoredPayload,
+        CUSTOM_GLYPH_FONT_ID, CUSTOM_GLYPH_FONT_ID_U32, GLOSSARY_CAPACITY,
     };
     pub use crate::renderer::image_cache::colr_raster::{
-        rasterize_payload, RasterizedPayload,
+        payload_uses_foreground, rasterize_payload, RasterizedPayload,
     };
 }
 
@@ -37,9 +38,9 @@ pub use swash::{Attributes, Stretch, Style, Weight};
 pub use crate::font_cache::ResolvedGlyph;
 pub use crate::sugarloaf::{
     graphics::{
-        atlas_image_key, kitty_image_key, ColorType, Graphic, GraphicData,
-        GraphicDataEntry, GraphicId, GraphicOverlay, Graphics, ResizeCommand,
-        ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
+        atlas_image_key, image_key_route, kitty_image_key, route_image_key, ColorType,
+        Graphic, GraphicData, GraphicDataEntry, GraphicId, GraphicOverlay, Graphics,
+        ResizeCommand, ResizeParameter, MAX_GRAPHIC_DIMENSIONS,
     },
     primitives::{
         is_private_user_area, Corners, CursorKind, ImageProperties, Quad, Rect,

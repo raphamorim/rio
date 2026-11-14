@@ -7,13 +7,16 @@ on:
 jobs:
   lockfile:
     runs-on: ubuntu-latest
+    # contents+pull-requests write so update-flake-lock can push its
+    # branch and open the PR.
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v6
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
-      - name: Enable magic Nix cache
-        uses: DeterminateSystems/flakehub-cache-action@main
       - name: Check flake
         uses: DeterminateSystems/flake-checker-action@main
       - name: Update flake.lock

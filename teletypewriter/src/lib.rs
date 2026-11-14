@@ -47,11 +47,22 @@ pub trait ProcessReadWrite {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChildEvent {
-    /// Indicates the child has exited.
-    Exited,
+    /// Indicates the child has exited, with the raw wait status when the
+    /// platform makes it available (interpret with
+    /// `std::process::ExitStatus::from_raw` / `ExitStatusExt`).
+    Exited(Option<i32>),
 }
 
 pub trait EventedPty: ProcessReadWrite {
+    /// Optional hook for releasing child-process resources when the I/O loop stops.
+    ///
+    /// The default does nothing; success does not guarantee child termination.
+    /// Unix terminates and reaps its child here. Windows keeps its existing
+    /// cleanup on drop, when the ConPTY backend closes the pseudoconsole.
+    fn shutdown(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+
     fn child_event_token(&self) -> corcovado::Token;
 
     /// Tries to retrieve an event.

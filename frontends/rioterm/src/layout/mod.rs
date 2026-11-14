@@ -114,6 +114,9 @@ pub struct ContextGrid<T: EventListener> {
     pub custom_title: Option<String>,
     // custom_color is the tab's background override (tab color picker).
     pub custom_color: Option<[f32; 4]>,
+    // bell is set when a pane in this tab rang while the tab was in the
+    // background; cleared once the tab is focused again.
+    pub bell: bool,
     scale: f32,
     inner: FxHashMap<NodeId, ContextGridItem<T>>,
     pub root: Option<NodeId>,
@@ -229,6 +232,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             scaled_margin,
             custom_title: None,
             custom_color: None,
+            bell: false,
             scale,
             width,
             height,
@@ -670,11 +674,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Use flex_grow proportional to the desired size so panels
         // scale correctly when the window is resized.
         if let Some(w) = width {
-            style.flex_basis = length(0.0);
+            style.flex_basis = length(0.0_f32);
             style.flex_grow = w;
             style.flex_shrink = 1.0;
         } else if let Some(h) = height {
-            style.flex_basis = length(0.0);
+            style.flex_basis = length(0.0_f32);
             style.flex_grow = h;
             style.flex_shrink = 1.0;
         }
@@ -910,17 +914,27 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
             // Clear margin since Taffy layout already accounts for spacing
             item.val.dimension.margin = Margin::all(0.0);
+            let resized =
+                item.val.dimension.width != width || item.val.dimension.height != height;
             item.val.dimension.update_width(width);
             item.val.dimension.update_height(height);
 
             // Update terminal size
             let mut terminal = item.val.terminal.lock();
+            if resized {
+                terminal.end_sync_update();
+            }
             terminal.resize::<ContextDimension>(item.val.dimension);
             drop(terminal);
 
             let winsize =
                 crate::renderer::utils::terminal_dimensions(&item.val.dimension);
             let _ = item.val.messenger.send_resize(winsize);
+
+            // The reflow damages the Crosswords, but the present gate reads
+            // `pending_update.is_dirty()` and skips the panel before reading
+            // that. Mark it dirty so an idle terminal still presents.
+            item.val.renderable_content.pending_update.set_dirty();
 
             // Panel position / clipping bounds are tracked rio-side
             // now; the grid pass reads `panel_rect` from the renderer's
@@ -1181,6 +1195,52 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let _ = self.try_update_size(self.width, self.height);
     }
 
+    /// Refresh the grid's DPI scale and every scale-derived value baked
+    /// into the taffy tree at creation time: container gaps, panel
+    /// padding/margins, and the live reads (border hit-boxes, divider
+    /// math) that go through `self.scale`. Without this a grid created on
+    /// one display keeps its creation-time DPI for paddings and gaps
+    /// forever, even though the cell metrics update.
+    pub fn update_scale(&mut self, new_scale: f32) {
+        if (self.scale - new_scale).abs() < f32::EPSILON {
+            return;
+        }
+        self.scale = new_scale;
+
+        let gap = geometry::Size {
+            width: length(self.panel_config.column_gap * new_scale),
+            height: length(self.panel_config.row_gap * new_scale),
+        };
+        let padding = geometry::Rect {
+            left: length(self.panel_config.padding.left * new_scale),
+            right: length(self.panel_config.padding.right * new_scale),
+            top: length(self.panel_config.padding.top * new_scale),
+            bottom: length(self.panel_config.padding.bottom * new_scale),
+        };
+        let margin = geometry::Rect {
+            left: length(self.panel_config.margin.left * new_scale),
+            right: length(self.panel_config.margin.right * new_scale),
+            top: length(self.panel_config.margin.top * new_scale),
+            bottom: length(self.panel_config.margin.bottom * new_scale),
+        };
+
+        let mut stack = vec![self.root_node];
+        while let Some(node) = stack.pop() {
+            if let Ok(mut style) = self.tree.style(node).cloned() {
+                if self.inner.contains_key(&node) {
+                    style.padding = padding;
+                    style.margin = margin;
+                } else {
+                    style.gap = gap;
+                }
+                let _ = self.tree.set_style(node, style);
+            }
+            if let Ok(children) = self.tree.children(node) {
+                stack.extend(children);
+            }
+        }
+    }
+
     pub fn update_line_height(&mut self, line_height: f32) {
         for context in self.inner.values_mut() {
             context.val.dimension.update_line_height(line_height);
@@ -1241,6 +1301,33 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
+    /// Remove the panel owning `route_id`, wherever it sits in the
+    /// grid. The grid's focused panel is preserved unless it is the
+    /// one being removed, in which case `remove_current`'s sibling
+    /// selection applies. Returns whether a panel was removed.
+    pub fn remove_by_route(
+        &mut self,
+        route_id: usize,
+        sugarloaf: &mut Sugarloaf,
+    ) -> bool {
+        let Some(key) = self
+            .inner
+            .iter()
+            .find(|(_, item)| item.val.route_id == route_id)
+            .map(|(key, _)| *key)
+        else {
+            return false;
+        };
+
+        let previous = self.current;
+        self.current = key;
+        self.remove_current(sugarloaf);
+        if previous != key && self.inner.contains_key(&previous) {
+            self.current = previous;
+        }
+        true
+    }
+
     pub fn remove_current(&mut self, sugarloaf: &mut Sugarloaf) {
         if self.inner.is_empty() {
             tracing::error!("Attempted to remove from empty grid");
@@ -1262,6 +1349,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Get rich text ID before removing
         let rich_text_id = self.inner.get(&to_remove).map(|item| item.val.rich_text_id);
+        let route_id = self.inner.get(&to_remove).map(|item| item.val.route_id);
 
         // Select next panel before removing (use visual ordering)
         let ordered_keys = self.get_ordered_keys();
@@ -1298,6 +1386,9 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // no other panel state to clean up post-Content removal.
         if let Some(id) = rich_text_id {
             sugarloaf.clear_image_overlays_for(id);
+        }
+        if let Some(route_id) = route_id {
+            sugarloaf.remove_route_images(route_id);
         }
 
         // Update root if necessary
@@ -1576,9 +1667,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// `ContextManager`; only the kitty graphics state needs an
     /// explicit cleanup signal.
     #[inline]
-    pub fn remove_all_rich_text(&self, sugarloaf: &mut Sugarloaf) {
+    /// Release everything this grid's panels hold in sugarloaf: image
+    /// overlays and the images they drew.
+    pub fn remove_from_sugarloaf(&self, sugarloaf: &mut Sugarloaf) {
         for item in self.inner.values() {
             sugarloaf.clear_image_overlays_for(item.val.rich_text_id);
+            sugarloaf.remove_route_images(item.val.route_id);
         }
     }
 }

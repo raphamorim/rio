@@ -25,6 +25,7 @@ use super::event_handler::EventHandler;
 use super::event_loop::{stop_app_immediately, ActiveEventLoop, PanicInfo};
 use super::observer::{EventLoopWaker, RunLoop};
 use super::window::WinitWindow;
+use super::window_delegate::WindowDelegate;
 use super::{menu, WindowId, DEVICE_ID};
 use crate::dpi::PhysicalSize;
 use crate::event::{
@@ -259,6 +260,29 @@ declare_class!(
                 if existing_value.is_null() {
                     let false_value: *mut Object = msg_send![class!(NSNumber), numberWithBool:false];
                     let _: () = msg_send![user_defaults, setObject: false_value forKey: name];
+                }
+            }
+        }
+
+        #[method(applicationDidChangeScreenParameters:)]
+        fn application_did_change_screen_parameters(&self, _: Option<&AnyObject>) {
+            trace_scope!("applicationDidChangeScreenParameters:");
+            // Display reconfiguration (sleep/wake, monitor connect,
+            // arrangement or resolution change) can alter a window's
+            // backing scale without AppKit delivering
+            // windowDidChangeBackingProperties: to every window. Re-run
+            // the scale check on all of them; the per-window numeric
+            // de-dupe makes this a no-op where nothing changed.
+            let mtm = MainThreadMarker::from(self);
+            let app = NSApplication::sharedApplication(mtm);
+            for window in app.windows().iter() {
+                if let Some(delegate) = unsafe { window.delegate() } {
+                    if delegate.is_kind_of::<WindowDelegate>() {
+                        // SAFETY: Just checked the class.
+                        let delegate: Retained<WindowDelegate> =
+                            unsafe { Retained::cast(delegate) };
+                        delegate.queue_static_scale_factor_changed_event();
+                    }
                 }
             }
         }

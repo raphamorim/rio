@@ -7,6 +7,13 @@ pub fn default_unfocused_split_opacity() -> f32 {
     0.7
 }
 
+/// macOS hides the strip for a lone tab (the native-app feel);
+/// Linux/Windows keep it, drawn as a centred title.
+#[inline]
+pub fn default_hide_if_single() -> bool {
+    cfg!(target_os = "macos")
+}
+
 #[inline]
 pub fn default_max_tab_width() -> f32 {
     240.0
@@ -143,7 +150,7 @@ pub struct Navigation {
     pub current_working_directory: bool,
     #[serde(default = "bool::default", rename = "use-terminal-title")]
     pub use_terminal_title: bool,
-    #[serde(default = "default_bool_true", rename = "hide-if-single")]
+    #[serde(default = "default_hide_if_single", rename = "hide-if-single")]
     pub hide_if_single: bool,
     #[serde(default = "default_bool_true", rename = "use-split")]
     pub use_split: bool,
@@ -181,7 +188,7 @@ impl Default for Navigation {
             clickable: false,
             current_working_directory: true,
             use_terminal_title: false,
-            hide_if_single: true,
+            hide_if_single: default_hide_if_single(),
             use_split: true,
             unfocused_split_opacity: default_unfocused_split_opacity(),
             unfocused_split_fill: None,
@@ -223,10 +230,60 @@ impl Navigation {
     pub fn island_visible(&self, num_tabs: usize) -> bool {
         self.is_enabled() && !(self.hide_if_single && num_tabs == 1)
     }
+
+    /// Whether the top band is reserved as custom window chrome this
+    /// frame, painted island or not. On macOS the full-size content
+    /// view keeps the band whenever Tab navigation is enabled, even
+    /// with `hide-if-single` hiding the strip; other platforms render
+    /// the terminal from the top when the island is hidden. Must agree
+    /// with `padding_top_from_config`, which reserves the band's
+    /// height under the same condition.
+    #[inline]
+    pub fn chrome_band_reserved(&self, num_tabs: usize) -> bool {
+        if cfg!(target_os = "macos") {
+            self.is_enabled()
+        } else {
+            self.island_visible(num_tabs)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn chrome_band_follows_padding_contract() {
+        use crate::config::navigation::{Navigation, NavigationMode};
+
+        let mut nav = Navigation {
+            mode: NavigationMode::Tab,
+            hide_if_single: true,
+            ..Navigation::default()
+        };
+
+        // Visible island: band reserved everywhere.
+        assert!(nav.island_visible(2));
+        assert!(nav.chrome_band_reserved(2));
+
+        // Hidden island (single tab): macOS keeps the band as chrome,
+        // other platforms hand it to the terminal, matching
+        // padding_top_from_config.
+        assert!(!nav.island_visible(1));
+        assert_eq!(nav.chrome_band_reserved(1), cfg!(target_os = "macos"));
+
+        // Non-Tab modes never reserve the band.
+        nav.mode = NavigationMode::Plain;
+        assert!(!nav.island_visible(1));
+        assert!(!nav.chrome_band_reserved(1));
+        assert!(!nav.chrome_band_reserved(2));
+
+        #[cfg(target_os = "macos")]
+        {
+            nav.mode = NavigationMode::NativeTab;
+            assert!(!nav.chrome_band_reserved(1));
+            assert!(!nav.chrome_band_reserved(2));
+        }
+    }
+
     use crate::config::colors::hex_to_color_arr;
     use crate::config::navigation::{Navigation, NavigationMode};
     use serde::Deserialize;
@@ -235,6 +292,43 @@ mod tests {
     struct Root {
         #[serde(default = "Navigation::default")]
         navigation: Navigation,
+    }
+
+    /// The default is platform-split: macOS hides the strip for a lone
+    /// tab, Linux/Windows keep it as a centred title with no island
+    /// behind it.
+    #[test]
+    fn hide_if_single_platform_default() {
+        let decoded = toml::from_str::<Root>("[navigation]\nmode = 'Tab'\n").unwrap();
+        assert_eq!(decoded.navigation.hide_if_single, cfg!(target_os = "macos"));
+        assert_eq!(
+            decoded.navigation.island_visible(1),
+            !cfg!(target_os = "macos")
+        );
+        assert_eq!(
+            Navigation::default().island_visible(1),
+            !cfg!(target_os = "macos")
+        );
+        // More than one tab always shows the strip.
+        assert!(decoded.navigation.island_visible(2));
+    }
+
+    /// Both explicit values must override the platform default.
+    #[test]
+    fn hide_if_single_explicit_override() {
+        let on =
+            toml::from_str::<Root>("[navigation]\nmode = 'Tab'\nhide-if-single = true\n")
+                .unwrap();
+        assert!(on.navigation.hide_if_single);
+        assert!(!on.navigation.island_visible(1));
+        assert!(on.navigation.island_visible(2));
+
+        let off = toml::from_str::<Root>(
+            "[navigation]\nmode = 'Tab'\nhide-if-single = false\n",
+        )
+        .unwrap();
+        assert!(!off.navigation.hide_if_single);
+        assert!(off.navigation.island_visible(1));
     }
 
     #[test]

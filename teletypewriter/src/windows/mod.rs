@@ -32,20 +32,28 @@ pub struct Pty {
 
 // Creates conpty instead of pty
 // Windows Pseudo Console (ConPTY)
+//
+// `env`, when given, is applied on top of the inherited environment,
+// overriding inherited variables of the same name. `None` inherits as-is.
+//
+// `shell` of `None` means no program was configured, and the default console
+// host is used.
 pub fn create_pty(
-    shell: &str,
+    shell: Option<&str>,
     args: Vec<String>,
     working_directory: &Option<String>,
+    env: Option<Vec<(String, String)>>,
     columns: u16,
     rows: u16,
 ) -> Result<Pty, std::io::Error> {
-    let exec = if !args.is_empty() {
-        let args = args.join(" ");
-        &format!("{shell} {args}")
-    } else {
-        shell
-    };
-    conpty::new(exec, working_directory, columns, rows)
+    let exec = shell.map(|shell| {
+        if args.is_empty() {
+            shell.to_string()
+        } else {
+            format!("{shell} {}", args.join(" "))
+        }
+    });
+    conpty::new(exec.as_deref(), working_directory, env, columns, rows)
 }
 
 impl Pty {
@@ -224,13 +232,13 @@ impl EventedPty for Pty {
         match self.child_watcher.event_rx().try_recv() {
             Ok(ev) => Some(ev),
             Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => Some(ChildEvent::Exited),
+            Err(TryRecvError::Disconnected) => Some(ChildEvent::Exited(None)),
         }
     }
 }
 
-fn cmdline(shell: &str) -> String {
-    if !shell.is_empty() {
+fn cmdline(shell: Option<&str>) -> String {
+    if let Some(shell) = shell.filter(|shell| !shell.is_empty()) {
         return shell.to_string();
     }
 

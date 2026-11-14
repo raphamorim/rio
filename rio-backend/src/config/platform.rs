@@ -45,6 +45,7 @@ pub struct PlatformWindow {
     pub opacity: Option<f32>,
     #[serde(default = "Option::default")]
     pub blur: Option<window::WindowBlur>,
+    #[cfg(feature = "renderer")]
     #[serde(
         default = "Option::default",
         rename = "background-image",

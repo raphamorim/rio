@@ -1213,7 +1213,7 @@ fn rasterize_swash_glyph(
 ) -> Option<SwashRawGlyph> {
     use swash::scale::{
         image::{Content, Image as GlyphImage},
-        Render, Source, StrikeWith,
+        Render, Source,
     };
     use swash::zeno::{Angle, Format, Transform};
     use swash::{FontRef, Setting};
@@ -1243,12 +1243,12 @@ fn rasterize_swash_glyph(
         .variations(var_slice.iter().copied())
         .build();
 
+    let sources: &[Source] =
+        match crate::font::select_color_bitmap(font_ref, glyph_id, size_px) {
+            Some(bitmap) => &[Source::ColorOutline(0), bitmap, Source::Outline],
+            None => &[Source::ColorOutline(0), Source::Outline],
+        };
     let mut image = GlyphImage::new();
-    let sources: &[Source] = &[
-        Source::ColorOutline(0),
-        Source::ColorBitmap(StrikeWith::BestFit),
-        Source::Outline,
-    ];
     let embolden_amount = if synthetic_bold {
         (size_px / 14.0).max(1.0)
     } else {
@@ -1271,6 +1271,7 @@ fn rasterize_swash_glyph(
         return None;
     }
 
+    crate::font::normalize_color_bitmap(&mut image);
     let is_color = image.content == Content::Color;
     Some(SwashRawGlyph {
         width: image.placement.width,
@@ -1896,33 +1897,9 @@ impl Drop for TextVulkanState {
     }
 }
 
-//  CPU blit helpers for `Text::render_cpu`. Same blend model as
-//  `grid::cpu`: premultiplied source-over against an opaque
-//  `0x00RRGGBB` destination.
-
-#[inline]
-fn pack_opaque(r: u8, g: u8, b: u8) -> u32 {
-    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
-}
-
-#[inline]
-fn blend_premul_over(src: [u8; 4], dst: u32) -> u32 {
-    let sa = src[3] as u32;
-    if sa == 0 {
-        return dst;
-    }
-    if sa == 255 {
-        return pack_opaque(src[0], src[1], src[2]);
-    }
-    let inv = 255 - sa;
-    let dr = (dst >> 16) & 0xff;
-    let dg = (dst >> 8) & 0xff;
-    let db = dst & 0xff;
-    let or = src[0] as u32 + (dr * inv + 127) / 255;
-    let og = src[1] as u32 + (dg * inv + 127) / 255;
-    let ob = src[2] as u32 + (db * inv + 127) / 255;
-    pack_opaque(or.min(255) as u8, og.min(255) as u8, ob.min(255) as u8)
-}
+//  CPU blit path for `Text::render_cpu`: premultiplied source-over into
+//  the shared `0xAARRGGBB` framebuffer (see `crate::premul`).
+use crate::premul::blend_premul_over;
 
 #[allow(clippy::too_many_arguments)]
 fn blit_text_mask(

@@ -34,6 +34,7 @@ use tiny_skia::{
 };
 
 use crate::font::glyf_decode;
+use crate::font::glyph_registry::{GlyphAlignH, GlyphAlignV, GlyphLayout, GlyphSize};
 
 /// Bitmap + placement metadata produced by [`rasterize_payload`] (and
 /// internally by [`rasterize`]). `is_color` distinguishes the two
@@ -45,12 +46,6 @@ pub struct RasterizedPayload {
     pub data: Vec<u8>,
     pub width: u16,
     pub height: u16,
-    /// Pixel offset from the cell's pen position to the bitmap's
-    /// left edge.
-    pub left: i32,
-    /// Pixel offset from the baseline to the bitmap's top edge
-    /// (positive = baseline below the top).
-    pub top: i32,
     pub is_color: bool,
 }
 
@@ -60,24 +55,29 @@ pub struct RasterizedPayload {
 /// painter graph (RGBA8 output). Returns `None` on malformed payload
 /// or degenerate sizing.
 ///
-/// The scale fits the authored em square inside the caller's box
-/// (`min(cell_w, cell_h) / upm`). The renderer passes the declared
-/// render span as `cell_width_px` (1 or 2 cell widths), so a wide
-/// registration gets the whole span while scaling by font size
-/// (roughly 2x the cell width in a monospace grid) would bleed
-/// every full-em icon past it.
+/// `cell_width_px` is the declared render span (1 or 2 cell widths),
+/// and the bitmap is always exactly that span by `cell_height_px`.
+/// `baseline_px` is the text baseline measured from the top of the
+/// cell, used by `align=_,baseline`. See [`SpanPlacement`].
 pub fn rasterize_payload(
     payload: &crate::font::glyph_registry::StoredPayload,
     upm: u16,
     cell_width_px: u16,
     cell_height_px: u16,
     foreground_rgba: [u8; 4],
+    layout: &GlyphLayout,
+    baseline_px: f32,
 ) -> Option<RasterizedPayload> {
     use crate::font::glyph_registry::StoredPayload;
     match payload {
-        StoredPayload::Glyf { glyf } => {
-            rasterize_mono(glyf, upm, cell_width_px, cell_height_px)
-        }
+        StoredPayload::Glyf { glyf } => rasterize_mono(
+            glyf,
+            upm,
+            cell_width_px,
+            cell_height_px,
+            layout,
+            baseline_px,
+        ),
         StoredPayload::ColrV0 { glyphs, colr, cpal }
         | StoredPayload::ColrV1 { glyphs, colr, cpal } => rasterize(
             glyphs,
@@ -87,54 +87,95 @@ pub fn rasterize_payload(
             cell_width_px,
             cell_height_px,
             foreground_rgba,
+            layout,
+            baseline_px,
         ),
     }
 }
 
-/// Glyph→cell scale shared by the mono and COLR paths.
-///
-/// Two constraints, whichever is tighter:
-/// * **em-proportional** (`min(cell_w, cell_h) / upm`) — sizes the glyph
-///   against the authored em so a coordinated icon set stays visually
-///   consistent (every glyph the same fraction of its declared em).
-/// * **contain the outline bbox** (`min(cell_w / bbox_w, cell_h / bbox_h)`)
-///   — a hard cap so a glyph whose actual geometry exceeds the em can
-///   never bleed past its cell. `bbox_*` are the outline extents in
-///   design units.
-///
-/// Taking the `min` of the two means well-behaved glyphs keep their
-/// em-relative size while oversized outlines are shrunk to fit. Because
-/// the result is always ≤ the contain factor, `bbox × scale ≤ cell` on
-/// both axes — the rasterised pixmap can never exceed the cell, which
-/// also makes a hostile `upm` (e.g. `upm=1`) harmless.
-#[inline]
-fn glyph_cell_scale(
-    upm: u16,
-    bbox_w: f32,
-    bbox_h: f32,
-    cell_width_px: u16,
-    cell_height_px: u16,
-) -> Option<f32> {
-    if upm == 0 || cell_width_px == 0 || cell_height_px == 0 {
-        return None;
-    }
-    if bbox_w <= 0.0 || bbox_h <= 0.0 {
-        return None;
-    }
-    let em_fit = cell_width_px.min(cell_height_px) as f32 / upm as f32;
-    let contain = (cell_width_px as f32 / bbox_w).min(cell_height_px as f32 / bbox_h);
-    Some(em_fit.min(contain))
+/// An outline placed by the §8.5 model: `pad`, then `size`, then
+/// `align`, all on the authored extent. A design point `(x, y)` lands
+/// on pixel `(tx + x * sx, ty - y * sy)` of a bitmap exactly the size of
+/// the render span, which is what clips the glyph to its span (§8.5.7).
+struct SpanPlacement {
+    sx: f32,
+    sy: f32,
+    tx: f32,
+    ty: f32,
 }
 
-/// Hard ceiling on a rasterised glyph's pixel dimensions, matching the
-/// atlas's `ATLAS_MAX_SIZE` (a bitmap larger than the atlas page can
-/// never be stored anyway). A registered glyph spans at most two cells,
-/// so this is orders of magnitude above any legitimate raster — its job
-/// is to reject hostile payloads. `upm` is only floored at 0 by the
-/// wire parser, so `upm=1` with an outline spanning the i16 coordinate
-/// range yields a multi-million-pixel pixmap (gigabytes to terabytes)
-/// without this guard.
-const MAX_RASTER_DIM: u32 = 4096;
+impl SpanPlacement {
+    /// `bounds` yields the outline's `[x_min, y_min, x_max, y_max]`; it
+    /// is only asked for when the extent isn't declared.
+    fn new(
+        layout: &GlyphLayout,
+        upm: u16,
+        span_w_px: u16,
+        cell_h_px: u16,
+        baseline_px: f32,
+        bounds: impl FnOnce() -> Option<[f32; 4]>,
+    ) -> Option<Self> {
+        // §8.5.1: the declared extent, or the outline's bounds without one.
+        let declared =
+            layout.aw.is_some() || layout.lh.is_some() || layout.ymin.is_some();
+        let (x0, aw, y0, lh) = if declared {
+            (
+                0.0,
+                layout.aw.unwrap_or(upm) as f32,
+                layout.ymin.unwrap_or(0) as f32,
+                layout.lh.unwrap_or(upm) as f32,
+            )
+        } else {
+            let [x_min, y_min, x_max, y_max] = bounds()?;
+            (x_min, x_max - x_min, y_min, y_max - y_min)
+        };
+        if upm == 0 || aw <= 0.0 || lh <= 0.0 || span_w_px == 0 || cell_h_px == 0 {
+            return None;
+        }
+
+        // §8.5.2: the effective span.
+        let [pad_top, pad_right, pad_bottom, pad_left] = layout.pad;
+        let (span_w, span_h) = (span_w_px as f32, cell_h_px as f32);
+        let (inset_x, inset_y) = (span_w * pad_left, span_h * pad_top);
+        let w = span_w * (1.0 - pad_left - pad_right);
+        let h = span_h * (1.0 - pad_top - pad_bottom);
+
+        // §8.5.3: scale factors.
+        let (fit_w, fit_h) = (w / aw, h / lh);
+        // Without a declared extent the em keeps a set in proportion.
+        let contain = if declared {
+            fit_w.min(fit_h)
+        } else {
+            fit_w.min(fit_h).min(w.min(h) / upm as f32)
+        };
+        let (sx, sy) = match layout.size {
+            GlyphSize::Height => (fit_h, fit_h),
+            GlyphSize::Advance => (fit_w, fit_w),
+            GlyphSize::Contain => (contain, contain),
+            GlyphSize::Cover => (fit_w.max(fit_h), fit_w.max(fit_h)),
+            GlyphSize::Stretch => (fit_w, fit_h),
+        };
+
+        // §8.5.4: where the scaled extent sits in the span.
+        let tx = inset_x - x0 * sx
+            + match layout.align_h {
+                GlyphAlignH::Start => 0.0,
+                GlyphAlignH::Center => (w - aw * sx) / 2.0,
+                GlyphAlignH::End => w - aw * sx,
+            };
+        // `stretch` fills the span, so `align` has no effect on it.
+        let bottom = inset_y + h + y0 * sy;
+        let ty = match layout.align_v {
+            _ if layout.size == GlyphSize::Stretch => bottom,
+            GlyphAlignV::Start => bottom,
+            GlyphAlignV::Center => inset_y + h / 2.0 + (y0 + lh / 2.0) * sy,
+            GlyphAlignV::End => inset_y + (y0 + lh) * sy,
+            GlyphAlignV::Baseline => baseline_px,
+        };
+
+        Some(Self { sx, sy, tx, ty })
+    }
+}
 
 /// Walk a `glyf` simple-glyph outline and rasterise it as an A8 alpha
 /// mask sized to fit `pixel_size`. The atlas-bound caller uploads
@@ -145,26 +186,37 @@ fn rasterize_mono(
     upm: u16,
     cell_width_px: u16,
     cell_height_px: u16,
+    layout: &GlyphLayout,
+    baseline_px: f32,
 ) -> Option<RasterizedPayload> {
     let outline = glyf_decode::decode(glyf).ok()?;
-    let scale = glyph_cell_scale(
+
+    let span = SpanPlacement::new(
+        layout,
         upm,
-        (outline.x_max - outline.x_min) as f32,
-        (outline.y_max - outline.y_min) as f32,
         cell_width_px,
         cell_height_px,
+        baseline_px,
+        || {
+            Some([
+                outline.x_min as f32,
+                outline.y_min as f32,
+                outline.x_max as f32,
+                outline.y_max as f32,
+            ])
+        },
     )?;
-
-    let pad = 1.0_f32;
-    let pix_w = (((outline.x_max - outline.x_min) as f32 * scale).ceil() + pad * 2.0)
-        .max(1.0) as u32;
-    let pix_h = (((outline.y_max - outline.y_min) as f32 * scale).ceil() + pad * 2.0)
-        .max(1.0) as u32;
-    // Reject degenerate / hostile dimensions before allocating the
-    // pixmap (see `MAX_RASTER_DIM`).
-    if pix_w > MAX_RASTER_DIM || pix_h > MAX_RASTER_DIM {
-        return None;
-    }
+    let (pix_w, pix_h) = (cell_width_px as u32, cell_height_px as u32);
+    // `Outline::walk` (below) is Y-down from the bbox top, hence the
+    // `y_max` shift.
+    let ctm = Transform::from_row(
+        span.sx,
+        0.0,
+        0.0,
+        span.sy,
+        span.tx,
+        span.ty - outline.y_max as f32 * span.sy,
+    );
 
     // `glyf_decode::Outline::walk` flips Y so its output is Y-down
     // with origin at the top of the bbox (y=0 → top, y increases
@@ -189,18 +241,6 @@ fn rasterize_mono(
     let path = pb.finish()?;
 
     let mut pixmap = Pixmap::new(pix_w, pix_h)?;
-    // X: shift so design `x_min` lands at pixel `pad`.
-    // Y: walk already puts the bbox top at y=0, so a flat `pad`
-    // offset places the top of the glyph one px below the pixmap
-    // top edge.
-    let ctm = Transform::from_row(
-        scale,
-        0.0,
-        0.0,
-        scale,
-        pad - outline.x_min as f32 * scale,
-        pad,
-    );
     let mut paint = SkPaint::default();
     paint.set_color_rgba8(0xFF, 0xFF, 0xFF, 0xFF);
     paint.anti_alias = true;
@@ -210,26 +250,97 @@ fn rasterize_mono(
     // the alpha channel (which equals R/G/B since we filled white).
     let data: Vec<u8> = pixmap.pixels().iter().map(|p| p.alpha()).collect();
 
-    // Placement: `floor` left and `ceil` top to expand outward by a
-    // sub-pixel and avoid clipping anti-aliased edges, matching the
-    // COLR rasteriser's convention. The bitmap's top edge sits at
-    // design-unit `y_max` in baseline-up convention.
-    let left = (outline.x_min as f32 * scale - pad).floor() as i32;
-    let top = (outline.y_max as f32 * scale + pad).ceil() as i32;
-
     Some(RasterizedPayload {
         data,
         width: pix_w as u16,
         height: pix_h as u16,
-        left,
-        top,
         is_color: false,
     })
+}
+
+/// Parse a colour container's `COLR` table against its `CPAL`.
+///
+/// A container may ship no CPAL (legal for v1 paints that only use
+/// direct or foreground colours), but `cpal::Table::parse` rejects
+/// anything without at least one palette. Feed it the smallest valid
+/// table: one palette holding no colours. Foreground paints never
+/// consult it, and a real palette lookup still fails.
+fn parse_colr<'a>(
+    colr_bytes: &'a [u8],
+    cpal_bytes: &'a [u8],
+) -> Option<ttf_parser::colr::Table<'a>> {
+    const EMPTY_CPAL: [u8; 14] = [
+        0x00, 0x00, // version
+        0x00, 0x00, // numPaletteEntries
+        0x00, 0x01, // numPalettes
+        0x00, 0x00, // numColorRecords
+        0x00, 0x00, 0x00, 0x0E, // colorRecordsArrayOffset
+        0x00, 0x00, // colorRecordIndices[0]
+    ];
+    let cpal_source: &[u8] = if cpal_bytes.is_empty() {
+        &EMPTY_CPAL
+    } else {
+        cpal_bytes
+    };
+    let cpal = ttf_parser::cpal::Table::parse(cpal_source)?;
+    ttf_parser::colr::Table::parse(cpal, colr_bytes)
+}
+
+/// Records every colour a paint graph asks for, drawing nothing.
+#[derive(Default)]
+struct PaintedColors(Vec<RgbaColor>);
+
+impl<'a> Painter<'a> for PaintedColors {
+    fn outline_glyph(&mut self, _: GlyphId) {}
+    fn paint(&mut self, paint: Paint<'a>) {
+        match paint {
+            Paint::Solid(color) => self.0.push(color),
+            Paint::LinearGradient(g) => self.0.extend(g.stops(0, &[]).map(|s| s.color)),
+            Paint::RadialGradient(g) => self.0.extend(g.stops(0, &[]).map(|s| s.color)),
+            Paint::SweepGradient(g) => self.0.extend(g.stops(0, &[]).map(|s| s.color)),
+        }
+    }
+    fn push_clip(&mut self) {}
+    fn push_clip_box(&mut self, _: ClipBox) {}
+    fn pop_clip(&mut self) {}
+    fn push_layer(&mut self, _: CompositeMode) {}
+    fn pop_layer(&mut self) {}
+    fn push_transform(&mut self, _: TtfTransform) {}
+    fn pop_transform(&mut self) {}
+}
+
+/// Whether a payload's pixels depend on the foreground colour. Walks the
+/// paint graph under two different foregrounds: a graph that references
+/// the foreground asks for different colours, whatever the cell size.
+/// Alpha masks take their colour at draw time, so they don't.
+pub fn payload_uses_foreground(
+    payload: &crate::font::glyph_registry::StoredPayload,
+) -> bool {
+    use crate::font::glyph_registry::StoredPayload;
+    let (glyphs, colr, cpal) = match payload {
+        StoredPayload::Glyf { .. } => return false,
+        StoredPayload::ColrV0 { glyphs, colr, cpal }
+        | StoredPayload::ColrV1 { glyphs, colr, cpal } => (glyphs, colr, cpal),
+    };
+    let (Some(table), Some(base_gid)) =
+        (parse_colr(colr, cpal), first_base_glyph_id(colr, glyphs))
+    else {
+        return false;
+    };
+    let colors_under = |foreground| {
+        let mut painted = PaintedColors::default();
+        table
+            .paint(GlyphId(base_gid), 0, &mut painted, &[], foreground)
+            .map(|()| painted.0)
+    };
+    colors_under(RgbaColor::new(0, 0, 0, 255))
+        != colors_under(RgbaColor::new(255, 255, 255, 255))
 }
 
 /// Rasterise a COLR glyph to RGBA. Returns `None` when COLR/CPAL is
 /// malformed, when the base-glyph outline is empty, or when tiny-skia
 /// rejects a degenerate configuration (e.g. zero pixmap size).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn rasterize(
     glyphs: &[Vec<u8>],
     colr_bytes: &[u8],
@@ -238,86 +349,53 @@ pub(super) fn rasterize(
     cell_width_px: u16,
     cell_height_px: u16,
     foreground: [u8; 4],
+    layout: &GlyphLayout,
+    baseline_px: f32,
 ) -> Option<RasterizedPayload> {
-    // Cheap guard before the COLR parse; the real scale needs the bbox
-    // (computed below) so it can contain the outline.
+    // Cheap guard before the COLR parse.
     if upm == 0 || cell_width_px == 0 || cell_height_px == 0 {
         return None;
     }
 
-    // ttf-parser's `colr::Table::parse` requires a non-empty CPAL
-    // slice, even for v1 fonts that make no palette lookups. If the
-    // container ships an empty CPAL (legal for v1-only paints), feed
-    // the parser a zero-entry placeholder.
-    const EMPTY_CPAL: [u8; 12] = [
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C,
-    ];
-    let cpal_source: &[u8] = if cpal_bytes.is_empty() {
-        &EMPTY_CPAL
-    } else {
-        cpal_bytes
-    };
-    let cpal = ttf_parser::cpal::Table::parse(cpal_source)?;
-    let colr = ttf_parser::colr::Table::parse(cpal, colr_bytes)?;
+    let colr = parse_colr(colr_bytes, cpal_bytes)?;
     let base_gid = first_base_glyph_id(colr_bytes, glyphs)?;
 
-    // Prefer the COLR ClipBox — authoritative per the OpenType spec,
-    // and required for emoji fonts (Noto Color Emoji, etc.) whose base
-    // glyphs are empty wrappers that reference layer glyphs via the
-    // paint graph. Fall back to the base glyph's `glyf` bbox for fonts
-    // like Nabla that carry geometry on the base glyph. Pad 1 px each
-    // side so anti-aliased layer edges that drift slightly past the
-    // declared bbox (common in hand-authored fonts) aren't clipped.
-    //
-    // Widened to i32 immediately because a saturated ClipBox (e.g.
-    // `x_min = i16::MIN`, `x_max = i16::MAX`) would overflow on the
-    // `x_max - x_min` subtraction below if kept as i16 — wrapping in
-    // release and panicking in debug.
-    let (x_min, y_min, x_max, y_max): (i32, i32, i32, i32) =
-        match colr.clip_box(GlyphId(base_gid), &[]) {
-            Some(cb) => (
-                cb.x_min.floor() as i32,
-                cb.y_min.floor() as i32,
-                cb.x_max.ceil() as i32,
-                cb.y_max.ceil() as i32,
-            ),
-            None => {
-                let (a, b, c, d) = glyf_bbox(glyphs.get(base_gid as usize)?)?;
-                (a as i32, b as i32, c as i32, d as i32)
-            }
-        };
-    let scale = glyph_cell_scale(
+    // The outline's bounds, used only when the extent isn't declared.
+    // Prefer the COLR ClipBox: emoji fonts (Noto Color Emoji, etc.) have
+    // empty wrapper base glyphs that reference layers via the paint
+    // graph. Fall back to the base glyph's own points for fonts like
+    // Nabla that carry geometry on the base glyph.
+    let bounds = || match colr.clip_box(GlyphId(base_gid), &[]) {
+        Some(cb) => Some([
+            cb.x_min.floor(),
+            cb.y_min.floor(),
+            cb.x_max.ceil(),
+            cb.y_max.ceil(),
+        ]),
+        None => {
+            let glyph = glyphs.get(base_gid as usize)?;
+            let (x_min, y_min, x_max, y_max) = glyf_decode::bounds(glyph).ok()?;
+            Some([x_min as f32, y_min as f32, x_max as f32, y_max as f32])
+        }
+    };
+    let span = SpanPlacement::new(
+        layout,
         upm,
-        (x_max - x_min) as f32,
-        (y_max - y_min) as f32,
         cell_width_px,
         cell_height_px,
+        baseline_px,
+        bounds,
     )?;
-    let pad = 1.0_f32;
-    let pix_w = (((x_max - x_min) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
-    let pix_h = (((y_max - y_min) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
-    // Reject degenerate / hostile dimensions before allocating the
-    // pixmap (see `MAX_RASTER_DIM`). A COLR ClipBox is f32-sourced and
-    // can exceed even the i16 range, so this guard is load-bearing.
-    if pix_w > MAX_RASTER_DIM || pix_h > MAX_RASTER_DIM {
-        return None;
-    }
-
-    let base_pixmap = Pixmap::new(pix_w, pix_h)?;
+    let (pix_w, pix_h) = (cell_width_px as u32, cell_height_px as u32);
 
     // Font units (y-up, origin at baseline) → pixmap pixels (y-down,
     // origin at top-left). The identity-sized glyph outline in the
     // painter gets this transform applied before drawing.
     // Matrix [sx, ky, kx, sy, tx, ty] applies (x,y) as
     //   (sx*x + kx*y + tx, ky*x + sy*y + ty).
-    let base_ctm = Transform::from_row(
-        scale,
-        0.0,
-        0.0,
-        -scale,
-        -(x_min as f32) * scale + pad,
-        (y_max as f32) * scale + pad,
-    );
+    let base_ctm = Transform::from_row(span.sx, 0.0, 0.0, -span.sy, span.tx, span.ty);
+
+    let base_pixmap = Pixmap::new(pix_w, pix_h)?;
 
     let mut raster = ColorRaster {
         layers: vec![Layer {
@@ -340,8 +418,6 @@ pub(super) fn rasterize(
         data: pixmap_to_rgba(&final_pixmap),
         width: pix_w as u16,
         height: pix_h as u16,
-        left: (x_min as f32 * scale - pad).floor() as i32,
-        top: (y_max as f32 * scale + pad).ceil() as i32,
         is_color: true,
     })
 }
@@ -627,17 +703,6 @@ fn first_base_glyph_id(colr: &[u8], glyphs: &[Vec<u8>]) -> Option<u16> {
     first_gid
 }
 
-fn glyf_bbox(bytes: &[u8]) -> Option<(i16, i16, i16, i16)> {
-    if bytes.len() < 10 {
-        return None;
-    }
-    let xmin = i16::from_be_bytes([bytes[2], bytes[3]]);
-    let ymin = i16::from_be_bytes([bytes[4], bytes[5]]);
-    let xmax = i16::from_be_bytes([bytes[6], bytes[7]]);
-    let ymax = i16::from_be_bytes([bytes[8], bytes[9]]);
-    Some((xmin, ymin, xmax, ymax))
-}
-
 /// Decode a glyf simple-glyph record into an unscaled, Y-up
 /// design-unit `Path`. The painter's CTM is responsible for the
 /// scale + Y-flip at draw time.
@@ -862,17 +927,13 @@ mod tests {
         a.0 * b.0 + a.1 * b.1
     }
 
-    /// Build a `glyf` simple-glyph whose bbox is the full `em_top × em_top`
-    /// square but whose inked region is just the top `strip_height` rows
-    /// (design Y from `em_top - strip_height` to `em_top`). The bbox in
-    /// the glyf header is authoritative — `glyf_decode` reads it directly
-    /// — so the rasterised pixmap will be em_top×em_top pixels with only
-    /// the top strip filled. That's what lets the test distinguish "top"
-    /// from "bottom" of the bitmap.
+    /// Build a `glyf` simple-glyph inked only across the top
+    /// `strip_height` rows of an `em_top` square (design Y from
+    /// `em_top - strip_height` to `em_top`).
     fn glyf_top_strip(em_top: i16, strip_height: i16) -> Vec<u8> {
         // glyf simple-glyph layout per OpenType:
         //   i16 numberOfContours
-        //   i16 xMin, yMin, xMax, yMax  (authoritative bbox — NOT derived from points)
+        //   i16 xMin, yMin, xMax, yMax
         //   u16 endPtsOfContours[numContours]
         //   u16 instructionLength
         //   u8  flags[numPoints]
@@ -880,11 +941,8 @@ mod tests {
         let strip_bottom = em_top - strip_height;
         let mut v = Vec::new();
         v.extend_from_slice(&1i16.to_be_bytes()); // numberOfContours
-                                                  // Declare bbox as the full em — not just the inked strip — so
-                                                  // the rasterised pixmap has empty space below the strip we
-                                                  // can sample as "bottom".
         v.extend_from_slice(&0i16.to_be_bytes()); // xMin
-        v.extend_from_slice(&0i16.to_be_bytes()); // yMin
+        v.extend_from_slice(&strip_bottom.to_be_bytes()); // yMin
         v.extend_from_slice(&em_top.to_be_bytes()); // xMax
         v.extend_from_slice(&em_top.to_be_bytes()); // yMax
         v.extend_from_slice(&3u16.to_be_bytes()); // endPtsOfContours[0] = 3 (4 points)
@@ -912,7 +970,12 @@ mod tests {
         // earlier (where the strip rendered at the bottom instead).
         let upm = 100i16;
         let bytes = glyf_top_strip(upm, upm / 4);
-        let r = rasterize_mono(&bytes, upm as u16, upm as u16, upm as u16)
+        let em = GlyphLayout {
+            aw: Some(upm as u16),
+            lh: Some(upm as u16),
+            ..Default::default()
+        };
+        let r = rasterize_mono(&bytes, upm as u16, upm as u16, upm as u16, &em, 0.0)
             .expect("rasterize succeeds for valid simple glyph");
 
         let w = r.width as usize;
@@ -946,17 +1009,12 @@ mod tests {
         // render it at 2× the cell and bleed into the neighbour; the
         // contain clamp keeps the pixmap within the cell on both axes.
         let bytes = glyf_top_strip(200, 50);
-        let r = rasterize_mono(&bytes, 100, 20, 40).expect("rasterizes");
-        assert!(
-            r.width as u32 <= 20 + 2,
-            "width {} must stay within the 20px cell (+AA pad)",
-            r.width
-        );
-        assert!(
-            r.height as u32 <= 40 + 2,
-            "height {} must stay within the 40px cell (+AA pad)",
-            r.height
-        );
+        let r = rasterize_mono(&bytes, 100, 20, 40, &GlyphLayout::default(), 0.0)
+            .expect("rasterizes");
+        assert_eq!((r.width, r.height), (20, 40));
+        // 20px wide at 0.1 px/unit: the whole span, not twice it.
+        assert_eq!(ink(&r.data, r.width).0, 0);
+        assert_eq!(ink(&r.data, r.width).1, 19);
     }
 
     #[test]
@@ -968,42 +1026,414 @@ mod tests {
         // the raster to the cell regardless of upm or outline span, so
         // the glyph rasterises safely instead.
         let bytes = glyf_top_strip(30000, 7500);
-        let r = rasterize_mono(&bytes, 1, 16, 32)
+        let r = rasterize_mono(&bytes, 1, 16, 32, &GlyphLayout::default(), 0.0)
             .expect("hostile upm should be contained, not rejected");
-        assert!(
-            r.width as u32 <= 16 + 2 && r.height as u32 <= 32 + 2,
-            "raster {}x{} must stay within the cell (+AA pad)",
-            r.width,
-            r.height
-        );
+        assert_eq!((r.width, r.height), (16, 32));
+        assert_eq!(ink(&r.data, r.width).1, 15);
+    }
+
+    /// A filled rectangle as a `glyf` simple glyph.
+    fn glyf_box(x_min: i16, y_min: i16, x_max: i16, y_max: i16) -> Vec<u8> {
+        let mut v = Vec::new();
+        for field in [1, x_min, y_min, x_max, y_max, 3, 0] {
+            v.extend_from_slice(&field.to_be_bytes());
+        }
+        v.extend_from_slice(&[0x01; 4]);
+        for delta in [x_min, x_max - x_min, 0, x_min - x_max] {
+            v.extend_from_slice(&delta.to_be_bytes());
+        }
+        for delta in [y_min, 0, y_max - y_min, 0] {
+            v.extend_from_slice(&delta.to_be_bytes());
+        }
+        v
+    }
+
+    /// Inclusive `(first_col, last_col, first_row, last_row)` of the
+    /// mostly-covered pixels.
+    fn ink(alpha: &[u8], width: u16) -> (usize, usize, usize, usize) {
+        let width = width as usize;
+        let inked = || alpha.iter().enumerate().filter(|(_, a)| **a >= 128);
+        let cols = || inked().map(|(i, _)| i % width);
+        let rows = || inked().map(|(i, _)| i / width);
+        (
+            cols().min().expect("some ink"),
+            cols().max().unwrap(),
+            rows().min().unwrap(),
+            rows().max().unwrap(),
+        )
+    }
+
+    fn place(glyf: &[u8], upm: u16, layout: GlyphLayout) -> Option<RasterizedPayload> {
+        rasterize_mono(glyf, upm, 10, 20, &layout, 15.0)
+    }
+
+    #[test]
+    fn layout_advance_fits_authored_advance_to_cell_on_baseline() {
+        // Departure Mono's shape: em 550, advance 350, cap 400.
+        let glyph = glyf_box(50, 0, 300, 400);
+        let layout = GlyphLayout {
+            aw: Some(350),
+            size: GlyphSize::Advance,
+            align_v: GlyphAlignV::Baseline,
+            ..Default::default()
+        };
+        let r = place(&glyph, 550, layout).unwrap();
+        assert_eq!((r.width, r.height), (10, 20));
+        // x: 50..300 at 10/350 px per unit; y: up from the baseline.
+        assert_eq!(ink(&r.data, r.width), (1, 8, 4, 14));
+        // `aw` alone sets the scale, so `upm` doesn't matter.
+        assert_eq!(place(&glyph, 350, layout).unwrap().data, r.data);
+    }
+
+    #[test]
+    fn layout_height_scales_by_line_height() {
+        let layout = GlyphLayout {
+            aw: Some(50),
+            lh: Some(100),
+            size: GlyphSize::Height,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 50, 100), 1000, layout).unwrap();
+        assert_eq!(ink(&r.data, r.width), (0, 9, 0, 19));
+    }
+
+    #[test]
+    fn layout_contain_stays_inside_the_span() {
+        let layout = GlyphLayout {
+            size: GlyphSize::Contain,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 100, 100), 100, layout).unwrap();
+        assert_eq!(r.width, 10);
+        // 10px square, centred in the 20px-tall cell.
+        assert_eq!(ink(&r.data, r.width), (0, 9, 5, 14));
+    }
+
+    #[test]
+    fn layout_cover_clips_to_the_span() {
+        let layout = GlyphLayout {
+            size: GlyphSize::Cover,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 100, 100), 100, layout).unwrap();
+        assert_eq!((r.width, r.height), (10, 20));
+        assert_eq!(ink(&r.data, r.width), (0, 9, 0, 19));
+    }
+
+    #[test]
+    fn layout_clips_vertical_overflow_to_the_cell() {
+        // One px per unit, 40 tall in a 20px cell, centred on lh=40.
+        let tall = GlyphLayout {
+            aw: Some(10),
+            lh: Some(40),
+            size: GlyphSize::Advance,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 10, 40), 10, tall).unwrap();
+        assert_eq!(r.height, 20);
+        assert_eq!(ink(&r.data, r.width), (0, 9, 0, 19));
+    }
+
+    #[test]
+    fn layout_stretch_fills_the_span_whatever_the_alignment() {
+        let layout = GlyphLayout {
+            size: GlyphSize::Stretch,
+            align_h: GlyphAlignH::End,
+            align_v: GlyphAlignV::Start,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 100, 100), 100, layout).unwrap();
+        assert_eq!(ink(&r.data, r.width), (0, 9, 0, 19));
+    }
+
+    #[test]
+    fn layout_pad_insets_the_span() {
+        let layout = GlyphLayout {
+            aw: Some(50),
+            lh: Some(50),
+            pad: [0.75, 0.5, 0.0, 0.0],
+            ..Default::default()
+        };
+        // The span shrinks to the bottom-left 5x5 pixels.
+        let r = place(&glyf_box(0, 0, 50, 50), 100, layout).unwrap();
+        assert_eq!(ink(&r.data, r.width), (0, 4, 15, 19));
+    }
+
+    #[test]
+    fn layout_alignment_anchors_the_authored_box() {
+        let vertical = |align_v| {
+            let layout = GlyphLayout {
+                size: GlyphSize::Contain,
+                align_v,
+                ..Default::default()
+            };
+            let r = place(&glyf_box(0, 0, 100, 100), 100, layout).unwrap();
+            ink(&r.data, r.width)
+        };
+        // A 10px square, pinned to the bottom or top of the 20px cell.
+        assert_eq!(vertical(GlyphAlignV::Start), (0, 9, 10, 19));
+        assert_eq!(vertical(GlyphAlignV::End), (0, 9, 0, 9));
+
+        let horizontal = |align_h| {
+            let layout = GlyphLayout {
+                aw: Some(20),
+                lh: Some(100),
+                align_h,
+                ..Default::default()
+            };
+            let r = place(&glyf_box(0, 0, 20, 100), 100, layout).unwrap();
+            let (first, last, _, _) = ink(&r.data, r.width);
+            (first, last)
+        };
+        // A 4px-wide box in the 10px span.
+        assert_eq!(horizontal(GlyphAlignH::Start), (0, 3));
+        assert_eq!(horizontal(GlyphAlignH::Center), (3, 6));
+        assert_eq!(horizontal(GlyphAlignH::End), (6, 9));
+    }
+
+    #[test]
+    fn layout_default_centres_an_outline_below_the_baseline() {
+        // y from -150 to 850 in a 1000-unit em: at the em cap of 0.01
+        // px/unit it is 10px tall and centred in the 20px cell.
+        let glyph = glyf_box(250, -150, 750, 850);
+        let r = place(&glyph, 1000, GlyphLayout::default()).unwrap();
+        let (_, _, first_row, last_row) = ink(&r.data, r.width);
+        assert_eq!((first_row, last_row), (5, 14));
+    }
+
+    #[test]
+    fn layout_undeclared_extent_ignores_a_lying_header() {
+        let mut lying = glyf_box(0, 0, 100, 100);
+        // Claim the outline is far smaller than it is.
+        lying[2..10].copy_from_slice(&[0, 40, 0, 40, 0, 41, 0, 41]);
+        let honest = place(&glyf_box(0, 0, 100, 100), 100, GlyphLayout::default());
+        let lied = place(&lying, 100, GlyphLayout::default());
+        assert_eq!(lied.unwrap().data, honest.unwrap().data);
+    }
+
+    #[test]
+    fn layout_undeclared_extent_keeps_a_set_in_proportion() {
+        // A small dot stays small: 0.01 px/unit, not grown to the span.
+        let dot = place(&glyf_box(400, 0, 600, 200), 1000, GlyphLayout::default());
+        let dot = dot.unwrap();
+        assert_eq!(ink(&dot.data, dot.width), (4, 5, 9, 10));
+    }
+
+    #[test]
+    fn layout_default_contains_an_undeclared_outline_in_its_span() {
+        // Twice as wide as the span and off-centre in its own em.
+        let r = place(&glyf_box(100, 0, 300, 120), 200, GlyphLayout::default()).unwrap();
+        assert_eq!(r.width, 10);
+        // 200x120 fits at 0.05 px/unit: 10x6, centred in the 20px cell.
+        assert_eq!(ink(&r.data, r.width), (0, 9, 7, 12));
+    }
+
+    #[test]
+    fn layout_ymin_positions_the_declared_extent() {
+        let extent = GlyphLayout {
+            aw: Some(10),
+            lh: Some(20),
+            ymin: Some(-5),
+            ..Default::default()
+        };
+        // 1 px/unit: an outline filling the extent fills the span.
+        let r = place(&glyf_box(0, -5, 10, 15), 1000, extent).unwrap();
+        assert_eq!(ink(&r.data, r.width), (0, 9, 0, 19));
+
+        // Without `ymin` the same outline is shoved down and clipped.
+        let unshifted = GlyphLayout {
+            ymin: None,
+            ..extent
+        };
+        let r = place(&glyf_box(0, -5, 10, 15), 1000, unshifted).unwrap();
+        assert_eq!(ink(&r.data, r.width), (0, 9, 5, 19));
+    }
+
+    #[test]
+    fn layout_declared_extent_ignores_each_outlines_own_bounds() {
+        let extent = GlyphLayout {
+            aw: Some(10),
+            lh: Some(20),
+            ymin: Some(-5),
+            ..Default::default()
+        };
+        // A small glyph stays where it was drawn inside the extent.
+        let r = place(&glyf_box(2, 0, 4, 5), 1000, extent).unwrap();
+        assert_eq!(ink(&r.data, r.width), (2, 3, 10, 14));
+    }
+
+    #[test]
+    fn layout_bounds_extreme_overflow_to_the_span() {
+        let layout = GlyphLayout {
+            aw: Some(1),
+            size: GlyphSize::Advance,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 32000, 10), 1000, layout).unwrap();
+        assert_eq!((r.width, r.height), (10, 20));
+    }
+
+    /// COLR v1 painting glyph 0 in the foreground colour.
+    fn colr_v1_foreground() -> Vec<u8> {
+        let mut colr = build_colr_v1(&[0]);
+        // Point the base record (at 40) past the list, at PaintGlyph.
+        colr[40..44].copy_from_slice(&10u32.to_be_bytes());
+        colr.extend_from_slice(&[10, 0, 0, 6, 0, 0]); // PaintGlyph(gid 0)
+        colr.extend_from_slice(&[2, 0xFF, 0xFF, 0x40, 0x00]); // PaintSolid(fg)
+        colr
+    }
+
+    fn rasterize_foreground(layout: &GlyphLayout) -> Option<RasterizedPayload> {
+        rasterize(
+            // Whole pixels at 35 units/px, so edges carry no coverage.
+            &[glyf_box(70, 0, 280, 350)],
+            &colr_v1_foreground(),
+            &[],
+            550,
+            10,
+            20,
+            [255, 255, 255, 255],
+            layout,
+            15.0,
+        )
+    }
+
+    fn alpha_of(rgba: &[u8]) -> Vec<u8> {
+        rgba.chunks(4).map(|pixel| pixel[3]).collect()
+    }
+
+    #[test]
+    fn colr_declared_extent_needs_no_base_glyph_bounds() {
+        // An empty wrapper base glyph painting layer glyph 1, no ClipList.
+        let glyphs = [Vec::new(), glyf_box(70, 0, 280, 350)];
+        let mut colr = colr_v1_foreground();
+        colr[49] = 1; // PaintGlyph's glyph id
+        let draw = |layout: &GlyphLayout| {
+            rasterize(
+                &glyphs,
+                &colr,
+                &[],
+                550,
+                10,
+                20,
+                [255, 255, 255, 255],
+                layout,
+                15.0,
+            )
+        };
+        let declared = GlyphLayout {
+            aw: Some(350),
+            size: GlyphSize::Advance,
+            align_v: GlyphAlignV::Baseline,
+            ..Default::default()
+        };
+        let r = draw(&declared).expect("a declared extent needs no bounds");
+        assert_eq!(ink(&alpha_of(&r.data), r.width), (2, 7, 5, 14));
+        // Without a declared extent there is nothing to place it by.
+        assert!(draw(&GlyphLayout::default()).is_none());
+    }
+
+    #[test]
+    fn colr_measures_a_hinted_base_glyph_it_never_paints() {
+        // A hinted monochrome base, unhinted layer, and no ClipList.
+        let mut hinted = glyf_box(70, 0, 280, 350);
+        hinted[12..14].copy_from_slice(&1u16.to_be_bytes());
+        hinted.insert(14, 0x00);
+        let glyphs = [hinted, glyf_box(70, 0, 280, 350)];
+        let mut colr = colr_v1_foreground();
+        colr[49] = 1; // PaintGlyph's glyph id
+        let r = rasterize(
+            &glyphs,
+            &colr,
+            &[],
+            550,
+            10,
+            20,
+            [255, 255, 255, 255],
+            &GlyphLayout::default(),
+            15.0,
+        )
+        .expect("the base glyph is only measured");
+        assert!(alpha_of(&r.data).iter().any(|alpha| *alpha >= 128));
+    }
+
+    #[test]
+    fn foreground_use_comes_from_the_paint_graph() {
+        use crate::font::glyph_registry::StoredPayload;
+
+        let glyphs = vec![glyf_box(70, 0, 280, 350)];
+        let foreground = StoredPayload::ColrV1 {
+            glyphs: glyphs.clone(),
+            colr: colr_v1_foreground(),
+            cpal: Vec::new(),
+        };
+        assert!(payload_uses_foreground(&foreground));
+
+        // The same graph painting palette entry 0 instead.
+        let mut palette_colr = colr_v1_foreground();
+        let solid = palette_colr.len() - 4;
+        palette_colr[solid..solid + 2].copy_from_slice(&[0, 0]);
+        let palette = StoredPayload::ColrV1 {
+            glyphs,
+            colr: palette_colr,
+            cpal: vec![0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 14, 0, 0, 0, 0, 0, 255],
+        };
+        assert!(!payload_uses_foreground(&palette));
+
+        assert!(!payload_uses_foreground(&StoredPayload::glyf(vec![1])));
+    }
+
+    #[test]
+    fn colr_without_cpal_renders_foreground_paints() {
+        let r = rasterize_foreground(&GlyphLayout::default())
+            .expect("spec §8.7 permits cpal_len = 0");
+        assert!(alpha_of(&r.data).iter().any(|alpha| *alpha >= 128));
+    }
+
+    #[test]
+    fn layout_applies_to_colr_with_the_same_orientation() {
+        let layout = GlyphLayout {
+            aw: Some(350),
+            size: GlyphSize::Advance,
+            align_v: GlyphAlignV::Baseline,
+            ..Default::default()
+        };
+        let r = rasterize_foreground(&layout).expect("colour glyph rasterizes");
+        assert_eq!(ink(&alpha_of(&r.data), r.width), (2, 7, 5, 14));
     }
 
     #[test]
     fn rasterize_mono_rejects_zero_cell_or_upm() {
         let bytes = glyf_top_strip(100, 25);
-        assert!(rasterize_mono(&bytes, 100, 0, 16).is_none());
-        assert!(rasterize_mono(&bytes, 100, 16, 0).is_none());
-        assert!(rasterize_mono(&bytes, 0, 16, 16).is_none());
+        assert!(
+            rasterize_mono(&bytes, 100, 0, 16, &GlyphLayout::default(), 0.0).is_none()
+        );
+        assert!(
+            rasterize_mono(&bytes, 100, 16, 0, &GlyphLayout::default(), 0.0).is_none()
+        );
+        assert!(
+            rasterize_mono(&bytes, 0, 16, 16, &GlyphLayout::default(), 0.0).is_none()
+        );
     }
 
     #[test]
     fn rasterize_mono_fits_em_square_into_cell_box() {
-        // A full-em-wide strip must rasterise no wider than the
-        // narrow cell axis (+ the 2px AA pad): the em square is
-        // contained in the cell, so a 10×20 cell yields a ≤10px-wide
-        // bitmap — NOT a font-size-wide one that would bleed into the
-        // neighbouring cell.
+        // A full-em-wide strip spans the narrow cell axis exactly: the
+        // em square is contained in the cell, not font-size-wide.
         let upm = 100i16;
         let bytes = glyf_top_strip(upm, upm / 4);
         let (cell_w, cell_h) = (10u16, 20u16);
-        let r = rasterize_mono(&bytes, upm as u16, cell_w, cell_h)
-            .expect("rasterize succeeds for valid simple glyph");
-        assert!(
-            r.width <= cell_w + 2,
-            "width {} must fit the cell width {} (+2px AA pad)",
-            r.width,
-            cell_w
-        );
+        let r = rasterize_mono(
+            &bytes,
+            upm as u16,
+            cell_w,
+            cell_h,
+            &GlyphLayout::default(),
+            0.0,
+        )
+        .expect("rasterize succeeds for valid simple glyph");
+        assert_eq!(r.width, cell_w);
+        assert_eq!(ink(&r.data, r.width).1, cell_w as usize - 1);
     }
 
     #[test]
@@ -1075,25 +1505,6 @@ mod tests {
         let (p3x, p3y) = project_p3(p0, p1, p2).unwrap();
         assert!((p3x - p1.0).abs() < 1e-6);
         assert!((p3y - p1.1).abs() < 1e-6);
-    }
-
-    #[test]
-    fn glyf_bbox_reads_signed_bbox() {
-        // numContours=1 (0x0001), x_min=-100, y_min=-200, x_max=300, y_max=700.
-        let bytes = [
-            0x00, 0x01, // numContours
-            0xFF, 0x9C, // -100
-            0xFF, 0x38, // -200
-            0x01, 0x2C, // 300
-            0x02, 0xBC, // 700
-        ];
-        assert_eq!(glyf_bbox(&bytes), Some((-100, -200, 300, 700)));
-    }
-
-    #[test]
-    fn glyf_bbox_rejects_short_input() {
-        assert_eq!(glyf_bbox(&[]), None);
-        assert_eq!(glyf_bbox(&[0; 9]), None);
     }
 
     /// Build a minimal COLR v1 header + BaseGlyphList payload.

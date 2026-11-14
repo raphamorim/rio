@@ -506,6 +506,19 @@ impl CommandPalette {
         self.last_scroll_time = None;
     }
 
+    /// Append committed or typed text to the query, applying the
+    /// shared overlay input policy (`is_printable_text`) so the key
+    /// path and the IME commit path can never drift. Returns whether
+    /// anything was appended.
+    pub fn append_query(&mut self, text: &str) -> bool {
+        if !crate::renderer::is_printable_text(text) {
+            return false;
+        }
+        let query = format!("{}{}", self.query, text);
+        self.set_query(query);
+        true
+    }
+
     pub fn set_query(&mut self, query: String) {
         self.query = query;
         self.selected_index = 0;

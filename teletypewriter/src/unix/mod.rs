@@ -1,8 +1,10 @@
 #![cfg(unix)]
 
+mod child;
 #[cfg(target_os = "macos")]
 mod macos;
 mod signals;
+pub use child::{Child, ChildTerminator};
 
 extern crate libc;
 
@@ -24,7 +26,6 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::ptr;
-use std::sync::Arc;
 
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
@@ -52,13 +53,23 @@ extern "C" {
         winsize: *const Winsize,
     ) -> libc::pid_t;
 
-    fn waitpid(
-        pid: libc::pid_t,
-        status: *mut libc::c_int,
-        options: libc::c_int,
-    ) -> libc::pid_t;
-
     fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
+}
+
+/// Export `envs` in the forked child before exec. Runs post-fork, so
+/// keep it to setenv: the allocations match what `default_shell_command`
+/// already does on this path.
+fn set_child_envs(envs: &[(String, String)]) {
+    for (key, value) in envs {
+        let (Ok(key), Ok(value)) =
+            (CString::new(key.as_str()), CString::new(value.as_str()))
+        else {
+            continue;
+        };
+        unsafe {
+            libc::setenv(key.as_ptr(), value.as_ptr(), 1);
+        }
+    }
 }
 
 fn default_shell_command(shell: &str, args: &[String]) {
@@ -125,6 +136,7 @@ pub struct Pty {
     token: corcovado::Token,
     signals_token: corcovado::Token,
     signals: Signals,
+    child_event_emitted: bool,
 }
 
 impl Deref for Pty {
@@ -371,6 +383,23 @@ pub fn create_termp(utf8: bool) -> libc::termios {
         term.c_cc[libc::VSTATUS] = 20;
     }
 
+    // The BSD/XNU tty layer sizes the output-queue water marks from the
+    // baud rate (`ttsetwater`: cps = ospeed / 10). A zero speed clamps
+    // the queue to its ~100-byte floor, so every slave write hands the
+    // reader a ~150-byte sliver through a read+poll round trip each,
+    // capping PTY drain throughput at a fraction of what the kernel can
+    // move. B230400 saturates the clamp and yields the maximum queue.
+    // Linux ptys size their buffers independently of baud; there the
+    // speed is report-only (stty, ncurses baudrate()), and a zero would
+    // read as "0 baud", so it is set everywhere.
+    unsafe {
+        if libc::cfsetspeed(&mut term, libc::B230400) != 0 {
+            tracing::warn!(
+                "cfsetspeed(B230400) failed; pty output queue stays at the minimum"
+            );
+        }
+    }
+
     term
 }
 
@@ -384,6 +413,7 @@ struct ShellUser {
 impl ShellUser {
     /// look for shell, username, longname, and home dir in the respective environment variables
     /// before falling back on looking in to `passwd`.
+    #[allow(clippy::question_mark)]
     fn from_env() -> Result<Self, Error> {
         let mut buf = [0; 1024];
         let pw = get_pw_entry(&mut buf);
@@ -420,14 +450,13 @@ impl ShellUser {
 ///
 /// Build the argv passed to login(1) on macOS.
 ///
-/// A custom command (non empty args) goes straight into login's argv:
-/// login execvp's it, so args pass through as single words with no
-/// intermediate shell that could word split them.
-///
-/// A bare shell becomes a login shell through a bash intermediate that
-/// execs it with `-l`, which prepends the dash to argv[0]. bash runs
-/// with `--noprofile --norc` so user startup files cannot interfere
-/// with the exec.
+/// The shell always becomes a login shell through a bash intermediate
+/// that execs it with `-l`, which prepends the dash to argv[0]. The
+/// shell program rides as `$0` and any args as `"$@"`, so no quoting
+/// or word splitting can touch them (this also keeps login semantics
+/// when integration or the user adds args to the default shell). bash
+/// runs with `--noprofile --norc` so user startup files cannot
+/// interfere with the exec.
 #[cfg(any(target_os = "macos", test))]
 fn login_argv(
     hushlogin: bool,
@@ -447,17 +476,13 @@ fn login_argv(
     argv.push("-flp".to_string());
     argv.push(username.to_string());
 
-    if args.is_empty() {
-        let quoted = shell_program.replace('\'', "'\\''");
-        argv.push("/bin/bash".to_string());
-        argv.push("--noprofile".to_string());
-        argv.push("--norc".to_string());
-        argv.push("-c".to_string());
-        argv.push(format!("exec -l '{quoted}'"));
-    } else {
-        argv.push(shell_program.to_string());
-        argv.extend(args.iter().cloned());
-    }
+    argv.push("/bin/bash".to_string());
+    argv.push("--noprofile".to_string());
+    argv.push("--norc".to_string());
+    argv.push("-c".to_string());
+    argv.push(r#"exec -l "$0" "$@""#.to_string());
+    argv.push(shell_program.to_string());
+    argv.extend(args.iter().cloned());
 
     argv
 }
@@ -468,12 +493,22 @@ fn login_argv(
 /// which is a command in Unix and Unix-like operating systems to print the file name of the
 /// terminal connected to standard input. tty stands for TeleTYpewriter.
 ///
+/// `env`, when given, is applied on top of the inherited environment,
+/// overriding inherited variables of the same name. `None` inherits as-is.
+///
+/// `shell` of `None` means no program was configured: the user's default shell
+/// is looked up and, on macOS, wrapped in `/usr/bin/login` so the child gets a
+/// login session. A caller that names a program gets exactly that program,
+/// spawned directly, with no `login` in between.
+///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn create_pty_with_spawn(
-    shell: &str,
+    shell: Option<&str>,
     args: Vec<String>,
     working_directory: &Option<String>,
+    env: Option<Vec<(String, String)>>,
     columns: u16,
     rows: u16,
     width: u16,
@@ -495,7 +530,7 @@ pub fn create_pty_with_spawn(
     };
     let term = create_termp(true);
 
-    let res = unsafe {
+    let mut open = || unsafe {
         openpty(
             &mut main as *mut _,
             &mut child as *mut _,
@@ -505,37 +540,65 @@ pub fn create_pty_with_spawn(
         )
     };
 
-    if res < 0 {
-        return Err(Error::other("openpty failed"));
+    // openpty fails transiently when many PTYs open concurrently (seen
+    // on macOS under parallel spawns, with garbage errno); a brief retry
+    // absorbs it instead of surfacing a dead surface to the embedder.
+    let mut res = open();
+    for _ in 0..3 {
+        if res >= 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        res = open();
     }
 
-    let mut shell_program = shell;
+    if res < 0 {
+        return Err(Error::other(format!(
+            "openpty failed: {}",
+            Error::last_os_error()
+        )));
+    }
+
+    // Own both descriptors before any fallible setup so every error path
+    // closes them, including command and signal registration failures.
+    let file = unsafe { File::from_raw_fd(main) };
+    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+    set_cloexec(main)?;
+    set_cloexec(child)?;
 
     let user = match ShellUser::from_env() {
         Ok(data) => data,
         Err(..) => ShellUser {
-            shell: shell.to_string(),
+            shell: shell.unwrap_or_default().to_string(),
             ..Default::default()
         },
     };
 
-    if shell.is_empty() {
-        shell_program = &user.shell;
-    }
+    // No program means the caller wants the user's default shell, which is the
+    // only case that goes through `login`. A named program is spawned as given.
+    let uses_default_shell = shell.is_none();
+    let shell_program = shell.unwrap_or(&user.shell);
 
     tracing::info!("spawn {:?} {:?}", shell_program, args);
 
     let mut builder = {
         #[cfg(target_os = "macos")]
         {
-            // On macOS, use /usr/bin/login to ensure proper login shell environment
-            // This ensures PATH includes directories like /usr/local/bin
-            let hushlogin = std::path::Path::new(&user.home).join(".hushlogin").exists();
+            if uses_default_shell {
+                // On macOS, use /usr/bin/login to ensure proper login shell environment
+                // This ensures PATH includes directories like /usr/local/bin
+                let hushlogin =
+                    std::path::Path::new(&user.home).join(".hushlogin").exists();
 
-            let mut login_cmd = Command::new("/usr/bin/login");
-            login_cmd.args(login_argv(hushlogin, &user.user, shell_program, &args));
+                let mut login_cmd = Command::new("/usr/bin/login");
+                login_cmd.args(login_argv(hushlogin, &user.user, shell_program, &args));
 
-            login_cmd
+                login_cmd
+            } else {
+                let mut cmd = Command::new(shell_program);
+                cmd.args(args);
+                cmd
+            }
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -560,6 +623,14 @@ pub fn create_pty_with_spawn(
                 "--env=TERM=rio".to_string(),
             ];
 
+            // Only `--env=` crosses the sandbox boundary: variables set
+            // on flatpak-spawn itself never reach the host process.
+            if let Some(env) = &env {
+                for (key, value) in env {
+                    with_args.push(format!("--env={key}={value}"));
+                }
+            }
+
             if let Some(directory) = working_directory {
                 with_args.push(format!(
                     "--directory={}",
@@ -582,10 +653,7 @@ pub fn create_pty_with_spawn(
     }
 
     // Setup child stdin/stdout/stderr as child fd of PTY.
-    // Ownership of fd is transferred to the Stdio structs and will be closed by them at the end of
-    // this scope. (It is not an issue that the fd is closed three times since File::drop ignores
-    // error on libc::close.).
-    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+    // Each Stdio owns a distinct descriptor and closes it when dropped.
 
     builder.stdin(owned_child.try_clone()?);
     builder.stderr(owned_child.try_clone()?);
@@ -593,6 +661,9 @@ pub fn create_pty_with_spawn(
 
     builder.env("USER", user.user);
     builder.env("HOME", user.home);
+    if let Some(env) = env {
+        builder.envs(env);
+    }
 
     unsafe {
         builder.pre_exec(move || {
@@ -617,6 +688,13 @@ pub fn create_pty_with_spawn(
             libc::signal(libc::SIGTERM, libc::SIG_DFL);
             libc::signal(libc::SIGALRM, libc::SIG_DFL);
 
+            // The embedding process may run with signals blocked (e.g. on a
+            // background thread); the child must not inherit that mask or
+            // Ctrl-C and friends stop working in the spawned shell.
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            libc::sigprocmask(libc::SIG_SETMASK, &set, std::ptr::null_mut());
+
             Ok(())
         });
     }
@@ -627,26 +705,26 @@ pub fn create_pty_with_spawn(
     }
 
     // Prepare signal handling before spawning child.
-    let signals =
-        Signals::new([sigconsts::SIGCHLD]).expect("error preparing signal handling");
+    let signals = Signals::new([sigconsts::SIGCHLD])?;
 
     match builder.spawn() {
         Ok(child_process) => {
+            let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
+            let child_unix = Child::new(
+                main,
+                child_process.id() as libc::pid_t,
+                ptsname,
+                Some(child_process),
+            );
+
             unsafe {
                 set_nonblocking(main);
             }
 
-            let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-            let child_unix = Child {
-                id: Arc::new(main),
-                ptsname,
-                pid: Arc::new(child_process.id().try_into().unwrap()),
-                process: Some(child_process),
-            };
-
             Ok(Pty {
                 child: child_unix,
-                file: unsafe { File::from_raw_fd(main) },
+                child_event_emitted: false,
+                file,
                 token: corcovado::Token::from(0),
                 signals,
                 signals_token: corcovado::Token::from(0),
@@ -672,9 +750,20 @@ pub fn create_pty_with_spawn(
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
+/// The shell a spawn falls back to when none is configured: `$SHELL`,
+/// else the passwd entry. Public so per-shell decisions made before
+/// spawning (title program name, shell integration) match what
+/// actually spawns.
+pub fn default_shell_program() -> String {
+    ShellUser::from_env()
+        .map(|user| user.shell)
+        .unwrap_or_default()
+}
+
 pub fn create_pty_with_fork(
-    shell: &str,
+    shell: Option<&str>,
     args: &[String],
+    envs: &[(String, String)],
     columns: u16,
     rows: u16,
     width: u16,
@@ -689,22 +778,22 @@ pub fn create_pty_with_fork(
     };
     let term = create_termp(true);
 
-    let mut shell_program = shell;
-
     let user = match ShellUser::from_env() {
         Ok(data) => data,
         Err(..) => ShellUser {
-            shell: shell.to_string(),
+            shell: shell.unwrap_or_default().to_string(),
             ..Default::default()
         },
     };
 
-    if shell.is_empty() {
-        tracing::info!("shell configuration is empty, will retrieve from env");
-        shell_program = &user.shell;
-    }
+    let shell_program = shell.unwrap_or_else(|| {
+        tracing::info!("no shell configured, will retrieve from env");
+        &user.shell
+    });
 
     tracing::info!("fork {:?}", shell_program);
+
+    let signals = Signals::new([sigconsts::SIGCHLD])?;
 
     match unsafe {
         forkpty(
@@ -715,33 +804,32 @@ pub fn create_pty_with_fork(
         )
     } {
         0 => {
+            set_child_envs(envs);
             default_shell_command(shell_program, args);
-            Err(Error::other(format!(
-                "forkpty has reach unreachable with {shell_program}"
-            )))
+            // Never return into the terminal application in the forked child
+            // when exec fails, or run the parent's destructors there.
+            unsafe { libc::_exit(127) }
         }
         id if id > 0 => {
+            let file = unsafe { File::from_raw_fd(main) };
+            if let Err(err) = set_cloexec(main) {
+                tracing::warn!("failed to set close-on-exec on the pty: {err}");
+            }
             // TODO: Currently we fork the process and don't wait to know if led to failure
             // Whenever it happens it will just simply shut down the teletyperwriter
             // In the future add an option to check before release the method
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-            let child = Child {
-                id: Arc::new(main),
-                ptsname,
-                pid: Arc::new(id),
-                process: None,
-            };
+            let child = Child::new(main, id, ptsname, None);
 
             unsafe {
                 set_nonblocking(main);
             }
 
-            let signals = Signals::new([sigconsts::SIGCHLD])
-                .expect("error preparing signal handling");
             Ok(Pty {
                 child,
+                child_event_emitted: false,
                 signals,
-                file: unsafe { File::from_raw_fd(main) },
+                file,
                 token: corcovado::Token(0),
                 signals_token: corcovado::Token(0),
             })
@@ -770,88 +858,25 @@ fn set_controlling_terminal(fd: libc::c_int) -> Result<(), Error> {
     Ok(())
 }
 
+/// Marks `fd` close-on-exec. openpty and forkpty return descriptors
+/// without it, so every shell spawned later would inherit the pty of
+/// each terminal already open and keep it from hanging up on close.
+fn set_cloexec(fd: libc::c_int) -> Result<(), Error> {
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    if flags < 0
+        || unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } < 0
+    {
+        return Err(Error::last_os_error());
+    }
+    Ok(())
+}
+
 // https://man7.org/linux/man-pages/man2/fcntl.2.html
 unsafe fn set_nonblocking(fd: libc::c_int) {
     use libc::{fcntl, F_GETFL, F_SETFL, O_NONBLOCK};
 
     let res = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
     assert_eq!(res, 0);
-}
-
-#[derive(Debug)]
-pub struct Child {
-    pub id: Arc<libc::c_int>,
-    pub pid: Arc<libc::pid_t>,
-    #[allow(dead_code)]
-    ptsname: String,
-    #[allow(dead_code)]
-    process: Option<std::process::Child>,
-}
-
-impl Child {
-    /// The tcgetwinsize function fills in the winsize structure pointed to by
-    ///  gws with values that represent the size of the terminal window for which
-    ///  fd provides an open file descriptor.  If no error occurs tcgetwinsize()
-    ///  returns zero (0).
-    ///  The tcsetwinsize function sets the terminal window size, for the terminal
-    ///  referenced by fd, to the sizes from the winsize structure pointed to by
-    ///  sws.  If no error occurs tcsetwinsize() returns zero (0).
-    ///  The winsize structure, defined in <termios.h>, contains (at least) the
-    ///  following four fields
-    ///  unsigned short ws_row;      /* Number of rows, in characters */
-    ///  unsigned short ws_col;      /* Number of columns, in characters */
-    ///  unsigned short ws_xpixel;   /* Width, in pixels */
-    ///  unsigned short ws_ypixel;   /* Height, in pixels */
-    /// If the actual window size of the controlling terminal of a process
-    /// changes, the process is sent a SIGWINCH signal.  See signal(7).  Note
-    /// simply changing the sizes using tcsetwinsize() does not necessarily
-    /// change the actual window size, and if not, will not generate a SIGWINCH.
-    pub fn set_winsize(&self, winsize_builder: WinsizeBuilder) -> io::Result<()> {
-        let winsize: Winsize = winsize_builder.build();
-        match unsafe { libc::ioctl(**self, TIOCSWINSZ, &winsize as *const _) } {
-            -1 => Err(io::Error::last_os_error()),
-            _ => Ok(()),
-        }
-    }
-
-    /// Return the child’s exit status if it has already exited. If the child is still running, return Ok(None).
-    /// https://linux.die.net/man/2/waitpid
-    pub fn waitpid(&self) -> Result<Option<i32>, String> {
-        let mut status = 0 as libc::c_int;
-        // If WNOHANG was specified in options and there were no children in a waitable state, then waitid() returns 0 immediately and the state of the siginfo_t structure pointed to by infop is unspecified. To distinguish this case from that where a child was in a waitable state, zero out the si_pid field before the call and check for a nonzero value in this field after the call returns.
-        let res =
-            unsafe { waitpid(*self.pid, &mut status as *mut libc::c_int, libc::WNOHANG) };
-        if res <= -1 {
-            return Err(String::from("error"));
-        }
-
-        if res == 0 && status == 0 {
-            return Ok(None);
-        }
-
-        Ok(Some(status))
-    }
-}
-
-pub fn kill_pid(pid: i32) {
-    unsafe {
-        libc::kill(pid, libc::SIGHUP);
-    }
-}
-
-impl Deref for Child {
-    type Target = libc::c_int;
-    fn deref(&self) -> &libc::c_int {
-        &self.id
-    }
-}
-
-impl Drop for Child {
-    fn drop(&mut self) {
-        unsafe {
-            libc::kill(*self.pid, libc::SIGHUP);
-        }
-    }
 }
 
 pub fn command_per_pid(pid: libc::pid_t) -> String {
@@ -870,21 +895,23 @@ pub fn command_per_pid(pid: libc::pid_t) -> String {
 }
 
 impl EventedPty for Pty {
+    fn shutdown(&mut self) -> io::Result<()> {
+        self.child.terminate()
+    }
+
     #[inline]
     fn next_child_event(&mut self) -> Option<ChildEvent> {
+        if self.child_event_emitted {
+            return None;
+        }
         self.signals.pending().next().and_then(|signal| {
             if signal != sigconsts::SIGCHLD {
                 return None;
             }
 
-            match self.child.waitpid() {
-                Err(_e) => {
-                    // std::process::exit(1);
-                    None
-                }
-                Ok(None) => None,
-                Ok(Some(..)) => Some(ChildEvent::Exited),
-            }
+            let event = self.child.poll_exit().ok().flatten()?;
+            self.child_event_emitted = true;
+            Some(event)
         })
     }
 
@@ -1068,7 +1095,8 @@ mod login_argv_tests {
                 "--noprofile",
                 "--norc",
                 "-c",
-                "exec -l '/bin/zsh'",
+                r#"exec -l "$0" "$@""#,
+                "/bin/zsh",
             ]
         );
     }
@@ -1081,7 +1109,7 @@ mod login_argv_tests {
     }
 
     #[test]
-    fn custom_command_goes_directly_to_login() {
+    fn args_ride_as_positional_words_and_keep_login() {
         let args = vec!["-c".to_string(), "echo hello world; sleep 1".to_string()];
         let argv = login_argv(false, "rapha", "/bin/bash", &args);
         assert_eq!(
@@ -1090,6 +1118,11 @@ mod login_argv_tests {
                 "-flp",
                 "rapha",
                 "/bin/bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                r#"exec -l "$0" "$@""#,
+                "/bin/bash",
                 "-c",
                 "echo hello world; sleep 1",
             ]
@@ -1097,8 +1130,26 @@ mod login_argv_tests {
     }
 
     #[test]
-    fn quotes_in_shell_path_are_escaped() {
+    fn shell_path_needs_no_quoting() {
+        // The program travels as `$0`, never inside the -c string, so
+        // quotes and spaces in the path cannot break the exec.
         let argv = login_argv(false, "rapha", "/tmp/it's a shell", &[]);
-        assert_eq!(argv.last().unwrap(), "exec -l '/tmp/it'\\''s a shell'");
+        assert_eq!(argv.last().unwrap(), "/tmp/it's a shell");
+    }
+}
+
+#[cfg(test)]
+mod termp_tests {
+    use super::*;
+
+    // The pty output-queue watermark is derived from the baud rate on
+    // BSD/XNU; a zero speed clamps it to a ~100-byte floor and caps
+    // drain throughput.
+    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[test]
+    fn create_termp_sets_pty_speed() {
+        let term = create_termp(true);
+        assert_eq!(term.c_ospeed, libc::B230400);
+        assert_eq!(term.c_ispeed, libc::B230400);
     }
 }

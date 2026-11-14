@@ -6,11 +6,16 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 
 use windows_sys::Win32::Foundation::{BOOLEAN, HANDLE};
 use windows_sys::Win32::System::Threading::{
-    GetProcessId, RegisterWaitForSingleObject, UnregisterWait, INFINITE,
-    WT_EXECUTEINWAITTHREAD, WT_EXECUTEONLYONCE,
+    GetExitCodeProcess, GetProcessId, RegisterWaitForSingleObject, UnregisterWait,
+    INFINITE, WT_EXECUTEINWAITTHREAD, WT_EXECUTEONLYONCE,
 };
 
 use crate::ChildEvent;
+
+struct ChildExitSender {
+    sender: Sender<ChildEvent>,
+    child_handle: AtomicPtr<c_void>,
+}
 
 /// WinAPI callback to run when child process exits.
 extern "system" fn child_exit_callback(ctx: *mut c_void, timed_out: BOOLEAN) {
@@ -18,8 +23,16 @@ extern "system" fn child_exit_callback(ctx: *mut c_void, timed_out: BOOLEAN) {
         return;
     }
 
-    let event_tx: Box<_> = unsafe { Box::from_raw(ctx as *mut Sender<ChildEvent>) };
-    let _ = event_tx.send(ChildEvent::Exited);
+    let event_tx: Box<ChildExitSender> = unsafe { Box::from_raw(ctx as *mut _) };
+    let mut exit_code = 0_u32;
+    let status = unsafe {
+        GetExitCodeProcess(
+            event_tx.child_handle.load(Ordering::Relaxed) as HANDLE,
+            &mut exit_code,
+        )
+    };
+    let exit_code = (status != 0).then_some(exit_code as i32);
+    let _ = event_tx.sender.send(ChildEvent::Exited(exit_code));
 }
 
 pub struct ChildExitWatcher {
@@ -39,7 +52,10 @@ impl ChildExitWatcher {
         let (event_tx, event_rx) = channel::<ChildEvent>();
 
         let mut wait_handle: HANDLE = std::ptr::null_mut();
-        let sender_ref = Box::new(event_tx);
+        let sender_ref = Box::new(ChildExitSender {
+            sender: event_tx,
+            child_handle: AtomicPtr::from(child_handle),
+        });
 
         let success = unsafe {
             RegisterWaitForSingleObject(
@@ -122,9 +138,9 @@ mod tests {
         poll.poll(&mut events, Some(WAIT_TIMEOUT)).unwrap();
         assert_eq!(events.iter().next().unwrap().token(), child_events_token);
         // Verify that at least one `ChildEvent::Exited` was received.
-        assert_eq!(
+        assert!(matches!(
             child_exit_watcher.event_rx().try_recv(),
-            Ok(ChildEvent::Exited)
-        );
+            Ok(ChildEvent::Exited(_))
+        ));
     }
 }
