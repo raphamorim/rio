@@ -229,7 +229,7 @@ impl Application<'_> {
 
         let config = self.config.notify_on_command_finish;
         if config.when == NotifyWhen::Never
-            || duration.as_millis() <= u128::from(config.after)
+            || duration <= std::time::Duration::from_millis(config.after)
         {
             return;
         }
