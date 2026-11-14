@@ -27,10 +27,13 @@ the project's MIT notice and ships beside the files as
 ## Layout
 
 - `conpty.dll` sits next to `rio.exe` and matches its architecture.
-  Rio loads it by name, so the Windows loader looks in `rio.exe`'s
-  directory first and falls back to the Windows API when there is
-  none. The log line `Using conpty.dll for pseudoconsole` confirms the
-  bundled host is in use.
+  Rio loads it from that directory only, by full path; a copy on `PATH`
+  or in the working directory is never used, and without one Rio falls
+  back to the Windows API. The log line `Using conpty.dll for
+  pseudoconsole` confirms the bundled host is in use; a DLL that is
+  there but cannot be loaded (wrong architecture, say) is logged with
+  the reason. A bare `rio.exe` that used to find a `conpty.dll` on
+  `PATH` no longer does: the portable zip carries the files instead.
 - `OpenConsole.exe` matches the machine, not the application.
   `conpty.dll` looks for it beside itself, then in an `x64/` or
   `arm64/` folder named for the machine, and without one it silently

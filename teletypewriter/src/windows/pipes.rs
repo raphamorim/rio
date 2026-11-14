@@ -90,8 +90,23 @@ impl EventedAnonRead {
                         return;
                     }
 
-                    // Read into temp buffer
-                    let nbytes = try_or_send!(pipe.read(&mut tmp_buf[..]), error_sender);
+                    // Read into temp buffer. The pipe ends when the host
+                    // closes its last write end (a broken pipe, or a
+                    // zero-length read), and the consumer only looks for
+                    // an error once it is woken, so wake it.
+                    let nbytes = match pipe.read(&mut tmp_buf[..]) {
+                        Ok(0) => {
+                            let _ = error_sender.send("pipe closed".to_string());
+                            let _ = inner.readiness.set_readiness(Ready::readable());
+                            return;
+                        }
+                        Ok(nbytes) => nbytes,
+                        Err(err) => {
+                            let _ = error_sender.send(format!("{err}"));
+                            let _ = inner.readiness.set_readiness(Ready::readable());
+                            return;
+                        }
+                    };
 
                     // Write from the temp buffer into the producer
                     let mut written = 0usize;
