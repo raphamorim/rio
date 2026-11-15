@@ -742,13 +742,14 @@ fn prev_on_a_stale_position_ends_instead_of_panicking() {
     assert_eq!(it.prev().map(|i| i.pos), Some(Pos::new(Line(0), Column(0))));
     assert!(it.prev().is_none());
 
-    // Wrapping back onto a shorter row enters it at its real end, and
-    // walking forward leaves it from there.
+    // Wrapping back onto a shorter row enters it at its real end. The
+    // forward walk pays for no such row, since none exists today: past
+    // its end it stops like any stale position.
     let mut grid = Grid::<Square>::new(2, 5, 0);
     grid.raw[Line(0)].shrink(3);
     let mut it = grid.iter_from(Pos::new(Line(1), Column(0)));
     assert_eq!(it.prev().map(|i| i.pos), Some(Pos::new(Line(0), Column(2))));
-    assert_eq!(it.next().map(|i| i.pos), Some(Pos::new(Line(1), Column(0))));
+    assert!(it.next().is_none());
 }
 
 fn fill(grid: &mut Grid<Square>, line: i32, text: &str, wrap: bool) {

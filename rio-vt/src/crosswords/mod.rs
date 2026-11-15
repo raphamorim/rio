@@ -6887,8 +6887,8 @@ mod tests {
         for _ in 0..6 {
             cw.linefeed();
         }
-        // History rows keep their old length across column growth;
-        // simulate one narrower than the grid (#1713).
+        // No resize path leaves a row narrower than the grid, but a
+        // walk must survive one all the same (#1713); make one by hand.
         cw.grid[Line(-2)].inner.truncate(2);
         let start = Pos::new(Line(-3), Column(0));
         // Must not panic; may end early at the narrow row.
