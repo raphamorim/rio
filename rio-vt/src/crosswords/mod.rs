@@ -7791,11 +7791,11 @@ mod tests {
         }
     }
 
-    // Shrinking the columns wraps the cursor's line. The cursor keeps
-    // its screen row, so the half of the line above it goes to history,
-    // and it stays after the last character it was after. The saved
-    // cursor is only clamped to the new width, not reflowed. Growing
-    // back joins the line and the cursor follows.
+    // Shrinking the columns wraps the cursor's line. The blank rows
+    // under the cursor take the wrap, so nothing goes to history, and
+    // the cursor follows its text down, still after the last character
+    // it was after. The saved cursor is only clamped to the new width,
+    // not reflowed. Growing back joins the line and the cursor follows.
     #[test]
     fn cursor_and_saved_cursor_after_a_reflow() {
         let mut cw = Crosswords::new(
@@ -7817,11 +7817,11 @@ mod tests {
             let row = &cw.grid[Line(line)];
             (0..row.len()).map(|c| row[Column(c)].c()).collect()
         };
-        assert_eq!(cw.history_size(), 1);
-        assert_eq!(text(&cw, -1), "abcde");
-        assert!(cw.grid[Line(-1)][Column(4)].wrapline());
-        assert_eq!(text(&cw, 0), "fghij");
-        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(4)));
+        assert_eq!(cw.history_size(), 0, "the blank rows took the wrap");
+        assert_eq!(text(&cw, 0), "abcde");
+        assert!(cw.grid[Line(0)][Column(4)].wrapline());
+        assert_eq!(text(&cw, 1), "fghij");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(1), Column(4)));
         assert!(
             cw.grid.cursor.should_wrap,
             "still pending a wrap after the j"
@@ -7839,9 +7839,9 @@ mod tests {
     }
 
     // The same join when the cursor is not pending a wrap: a 13 cell
-    // line at 5 columns has its tail "klm" on the top row with the
+    // line at 5 columns has its tail "klm" on the third row with the
     // cursor after the m. Growing to 10 joins the first two rows; the
-    // tail stays on screen with the cursor after it.
+    // tail follows with the cursor after it.
     #[test]
     fn a_rejoined_line_keeps_the_cursor_after_its_text() {
         let mut cw = Crosswords::new(
@@ -7854,10 +7854,10 @@ mod tests {
         );
         cw.input_str("abcdefghij");
         cw.resize(CrosswordsSize::new(5, 4));
-        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(4)));
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(1), Column(4)));
         // Three more cells wrap onto the next row: "klm" below "fghij".
         cw.input_str("klm");
-        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(1), Column(3)));
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(2), Column(3)));
         assert!(!cw.grid.cursor.should_wrap);
 
         cw.resize(CrosswordsSize::new(10, 4));
@@ -7878,10 +7878,10 @@ mod tests {
         assert!(first >= 0, "the joined line is on screen, not in history");
     }
 
-    // The cursor on the top row inside a line whose head is in history,
-    // with cells still after it on that row: the grow moves the cursor
-    // onto the joined row, the row below keeps the rest, and the joined
-    // row is pulled onto the screen.
+    // The cursor inside a line that wrapped, with cells still after it
+    // on its row: the shrink carries the cursor with its cells to the
+    // next row, and the grow moves it back onto the joined row while
+    // the row below keeps the rest.
     #[test]
     fn a_cursor_inside_a_rejoined_line_lands_on_it() {
         let mut cw = Crosswords::new(
@@ -7903,16 +7903,11 @@ mod tests {
                 .trim_end_matches('\0')
                 .to_string()
         };
-        assert_eq!(cw.history_size(), 1);
-        assert_eq!(text(&cw, -1), "abcdef");
-        assert_eq!(text(&cw, 0), "ghijkl");
-        assert_eq!(text(&cw, 1), "m");
-        // The shrink does not reflow a cursor whose row's tail merges
-        // into the next row: it stays at the clamped column 5. That is
-        // a separate gap; this test is about the grow, so the cursor is
-        // put on the j by hand.
-        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(5)));
-        cw.goto(Line(0), Column(3));
+        assert_eq!(cw.history_size(), 0, "the blank row took the wrap");
+        assert_eq!(text(&cw, 0), "abcdef");
+        assert_eq!(text(&cw, 1), "ghijkl");
+        assert_eq!(text(&cw, 2), "m");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(1), Column(3)), "on the j");
 
         cw.resize(CrosswordsSize::new(10, 4));
         assert_eq!(cw.history_size(), 0);
@@ -7965,6 +7960,86 @@ mod tests {
         assert_eq!(text(2), "ooo");
         assert_eq!(text(3), "ppp");
         assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(9)));
+    }
+
+    // Reported on #2058: a cursor in the middle of the top line, with
+    // blank rows under it, when the width shrinks. The cursor cannot
+    // move above the screen, so the blank rows at the bottom take the
+    // wrap instead and the cursor stays on its character. Growing back
+    // joins the line again under the cursor.
+    #[test]
+    fn a_shrink_keeps_a_top_row_cursor_on_its_character() {
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(10, 3),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        cw.input_str("abcdefghij");
+        cw.goto(Line(0), Column(3));
+        let text = |cw: &Crosswords<VoidListener>, line: i32| -> String {
+            let row = &cw.grid[Line(line)];
+            (0..row.len())
+                .map(|c| row[Column(c)].c())
+                .collect::<String>()
+                .trim_end_matches('\0')
+                .to_string()
+        };
+
+        cw.resize(CrosswordsSize::new(4, 3));
+        assert_eq!(cw.history_size(), 0, "the blank rows took the wrap");
+        assert_eq!(text(&cw, 0), "abcd");
+        assert_eq!(text(&cw, 1), "efgh");
+        assert_eq!(text(&cw, 2), "ij");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(3)));
+        assert_eq!(cw.grid[cw.grid.cursor.pos].c(), 'd');
+
+        cw.resize(CrosswordsSize::new(10, 3));
+        assert_eq!(cw.history_size(), 0);
+        assert_eq!(text(&cw, 0), "abcdefghij");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(3)));
+        assert_eq!(cw.grid[cw.grid.cursor.pos].c(), 'd');
+    }
+
+    // Reported on #2058: a wide character before the cursor. The spacer
+    // pushes the wide character down, so the row keeps one cell fewer
+    // than the width, and the cursor has to move back by that many.
+    #[test]
+    fn a_shrink_moves_the_cursor_by_the_cells_the_row_kept() {
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(10, 3),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        cw.input_str("abc\u{4e2d}def");
+        cw.goto(Line(0), Column(7));
+        assert_eq!(cw.grid[cw.grid.cursor.pos].c(), 'f');
+
+        cw.resize(CrosswordsSize::new(4, 3));
+        let cursor = cw.grid.cursor.pos;
+        assert_eq!(cw.grid[cursor].c(), 'f', "the cursor is still on the f");
+        // The rows: "abc" and a leading spacer, then the wide char with
+        // "de", then "f".
+        let row_of = |cw: &Crosswords<VoidListener>, c: char| -> i32 {
+            (-(cw.history_size() as i32)..3)
+                .find(|&line| {
+                    let row = &cw.grid[Line(line)];
+                    (0..row.len()).any(|col| row[Column(col)].c() == c)
+                })
+                .expect("the character is somewhere")
+        };
+        assert_eq!(row_of(&cw, 'f'), cursor.row.0);
+        assert_eq!(row_of(&cw, '\u{4e2d}'), row_of(&cw, 'e'));
+        assert_eq!(row_of(&cw, 'c'), row_of(&cw, '\u{4e2d}') - 1);
+        assert!(matches!(
+            cw.grid[Line(row_of(&cw, 'c'))][Column(3)].wide(),
+            crate::crosswords::square::Wide::LeadingSpacer
+        ));
     }
 
     // A resize that keeps the columns rotates the selection with the

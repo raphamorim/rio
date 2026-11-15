@@ -368,6 +368,23 @@ impl Grid<Square> {
 
         let mut rows = self.raw.take_all();
         let old_len = rows.len();
+
+        // The old row holding the cursor, counted from the bottom like
+        // `i`. Fixed here: the cursor moves as its text does, and the
+        // match must not drift with it.
+        let mut cursor_i = self.lines - self.cursor.pos.row.0 as usize - 1;
+        // Set when the cursor's cells travel to the next row in the
+        // buffered tail, so that row does not shift the cursor again.
+        let mut cursor_in_buffered = false;
+        // Blank rows at the bottom of the screen under the cursor: room
+        // a wrap can take instead of pushing rows into history. Each
+        // row a wrap adds while there is room is paid for by one of
+        // them, popped below the loop, so everything above stays put.
+        let mut room = rows.iter().take_while(|row| row.is_clear()).count().min(
+            self.lines
+                .saturating_sub(self.cursor.pos.row.0 as usize + 1),
+        );
+        let mut pull = 0usize;
         // See `grow_columns`; `base_abs + position` also survives the
         // cap truncation below because dropping the N oldest rows
         // advances the eviction base by the same N.
@@ -392,11 +409,12 @@ impl Grid<Square> {
             // Append lines left over from the previous row.
             if let Some(buffered) = buffered.take() {
                 // Add a column for every cell added before the cursor, if it goes beyond the new
-                // width it is then later reflown.
-                let cursor_buffer_line = self.lines - self.cursor.pos.row.0 as usize - 1;
-                if i == cursor_buffer_line {
+                // width it is then later reflown. A cursor that arrived in
+                // the buffered cells is already placed.
+                if i == cursor_i && !cursor_in_buffered {
                     self.cursor.pos.col += buffered.len();
                 }
+                cursor_in_buffered = false;
 
                 row.append_front(buffered);
             }
@@ -406,12 +424,7 @@ impl Grid<Square> {
                 let mut wrapped = match row.shrink(columns) {
                     Some(wrapped) if reflow => wrapped,
                     _ => {
-                        let cursor_buffer_line =
-                            self.lines - self.cursor.pos.row.0 as usize - 1;
-                        if reflow
-                            && i == cursor_buffer_line
-                            && self.cursor.pos.col > columns
-                        {
+                        if reflow && i == cursor_i && self.cursor.pos.col > columns {
                             // If there are empty cells before the cursor, we assume it is explicit
                             // whitespace and need to wrap it like normal content.
                             Vec::new()
@@ -502,6 +515,10 @@ impl Grid<Square> {
                     cell.set_wrapline(true);
                 }
 
+                // The cells this push kept on the row: `columns`, less a
+                // wide char the spacer displaced into the next row.
+                let kept = columns - displaced as usize;
+
                 if wrapped
                     .last()
                     .map(|c| c.wrapline() && i >= 1)
@@ -513,24 +530,48 @@ impl Grid<Square> {
                         cell.set_wrapline(false);
                     }
 
+                    // The cursor travels with its cells to the next row,
+                    // which then holds it.
+                    if i == cursor_i && self.cursor.pos.col.0 >= kept {
+                        self.cursor.pos.col -= kept;
+                        self.cursor.pos.row += 1;
+                        cursor_i -= 1;
+                        cursor_in_buffered = true;
+                    }
+
                     // Add removed cells to start of next row.
                     buffered = Some(wrapped);
                     break;
                 } else {
-                    // Reflow cursor if a line below it is deleted.
-                    let cursor_buffer_line =
-                        self.lines - self.cursor.pos.row.0 as usize - 1;
-                    if (i == cursor_buffer_line && self.cursor.pos.col < columns)
-                        || i < cursor_buffer_line
-                    {
-                        self.cursor.pos.row = max(self.cursor.pos.row - 1, Line(0));
-                    }
-
-                    // Reflow the cursor if it is on this line beyond the width.
-                    if i == cursor_buffer_line && self.cursor.pos.col >= columns {
-                        // Since only a single new line is created, we subtract only `columns`
-                        // from the cursor instead of reflowing it completely.
-                        self.cursor.pos.col -= columns;
+                    // This push adds a row. With room below the cursor the
+                    // row is paid for from the bottom and nothing above
+                    // moves; without it the screen is anchored at the
+                    // bottom and the cursor follows its text up.
+                    if i == cursor_i && self.cursor.pos.col.0 >= kept {
+                        // The cursor's cells are on the new row. Since only
+                        // a single new line is created, subtract only the
+                        // kept cells instead of reflowing it completely.
+                        self.cursor.pos.col -= kept;
+                        if room > 0 {
+                            room -= 1;
+                            pull += 1;
+                            self.cursor.pos.row += 1;
+                        }
+                    } else if i > cursor_i {
+                        // A row above the cursor's text.
+                        if room > 0 {
+                            room -= 1;
+                            pull += 1;
+                            self.cursor.pos.row += 1;
+                        }
+                    } else {
+                        // A row below the cursor's text, on its row or under.
+                        if room > 0 {
+                            room -= 1;
+                            pull += 1;
+                        } else if self.cursor.pos.row > Line(0) {
+                            self.cursor.pos.row -= 1;
+                        }
                     }
 
                     // Make sure new row is at least as long as new width.
@@ -548,8 +589,18 @@ impl Grid<Square> {
             }
         }
 
-        // Restore oldest-first order in place and reuse the buffer as the new
-        // grid storage, avoiding a second full row-buffer allocation.
+        // The blank bottom rows that paid for added rows go now, so the
+        // screen keeps its line count with everything above in place.
+        while pull > 0
+            && new_raw.len() > self.lines
+            && new_raw.last().is_some_and(|row| row.is_clear())
+        {
+            new_raw.pop();
+            pull -= 1;
+        }
+
+        // Put the rows in storage order, newest first, in place, reusing
+        // the buffer as the new grid storage.
         new_raw.reverse();
         let mut reversed = new_raw;
         // Reflow can overflow the scrollback cap; the oldest lines
