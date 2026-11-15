@@ -3821,7 +3821,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // keeps scalar and bulk agreeing regardless of how the parser
         // chunks the stream) and are the common case, so that check
         // goes first.
+        // A kitty image placeholder is a cell of its own: the marks
+        // after it carry the image position, so it never continues a
+        // cluster even where the break rules would let it.
         if c > '\u{FF}'
+            && c != crate::ansi::kitty_virtual::PLACEHOLDER
             && self.mode.contains(Mode::GRAPHEME_CLUSTER)
             && self.try_cluster_append(c, width)
         {
@@ -3964,6 +3968,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // continuation ends the run and takes the scalar path, which
         // owns the join.
         let clustering = self.mode.contains(Mode::GRAPHEME_CLUSTER);
+        // With auto-wrap off a wide codepoint at the last column is
+        // dropped, so inside a run the previous cell is not always the
+        // previous codepoint. Wide runs are then one codepoint long and
+        // each gets the real previous cell check.
+        let wide_one_at_a_time = clustering && !self.mode.contains(Mode::LINE_WRAP);
         use crate::grapheme_lut::class_of;
         use rio_unicode::grapheme::GraphemeClass;
         const OTHER: u8 = GraphemeClass::Other as u8;
@@ -4048,7 +4057,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             // cost one class lookup and no transition.
             let mut j = i + 1;
             let mut prev_class: Option<u8> = None;
-            while j < n {
+            while j < n && !(wide_one_at_a_time && width == 2) {
                 let next = codepoints[j];
                 if next == crate::ansi::kitty_virtual::PLACEHOLDER as u32
                     || crate::codepoint_width::width_in(table, next) != Some(width)
@@ -11852,7 +11861,7 @@ mod tests {
         const COLS: usize = 12;
         const LINES: usize = 4;
 
-        fn term(clustering: bool) -> Crosswords<VoidListener> {
+        fn term(clustering: bool, line_wrap: bool) -> Crosswords<VoidListener> {
             let mut cw = Crosswords::new(
                 CrosswordsSize::new(COLS, LINES),
                 CursorShape::Block,
@@ -11862,6 +11871,7 @@ mod tests {
                 20,
             );
             cw.set_grapheme_clustering(clustering);
+            cw.mode.set(Mode::LINE_WRAP, line_wrap);
             cw
         }
 
@@ -11878,10 +11888,11 @@ mod tests {
                         .map(|e| e.zerowidth.iter().collect())
                         .unwrap_or_default();
                     row_text.push_str(&format!(
-                        "[{}{}:{:?}]",
+                        "[{}{}:{:?}:{:?}]",
                         cell.c().escape_unicode(),
                         marks.escape_unicode(),
-                        cell.wide()
+                        cell.wide(),
+                        cell.cell_flags()
                     ));
                 }
                 row_text.push_str(&format!(
@@ -11928,12 +11939,16 @@ mod tests {
                 vec!["\u{D4E}\u{D15} a\u{D4E}b \u{D4E}\u{D4E}\u{D15}"],
                 vec!["\u{A9}\u{1F3FD} \u{AE}\u{FE0F} \u{A9}x"],
                 vec!["\u{915}\u{94D}\u{937} \u{928}\u{94D}\u{924}\u{947}"],
+                vec!["\u{D4E}\u{416}\u{417} \u{D4E}\u{65E5} \u{D4E}\u{10EEEE}x"],
+                vec!["aaaaaaaaaa\u{1100}", "\u{65E5}\u{1100}"],
+                vec!["aaaaaaaaaa\u{1F1E7}", "\u{65E5}\u{1F1E7}\u{1F1E7}"],
+                vec!["aaaaaaaaa\u{1F468}\u{200D}", "\u{65E5}\u{1F469}"],
             ]
         }
 
-        fn run(clustering: bool) {
+        fn run(clustering: bool, line_wrap: bool) {
             for sample in samples() {
-                let mut scalar = term(clustering);
+                let mut scalar = term(clustering, line_wrap);
                 for call in &sample {
                     for c in call.chars() {
                         scalar.input(c);
@@ -11941,7 +11956,7 @@ mod tests {
                 }
                 let want = picture(&scalar);
 
-                let mut bulk = term(clustering);
+                let mut bulk = term(clustering, line_wrap);
                 for call in &sample {
                     let cps: Vec<u32> = call.chars().map(|c| c as u32).collect();
                     bulk.input_codepoints(&cps);
@@ -11949,11 +11964,11 @@ mod tests {
                 assert_eq!(
                     picture(&bulk),
                     want,
-                    "bulk differs from scalar for {sample:?} (clustering={clustering})"
+                    "bulk differs from scalar for {sample:?} (clustering={clustering}, line_wrap={line_wrap})"
                 );
 
                 for chunk in [1usize, 2, 3, 5, 7, 64] {
-                    let mut parsed = term(clustering);
+                    let mut parsed = term(clustering, line_wrap);
                     let mut parser = crate::performer::handler::Processor::default();
                     for call in &sample {
                         for bytes in call.as_bytes().chunks(chunk) {
@@ -11963,7 +11978,7 @@ mod tests {
                     assert_eq!(
                         picture(&parsed),
                         want,
-                        "parser in {chunk} byte chunks differs from scalar for {sample:?} (clustering={clustering})"
+                        "parser in {chunk} byte chunks differs from scalar for {sample:?} (clustering={clustering}, line_wrap={line_wrap})"
                     );
                 }
             }
@@ -11971,19 +11986,28 @@ mod tests {
 
         #[test]
         fn bulk_and_scalar_agree_with_clustering_on() {
-            run(true);
+            run(true, true);
         }
 
         #[test]
         fn bulk_and_scalar_agree_with_clustering_off() {
-            run(false);
+            run(false, true);
+        }
+
+        // With auto-wrap off a wide codepoint at the last column is
+        // dropped; the next codepoint is still judged against the real
+        // last cell, in both paths.
+        #[test]
+        fn bulk_and_scalar_agree_without_auto_wrap() {
+            run(true, false);
+            run(false, false);
         }
 
         // A run of plain non-ASCII codepoints with clustering on: one
         // cell per codepoint, cursor after the last.
         #[test]
         fn a_non_ascii_run_lands_one_cell_per_codepoint() {
-            let mut cw = term(true);
+            let mut cw = term(true, true);
             let cps: Vec<u32> = "Съешь же".chars().map(|c| c as u32).collect();
             cw.input_codepoints(&cps);
             let cell = cw.grid[Line(0)][Column(0)];
@@ -11996,7 +12020,7 @@ mod tests {
         // cursor joins it, and the rest of the run is written fresh.
         #[test]
         fn a_run_starting_with_a_continuation_joins_the_previous_cell() {
-            let mut cw = term(true);
+            let mut cw = term(true, true);
             cw.input_codepoints(&['\u{1F1E7}' as u32]);
             cw.input_codepoints(&['\u{1F1F7}' as u32, 'o' as u32, 'k' as u32]);
             let flag = cw.grid[Line(0)][Column(0)];
@@ -12020,7 +12044,7 @@ mod tests {
         // scalar path does the join.
         #[test]
         fn a_spacing_mark_inside_a_run_ends_it_and_joins() {
-            let mut cw = term(true);
+            let mut cw = term(true, true);
             let cps: Vec<u32> = "ab\u{93E}cd".chars().map(|c| c as u32).collect();
             cw.input_codepoints(&cps);
             let b = cw.grid[Line(0)][Column(1)];
