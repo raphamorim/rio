@@ -408,6 +408,33 @@ fn version_number(mut version: &str) -> usize {
     version_number
 }
 
+/// Codepoints the narrow run scanner skips without a lookup, eight at a
+/// time.
+const LATIN_LANES: usize = 8;
+
+/// The printable codepoints up to U+00FF: the two ranges `0x20..=0x7E`
+/// and `0xA0..=0xFF`. Exactly the codepoints below U+0100 whose width
+/// is one (the rest are controls with no width), and none of them ever
+/// continues a grapheme cluster, so a run scanner can take them with no
+/// width or class lookup. Pinned against the width table by a test.
+#[inline]
+fn is_latin_printable(cp: u32) -> bool {
+    cp.wrapping_sub(0x20) <= 0x7E - 0x20 || cp.wrapping_sub(0xA0) <= 0xFF - 0xA0
+}
+
+/// Whether a codepoint of class `next` would continue the grapheme
+/// cluster of a cell that holds exactly one codepoint of class `prev`,
+/// freshly written. Inside a bulk run that is the only shape the
+/// previous cell can have, so this pair test is the whole mode-2027
+/// break decision; `try_cluster_append` does the same against a real
+/// cell, marks and all.
+#[inline]
+fn continues_fresh_cell(prev: u8, next: u8) -> bool {
+    use crate::grapheme_lut::{is_break_lut, start_state};
+    let mut state = start_state(prev);
+    !is_break_lut(prev, next, &mut state)
+}
+
 /// True when (`base`, `vs`) appears in Unicode's `emoji-variation-sequences.txt`,
 /// i.e. `vs` (U+FE0F or U+FE0E) is defined to have an effect on this base.
 /// Equivalent to kitty's `is_emoji_presentation_base` guard — the
@@ -3808,7 +3835,11 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // keeps scalar and bulk agreeing regardless of how the parser
         // chunks the stream) and are the common case, so that check
         // goes first.
+        // A kitty image placeholder is a cell of its own: the marks
+        // after it carry the image position, so it never continues a
+        // cluster even where the break rules would let it.
         if c > '\u{FF}'
+            && c != crate::ansi::kitty_virtual::PLACEHOLDER
             && self.mode.contains(Mode::GRAPHEME_CLUSTER)
             && self.try_cluster_append(c, width)
         {
@@ -3931,16 +3962,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Insert mode falls back: cell-rotation is per-char and the cost of
         // bulk-handling it correctly outweighs the win. Non-ASCII charsets
         // fall back too: decode runs can carry ASCII that needs mapping.
+        // Without auto-wrap a wide codepoint at the last column is
+        // dropped, so the previous cell is not always the previous
+        // codepoint and the run scanner's pair test does not hold;
+        // the scalar path owns that mode. A single-shift charset, a
+        // horizontal margin or a status display would each need a gate
+        // here too; the terminal has none of them today.
         let active = self.grid.cursor.charsets[self.active_charset];
         if self.mode.contains(Mode::INSERT)
+            || !self.mode.contains(Mode::LINE_WRAP)
             || active != crate::crosswords::pos::StandardCharset::Ascii
-            // Grapheme clustering decides cell layout per codepoint
-            // against the previous cell; the bulk writers place whole
-            // width-runs at once and would split clusters. ASCII bulk
-            // paths stay fast: ASCII never continues a cluster, and
-            // the cluster check anchors on the previous cell, so it
-            // self-invalidates across a bulk run.
-            || self.mode.contains(Mode::GRAPHEME_CLUSTER)
         {
             for &cp in codepoints {
                 let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
@@ -3948,6 +3979,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             return;
         }
+
+        // Mode 2027 decides cell layout per codepoint against the
+        // previous cell. The bulk writers below stay exact under it:
+        // the first codepoint of a run is checked against the real
+        // previous cell by the scalar path, and inside a run the
+        // previous cell is always the previous codepoint written
+        // fresh, so the break test on the pair is the whole test. A
+        // continuation ends the run and takes the scalar path, which
+        // owns the join.
+        let clustering = self.mode.contains(Mode::GRAPHEME_CLUSTER);
+        use crate::grapheme_lut::class_of;
+        use rio_unicode::grapheme::GraphemeClass;
+        const OTHER: u8 = GraphemeClass::Other as u8;
+        const PREPEND: u8 = GraphemeClass::Prepend as u8;
 
         // Registered glyphs keep their system `wcwidth` here (see the
         // note in `input`); the declared width is a render-time hint
@@ -3962,7 +4007,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     None => continue,
                 };
                 let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
-                if width == 0 {
+                if width == 0 || clustering {
                     self.input(c);
                 } else {
                     self.write_codepoint_cell(cp, c, width);
@@ -4005,14 +4050,69 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 continue;
             }
 
-            // Maximal run of same-width codepoints, written in bulk.
+            // The first codepoint of a run may continue the cluster in
+            // the cell before the cursor, which can hold marks and a
+            // break state the run scanner cannot see. Codepoints up to
+            // U+00FF never continue a cluster, as in `input`.
+            if clustering && cp > 0xFF {
+                let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
+                if self.try_cluster_append(c, width as usize) {
+                    i += 1;
+                    continue;
+                }
+            }
+
+            // Maximal run of same-width codepoints that each start a
+            // new cluster, written in bulk. Inside the run the previous
+            // cell is always the previous codepoint written fresh, so
+            // the pair test is the whole break decision. Printable
+            // Latin-1 is width one and never continues a cluster, so a
+            // narrow run skips over it eight codepoints at a time with
+            // no lookups; letters above U+00FF are class Other, which
+            // continues nothing but a Prepend, so they cost one class
+            // lookup and no transition. Codepoints up to U+00FF need no
+            // class of their own until something above follows them.
             let mut j = i + 1;
+            let mut prev_class: Option<u8> = None;
             while j < n {
+                if width == 1 && is_latin_printable(codepoints[j]) {
+                    j += 1;
+                    while j + LATIN_LANES <= n
+                        && codepoints[j..j + LATIN_LANES]
+                            .iter()
+                            .fold(true, |all, &cp| all & is_latin_printable(cp))
+                    {
+                        j += LATIN_LANES;
+                    }
+                    while j < n && is_latin_printable(codepoints[j]) {
+                        j += 1;
+                    }
+                    prev_class = None;
+                    if j == n {
+                        break;
+                    }
+                }
                 let next = codepoints[j];
                 if next == crate::ansi::kitty_virtual::PLACEHOLDER as u32
                     || crate::codepoint_width::width_in(table, next) != Some(width)
                 {
                     break;
+                }
+                if clustering && next > 0xFF {
+                    let next_class = class_of(char::from_u32(next).unwrap_or('\u{FFFD}'));
+                    let prev = prev_class.unwrap_or_else(|| {
+                        class_of(char::from_u32(codepoints[j - 1]).unwrap_or('\u{FFFD}'))
+                    });
+                    if next_class == OTHER {
+                        if prev == PREPEND {
+                            break;
+                        }
+                    } else if continues_fresh_cell(prev, next_class) {
+                        break;
+                    }
+                    prev_class = Some(next_class);
+                } else {
+                    prev_class = None;
                 }
                 j += 1;
             }
@@ -11782,5 +11882,239 @@ mod tests {
         events.borrow_mut().clear();
         parser.advance(&mut term, b"\x1b[?9h\x1b[?9$p");
         assert_eq!(replies(&events), vec!["\x1b[?9;1$y".to_string()]);
+    }
+
+    // The bulk codepoint path under mode 2027. Every sample is written
+    // three ways, through the scalar `input`, through `input_codepoints`
+    // in one call, and through the parser in byte chunks of several
+    // sizes, and the grids must agree cell for cell: text, width, the
+    // marks attached to each cell, the cursor, and the wrap state.
+    mod bulk_codepoints_under_clustering {
+        use super::*;
+
+        const COLS: usize = 12;
+        const LINES: usize = 4;
+
+        fn term(clustering: bool, line_wrap: bool) -> Crosswords<VoidListener> {
+            let mut cw = Crosswords::new(
+                CrosswordsSize::new(COLS, LINES),
+                CursorShape::Block,
+                VoidListener {},
+                crate::event::WindowId::from(0),
+                0,
+                20,
+            );
+            cw.set_grapheme_clustering(clustering);
+            cw.mode.set(Mode::LINE_WRAP, line_wrap);
+            cw
+        }
+
+        /// Everything about a grid that printing can change.
+        fn picture(cw: &Crosswords<VoidListener>) -> Vec<String> {
+            let mut out = Vec::new();
+            for line in -(cw.history_size() as i32)..LINES as i32 {
+                let mut row_text = String::new();
+                for col in 0..COLS {
+                    let cell = cw.grid[Line(line)][Column(col)];
+                    let marks: String = cell
+                        .extras_id()
+                        .and_then(|id| cw.grid.extras_table.get(id))
+                        .map(|e| e.zerowidth.iter().collect())
+                        .unwrap_or_default();
+                    row_text.push_str(&format!(
+                        "[{}{}:{:?}:{:?}]",
+                        cell.c().escape_unicode(),
+                        marks.escape_unicode(),
+                        cell.wide(),
+                        cell.cell_flags()
+                    ));
+                }
+                row_text.push_str(&format!(
+                    " wrap={}",
+                    cw.grid[Line(line)].last().is_some_and(|c| c.wrapline())
+                ));
+                out.push(row_text);
+            }
+            out.push(format!(
+                "cursor={:?} should_wrap={} history={}",
+                cw.grid.cursor.pos,
+                cw.grid.cursor.should_wrap,
+                cw.history_size()
+            ));
+            out
+        }
+
+        /// The samples, each a sequence of separate print calls, so a
+        /// call can start with a continuation of the cell before the
+        /// cursor.
+        fn samples() -> Vec<Vec<&'static str>> {
+            vec![
+                vec!["déjà vu à côté de l'hôtel, señor Núñez"],
+                vec!["Съешь же ещё этих мягких булок"],
+                vec!["日本語のテキスト中文字符한국어"],
+                vec!["\u{1100}\u{1161}\u{11A8}\u{1100}\u{1161}"],
+                vec!["नमस्ते क्षि"],
+                vec!["สวัสดีครับ"],
+                vec!["\u{1F44D}\u{1F3FD} \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"],
+                vec!["\u{1F1E7}\u{1F1F7}\u{1F1EF}\u{1F1F5}\u{1F1E7}"],
+                vec!["\u{2764}\u{FE0F} \u{263A}\u{FE0E} \u{1F600}\u{1F601}\u{1F602}"],
+                vec!["e\u{301}a\u{308}o\u{302}"],
+                vec!["a\u{93E}b\u{93F}c"],
+                vec!["abc日本def\u{1F389}xyz"],
+                vec!["ab\u{10EEEE}cd\u{10EEEE}"],
+                vec!["\u{1F1E7}", "\u{1F1F7}"],
+                vec!["\u{1F468}", "\u{200D}\u{1F469}", "\u{200D}\u{1F467}"],
+                vec!["e", "\u{301}\u{308}", "x"],
+                vec!["日本語日本語", "のテ"],
+                vec!["\u{1F600}", "\u{1F3FD}\u{1F600}"],
+                vec!["\u{600}\u{660}\u{661}"],
+                vec!["x\u{200D}y\u{200D}z"],
+                vec!["ab\u{FE0F}cd\u{FE0E}"],
+                vec!["\u{D4E}\u{D15} a\u{D4E}b \u{D4E}\u{D4E}\u{D15}"],
+                vec!["\u{A9}\u{1F3FD} \u{AE}\u{FE0F} \u{A9}x"],
+                vec!["\u{915}\u{94D}\u{937} \u{928}\u{94D}\u{924}\u{947}"],
+                vec!["\u{D4E}\u{416}\u{417} \u{D4E}\u{65E5} \u{D4E}\u{10EEEE}x"],
+                vec!["aaaaaaaaaa\u{1100}", "\u{65E5}\u{1100}"],
+                vec![
+                    "abcdefghijЖklmnopqrstuvwxyzЗ",
+                    "éééééééé日ééééééé\u{AD}\u{A0}ÿ",
+                ],
+                vec!["\u{A9}\u{1F3FD}abcdefghij\u{AE}\u{FE0F}k"],
+                vec!["aaaaaaaaaa\u{1F1E7}", "\u{65E5}\u{1F1E7}\u{1F1E7}"],
+                vec!["aaaaaaaaa\u{1F468}\u{200D}", "\u{65E5}\u{1F469}"],
+            ]
+        }
+
+        fn run(clustering: bool, line_wrap: bool) {
+            for sample in samples() {
+                let mut scalar = term(clustering, line_wrap);
+                for call in &sample {
+                    for c in call.chars() {
+                        scalar.input(c);
+                    }
+                }
+                let want = picture(&scalar);
+
+                let mut bulk = term(clustering, line_wrap);
+                for call in &sample {
+                    let cps: Vec<u32> = call.chars().map(|c| c as u32).collect();
+                    bulk.input_codepoints(&cps);
+                }
+                assert_eq!(
+                    picture(&bulk),
+                    want,
+                    "bulk differs from scalar for {sample:?} (clustering={clustering}, line_wrap={line_wrap})"
+                );
+
+                for chunk in [1usize, 2, 3, 5, 7, 64] {
+                    let mut parsed = term(clustering, line_wrap);
+                    let mut parser = crate::performer::handler::Processor::default();
+                    for call in &sample {
+                        for bytes in call.as_bytes().chunks(chunk) {
+                            parser.advance(&mut parsed, bytes);
+                        }
+                    }
+                    assert_eq!(
+                        picture(&parsed),
+                        want,
+                        "parser in {chunk} byte chunks differs from scalar for {sample:?} (clustering={clustering}, line_wrap={line_wrap})"
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn bulk_and_scalar_agree_with_clustering_on() {
+            run(true, true);
+        }
+
+        // The range the narrow scanner skips without a lookup is exactly
+        // the codepoints below U+0100 with width one.
+        #[test]
+        fn latin_printable_is_exactly_width_one_below_0x100() {
+            let table = crate::codepoint_width::width_table();
+            for cp in 0u32..=0xFF {
+                assert_eq!(
+                    is_latin_printable(cp),
+                    crate::codepoint_width::width_in(table, cp) == Some(1),
+                    "U+{cp:04X}"
+                );
+            }
+            assert!(!is_latin_printable(0x100));
+            assert!(!is_latin_printable(u32::MAX));
+        }
+
+        #[test]
+        fn bulk_and_scalar_agree_with_clustering_off() {
+            run(false, true);
+        }
+
+        // With auto-wrap off a wide codepoint at the last column is
+        // dropped; the next codepoint is still judged against the real
+        // last cell, in both paths.
+        #[test]
+        fn bulk_and_scalar_agree_without_auto_wrap() {
+            run(true, false);
+            run(false, false);
+        }
+
+        // A run of plain non-ASCII codepoints with clustering on: one
+        // cell per codepoint, cursor after the last.
+        #[test]
+        fn a_non_ascii_run_lands_one_cell_per_codepoint() {
+            let mut cw = term(true, true);
+            let cps: Vec<u32> = "Съешь же".chars().map(|c| c as u32).collect();
+            cw.input_codepoints(&cps);
+            let cell = cw.grid[Line(0)][Column(0)];
+            assert_eq!(cell.c(), 'С');
+            assert_eq!(cw.grid[Line(0)][Column(7)].c(), 'е');
+            assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(cps.len())));
+        }
+
+        // A run whose first codepoint continues the cell before the
+        // cursor joins it, and the rest of the run is written fresh.
+        #[test]
+        fn a_run_starting_with_a_continuation_joins_the_previous_cell() {
+            let mut cw = term(true, true);
+            cw.input_codepoints(&['\u{1F1E7}' as u32]);
+            cw.input_codepoints(&['\u{1F1F7}' as u32, 'o' as u32, 'k' as u32]);
+            let flag = cw.grid[Line(0)][Column(0)];
+            assert_eq!(flag.c(), '\u{1F1E7}');
+            assert_eq!(
+                cw.grid
+                    .extras_table
+                    .get(flag.extras_id().unwrap())
+                    .unwrap()
+                    .zerowidth,
+                vec!['\u{1F1F7}']
+            );
+            assert_eq!(flag.wide(), crate::crosswords::square::Wide::Wide);
+            assert_eq!(cw.grid[Line(0)][Column(2)].c(), 'o');
+            assert_eq!(cw.grid[Line(0)][Column(3)].c(), 'k');
+            assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(4)));
+        }
+
+        // Inside a run, a spacing mark after a Latin letter would join it
+        // and widen the cell, so the run ends before the mark and the
+        // scalar path does the join.
+        #[test]
+        fn a_spacing_mark_inside_a_run_ends_it_and_joins() {
+            let mut cw = term(true, true);
+            let cps: Vec<u32> = "ab\u{93E}cd".chars().map(|c| c as u32).collect();
+            cw.input_codepoints(&cps);
+            let b = cw.grid[Line(0)][Column(1)];
+            assert_eq!(b.c(), 'b');
+            assert_eq!(b.wide(), crate::crosswords::square::Wide::Wide);
+            assert_eq!(
+                cw.grid
+                    .extras_table
+                    .get(b.extras_id().unwrap())
+                    .unwrap()
+                    .zerowidth,
+                vec!['\u{93E}']
+            );
+            assert_eq!(cw.grid[Line(0)][Column(3)].c(), 'c');
+            assert_eq!(cw.grid[Line(0)][Column(4)].c(), 'd');
+        }
     }
 }
