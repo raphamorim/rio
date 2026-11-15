@@ -7922,11 +7922,12 @@ mod tests {
     }
 
     // When the joined rows overflow the screen and the rows under the
-    // cursor hold content, the overflow leaves from the bottom: the
-    // cursor stays on its line and that line stays on screen. A
-    // full-screen program repaints on the resize anyway.
+    // cursor hold content, nothing is dropped: a grow must not destroy
+    // output. The joined line goes above the screen and the cursor,
+    // already on the top row, stays there; a program repositions its
+    // cursor on the resize.
     #[test]
-    fn a_rejoin_that_overflows_the_screen_drops_the_bottom_row() {
+    fn a_rejoin_that_overflows_the_screen_keeps_the_bottom_row() {
         let mut cw = Crosswords::new(
             CrosswordsSize::new(6, 4),
             CursorShape::Block,
@@ -7954,11 +7955,12 @@ mod tests {
                 .trim_end_matches('\0')
                 .to_string()
         };
-        assert_eq!(cw.history_size(), 0);
-        assert_eq!(text(0), "abcdefghij");
-        assert_eq!(text(1), "kl");
-        assert_eq!(text(2), "ooo");
-        assert_eq!(text(3), "ppp");
+        assert_eq!(cw.history_size(), 1);
+        assert_eq!(text(-1), "abcdefghij");
+        assert_eq!(text(0), "kl");
+        assert_eq!(text(1), "ooo");
+        assert_eq!(text(2), "ppp");
+        assert_eq!(text(3), "qqq", "the bottom row survived the grow");
         assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(9)));
     }
 

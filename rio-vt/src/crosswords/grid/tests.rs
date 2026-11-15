@@ -394,8 +394,13 @@ fn shrink_reflow_remap_tracks_displaced_wide_char() {
     assert_eq!(remap.base_abs, 0);
     // Old row 0 lands at 0; the wide-char row's first cell lands at 2
     // (position 1 holds the buffered "567" tail plus the spacer); the
-    // trailing blank row lands at 3.
-    assert_eq!(remap.new_pos, vec![0, 2, 3]);
+    // trailing blank row paid for the row the wrap added and is gone.
+    assert_eq!(remap.new_pos, vec![0, 2, -1]);
+    assert_eq!(
+        grid.history_size(),
+        0,
+        "three rows of content fit three lines"
+    );
 
     // Cross-check against where the wide char actually sits.
     let total = grid.total_lines() as i32;
@@ -737,9 +742,134 @@ fn prev_on_a_stale_position_ends_instead_of_panicking() {
     assert_eq!(it.prev().map(|i| i.pos), Some(Pos::new(Line(0), Column(0))));
     assert!(it.prev().is_none());
 
-    // Wrapping back onto a shorter row enters it at its real end.
+    // Wrapping back onto a shorter row enters it at its real end, and
+    // walking forward leaves it from there.
     let mut grid = Grid::<Square>::new(2, 5, 0);
     grid.raw[Line(0)].shrink(3);
     let mut it = grid.iter_from(Pos::new(Line(1), Column(0)));
     assert_eq!(it.prev().map(|i| i.pos), Some(Pos::new(Line(0), Column(2))));
+    assert_eq!(it.next().map(|i| i.pos), Some(Pos::new(Line(1), Column(0))));
+}
+
+fn fill(grid: &mut Grid<Square>, line: i32, text: &str, wrap: bool) {
+    let last = text.chars().count() - 1;
+    for (col, c) in text.chars().enumerate() {
+        grid[Line(line)][Column(col)] = if wrap && col == last {
+            wrap_cell(c)
+        } else {
+            cell(c)
+        };
+    }
+}
+
+fn text_of(grid: &Grid<Square>, line: i32) -> String {
+    let row = &grid[Line(line)];
+    (0..row.len())
+        .map(|c| row[Column(c)].c())
+        .collect::<String>()
+        .trim_end_matches('\0')
+        .to_string()
+}
+
+// A blank row right under a line that wraps is that line's continuation:
+// the wrapped tail lands in it, so it cannot pay for an added row. With
+// it counted as room, the cursor was moved for a row that was never
+// popped and ended one row under its text.
+#[test]
+fn a_blank_continuation_row_is_not_room() {
+    let mut grid = Grid::<Square>::new(6, 10, 10);
+    fill(&mut grid, 0, "xxxxxxxxxx", true);
+    fill(&mut grid, 1, "xxxxxxxxxx", true);
+    fill(&mut grid, 2, "xxxxxxxxxx", false);
+    fill(&mut grid, 3, "abcdefghij", true);
+    // Rows 4 (the continuation of row 3) and 5 are blank.
+    grid.cursor.pos = Pos::new(Line(3), Column(3));
+
+    grid.resize(true, 6, 7);
+
+    assert_eq!(
+        grid.history_size(),
+        1,
+        "one blank row paid, one row went up"
+    );
+    assert_eq!(text_of(&grid, -1), "xxxxxxx");
+    assert_eq!(text_of(&grid, 3), "xx");
+    assert_eq!(text_of(&grid, 4), "abcdefg");
+    assert_eq!(text_of(&grid, 5), "hij");
+    assert_eq!(grid.cursor.pos, Pos::new(Line(4), Column(3)));
+    assert_eq!(grid[grid.cursor.pos].c(), 'd');
+}
+
+// A wide char at the seam stays behind its spacer when the row above
+// takes the cells before it, so one cell fewer moves than fit. A cursor
+// on a moved cell lands after the cells the row above already had.
+#[test]
+fn a_cursor_before_a_displaced_wide_char_rejoins_on_its_cell() {
+    let mut grid = Grid::<Square>::new(2, 9, 0);
+    fill(&mut grid, 0, "abcdefgh", false);
+    let mut leading = spacer_cell();
+    leading.set_wide(crate::crosswords::square::Wide::LeadingSpacer);
+    leading.set_wrapline(true);
+    grid[Line(0)][Column(8)] = leading;
+    grid[Line(1)][Column(0)] = cell('x');
+    grid[Line(1)][Column(1)] = wide_cell('\u{4e2d}');
+    grid[Line(1)][Column(2)] = spacer_cell();
+    grid.cursor.pos = Pos::new(Line(1), Column(0));
+
+    grid.resize(true, 2, 10);
+
+    assert_eq!(grid[Line(0)][Column(8)], cell('x'));
+    assert!(matches!(
+        grid[Line(0)][Column(9)].wide(),
+        crate::crosswords::square::Wide::LeadingSpacer
+    ));
+    assert_eq!(grid[Line(1)][Column(0)], wide_cell('\u{4e2d}'));
+    assert_eq!(grid.cursor.pos, Pos::new(Line(0), Column(8)));
+    assert_eq!(grid[grid.cursor.pos].c(), 'x');
+}
+
+// Rows popped to pay for added rows are gone for the image remap too.
+#[test]
+fn popped_rows_leave_no_remap_entry() {
+    let mut grid = Grid::<Square>::new(3, 10, 5);
+    fill(&mut grid, 0, "abcdefghij", false);
+    grid.cursor.pos = Pos::new(Line(0), Column(3));
+    grid.track_reflow_remap = true;
+
+    grid.resize(true, 3, 4);
+
+    let remap = grid.reflow_remap.take().expect("the full path ran");
+    assert_eq!(remap.new_pos, vec![0, -1, -1]);
+    assert_eq!(grid.history_size(), 0);
+    assert_eq!(text_of(&grid, 2), "ij");
+}
+
+// The rows popped were below a scrolled viewport, which keeps its
+// distance to the new bottom instead of jumping up.
+#[test]
+fn a_scrolled_viewport_keeps_its_distance_when_rows_are_popped() {
+    let mut grid = Grid::<Square>::new(3, 10, 5);
+    fill(&mut grid, 0, "hhhh", false);
+    grid.scroll_up(&(Line(0)..Line(3)), 1);
+    fill(&mut grid, 0, "abcdefghij", false);
+    grid.cursor.pos = Pos::new(Line(0), Column(3));
+    assert_eq!(grid.history_size(), 1);
+    grid.scroll_display(Scroll::Delta(1));
+    assert_eq!(grid.display_offset(), 1);
+
+    grid.resize(true, 3, 4);
+
+    assert_eq!(
+        grid.history_size(),
+        1,
+        "the two blank rows paid for the two added"
+    );
+    assert_eq!(
+        grid.display_offset(),
+        0,
+        "both popped rows were under the viewport"
+    );
+    assert_eq!(text_of(&grid, -1), "hhhh");
+    assert_eq!(text_of(&grid, 0), "abcd");
+    assert_eq!(grid.cursor.pos, Pos::new(Line(0), Column(3)));
 }
