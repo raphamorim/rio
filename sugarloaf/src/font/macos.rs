@@ -188,8 +188,9 @@ pub fn register_fonts_in_dir(dir: &std::path::Path) {
 /// `CGFontCreateWithDataProvider` → `CTFontCreateWithGraphicsFont` path
 /// silently drops.
 ///
-/// Stored at a reference 1.0pt size; per-call rasterization clones with the
-/// target size (cheap CF refcount, not a parse). Clone is a CF retain.
+/// Stored at a reference 1.0pt size; shaping and rasterization use the
+/// memoized font at the target size (see [`FontHandle::at_size`]). Clone
+/// is a CF retain and shares the memo.
 ///
 /// TTC caveat: CoreText's data-based descriptor reads only the first font in
 /// a collection — use [`FontHandle::from_bytes_index`] for other indices.
@@ -214,8 +215,8 @@ struct SizedKey {
     sheared: bool,
 }
 
-/// Sizes a handle remembers before the oldest is dropped: a font size
-/// change or two, plus the sheared variants.
+/// Sizes a handle remembers before the least recently used is dropped:
+/// a font size change or two, plus the sheared variants.
 const SIZED_FONTS_KEPT: usize = 8;
 
 impl FontHandle {
@@ -234,8 +235,13 @@ impl FontHandle {
             sheared,
         };
         let mut sized = self.sized.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((_, font)) = sized.iter().find(|(k, _)| *k == key) {
-            return font.clone();
+        if let Some(hit) = sized.iter().position(|(k, _)| *k == key) {
+            // A hit moves to the back, so the sizes in use stay and
+            // the one not asked for longest is the one dropped.
+            let entry = sized.remove(hit);
+            let font = entry.1.clone();
+            sized.push(entry);
+            return font;
         }
         let font = if sheared {
             ct_font_sheared(&self.base_font, size_px as f64)
@@ -1245,8 +1251,8 @@ pub struct FontMetrics {
     pub x_height: f32,
 }
 
-/// Read CoreText's line metrics for `handle` at `size_px`. Cheap: clones the
-/// base CTFont to the target size (CF refcount + trivial size field).
+/// Read CoreText's line metrics for `handle` at `size_px`, through the
+/// handle's memoized sized font.
 pub fn font_metrics(handle: &FontHandle, size_px: f32) -> FontMetrics {
     let ct_font = handle.sized(size_px);
     let ascent = ct_font.ascent() as f32;
@@ -1731,10 +1737,28 @@ mod tests {
             handle.sized(10.0 + size as f32);
         }
         assert_eq!(handle.sized.lock().unwrap().len(), SIZED_FONTS_KEPT);
-        // The oldest size was dropped, so asking again makes a new object.
+        // The size not asked for longest was dropped, so asking again
+        // makes a new object.
         assert_ne!(
             handle.sized(10.0).as_concrete_TypeRef(),
             first.as_concrete_TypeRef()
+        );
+    }
+
+    #[test]
+    fn a_size_in_use_survives_the_others_churning() {
+        use core_foundation::base::TCFType;
+        let handle = FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF).unwrap();
+        let in_use = handle.sized(10.0);
+        for size in 1..=(3 * SIZED_FONTS_KEPT) {
+            handle.sized(10.0 + size as f32);
+            // Asked for again between the others, as the grid font is
+            // between the UI label sizes.
+            handle.sized(10.0);
+        }
+        assert_eq!(
+            handle.sized(10.0).as_concrete_TypeRef(),
+            in_use.as_concrete_TypeRef()
         );
     }
 
@@ -1744,11 +1768,11 @@ mod tests {
         let handle = FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF).unwrap();
         let fresh = FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF).unwrap();
         let text: Vec<u16> = "fi -> == 0x1F".encode_utf16().collect();
+        let first = shape_text_utf16(&handle, &text, 16.0);
         let warm = shape_text_utf16(&handle, &text, 16.0);
-        let again = shape_text_utf16(&handle, &text, 16.0);
         let cold = shape_text_utf16(&fresh, &text, 16.0);
+        assert_eq!(first, cold);
         assert_eq!(warm, cold);
-        assert_eq!(again, cold);
         let glyph = warm[0].id;
         let a = rasterize_glyph(&handle, glyph, 16.0, false, false, false).unwrap();
         let b = rasterize_glyph(&fresh, glyph, 16.0, false, false, false).unwrap();
