@@ -463,6 +463,19 @@ pub trait Handler {
     /// writes it back to the originating pane's PTY directly.
     fn glyph_query(&mut self, _cp: u32) {}
 
+    /// Whether this host answers grapheme queries (`q;grapheme=`,
+    /// spec §5.3). Drives both the `cap=grapheme` advertisement in the
+    /// `s` reply and the `reason=unsupported` answer, so the two can
+    /// never disagree. Off unless the frontend that renders the
+    /// session opted in: only it can shape the cluster.
+    fn glyph_grapheme_query_enabled(&self) -> bool {
+        false
+    }
+
+    /// Forward a grapheme query to the frontend. Only called when
+    /// [`Self::glyph_grapheme_query_enabled`] is `true`.
+    fn glyph_query_grapheme(&mut self, _cps: Vec<char>) {}
+
     /// Get mutable access to the kitty graphics chunking state
     /// Used by the APC handler to accumulate chunked image transmissions
     ///
@@ -735,10 +748,26 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
     fn dispatch_glyph_protocol(&mut self, data: &[u8]) {
         match glyph_protocol::parse(data) {
             Ok(glyph_protocol::GlyphCommand::Support) => {
+                let caps: &[&str] = if self.handler.glyph_grapheme_query_enabled() {
+                    &[glyph_protocol::CAP_GRAPHEME]
+                } else {
+                    &[]
+                };
                 let resp = glyph_protocol::format_support_response(
                     glyph_protocol::SUPPORTED_FORMATS,
+                    caps,
                 );
                 self.handler.glyph_protocol_response(resp);
+            }
+            Ok(glyph_protocol::GlyphCommand::QueryGrapheme { cps }) => {
+                // Same event queue as `cp` queries and PtyWrite replies,
+                // so answers keep request order (§5.5) either way.
+                if self.handler.glyph_grapheme_query_enabled() {
+                    self.handler.glyph_query_grapheme(cps);
+                } else {
+                    let resp = glyph_protocol::format_grapheme_query_unsupported(&cps);
+                    self.handler.glyph_protocol_response(resp);
+                }
             }
             Ok(glyph_protocol::GlyphCommand::Query { cp }) => {
                 // Fire-and-forget: the handler emits a frontend-bound
@@ -790,6 +819,11 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
             }
             Err(glyph_protocol::ParseError::Malformed(why)) => {
                 warn!("[glyph_protocol] malformed APC: {why}");
+            }
+            Err(glyph_protocol::ParseError::QueryMalformed(why)) => {
+                warn!("[glyph_protocol] malformed query: {why}");
+                let resp = glyph_protocol::format_query_malformed();
+                self.handler.glyph_protocol_response(resp);
             }
         }
     }

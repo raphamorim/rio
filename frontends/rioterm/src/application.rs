@@ -826,6 +826,38 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::GlyphProtocolGraphemeQuery {
+                route_id,
+                cps,
+                one_cell,
+            }) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    use rio_backend::ansi::glyph_protocol::{
+                        format_grapheme_query_response, QueryStatus,
+                    };
+                    // A cluster split across cells never draws as one
+                    // unit, whatever the font does with it.
+                    let status = if one_cell {
+                        let screen = &mut route.window.screen;
+                        let library = screen.sugarloaf.font_library().clone();
+                        screen
+                            .grid_rasterizer
+                            .grapheme_query_status(&cps, &library, route_id)
+                    } else {
+                        QueryStatus::Free
+                    };
+                    let resp = format_grapheme_query_response(&cps, status);
+                    if let Some(item) = route
+                        .window
+                        .screen
+                        .context_manager
+                        .current_grid_mut()
+                        .get_by_route_id(route_id)
+                    {
+                        item.context_mut().messenger.send_bytes(resp.into_bytes());
+                    }
+                }
+            }
             RioEventType::Rio(RioEvent::CloseTerminal(route_id)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     if self.config.hold

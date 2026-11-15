@@ -1529,6 +1529,175 @@ impl GridGlyphRasterizer {
     }
 }
 
+impl GridGlyphRasterizer {
+    /// The font half of a Glyph Protocol grapheme query (spec §5.3),
+    /// for a cluster the terminal already found would land in one
+    /// cell. It replays what [`build_row_fg`] does with that cell,
+    /// regular face:
+    ///
+    /// - The font comes from the base codepoint; the attached
+    ///   codepoints are shaped with the base in that same font. A
+    ///   registered block codepoint short-circuits to the registry and
+    ///   draws alone, so it answers `glossary` only when everything
+    ///   after it is default-ignorable.
+    /// - That font must have a glyph for every codepoint that is not
+    ///   default-ignorable. CoreText can cascade a missing codepoint
+    ///   to another font while shaping, but the grid draws the glyph id
+    ///   from the resolved font, so a cascaded glyph is not a correct
+    ///   render: coverage is checked against the resolved font itself.
+    /// - An emoji sequence must shape to exactly one advancing glyph,
+    ///   since UTS #51 defines it to display as a single image. Other
+    ///   scripts legitimately shape to several glyphs.
+    pub fn grapheme_query_status(
+        &mut self,
+        cps: &[char],
+        font_library: &FontLibrary,
+        route_id: usize,
+    ) -> rio_backend::ansi::glyph_protocol::QueryStatus {
+        use rio_backend::ansi::glyph_protocol::QueryStatus;
+        use rio_unicode::grapheme::is_default_ignorable;
+
+        let Some((&base, rest)) = cps.split_first() else {
+            return QueryStatus::Free;
+        };
+        let rest_ignorable = rest.iter().all(|&c| is_default_ignorable(c));
+
+        if font_library
+            .glyph_registry_for(route_id)
+            .is_some_and(|r| r.contains(base as u32))
+        {
+            if !rest_ignorable {
+                return QueryStatus::Free;
+            }
+            // Same pairing as a `cp` query (§5.2): the registration
+            // draws it, and a system font could too.
+            return if font_library.covers_codepoint(base as u32) {
+                QueryStatus::Both
+            } else {
+                QueryStatus::Glossary
+            };
+        }
+
+        let (font_id, _) = self.resolve_font(base, 0, font_library, route_id);
+        if font_id == CUSTOM_GLYPH_FONT_ID_U32 {
+            // Registered between the check above and the resolve.
+            return QueryStatus::Free;
+        }
+        if !cps
+            .iter()
+            .filter(|&&c| !is_default_ignorable(c))
+            .all(|&c| font_covers(font_library, font_id, c))
+        {
+            return QueryStatus::Free;
+        }
+
+        if is_emoji_sequence(cps) {
+            let advancing = self.shape_cluster_for_query(cps, font_id, font_library);
+            if advancing != Some(1) {
+                return QueryStatus::Free;
+            }
+        }
+        QueryStatus::System
+    }
+
+    /// Shape `cps` in `font_id` the way the grid stages a cell (base,
+    /// then its attached codepoints minus VS15/VS16) and count the
+    /// glyphs that advance the pen. `None` when the font can't be
+    /// shaped. Leaves the run scratch empty, as every run start
+    /// expects.
+    fn shape_cluster_for_query(
+        &mut self,
+        cps: &[char],
+        font_id: u32,
+        font_library: &FontLibrary,
+    ) -> Option<usize> {
+        // Glyph count does not depend on size; any size works, and
+        // `None` keeps the nominal one out of the ascent cache.
+        const QUERY_SIZE: u16 = 16;
+        let (&base, rest) = cps.split_first()?;
+        #[cfg(target_os = "macos")]
+        {
+            self.run_utf16_scratch.clear();
+            let mut buf = [0u16; 2];
+            self.run_utf16_scratch
+                .extend_from_slice(base.encode_utf16(&mut buf));
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            self.run_str_scratch.clear();
+            self.run_str_scratch.push(base);
+        }
+        push_cluster_chars(self, rest);
+
+        #[cfg(target_os = "macos")]
+        let shaped = shape_run_ct(self, font_id, QUERY_SIZE, None, font_library);
+        #[cfg(not(target_os = "macos"))]
+        let shaped = shape_run_swash(self, font_id, QUERY_SIZE, None, font_library);
+
+        #[cfg(target_os = "macos")]
+        self.run_utf16_scratch.clear();
+        #[cfg(not(target_os = "macos"))]
+        self.run_str_scratch.clear();
+
+        let (glyphs, _) = shaped?;
+        Some(glyphs.iter().filter(|g| g.advance > 0.0).count())
+    }
+}
+
+/// Whether the font registered under `font_id` has a real glyph for
+/// `ch`.
+///
+/// On macOS, CoreText's cascade ends in `LastResort`, which maps every
+/// codepoint to a placeholder showing the codepoint's block: the
+/// system's own missing-glyph box. A cluster drawn from it is tofu, so
+/// it covers nothing here.
+fn font_covers(font_library: &FontLibrary, font_id: u32, ch: char) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        font_library
+            .ct_font(font_id as usize)
+            .is_some_and(|handle| {
+                handle.postscript_name() != "LastResort"
+                    && rio_backend::sugarloaf::font::macos::font_has_char(&handle, ch)
+            })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let lib = font_library.inner.read();
+        lib.get_data(&(font_id as usize))
+            .is_some_and(|(data, offset, key)| {
+                let font_ref = rio_backend::sugarloaf::swash::FontRef {
+                    data: data.as_ref(),
+                    offset,
+                    key,
+                };
+                font_ref.charmap().map(ch) != 0
+            })
+    }
+}
+
+/// Whether `cps` is an emoji sequence in the UTS #51 sense, which
+/// displays as a single image: an Extended_Pictographic or Regional
+/// Indicator base with something besides variation selectors after
+/// it (a ZWJ chain, a skin-tone modifier, a flag's second indicator,
+/// tag characters), or a keycap sequence (U+20E3).
+fn is_emoji_sequence(cps: &[char]) -> bool {
+    use rio_unicode::grapheme::{grapheme_class, GraphemeClass};
+    let Some((&base, rest)) = cps.split_first() else {
+        return false;
+    };
+    let mut rest = rest
+        .iter()
+        .filter(|&&c| !matches!(c, '\u{FE0E}' | '\u{FE0F}'));
+    if rest.clone().any(|&c| c == '\u{20E3}') {
+        return true;
+    }
+    matches!(
+        grapheme_class(base),
+        GraphemeClass::ExtPic | GraphemeClass::RegionalIndicator
+    ) && rest.next().is_some()
+}
+
 #[inline]
 fn span_style_for_flags(style_flags: u8) -> rio_backend::sugarloaf::SpanStyle {
     use rio_backend::sugarloaf::{Attributes, Stretch, Style as FontStyle, Weight};
@@ -1682,12 +1851,16 @@ fn run_cache_put(buckets: &mut [Vec<RunCacheEntry>], entry: RunCacheEntry) {
 /// Shape a single run on macOS via CoreText and populate
 /// `out.ascent_px` as a side effect via the rasterizer's cache.
 /// Returns the glyph list if the handle is available.
+///
+/// `size_bucket` is `None` for a shape that is not drawn (a Glyph
+/// Protocol grapheme query): the ascent cache is keyed by bucket, so a
+/// nominal size must never populate it, and the returned ascent is 0.
 #[cfg(target_os = "macos")]
 fn shape_run_ct(
     rasterizer: &mut GridGlyphRasterizer,
     font_id: u32,
     size_u16: u16,
-    size_bucket: u16,
+    size_bucket: Option<u16>,
     font_library: &FontLibrary,
 ) -> Option<(Vec<ShapedGlyph>, i16)> {
     let (_, features) = rasterizer.library_settings(font_library);
@@ -1708,16 +1881,19 @@ fn shape_run_ct(
             h
         }
     };
-    let ascent_px = *rasterizer
-        .ascent_cache
-        .entry((font_id, size_bucket))
-        .or_insert_with(|| {
-            let m = rio_backend::sugarloaf::font::macos::font_metrics(
-                &handle,
-                size_u16 as f32,
-            );
-            rounded_ascent_px(m.ascent)
-        });
+    let ascent_px = match size_bucket {
+        Some(size_bucket) => *rasterizer
+            .ascent_cache
+            .entry((font_id, size_bucket))
+            .or_insert_with(|| {
+                let m = rio_backend::sugarloaf::font::macos::font_metrics(
+                    &handle,
+                    size_u16 as f32,
+                );
+                rounded_ascent_px(m.ascent)
+            }),
+        None => 0,
+    };
     let ct_glyphs = rio_backend::sugarloaf::font::macos::shape_text_utf16(
         &handle,
         &rasterizer.run_utf16_scratch,
@@ -1739,12 +1915,14 @@ fn shape_run_ct(
 /// Shape a single run on non-macOS via swash. Populates
 /// `rasterizer.ascent_cache` + `rasterizer.font_data_cache` as a side
 /// effect.
+/// `size_bucket` is `None` for a shape that is not drawn, as in
+/// [`shape_run_ct`].
 #[cfg(not(target_os = "macos"))]
 fn shape_run_swash(
     rasterizer: &mut GridGlyphRasterizer,
     font_id: u32,
     size_u16: u16,
-    size_bucket: u16,
+    size_bucket: Option<u16>,
     font_library: &FontLibrary,
 ) -> Option<(Vec<ShapedGlyph>, i16)> {
     use rio_backend::sugarloaf::swash::{FontRef, Setting};
@@ -1770,13 +1948,16 @@ fn shape_run_swash(
         key: font_entry.2,
     };
 
-    let ascent_px = *rasterizer
-        .ascent_cache
-        .entry((font_id, size_bucket))
-        .or_insert_with(|| {
-            let m = font_ref.metrics(&[]).scale(size_u16 as f32);
-            rounded_ascent_px(m.ascent)
-        });
+    let ascent_px = match size_bucket {
+        Some(size_bucket) => *rasterizer
+            .ascent_cache
+            .entry((font_id, size_bucket))
+            .or_insert_with(|| {
+                let m = font_ref.metrics(&[]).scale(size_u16 as f32);
+                rounded_ascent_px(m.ascent)
+            }),
+        None => 0,
+    };
 
     const WGHT_TAG: u32 = u32::from_be_bytes(*b"wght");
     let wght_var = wght.map(|v| Setting {
@@ -1836,11 +2017,21 @@ fn shape_cached(
         ));
     }
     #[cfg(target_os = "macos")]
-    let shaped_opt =
-        shape_run_ct(rasterizer, font_id, size_u16, size_bucket, font_library);
+    let shaped_opt = shape_run_ct(
+        rasterizer,
+        font_id,
+        size_u16,
+        Some(size_bucket),
+        font_library,
+    );
     #[cfg(not(target_os = "macos"))]
-    let shaped_opt =
-        shape_run_swash(rasterizer, font_id, size_u16, size_bucket, font_library);
+    let shaped_opt = shape_run_swash(
+        rasterizer,
+        font_id,
+        size_u16,
+        Some(size_bucket),
+        font_library,
+    );
     let (glyphs, ascent_px) = shaped_opt?;
     let advance: f32 = glyphs.iter().map(|g| g.advance).sum();
     run_cache_put(
@@ -3899,5 +4090,125 @@ mod custom_glyph_tests {
         marked.insert_cell_flag(CellFlags::GRAPHEME);
         row[Column(1)] = marked;
         assert_eq!(custom_glyph_room(&row, 0, 3), 1, "a space with a mark");
+    }
+}
+
+#[cfg(test)]
+mod grapheme_query_tests {
+    use super::*;
+    use rio_backend::ansi::glyph_protocol::QueryStatus;
+    use rio_backend::sugarloaf::font::glyph_registry::{
+        GlyphLayout, GlyphRegistry, StoredPayload,
+    };
+
+    const FAMILY: [char; 5] = [
+        '\u{1F468}',
+        '\u{200D}',
+        '\u{1F469}',
+        '\u{200D}',
+        '\u{1F467}',
+    ];
+
+    #[test]
+    fn emoji_sequences_per_uts_51() {
+        assert!(is_emoji_sequence(&FAMILY));
+        assert!(is_emoji_sequence(&['\u{1F44D}', '\u{1F3FD}']));
+        assert!(is_emoji_sequence(&['\u{1F1E7}', '\u{1F1F7}']));
+        assert!(is_emoji_sequence(&['1', '\u{FE0F}', '\u{20E3}']));
+        // A lone emoji, with or without a selector, is not a sequence.
+        assert!(!is_emoji_sequence(&['\u{1F600}']));
+        assert!(!is_emoji_sequence(&['\u{231A}', '\u{FE0E}']));
+        // Nor is text with marks.
+        assert!(!is_emoji_sequence(&['e', '\u{301}']));
+    }
+
+    #[test]
+    fn a_registered_glyph_draws_alone() {
+        const BLOCK: u32 = 0x10_0000;
+        const ROUTE: usize = 7;
+        let font_library = FontLibrary::default();
+        let registry = GlyphRegistry::new();
+        registry
+            .register(
+                BLOCK,
+                StoredPayload::glyf(vec![1]),
+                1000,
+                1,
+                GlyphLayout::default(),
+            )
+            .unwrap();
+        font_library.install_glyph_registry(ROUTE, registry);
+        let mut r = GridGlyphRasterizer::new();
+        let block = char::from_u32(BLOCK).unwrap();
+
+        assert_eq!(
+            r.grapheme_query_status(&[block], &font_library, ROUTE),
+            QueryStatus::Glossary
+        );
+        // Default-ignorables after it change nothing.
+        assert_eq!(
+            r.grapheme_query_status(&[block, '\u{FE0F}'], &font_library, ROUTE),
+            QueryStatus::Glossary
+        );
+        // A visible mark would not be drawn with it.
+        assert_eq!(
+            r.grapheme_query_status(&[block, '\u{301}'], &font_library, ROUTE),
+            QueryStatus::Free
+        );
+        // Another session never registered it.
+        assert_eq!(
+            r.grapheme_query_status(&[block], &font_library, ROUTE + 1),
+            QueryStatus::Free
+        );
+    }
+
+    #[test]
+    fn an_unassigned_codepoint_is_tofu() {
+        let font_library = FontLibrary::default();
+        let mut r = GridGlyphRasterizer::new();
+        assert_eq!(
+            r.grapheme_query_status(&['\u{378}'], &font_library, 0),
+            QueryStatus::Free
+        );
+        assert_eq!(
+            r.grapheme_query_status(&['a', '\u{378}'], &font_library, 0),
+            QueryStatus::Free
+        );
+    }
+
+    /// Strict only where an emoji font is guaranteed (Apple Color
+    /// Emoji); a fontless Linux container has nothing to join with.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn emoji_sequences_must_join() {
+        let font_library = FontLibrary::default();
+        let mut r = GridGlyphRasterizer::new();
+        assert_eq!(
+            r.grapheme_query_status(&FAMILY, &font_library, 0),
+            QueryStatus::System
+        );
+        assert_eq!(
+            r.grapheme_query_status(&['\u{1F44D}', '\u{1F3FD}'], &font_library, 0),
+            QueryStatus::System
+        );
+        // Not an RGI sequence: every codepoint is covered, but it
+        // shapes to a dinosaur and a pizza.
+        assert_eq!(
+            r.grapheme_query_status(
+                &['\u{1F996}', '\u{200D}', '\u{1F355}'],
+                &font_library,
+                0
+            ),
+            QueryStatus::Free
+        );
+        // Text presentation and combining marks.
+        assert_eq!(
+            r.grapheme_query_status(&['\u{231A}', '\u{FE0E}'], &font_library, 0),
+            QueryStatus::System
+        );
+        assert_eq!(
+            r.grapheme_query_status(&['e', '\u{301}'], &font_library, 0),
+            QueryStatus::System
+        );
     }
 }

@@ -5,11 +5,13 @@ Fetches its inputs from unicode.org (UNIDATA = latest release) into
 the working directory when missing, then reads:
   - GraphemeBreakProperty.txt   (UAX #29 GCB classes; auxiliary/)
   - emoji-data.txt              (Extended_Pictographic; emoji/)
-  - DerivedCoreProperties.txt   (InCB=Consonant/Linker/Extend, for GB9c)
+  - DerivedCoreProperties.txt   (InCB=Consonant/Linker/Extend, for GB9c;
+                                 Default_Ignorable_Code_Point)
   - GraphemeBreakTest.txt       (conformance vectors; auxiliary/)
 
 Emits:
-  - ../src/grapheme_tables.rs   (class ranges + Unicode version)
+  - ../src/grapheme_tables.rs   (class ranges, default-ignorable ranges,
+                                 Unicode version)
   - ../tests/grapheme_conformance.rs (every UCD test vector)
 
 Each codepoint gets exactly one class; InCB values refine the GCB
@@ -82,6 +84,22 @@ with open(ensure("DerivedCoreProperties.txt"), encoding="utf-8") as f:
         for cp in range(lo, hi + 1):
             incb[cp] = value
 
+# Default_Ignorable_Code_Point: codepoints with no glyph of their own
+# (ZWJ, variation selectors, tags, ...). Glyph Protocol's grapheme
+# query never reports them as missing.
+ignorable = []
+for lo, hi, v in parse_props("DerivedCoreProperties.txt"):
+    if v == "Default_Ignorable_Code_Point":
+        ignorable.append((lo, hi))
+ignorable.sort()
+merged = []
+for lo, hi in ignorable:
+    if merged and lo <= merged[-1][1] + 1:
+        merged[-1] = (merged[-1][0], max(merged[-1][1], hi))
+    else:
+        merged.append((lo, hi))
+ignorable = merged
+
 CLASSES = ["Other", "CR", "LF", "Control", "Extend", "ExtendIncb", "Linker",
            "Zwj", "RegionalIndicator", "Prepend", "SpacingMark",
            "L", "V", "T", "LV", "LVT", "ExtPic", "Consonant"]
@@ -139,8 +157,13 @@ with open("../src/grapheme_tables.rs", "w", encoding="utf-8") as out:
     out.write("pub(crate) static GRAPHEME_CLASS_RANGES: &[(u32, u32, GraphemeClass)] = &[\n")
     for lo, hi, c in ranges:
         out.write(f"    (0x{lo:X}, 0x{hi:X}, GraphemeClass::{c}),\n")
+    out.write("];\n\n")
+    out.write("/// Sorted, non-overlapping `Default_Ignorable_Code_Point` ranges.\n")
+    out.write("pub(crate) static DEFAULT_IGNORABLE_RANGES: &[(u32, u32)] = &[\n")
+    for lo, hi in ignorable:
+        out.write(f"    (0x{lo:X}, 0x{hi:X}),\n")
     out.write("];\n")
-print(f"grapheme_tables.rs: {len(ranges)} ranges (Unicode {version})")
+print(f"grapheme_tables.rs: {len(ranges)} ranges, {len(ignorable)} ignorable ranges (Unicode {version})")
 
 # Conformance vectors.
 tests = []

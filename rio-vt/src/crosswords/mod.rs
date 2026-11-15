@@ -452,6 +452,62 @@ pub(crate) fn vs_is_valid_base(base: char, vs: char) -> bool {
     Presentation::for_grapheme(s).1.is_some()
 }
 
+/// Whether `cps`, printed at the cursor, would land in a single cell
+/// under the current clustering mode. This is the terminal's half of a
+/// Glyph Protocol grapheme query (spec §5.3): it replays the decisions
+/// [`Crosswords::input`] makes for each codepoint, without touching
+/// the grid.
+///
+/// - The first codepoint must open a cell: a zero-width or control
+///   codepoint has no cell of its own (mode 2027 drops an orphan mark,
+///   legacy attaches it to whatever came before).
+/// - Mode 2027 on: every later codepoint must continue the cluster.
+///   Latin-1 never does (the scalar and bulk writers agree on that),
+///   and a UAX #29 break opens a new cell.
+/// - Mode 2027 off: only zero-width codepoints attach, wcwidth-style;
+///   anything with a width opens a new cell.
+///
+/// A codepoint `input` ignores (an invalid variation selector) neither
+/// splits nor joins, so it does not fail the check.
+pub(crate) fn grapheme_fits_one_cell(cps: &[char], clustering: bool) -> bool {
+    use crate::codepoint_width::codepoint_width;
+    use crate::grapheme_lut::{class_of, is_break_lut, start_state};
+
+    let Some((&base, rest)) = cps.split_first() else {
+        return false;
+    };
+    if !matches!(codepoint_width(base as u32), Some(w) if w > 0) {
+        return false;
+    }
+    if clustering {
+        let mut prev = class_of(base);
+        let mut state = start_state(prev);
+        let mut last_cp = base;
+        for &c in rest {
+            if c <= '\u{FF}' || codepoint_width(c as u32).is_none() {
+                return false;
+            }
+            let class = class_of(c);
+            // `try_cluster_append` rebuilds the state from the cell's
+            // contents each time, so a codepoint it ignores leaves no
+            // trace: probe on a copy and keep it only when stored.
+            let mut probe = state;
+            if is_break_lut(prev, class, &mut probe) {
+                return false;
+            }
+            if matches!(c, '\u{FE0E}' | '\u{FE0F}') && !vs_is_valid_base(last_cp, c) {
+                continue;
+            }
+            state = probe;
+            prev = class;
+            last_cp = c;
+        }
+        true
+    } else {
+        rest.iter().all(|&c| codepoint_width(c as u32) == Some(0))
+    }
+}
+
 // Max size of the window title stack.
 const TITLE_STACK_MAX_DEPTH: usize = 4096;
 
@@ -548,6 +604,12 @@ where
     /// so terminals that never use the protocol never wake the embedder
     /// for it.
     program_status_seen: bool,
+    /// Whether the frontend answers Glyph Protocol grapheme queries
+    /// (`q;grapheme=`). Only a host that shapes the cluster the way
+    /// it draws it can answer, so this is off until one opts in, and
+    /// both the `cap=grapheme` advertisement and the
+    /// `reason=unsupported` reply follow it.
+    glyph_grapheme_query: bool,
 
     /// When the running shell command started its output (OSC 133 `C`),
     /// so `D` can report how long it ran. `None` between commands.
@@ -636,6 +698,7 @@ impl<U: EventListener> Crosswords<U> {
             program_status_enabled: false,
             focused: false,
             program_status_seen: false,
+            glyph_grapheme_query: false,
             command_started_at: None,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
@@ -654,6 +717,15 @@ impl<U: EventListener> Crosswords<U> {
     /// send reports and lifecycle events to the listener.
     pub fn set_program_status_enabled(&mut self, enabled: bool) {
         self.program_status_enabled = enabled;
+    }
+
+    /// Opt in to Glyph Protocol grapheme queries: the `s` reply lists
+    /// `cap=grapheme` and `q;grapheme=` is forwarded to the listener
+    /// as [`RioEvent::GlyphProtocolGraphemeQuery`]. The listener MUST
+    /// answer every forwarded query, since clients pipeline them and
+    /// wait for replies in order.
+    pub fn set_glyph_grapheme_query(&mut self, enabled: bool) {
+        self.glyph_grapheme_query = enabled;
     }
 
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
@@ -5868,6 +5940,26 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.mark_fully_damaged();
     }
 
+    fn glyph_grapheme_query_enabled(&self) -> bool {
+        self.glyph_grapheme_query
+    }
+
+    fn glyph_query_grapheme(&mut self, cps: Vec<char>) {
+        // The cell layout is the terminal's half of the answer: the
+        // frontend can't see the mode, and a cluster split across
+        // cells is never drawn as one unit however the font shapes it.
+        let one_cell =
+            grapheme_fits_one_cell(&cps, self.mode.contains(Mode::GRAPHEME_CLUSTER));
+        self.event_proxy.send_event(
+            RioEvent::GlyphProtocolGraphemeQuery {
+                route_id: self.route_id,
+                cps,
+                one_cell,
+            },
+            self.window_id,
+        );
+    }
+
     fn glyph_query(&mut self, cp: u32) {
         // Defer to the frontend: only it has access to both the per-
         // route registry and the FontLibrary, so only it can compute
@@ -6457,6 +6549,122 @@ mod tests {
         // `N` with nothing open is just a prompt.
         parser.advance(&mut cw, b"\x1b]133;N\x07$ ");
         assert_eq!(finished_commands(&events).len(), 2);
+    }
+
+    #[test]
+    fn grapheme_one_cell_follows_mode_2027() {
+        let family = [
+            '\u{1F468}',
+            '\u{200D}',
+            '\u{1F469}',
+            '\u{200D}',
+            '\u{1F467}',
+        ];
+        let brazil = ['\u{1F1E7}', '\u{1F1F7}'];
+        let thumbs_tone = ['\u{1F44D}', '\u{1F3FD}'];
+        let e_acute = ['e', '\u{301}'];
+
+        // Mode 2027 on: no-break sequences stay in one cell.
+        assert!(grapheme_fits_one_cell(&family, true));
+        assert!(grapheme_fits_one_cell(&brazil, true));
+        assert!(grapheme_fits_one_cell(&thumbs_tone, true));
+        assert!(grapheme_fits_one_cell(&e_acute, true));
+        assert!(grapheme_fits_one_cell(&['\u{231A}', '\u{FE0E}'], true));
+        // Two flags are two clusters; so are two letters.
+        assert!(!grapheme_fits_one_cell(
+            &['\u{1F1E7}', '\u{1F1F7}', '\u{1F1E7}', '\u{1F1F7}'],
+            true
+        ));
+        assert!(!grapheme_fits_one_cell(&['a', 'b'], true));
+        assert!(!grapheme_fits_one_cell(&['e', '\u{301}', 'x'], true));
+        // A mark with no base, and nothing at all, have no cell.
+        assert!(!grapheme_fits_one_cell(&['\u{301}'], true));
+        assert!(!grapheme_fits_one_cell(&[], true));
+        // An invalid selector is ignored, not a split.
+        assert!(grapheme_fits_one_cell(&['a', '\u{FE0F}', '\u{301}'], true));
+
+        // Legacy: only zero-width codepoints attach.
+        assert!(!grapheme_fits_one_cell(&family, false));
+        assert!(!grapheme_fits_one_cell(&brazil, false));
+        assert!(grapheme_fits_one_cell(&e_acute, false));
+        assert!(grapheme_fits_one_cell(&['\u{1F44D}', '\u{FE0F}'], false));
+    }
+
+    /// The `q`/`s` replies a session wrote back to its PTY.
+    fn pty_writes(events: &std::cell::RefCell<Vec<RioEvent>>) -> Vec<String> {
+        events
+            .borrow()
+            .iter()
+            .filter_map(|e| match e {
+                RioEvent::PtyWrite(_, s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn grapheme_query_is_unsupported_until_the_host_opts_in() {
+        let (mut cw, events) = make_crosswords_with_events(3);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b_25a1;s\x1b\\");
+        parser.advance(&mut cw, b"\x1b_25a1;q;grapheme=1f468,200d,1f469\x1b\\");
+        assert_eq!(
+            pty_writes(&events),
+            vec![
+                "\x1b_25a1;s;fmt=glyf,colrv0,colrv1\x1b\\".to_string(),
+                "\x1b_25a1;q;grapheme=1f468,200d,1f469;reason=unsupported\x1b\\"
+                    .to_string(),
+            ]
+        );
+        assert!(!events
+            .borrow()
+            .iter()
+            .any(|e| matches!(e, RioEvent::GlyphProtocolGraphemeQuery { .. })));
+    }
+
+    #[test]
+    fn grapheme_query_reaches_the_host_with_the_cell_layout() {
+        let (mut cw, events) = make_crosswords_with_events(3);
+        cw.set_glyph_grapheme_query(true);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b_25a1;s\x1b\\");
+        assert_eq!(
+            pty_writes(&events),
+            vec!["\x1b_25a1;s;fmt=glyf,colrv0,colrv1;cap=grapheme\x1b\\".to_string()]
+        );
+
+        let family = b"\x1b_25a1;q;grapheme=1f468,200d,1f469\x1b\\";
+        parser.advance(&mut cw, family);
+        // Mode 2027 off: the ZWJ sequence would split across cells.
+        parser.advance(&mut cw, b"\x1b[?2027l");
+        parser.advance(&mut cw, family);
+
+        let queries: Vec<(usize, Vec<char>, bool)> = events
+            .borrow()
+            .iter()
+            .filter_map(|e| match e {
+                RioEvent::GlyphProtocolGraphemeQuery {
+                    route_id,
+                    cps,
+                    one_cell,
+                } => Some((*route_id, cps.clone(), *one_cell)),
+                _ => None,
+            })
+            .collect();
+        let cps = vec!['\u{1F468}', '\u{200D}', '\u{1F469}'];
+        assert_eq!(queries, vec![(3, cps.clone(), true), (3, cps, false)]);
+    }
+
+    #[test]
+    fn malformed_query_gets_a_reply() {
+        let (mut cw, events) = make_crosswords_with_events(0);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b_25a1;q\x1b\\");
+        parser.advance(&mut cw, b"\x1b_25a1;q;cp=zz\x1b\\");
+        assert_eq!(
+            pty_writes(&events),
+            vec!["\x1b_25a1;q;reason=malformed_query\x1b\\".to_string(); 2]
+        );
     }
 
     #[test]

@@ -6,8 +6,9 @@
 // Verbs:
 //   s — advertise supported payload formats; also serves as protocol
 //       detection (any reply = protocol implemented)
-//   q — query the state of a codepoint (status is a comma-separated
-//       list of coverage names: `system`, `glossary`, both, or empty)
+//   q — query the state of a codepoint (`cp=`) or of one grapheme
+//       cluster (`grapheme=`); status is a comma-separated list of
+//       coverage names: `system`, `glossary`, both, or empty
 //   r — register a glyph at a codepoint in the registration block
 //   c — clear one block codepoint or every registration in this session
 //
@@ -49,6 +50,13 @@ pub const SUPPORTED_FORMATS: &[&str] = &["glyf", "colrv0", "colrv1"];
 
 pub use rio_graphics::glyph_namespace::in_registration_block;
 
+/// Capability name for the grapheme query (`q;grapheme=`, spec §5.3),
+/// listed in the `s` reply's `cap` key by hosts that answer it.
+pub const CAP_GRAPHEME: &str = "grapheme";
+
+/// Most codepoints one `q;grapheme=` may carry (spec §5.1).
+pub const MAX_GRAPHEME_CODEPOINTS: usize = 32;
+
 /// Parsed Glyph Protocol command, ready for dispatch.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GlyphCommand {
@@ -57,6 +65,10 @@ pub enum GlyphCommand {
     Support,
     /// Query state of a single codepoint.
     Query { cp: u32 },
+    /// Query whether one grapheme cluster, segmented by the client,
+    /// renders correctly as a whole (spec §5.3). Holds 1 to
+    /// [`MAX_GRAPHEME_CODEPOINTS`] scalars in logical order.
+    QueryGrapheme { cps: Vec<char> },
     /// Register a glyph at a block codepoint chosen by the client. The
     /// `payload` carries format-specific data (monochrome `glyf`, or a
     /// `colrv0`/`colrv1` colour container wrapping OpenType tables).
@@ -247,6 +259,11 @@ pub enum ParseError {
     },
     /// `c;cp=<hex>` where the codepoint is outside the registration block.
     ClearOutOfNamespace,
+    /// A `q` the terminal cannot read: neither or both of `cp` and
+    /// `grapheme`, a bad hex value, a surrogate, or too many
+    /// codepoints. Answered with `reason=malformed_query` (§5.4) so a
+    /// client waiting on the reply does not hang until its timeout.
+    QueryMalformed(&'static str),
 }
 
 /// Parse a raw APC body (minus the `ESC _` introducer and `ESC \`
@@ -284,14 +301,35 @@ fn parse_support(_rest: &[u8]) -> Result<GlyphCommand, ParseError> {
 
 fn parse_query(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     let params = parse_params(rest);
-    let cp_raw = params
-        .get("cp")
-        .ok_or(ParseError::Malformed("query missing cp"))?;
-    if cp_raw.contains(&b',') {
-        return Err(ParseError::Malformed("cp must be a single codepoint"));
+    match (params.get("cp"), params.get("grapheme")) {
+        (Some(cp_raw), None) => {
+            if cp_raw.contains(&b',') {
+                return Err(ParseError::QueryMalformed("cp must be a single codepoint"));
+            }
+            let cp = parse_hex_cp(cp_raw)
+                .ok_or(ParseError::QueryMalformed("query cp invalid hex"))?;
+            Ok(GlyphCommand::Query { cp })
+        }
+        (None, Some(list)) => {
+            let mut cps = Vec::new();
+            for raw in list.split(|&b| b == b',') {
+                if cps.len() == MAX_GRAPHEME_CODEPOINTS {
+                    return Err(ParseError::QueryMalformed(
+                        "grapheme holds more than 32 codepoints",
+                    ));
+                }
+                let ch = parse_hex_cp(raw)
+                    .and_then(char::from_u32)
+                    .ok_or(ParseError::QueryMalformed("grapheme invalid hex"))?;
+                cps.push(ch);
+            }
+            Ok(GlyphCommand::QueryGrapheme { cps })
+        }
+        (None, None) => Err(ParseError::QueryMalformed("query missing cp")),
+        (Some(_), Some(_)) => Err(ParseError::QueryMalformed(
+            "query carries both cp and grapheme",
+        )),
     }
-    let cp = parse_hex_cp(cp_raw).ok_or(ParseError::Malformed("query cp invalid hex"))?;
-    Ok(GlyphCommand::Query { cp })
 }
 
 fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
@@ -714,9 +752,19 @@ impl<'a> Params<'a> {
 /// payload format names, joined with `,` on the wire. An empty slice
 /// produces `fmt=` — a degenerate "protocol implemented but no payload
 /// format accepted" state, reserved for future negotiation and never
-/// produced by this build.
-pub(crate) fn format_support_response(fmts: &[&str]) -> String {
-    format!("\x1b_25a1;s;fmt={}\x1b\\", fmts.join(","))
+/// produced by this build. `caps` lists optional capabilities (§3.3);
+/// the `cap` key is left out when there are none, which the spec
+/// defines as equal to an empty `cap=`.
+pub(crate) fn format_support_response(fmts: &[&str], caps: &[&str]) -> String {
+    if caps.is_empty() {
+        format!("\x1b_25a1;s;fmt={}\x1b\\", fmts.join(","))
+    } else {
+        format!(
+            "\x1b_25a1;s;fmt={};cap={}\x1b\\",
+            fmts.join(","),
+            caps.join(",")
+        )
+    }
 }
 
 /// Format the reply to `q;cp=<hex>`. Public because the frontend
@@ -725,6 +773,44 @@ pub(crate) fn format_support_response(fmts: &[&str]) -> String {
 /// status; it formats the reply itself and writes it back to the PTY.
 pub fn format_query_response(cp: u32, status: QueryStatus) -> String {
     format!("\x1b_25a1;q;cp={:x};status={}\x1b\\", cp, status.as_str())
+}
+
+/// The `grapheme=` value as echoed in replies: lowercase hex joined
+/// with `,`.
+fn grapheme_hex(cps: &[char]) -> String {
+    let mut out = String::with_capacity(cps.len() * 6);
+    for (i, ch) in cps.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!("{:x}", *ch as u32));
+    }
+    out
+}
+
+/// Format the reply to `q;grapheme=…` (§5.3). Public for the same
+/// reason as [`format_query_response`]: the frontend computes it.
+pub fn format_grapheme_query_response(cps: &[char], status: QueryStatus) -> String {
+    format!(
+        "\x1b_25a1;q;grapheme={};status={}\x1b\\",
+        grapheme_hex(cps),
+        status.as_str()
+    )
+}
+
+/// `q;grapheme=…` sent to a host that does not answer grapheme
+/// queries (§5.4).
+pub(crate) fn format_grapheme_query_unsupported(cps: &[char]) -> String {
+    format!(
+        "\x1b_25a1;q;grapheme={};reason=unsupported\x1b\\",
+        grapheme_hex(cps)
+    )
+}
+
+/// A `q` the terminal could not read (§5.4). Nothing is echoed: the
+/// request's target is exactly what failed to parse.
+pub(crate) fn format_query_malformed() -> String {
+    String::from("\x1b_25a1;q;reason=malformed_query\x1b\\")
 }
 
 /// Format a successful register reply.
@@ -787,7 +873,7 @@ mod tests {
     fn query_rejects_sequence() {
         assert!(matches!(
             parse(b"25a1;q;cp=2D,3E"),
-            Err(ParseError::Malformed(_))
+            Err(ParseError::QueryMalformed(_))
         ));
     }
 
@@ -795,7 +881,7 @@ mod tests {
     fn query_rejects_surrogate() {
         assert!(matches!(
             parse(b"25a1;q;cp=D800"),
-            Err(ParseError::Malformed(_))
+            Err(ParseError::QueryMalformed(_))
         ));
     }
 
@@ -1183,7 +1269,7 @@ mod tests {
     #[test]
     fn query_rejects_cp_above_unicode_max() {
         let body = b"25a1;q;cp=110000";
-        assert!(matches!(parse(body), Err(ParseError::Malformed(_))));
+        assert!(matches!(parse(body), Err(ParseError::QueryMalformed(_))));
     }
 
     #[test]
@@ -1247,7 +1333,7 @@ mod tests {
     #[test]
     fn support_response_advertises_glyf_colrv0_colrv1() {
         assert_eq!(
-            format_support_response(SUPPORTED_FORMATS),
+            format_support_response(SUPPORTED_FORMATS, &[]),
             "\x1b_25a1;s;fmt=glyf,colrv0,colrv1\x1b\\"
         );
     }
@@ -1255,10 +1341,104 @@ mod tests {
     #[test]
     fn support_response_encodes_subset_and_empty() {
         assert_eq!(
-            format_support_response(&["glyf", "colrv0"]),
+            format_support_response(&["glyf", "colrv0"], &[]),
             "\x1b_25a1;s;fmt=glyf,colrv0\x1b\\"
         );
-        assert_eq!(format_support_response(&[]), "\x1b_25a1;s;fmt=\x1b\\");
+        assert_eq!(format_support_response(&[], &[]), "\x1b_25a1;s;fmt=\x1b\\");
+    }
+
+    #[test]
+    fn support_response_lists_capabilities() {
+        assert_eq!(
+            format_support_response(SUPPORTED_FORMATS, &[CAP_GRAPHEME]),
+            "\x1b_25a1;s;fmt=glyf,colrv0,colrv1;cap=grapheme\x1b\\"
+        );
+    }
+
+    #[test]
+    fn parses_grapheme_query() {
+        let got = parse(b"25a1;q;grapheme=1F468,200d,1f469,200D,1f467").unwrap();
+        assert_eq!(
+            got,
+            GlyphCommand::QueryGrapheme {
+                cps: vec![
+                    '\u{1F468}',
+                    '\u{200D}',
+                    '\u{1F469}',
+                    '\u{200D}',
+                    '\u{1F467}'
+                ],
+            }
+        );
+        assert_eq!(
+            parse(b"25a1;q;grapheme=61").unwrap(),
+            GlyphCommand::QueryGrapheme { cps: vec!['a'] }
+        );
+    }
+
+    #[test]
+    fn grapheme_query_takes_at_most_32_codepoints() {
+        let list = |n: usize| vec!["301"; n].join(",");
+        let ok = format!("25a1;q;grapheme=65,{}", list(31));
+        assert!(matches!(
+            parse(ok.as_bytes()),
+            Ok(GlyphCommand::QueryGrapheme { cps }) if cps.len() == 32
+        ));
+        let over = format!("25a1;q;grapheme=65,{}", list(32));
+        assert!(matches!(
+            parse(over.as_bytes()),
+            Err(ParseError::QueryMalformed(_))
+        ));
+    }
+
+    #[test]
+    fn grapheme_query_rejects_bad_values() {
+        for body in [
+            &b"25a1;q;grapheme="[..],
+            b"25a1;q;grapheme=1f468,,1f469",
+            b"25a1;q;grapheme=1f468,zz",
+            b"25a1;q;grapheme=d800",
+            b"25a1;q;grapheme=110000",
+        ] {
+            assert!(
+                matches!(parse(body), Err(ParseError::QueryMalformed(_))),
+                "{}",
+                String::from_utf8_lossy(body)
+            );
+        }
+    }
+
+    #[test]
+    fn query_needs_exactly_one_target() {
+        assert!(matches!(
+            parse(b"25a1;q"),
+            Err(ParseError::QueryMalformed(_))
+        ));
+        assert!(matches!(
+            parse(b"25a1;q;cp=61;grapheme=61"),
+            Err(ParseError::QueryMalformed(_))
+        ));
+    }
+
+    #[test]
+    fn grapheme_query_replies() {
+        let family = ['\u{1F468}', '\u{200D}', '\u{1F469}'];
+        assert_eq!(
+            format_grapheme_query_response(&family, QueryStatus::System),
+            "\x1b_25a1;q;grapheme=1f468,200d,1f469;status=system\x1b\\"
+        );
+        assert_eq!(
+            format_grapheme_query_response(&family, QueryStatus::Free),
+            "\x1b_25a1;q;grapheme=1f468,200d,1f469;status=\x1b\\"
+        );
+        assert_eq!(
+            format_grapheme_query_unsupported(&family),
+            "\x1b_25a1;q;grapheme=1f468,200d,1f469;reason=unsupported\x1b\\"
+        );
+        assert_eq!(
+            format_query_malformed(),
+            "\x1b_25a1;q;reason=malformed_query\x1b\\"
+        );
     }
 
     #[test]
