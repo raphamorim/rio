@@ -85,6 +85,15 @@ fn compute(
 }
 
 #[inline]
+/// Whether a flex direction lays children out left to right, the axis
+/// a vertical divider sits across.
+fn is_row_direction(direction: taffy::FlexDirection) -> bool {
+    matches!(
+        direction,
+        taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
+    )
+}
+
 fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Rect {
     Rect::new(position[0], position[1], size[0], size[1], color)
 }
@@ -493,10 +502,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
 
             let is_row = match self.tree.style(node) {
-                Ok(s) => matches!(
-                    s.flex_direction,
-                    taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
-                ),
+                Ok(s) => is_row_direction(s.flex_direction),
                 Err(_) => continue,
             };
 
@@ -790,62 +796,109 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    /// Whether `node` is a container laid out along the axis a divider
-    /// move travels: left/right dividers sit between row children,
-    /// up/down dividers between column children.
-    fn lays_out_along(&self, node: NodeId, row: bool) -> bool {
-        let Ok(style) = self.tree.style(node) else {
-            return false;
-        };
-        let is_row = matches!(
-            style.flex_direction,
-            taffy::FlexDirection::Row | taffy::FlexDirection::RowReverse
-        );
-        is_row == row
+    /// The children of `node` in visual order along its main axis, when
+    /// that axis is the one a divider move travels: `row` for left and
+    /// right, column otherwise. `None` for a node laid out the other way.
+    fn children_along(&self, node: NodeId, row: bool) -> Option<Vec<NodeId>> {
+        let direction = self.tree.style(node).ok()?.flex_direction;
+        if is_row_direction(direction) != row {
+            return None;
+        }
+        let mut children = self.tree.children(node).ok()?;
+        if matches!(
+            direction,
+            taffy::FlexDirection::RowReverse | taffy::FlexDirection::ColumnReverse
+        ) {
+            children.reverse();
+        }
+        Some(children)
     }
 
-    /// The two siblings whose shared divider `node` moves along an axis,
-    /// in layout order, and whether `node` sits on the second one.
+    /// The two siblings whose shared divider a key moves for `node`, in
+    /// visual order: the divider on the side the key names (before the
+    /// panel for left and up, after it for right and down), or, when the
+    /// panel sits at the window edge on that side, the only divider it
+    /// has, the one on its other side.
     ///
-    /// Walks up from the panel to the nearest ancestor laid out along
-    /// that axis and pairs the child on the way down with the sibling
-    /// before it, or after it when it comes first. The pair can be
-    /// containers: a panel nested in a column still moves the divider
-    /// between its column and the neighbour column. Geometry is not
-    /// consulted, so panel margins and gaps cannot hide a neighbour.
+    /// Walks up from the panel through every container laid out along
+    /// the axis, so a pane whose own container has no sibling on that
+    /// side still reaches the divider an enclosing container holds. The
+    /// pair can be containers: a panel nested in a column moves the
+    /// divider between its column and the neighbour column. Geometry is
+    /// not consulted, so panel margins and gaps cannot hide a neighbour.
     fn divider_siblings(
         &self,
         node: NodeId,
         row: bool,
-    ) -> Option<(NodeId, NodeId, bool)> {
+        toward_start: bool,
+    ) -> Option<(NodeId, NodeId)> {
         if !self.inner.contains_key(&node) {
             return None;
         }
+        let mut other_side = None;
         let mut child = node;
-        loop {
-            let parent = self.tree.parent(child)?;
-            let children = self.tree.children(parent).ok()?;
-            if children.len() >= 2 && self.lays_out_along(parent, row) {
-                let index = children.iter().position(|&c| c == child)?;
-                return Some(if index > 0 {
-                    (children[index - 1], child, true)
-                } else {
-                    (child, children[index + 1], false)
-                });
+        while let Some(parent) = self.tree.parent(child) {
+            if let Some(children) = self.children_along(parent, row) {
+                if children.len() >= 2 {
+                    let index = children.iter().position(|&c| c == child)?;
+                    let before = (index > 0).then(|| (children[index - 1], child));
+                    let after = children.get(index + 1).map(|&next| (child, next));
+                    let (named, other) = if toward_start {
+                        (before, after)
+                    } else {
+                        (after, before)
+                    };
+                    if named.is_some() {
+                        return named;
+                    }
+                    if other_side.is_none() {
+                        other_side = other;
+                    }
+                }
             }
             child = parent;
         }
+        other_side
     }
 
-    /// Move the divider next to the current panel by `amount` logical
-    /// pixels along an axis, toward the window's start (left or up) or
-    /// end. The panel on the side the divider moves toward shrinks and
-    /// the other grows, whichever of the two is current. A pane never
-    /// drops under the same minimum the mouse drag keeps, and nothing
-    /// changes when the divider is already there. Styles only: the
-    /// caller recomputes the layout.
+    /// The smallest extent along an axis of any panel inside `node`,
+    /// `node` itself when it is a panel. A container shrinks through
+    /// the panels in it, so this is what a minimum size has to hold.
+    fn smallest_panel_extent(&self, node: NodeId, row: bool) -> f32 {
+        let mut smallest = f32::INFINITY;
+        let mut stack = vec![node];
+        while let Some(node) = stack.pop() {
+            if self.inner.contains_key(&node) {
+                if let Ok(layout) = self.tree.layout(node) {
+                    let extent = if row {
+                        layout.size.width
+                    } else {
+                        layout.size.height
+                    };
+                    smallest = smallest.min(extent);
+                }
+            } else if let Ok(children) = self.tree.children(node) {
+                stack.extend(children);
+            }
+        }
+        smallest
+    }
+
+    /// Move the divider a key names for the current panel by `amount`
+    /// logical pixels along an axis, toward the window's start (left or
+    /// up) or end. The side the divider moves toward shrinks and the
+    /// other grows, whichever of the two is current; a container on
+    /// either side spreads the change over its panels in proportion,
+    /// as the mouse drag of that same border does. No panel on the
+    /// shrinking side drops under the floor the mouse drag keeps, taking
+    /// the whole step as the loss of every panel in a container, which
+    /// is exact for a column losing width and early for a nested row.
+    /// Nothing changes when the divider is already there. Styles only:
+    /// the caller recomputes the layout.
     fn resize_divider(&mut self, row: bool, toward_start: bool, amount: f32) -> bool {
-        let Some((first, second, _)) = self.divider_siblings(self.current, row) else {
+        let Some((first, second)) =
+            self.divider_siblings(self.current, row, toward_start)
+        else {
             return false;
         };
         let size = |layout: &taffy::Layout| {
@@ -862,14 +915,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         };
         let (first_size, second_size) = (size(first_layout), size(second_layout));
 
-        let min_size = 50.0 * self.scale;
-        let shrinking = if toward_start {
-            first_size
-        } else {
-            second_size
-        };
+        let shrinking = if toward_start { first } else { second };
+        let room = self.smallest_panel_extent(shrinking, row) - 50.0 * self.scale;
         // Under half a pixel the rounded layout would not change.
-        let amount = (amount * self.scale).min(shrinking - min_size);
+        let amount = (amount * self.scale).min(room);
         if amount < 0.5 {
             return false;
         }
@@ -886,7 +935,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 grid.set_panel_size(node, None, Some(value))
             }
         };
-        set(self, first, new_first).is_ok() && set(self, second, new_second).is_ok()
+        // Both are applied: a half-applied pair would surface on the
+        // next unrelated layout pass.
+        let first_set = set(self, first, new_first);
+        let second_set = set(self, second, new_second);
+        first_set.is_ok() && second_set.is_ok()
     }
 
     fn apply_taffy_layout(&mut self, sugarloaf: &mut Sugarloaf) -> bool {

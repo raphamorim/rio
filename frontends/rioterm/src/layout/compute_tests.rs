@@ -741,16 +741,18 @@ mod divider_keys {
         let mut grid = grid(Panel::default());
         let left = grid.current;
         let right = split(&mut grid, true);
-        assert_eq!(
-            grid.divider_siblings(right, true),
-            Some((left, right, true))
-        );
-        assert_eq!(
-            grid.divider_siblings(left, true),
-            Some((left, right, false))
-        );
-        // No divider runs the other way in a single row.
-        assert_eq!(grid.divider_siblings(right, false), None);
+        for toward_start in [true, false] {
+            assert_eq!(
+                grid.divider_siblings(right, true, toward_start),
+                Some((left, right))
+            );
+            assert_eq!(
+                grid.divider_siblings(left, true, toward_start),
+                Some((left, right))
+            );
+            // No divider runs the other way in a single row.
+            assert_eq!(grid.divider_siblings(right, false, toward_start), None);
+        }
     }
 
     #[test]
@@ -851,5 +853,75 @@ mod divider_keys {
         // The other way is still open.
         assert!(nudge(&mut grid, true, false));
         assert_px(width(&grid, left), MIN + 40.0 * SCALE);
+    }
+
+    // A | B | D, with B and D in a nested row. The key names the side:
+    // from the middle pane, Left moves the divider on its left even
+    // though that divider belongs to the enclosing container, and Right
+    // moves the one on its right. At the window edge the only divider
+    // the pane has is the one on its other side. Moving the outer
+    // divider resizes the container, whose panes share the change in
+    // proportion, as they do when the mouse drags that same border.
+    #[test]
+    fn the_key_names_the_side_in_a_row_of_three() {
+        let mut grid = grid(Panel::default());
+        let a = grid.current;
+        let b = split(&mut grid, true);
+        let d = split(&mut grid, true);
+        let (aw, bw, dw) = (width(&grid, a), width(&grid, b), width(&grid, d));
+        let group = |grid: &ContextGrid<VoidListener>| width(grid, b) + width(grid, d);
+        let gw = group(&grid);
+
+        grid.current = b;
+        assert!(nudge(&mut grid, true, true));
+        assert_px(width(&grid, a), aw - 40.0 * SCALE);
+        assert_px(group(&grid), gw + 40.0 * SCALE);
+
+        assert!(nudge(&mut grid, true, false));
+        assert_px(width(&grid, a), aw - 40.0 * SCALE);
+        assert_px(group(&grid), gw + 40.0 * SCALE);
+        let (bw2, dw2) = (width(&grid, b), width(&grid, d));
+        assert!(
+            bw2 > bw && dw2 < dw,
+            "right from the middle shrinks the right pane"
+        );
+
+        // A has nothing on its left: Left moves the divider on its right.
+        grid.current = a;
+        assert!(nudge(&mut grid, true, true));
+        assert_px(width(&grid, a), aw - 80.0 * SCALE);
+        assert_px(group(&grid), gw + 80.0 * SCALE);
+
+        // D has nothing on its right: Right moves the divider on its left.
+        grid.current = d;
+        let (bw3, dw3) = (width(&grid, b), width(&grid, d));
+        assert!(nudge(&mut grid, true, false));
+        assert_px(width(&grid, b), bw3 + 40.0 * SCALE);
+        assert_px(width(&grid, d), dw3 - 40.0 * SCALE);
+        assert_px(width(&grid, a), aw - 80.0 * SCALE);
+    }
+
+    // The floor holds for the panes inside a container, not for the
+    // container: pushing a column to the right stops when its panes
+    // reach the minimum width.
+    #[test]
+    fn panes_inside_a_column_keep_the_minimum() {
+        let mut grid = grid(Panel::default());
+        let left = grid.current;
+        let top_right = split(&mut grid, true);
+        let bottom_right = split(&mut grid, false);
+
+        grid.current = left;
+        let mut moves = 0;
+        while nudge(&mut grid, true, false) {
+            moves += 1;
+            assert!(moves < 100, "the divider never stopped");
+        }
+        assert!(moves > 0);
+        assert_px(width(&grid, top_right), MIN);
+        assert_px(width(&grid, bottom_right), MIN);
+        assert!(!nudge(&mut grid, true, false));
+        assert!(nudge(&mut grid, true, true));
+        assert_px(width(&grid, top_right), MIN + 40.0 * SCALE);
     }
 }
