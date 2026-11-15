@@ -239,8 +239,13 @@ impl Grid<Square> {
                 self.cursor.pos.col = Column(target_col);
 
                 // Since `num_wrapped` is smaller than `columns` the line
-                // delta is always `0` or `1`.
+                // delta is always `0` or `1`. A cursor row left blank by
+                // the move is dropped like any other blank row, viewport
+                // adjustment included.
                 if line_delta != 0 && row.is_clear() {
+                    if i < self.display_offset {
+                        self.display_offset = self.display_offset.saturating_sub(1);
+                    }
                     continue;
                 }
 
@@ -281,7 +286,11 @@ impl Grid<Square> {
         }
 
         // Pull content down to put cursor in correct position, or move cursor up if there's no
-        // more lines to delete below the cursor.
+        // more lines to delete below the cursor. The rows removed are the
+        // bottom ones, content or not: the cursor has to stay on its line
+        // and that line has to stay on screen, so when the joined rows
+        // overflow the screen the overflow leaves from the bottom. A
+        // full-screen program repaints on the resize anyway.
         if cursor_line_delta != 0 {
             let cursor_buffer_line = self.lines - self.cursor.pos.row.0 as usize - 1;
             let available = min(cursor_buffer_line, reversed.len() - self.lines);

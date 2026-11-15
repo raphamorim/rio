@@ -1075,23 +1075,28 @@ impl<'a, T> Iterator for GridIterator<'a, T> {
             _ => self.current.col += Column(1),
         }
 
-        // Guard both axes before indexing (#1713): positions can be
-        // stale relative to the live grid (resize between capture and
-        // use), and history rows keep their old length across column
-        // growth. Ending the iteration beats panicking.
-        let screen_lines = self.grid.screen_lines() as i32;
-        let history = (self.grid.total_lines() - self.grid.screen_lines()) as i32;
-        if self.current.row.0 >= screen_lines || self.current.row.0 < -history {
-            return None;
-        }
-        let row = &self.grid[self.current.row];
-        if self.current.col.0 >= row.len() {
-            return None;
-        }
+        self.cell_at(self.current)
+    }
+}
 
+impl<'a, T> GridIterator<'a, T> {
+    /// The cell at `pos`, or `None` when `pos` is past the live grid.
+    /// Positions can be stale relative to the grid (#1713: a resize
+    /// between capture and use), and history rows keep their old
+    /// length across column growth. Ending the iteration beats
+    /// panicking.
+    fn cell_at(&self, pos: Pos) -> Option<Indexed<&'a T>> {
+        let screen_lines = self.grid.screen_lines() as i32;
+        if pos.row.0 >= screen_lines || pos.row < self.grid.topmost_line() {
+            return None;
+        }
+        let row = &self.grid[pos.row];
+        if pos.col.0 >= row.len() {
+            return None;
+        }
         Some(Indexed {
-            square: &self.grid[self.current],
-            pos: self.current,
+            square: &row[pos.col],
+            pos,
         })
     }
 }
@@ -1113,26 +1118,20 @@ impl<T> BidirectionalIterator for GridIterator<'_, T> {
 
         match self.current {
             Pos { col: Column(0), .. } => {
-                self.current.col = last_column;
                 self.current.row -= 1;
+                // A shorter previous row is entered at its real end,
+                // so a backwards walk does not stop at a row boundary.
+                self.current.col = last_column;
+                if self.current.row >= topmost_line
+                    && self.current.row.0 < self.grid.screen_lines() as i32
+                {
+                    let len = self.grid[self.current.row].len();
+                    self.current.col = min(last_column, Column(len.saturating_sub(1)));
+                }
             }
             _ => self.current.col -= Column(1),
         }
 
-        // The same guard `next` has: a position captured before a
-        // resize can sit past the live grid, and history rows keep
-        // their old length. Ending the iteration beats panicking.
-        let screen_lines = self.grid.screen_lines() as i32;
-        if self.current.row.0 >= screen_lines || self.current.row < topmost_line {
-            return None;
-        }
-        if self.current.col.0 >= self.grid[self.current.row].len() {
-            return None;
-        }
-
-        Some(Indexed {
-            square: &self.grid[self.current],
-            pos: self.current,
-        })
+        self.cell_at(self.current)
     }
 }

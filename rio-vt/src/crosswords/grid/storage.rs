@@ -997,15 +997,19 @@ mod tests {
     }
 
     // The pool never grows past MAX_CACHE_SIZE: a second truncation
-    // with a full pool frees the rows instead.
+    // with the pool already full frees the rows instead.
     #[test]
     fn the_pool_is_capped() {
         let mut storage = Storage::<char>::with_capacity(3, 1);
-        storage.initialize(3000, 1);
+        storage.initialize(4000, 1);
         storage.shrink_lines(1500);
         assert_eq!(storage.free.len(), MAX_CACHE_SIZE);
-        storage.initialize(2500, 1);
-        storage.shrink_lines(2500);
+        let pooled: Vec<*const char> =
+            storage.free.iter().map(|row| row.inner.as_ptr()).collect();
+        storage.shrink_lines(1500);
         assert_eq!(storage.free.len(), MAX_CACHE_SIZE);
+        let still: Vec<*const char> =
+            storage.free.iter().map(|row| row.inner.as_ptr()).collect();
+        assert_eq!(pooled, still, "a full pool keeps what it had");
     }
 }

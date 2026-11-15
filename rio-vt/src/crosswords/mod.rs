@@ -7829,6 +7829,95 @@ mod tests {
         assert!(first >= 0, "the joined line is on screen, not in history");
     }
 
+    // The cursor on the top row inside a line whose head is in history,
+    // with cells still after it on that row: the grow moves the cursor
+    // onto the joined row, the row below keeps the rest, and the joined
+    // row is pulled onto the screen.
+    #[test]
+    fn a_cursor_inside_a_rejoined_line_lands_on_it() {
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(10, 4),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        cw.input_str("abcdefghijklm");
+        cw.goto(Line(0), Column(9));
+        cw.resize(CrosswordsSize::new(6, 4));
+        let text = |cw: &Crosswords<VoidListener>, line: i32| -> String {
+            let row = &cw.grid[Line(line)];
+            (0..row.len())
+                .map(|c| row[Column(c)].c())
+                .collect::<String>()
+                .trim_end_matches('\0')
+                .to_string()
+        };
+        assert_eq!(cw.history_size(), 1);
+        assert_eq!(text(&cw, -1), "abcdef");
+        assert_eq!(text(&cw, 0), "ghijkl");
+        assert_eq!(text(&cw, 1), "m");
+        // The shrink does not reflow a cursor whose row's tail merges
+        // into the next row: it stays at the clamped column 5. That is
+        // a separate gap; this test is about the grow, so the cursor is
+        // put on the j by hand.
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(5)));
+        cw.goto(Line(0), Column(3));
+
+        cw.resize(CrosswordsSize::new(10, 4));
+        assert_eq!(cw.history_size(), 0);
+        assert_eq!(text(&cw, 0), "abcdefghij");
+        assert_eq!(text(&cw, 1), "klm");
+        assert_eq!(
+            cw.grid.cursor.pos,
+            Pos::new(Line(0), Column(9)),
+            "still on the j"
+        );
+        assert!(!cw.grid.cursor.should_wrap);
+    }
+
+    // When the joined rows overflow the screen and the rows under the
+    // cursor hold content, the overflow leaves from the bottom: the
+    // cursor stays on its line and that line stays on screen. A
+    // full-screen program repaints on the resize anyway.
+    #[test]
+    fn a_rejoin_that_overflows_the_screen_drops_the_bottom_row() {
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(6, 4),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        cw.input_str("abcdefghijkl");
+        for word in ["ooo", "ppp", "qqq"] {
+            cw.carriage_return();
+            cw.linefeed();
+            cw.input_str(word);
+        }
+        // History: abcdef. Screen: ghijkl, ooo, ppp, qqq.
+        assert_eq!(cw.history_size(), 1);
+        cw.goto(Line(0), Column(3));
+
+        cw.resize(CrosswordsSize::new(10, 4));
+        let text = |line: i32| -> String {
+            let row = &cw.grid[Line(line)];
+            (0..row.len())
+                .map(|c| row[Column(c)].c())
+                .collect::<String>()
+                .trim_end_matches('\0')
+                .to_string()
+        };
+        assert_eq!(cw.history_size(), 0);
+        assert_eq!(text(0), "abcdefghij");
+        assert_eq!(text(1), "kl");
+        assert_eq!(text(2), "ooo");
+        assert_eq!(text(3), "ppp");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(9)));
+    }
+
     // A resize that keeps the columns rotates the selection with the
     // rows it covers, through a grow that pulls history back and a
     // shrink that pushes rows into it.

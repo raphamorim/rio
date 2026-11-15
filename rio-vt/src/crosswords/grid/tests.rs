@@ -698,15 +698,17 @@ fn assert_same_grid(fast: &Grid<Square>, full: &Grid<Square>) {
 
 // The grow and shrink fast paths skip the full reflow when no row
 // wraps or overflows. They must land on the same grid the full reflow
-// does; `track_reflow_remap` forces the full path.
+// does; `track_reflow_remap` forces the full path. Both widths keep
+// every row within its occupancy, so `fast` takes the fast path.
 #[test]
 fn reflow_fast_paths_match_the_full_reflow() {
-    for columns in [8usize, 4, 2] {
+    for columns in [8usize, 4] {
         let mut fast = reflow_fixture();
         let mut full = reflow_fixture();
         full.track_reflow_remap = true;
         fast.resize(true, 3, columns);
         full.resize(true, 3, columns);
+        assert!(full.reflow_remap.is_some(), "the full path ran");
         assert_same_grid(&fast, &full);
 
         // And back again from the result.
@@ -734,4 +736,10 @@ fn prev_on_a_stale_position_ends_instead_of_panicking() {
     let mut it = grid.iter_from(Pos::new(Line(0), Column(1)));
     assert_eq!(it.prev().map(|i| i.pos), Some(Pos::new(Line(0), Column(0))));
     assert!(it.prev().is_none());
+
+    // Wrapping back onto a shorter row enters it at its real end.
+    let mut grid = Grid::<Square>::new(2, 5, 0);
+    grid.raw[Line(0)].shrink(3);
+    let mut it = grid.iter_from(Pos::new(Line(1), Column(0)));
+    assert_eq!(it.prev().map(|i| i.pos), Some(Pos::new(Line(0), Column(2))));
 }
