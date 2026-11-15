@@ -1656,6 +1656,68 @@ mod grid {
         assert!(dirty(&grid, d));
     }
 
+    // A reflow that keeps the rect, as a line height or font size
+    // change does, still has to open the present gate on every pane,
+    // or an idle terminal would keep showing the old cell metrics.
+    #[test]
+    fn a_reflow_in_place_marks_every_pane_dirty() {
+        let mut grid = grid(1.0);
+        let a = grid.current;
+        let b = split(&mut grid, true);
+        for node in [a, b] {
+            grid.inner
+                .get_mut(&node)
+                .unwrap()
+                .val
+                .renderable_content
+                .pending_update
+                .reset();
+        }
+        let rects = [rect(&grid, a), rect(&grid, b)];
+        let lines = grid.inner[&a].val.dimension.lines;
+
+        // What ContextGrid::update_dimensions does after a font size or
+        // line height change: new cell metrics on every pane.
+        let taller = TextDimensions {
+            scale: 1.0,
+            width: 18.,
+            height: 18.,
+        };
+        for node in [a, b] {
+            grid.inner
+                .get_mut(&node)
+                .unwrap()
+                .val
+                .dimension
+                .update_dimensions(taller, cell_for(taller));
+        }
+        assert!(grid.apply_taffy_layout(false));
+        assert_eq!(
+            [rect(&grid, a), rect(&grid, b)],
+            rects,
+            "the rects did not move"
+        );
+        assert!(
+            grid.inner[&a].val.dimension.lines < lines,
+            "the grid changed"
+        );
+        for node in [a, b] {
+            assert!(
+                grid.inner[&node]
+                    .val
+                    .renderable_content
+                    .pending_update
+                    .is_dirty(),
+                "a reflowed pane was not marked dirty"
+            );
+            let terminal = grid.inner[&node].val.terminal.lock();
+            assert_eq!(
+                terminal.grid.screen_lines(),
+                grid.inner[&node].val.dimension.lines
+            );
+        }
+    }
+
     #[test]
     fn removing_a_pane_selects_the_next_in_visual_order_and_fills_the_space() {
         let mut grid = grid(1.0);

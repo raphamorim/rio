@@ -2293,6 +2293,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // window lost focus, so the drag ends here.
                 if !focused && route.window.screen.resize_state.take().is_some() {
                     route.window.screen.context_manager.end_border_resize();
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
                 }
 
                 // Focus is a cheap checkpoint to catch backing-scale changes

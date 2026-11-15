@@ -35,6 +35,7 @@ pub struct PanelBorder {
 }
 
 /// What a removed panel held in sugarloaf, for the caller to release.
+#[must_use = "release it with RemovedPanel::release"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RemovedPanel {
     pub rich_text_id: usize,
@@ -208,15 +209,17 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
         let moved = self.applied_rect != self.layout_rect;
         let resized = self.applied_rect[2..] != self.layout_rect[2..];
         self.applied_rect = self.layout_rect;
-        if moved {
+        let key = grid_key(&self.val.dimension);
+        let reflowed = self.applied_grid != Some(key);
+        if moved || reflowed {
             // The present gate reads `pending_update.is_dirty()` before
-            // it looks at the terminal, so a moved panel has to be
-            // marked or an idle terminal would not present.
+            // it looks at the terminal, so a panel that moved or was
+            // reflowed in place (a font size change keeps the rect) has
+            // to be marked or an idle terminal would not present.
             self.val.renderable_content.pending_update.set_dirty();
         }
 
-        let key = grid_key(&self.val.dimension);
-        if self.applied_grid != Some(key) {
+        if reflowed {
             self.applied_grid = Some(key);
             let mut terminal = self.val.terminal.lock();
             terminal.end_sync_update();
@@ -1666,7 +1669,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug)]
 pub struct ContextDimension {
     pub width: f32,
     pub height: f32,
