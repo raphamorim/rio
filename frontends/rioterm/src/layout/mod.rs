@@ -17,8 +17,6 @@ use taffy::{
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
 
-static NEXT_GRID_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
 /// Direction of a draggable panel border
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BorderDirection {
@@ -91,6 +89,13 @@ impl RemovedPanel {
         images.remove_route_images(self.route_id);
     }
 }
+
+/// A grid's name: the route id of the pane it was created with. Route
+/// ids are minted once and never reused, so the name holds after that
+/// pane is gone, and a grid can be found again after the tabs were
+/// renumbered. Its own type, so a route id cannot be passed for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GridId(pub usize);
 
 /// Active resize drag state
 #[derive(Debug, Clone, Copy)]
@@ -200,9 +205,8 @@ pub struct ContextGrid<T: EventListener> {
     tree: TaffyTree<()>,
     root_node: NodeId,
     border_config: BorderConfig,
-    /// Unique for the life of the process, so a grid can be found again
-    /// after the tabs were renumbered.
-    id: u64,
+    /// Names the grid for the life of the process; see [`GridId`].
+    id: GridId,
     /// Bumped whenever a panel is added or removed, so a reference to
     /// the tree taken earlier can tell the tree changed under it.
     shape: u64,
@@ -325,6 +329,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         _border_active_color: [f32; 4],
         panel_config: rio_backend::config::layout::Panel,
     ) -> Self {
+        let id = context.route_id;
         let width = context.dimension.width;
         let height = context.dimension.height;
         let scale = context.dimension.dimension.scale;
@@ -402,16 +407,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             tree,
             root_node,
             border_config,
-            id: NEXT_GRID_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            id: GridId(id),
             shape: 0,
         };
         grid.calculate_positions();
         grid
     }
 
-    /// This grid's identity, unique for the life of the process.
+    /// This grid's name, unique for the life of the process.
     #[inline]
-    pub fn id(&self) -> u64 {
+    pub fn id(&self) -> GridId {
         self.id
     }
 
