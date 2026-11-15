@@ -952,4 +952,60 @@ mod tests {
         row[Column(0)] = content;
         row
     }
+
+    // Rows truncated off the ring wait in the pool, up to MAX_CACHE_SIZE
+    // of them, and a later growth takes them back blank at the current
+    // width instead of allocating.
+    #[test]
+    fn truncated_rows_are_pooled_and_handed_back_blank() {
+        let mut storage = Storage::<char>::with_capacity(3, 2);
+        storage.initialize(1500, 2);
+        assert_eq!(storage.len, 1503);
+        assert_eq!(storage.inner.len(), 1503);
+        for row in &mut storage.inner[400..1500] {
+            row[Column(0)] = 'x';
+            row[Column(1)] = 'y';
+        }
+
+        // Shrinking far enough past the cache headroom truncates the
+        // ring: the rows past `len` go to the pool, the excess is freed.
+        storage.shrink_lines(1200);
+        assert_eq!(storage.len, 303);
+        assert_eq!(storage.inner.len(), 303);
+        assert_eq!(storage.free.len(), MAX_CACHE_SIZE);
+        let pooled: Vec<*const char> =
+            storage.free.iter().map(|row| row.inner.as_ptr()).collect();
+
+        // Growing again drains the pool before allocating anything.
+        storage.initialize(1, 2);
+        assert_eq!(storage.len, 304);
+        assert_eq!(storage.inner.len(), 303 + MAX_CACHE_SIZE);
+        assert!(storage.free.is_empty());
+        let reused = storage.inner[303..]
+            .iter()
+            .filter(|row| pooled.contains(&row.inner.as_ptr()))
+            .count();
+        assert_eq!(reused, MAX_CACHE_SIZE, "every pooled buffer came back");
+        for row in &storage.inner[303..] {
+            assert_eq!(row.inner.len(), 2);
+            assert!(
+                row.inner.iter().all(|c| *c == char::default()),
+                "a recycled row is blank"
+            );
+            assert_eq!(row.occ, 0);
+        }
+    }
+
+    // The pool never grows past MAX_CACHE_SIZE: a second truncation
+    // with a full pool frees the rows instead.
+    #[test]
+    fn the_pool_is_capped() {
+        let mut storage = Storage::<char>::with_capacity(3, 1);
+        storage.initialize(3000, 1);
+        storage.shrink_lines(1500);
+        assert_eq!(storage.free.len(), MAX_CACHE_SIZE);
+        storage.initialize(2500, 1);
+        storage.shrink_lines(2500);
+        assert_eq!(storage.free.len(), MAX_CACHE_SIZE);
+    }
 }

@@ -1119,6 +1119,17 @@ impl<T> BidirectionalIterator for GridIterator<'_, T> {
             _ => self.current.col -= Column(1),
         }
 
+        // The same guard `next` has: a position captured before a
+        // resize can sit past the live grid, and history rows keep
+        // their old length. Ending the iteration beats panicking.
+        let screen_lines = self.grid.screen_lines() as i32;
+        if self.current.row.0 >= screen_lines || self.current.row < topmost_line {
+            return None;
+        }
+        if self.current.col.0 >= self.grid[self.current.row].len() {
+            return None;
+        }
+
         Some(Indexed {
             square: &self.grid[self.current],
             pos: self.current,

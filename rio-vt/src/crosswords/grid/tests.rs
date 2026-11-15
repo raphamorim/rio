@@ -612,3 +612,126 @@ fn resolver_fast_path_matches_slow_path() {
     grid.resolve_row_styles(&plain, &mut fast);
     assert_eq!(fast, vec![Style::default(); 3]);
 }
+
+// `lines_evicted` is the absolute index of the oldest row still in the
+// ring. It grows when a scroll at the cap pushes a row off, when the
+// cap is lowered, and when the history is cleared.
+#[test]
+fn evictions_are_counted_at_the_cap() {
+    let mut grid = Grid::<usize>::new(3, 1, 2);
+    assert_eq!(grid.lines_evicted(), 0);
+    for _ in 0..5 {
+        grid.scroll_up(&(Line(0)..Line(3)), 1);
+    }
+    assert_eq!(grid.history_size(), 2, "history stops at the cap");
+    assert_eq!(
+        grid.lines_evicted(),
+        3,
+        "the three scrolls past the cap evicted a row each"
+    );
+
+    grid.update_history(1);
+    assert_eq!(grid.history_size(), 1);
+    assert_eq!(
+        grid.lines_evicted(),
+        4,
+        "lowering the cap evicts the oldest"
+    );
+
+    grid.clear_history();
+    assert_eq!(grid.history_size(), 0);
+    assert_eq!(grid.lines_evicted(), 5, "clearing evicts what was left");
+
+    // A scroll inside a sub region adds nothing to history and evicts nothing.
+    grid.scroll_up(&(Line(1)..Line(3)), 1);
+    assert_eq!(grid.lines_evicted(), 5);
+}
+
+// A reflow can produce more rows than the ring holds. The oldest fall
+// off and count as evicted, like a scroll at the cap.
+#[test]
+fn reflow_past_the_cap_evicts_the_oldest_rows() {
+    let mut grid = Grid::<Square>::new(1, 5, 2);
+    for (i, c) in ['1', '2', '3', '4', '5'].into_iter().enumerate() {
+        grid[Line(0)][Column(i)] = cell(c);
+    }
+
+    grid.resize(true, 1, 1);
+
+    // Five rows wanted, three fit (one screen line plus two of history).
+    assert_eq!(grid.total_lines(), 3);
+    assert_eq!(grid.history_size(), 2);
+    assert_eq!(grid.lines_evicted(), 2);
+    assert_eq!(grid[Line(-2)][Column(0)], wrap_cell('3'));
+    assert_eq!(grid[Line(-1)][Column(0)], wrap_cell('4'));
+    assert_eq!(grid[Line(0)][Column(0)], cell('5'));
+}
+
+fn reflow_fixture() -> Grid<Square> {
+    let mut grid = Grid::<Square>::new(3, 6, 5);
+    for (line, text) in ["ab", "cde", "f"].into_iter().enumerate() {
+        for (col, c) in text.chars().enumerate() {
+            grid[Line(line as i32)][Column(col)] = cell(c);
+        }
+    }
+    grid.cursor.pos = Pos::new(Line(2), Column(1));
+    grid.saved_cursor.pos = Pos::new(Line(1), Column(3));
+    grid
+}
+
+fn assert_same_grid(fast: &Grid<Square>, full: &Grid<Square>) {
+    assert_eq!(fast.total_lines(), full.total_lines());
+    assert_eq!(fast.screen_lines(), full.screen_lines());
+    assert_eq!(fast.columns(), full.columns());
+    assert_eq!(fast.cursor.pos, full.cursor.pos);
+    assert_eq!(fast.cursor.should_wrap, full.cursor.should_wrap);
+    assert_eq!(fast.saved_cursor.pos, full.saved_cursor.pos);
+    let history = fast.history_size() as i32;
+    for line in -history..fast.screen_lines() as i32 {
+        let (a, b) = (&fast[Line(line)], &full[Line(line)]);
+        assert_eq!(a.len(), b.len(), "row {line} width");
+        for col in 0..a.len() {
+            assert_eq!(a[Column(col)], b[Column(col)], "row {line} col {col}");
+        }
+    }
+}
+
+// The grow and shrink fast paths skip the full reflow when no row
+// wraps or overflows. They must land on the same grid the full reflow
+// does; `track_reflow_remap` forces the full path.
+#[test]
+fn reflow_fast_paths_match_the_full_reflow() {
+    for columns in [8usize, 4, 2] {
+        let mut fast = reflow_fixture();
+        let mut full = reflow_fixture();
+        full.track_reflow_remap = true;
+        fast.resize(true, 3, columns);
+        full.resize(true, 3, columns);
+        assert_same_grid(&fast, &full);
+
+        // And back again from the result.
+        full.track_reflow_remap = true;
+        fast.resize(true, 3, 6);
+        full.resize(true, 3, 6);
+        assert_same_grid(&fast, &full);
+    }
+}
+
+// A position captured before a resize can point past the live grid.
+// `next` already ends the iteration there; `prev` must too.
+#[test]
+fn prev_on_a_stale_position_ends_instead_of_panicking() {
+    let grid = Grid::<Square>::new(2, 5, 0);
+    let past_the_row = Pos::new(Line(0), Column(9));
+    assert!(grid.iter_from(past_the_row).next().is_none());
+    assert!(grid.iter_from(past_the_row).prev().is_none());
+
+    let past_the_screen = Pos::new(Line(5), Column(0));
+    assert!(grid.iter_from(past_the_screen).next().is_none());
+    assert!(grid.iter_from(past_the_screen).prev().is_none());
+
+    // A live position still walks backwards to the start and stops.
+    let mut it = grid.iter_from(Pos::new(Line(0), Column(1)));
+    assert_eq!(it.prev().map(|i| i.pos), Some(Pos::new(Line(0), Column(0))));
+    assert!(it.prev().is_none());
+}

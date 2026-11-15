@@ -215,25 +215,36 @@ impl Grid<Square> {
             let cursor_buffer_line = self.lines - self.cursor.pos.row.0 as usize - 1;
 
             if i == cursor_buffer_line && reflow {
-                // Resize cursor's line and reflow the cursor if necessary.
-                let mut target = self.cursor.pos.sub(self, Boundary::Cursor, num_wrapped);
+                // Move the cursor back by the cells that left its row.
+                // Plain arithmetic, not `Pos::sub` with a screen
+                // boundary: when the cursor sits on the top row and its
+                // line continues from history, the target is one row
+                // above the screen, and a clamp to the top left corner
+                // would drop the column and never pull the joined row
+                // down, leaving the cursor detached from its text.
+                let col = self.cursor.pos.col.0;
+                let (mut line_delta, mut target_col): (usize, usize) =
+                    if col >= num_wrapped {
+                        (0, col - num_wrapped)
+                    } else {
+                        (1, columns + col - num_wrapped)
+                    };
 
                 // Clamp to the last column, if no content was reflown with the cursor.
-                if target.col.0 == 0 && row.is_clear() {
+                if target_col == 0 && row.is_clear() {
                     self.cursor.should_wrap = true;
-                    target = target.sub(self, Boundary::Cursor, 1);
+                    target_col = columns - 1;
+                    line_delta += 1;
                 }
-                self.cursor.pos.col = target.col;
+                self.cursor.pos.col = Column(target_col);
 
-                // Get required cursor line changes. Since `num_wrapped` is smaller than `columns`
-                // this will always be either `0` or `1`.
-                let line_delta = self.cursor.pos.row - target.row;
-
+                // Since `num_wrapped` is smaller than `columns` the line
+                // delta is always `0` or `1`.
                 if line_delta != 0 && row.is_clear() {
                     continue;
                 }
 
-                cursor_line_delta += line_delta.0 as usize;
+                cursor_line_delta += line_delta;
             } else if row.is_clear() {
                 if i < self.display_offset {
                     // Since we removed a line, rotate down the viewport.
