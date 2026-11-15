@@ -34,6 +34,22 @@ pub struct PanelBorder {
     pub right_or_bottom: NodeId,
 }
 
+/// What a removed panel held in sugarloaf, for the caller to release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RemovedPanel {
+    pub rich_text_id: usize,
+    pub route_id: usize,
+}
+
+impl RemovedPanel {
+    /// Drop the image overlays and route images the panel owned;
+    /// sugarloaf keeps no other per-panel state.
+    pub fn release(self, sugarloaf: &mut Sugarloaf) {
+        sugarloaf.clear_image_overlays_for(self.rich_text_id);
+        sugarloaf.remove_route_images(self.route_id);
+    }
+}
+
 /// Active resize drag state
 #[derive(Debug, Clone, Copy)]
 pub struct ResizeState {
@@ -1477,52 +1493,50 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// Remove the panel owning `route_id`, wherever it sits in the
     /// grid. The grid's focused panel is preserved unless it is the
     /// one being removed, in which case `remove_current`'s sibling
-    /// selection applies. Returns whether a panel was removed.
-    pub fn remove_by_route(
-        &mut self,
-        route_id: usize,
-        sugarloaf: &mut Sugarloaf,
-    ) -> bool {
-        let Some(key) = self
+    /// selection applies. Returns what the panel held in sugarloaf,
+    /// or `None` when no panel was removed.
+    pub fn remove_by_route(&mut self, route_id: usize) -> Option<RemovedPanel> {
+        let key = self
             .inner
             .iter()
             .find(|(_, item)| item.val.route_id == route_id)
-            .map(|(key, _)| *key)
-        else {
-            return false;
-        };
+            .map(|(key, _)| *key)?;
 
         let previous = self.current;
         self.current = key;
-        self.remove_current(sugarloaf);
+        let removed = self.remove_current();
         if previous != key && self.inner.contains_key(&previous) {
             self.current = previous;
         }
-        true
+        removed
     }
 
-    pub fn remove_current(&mut self, sugarloaf: &mut Sugarloaf) {
+    /// Remove the current panel and select its neighbour in visual
+    /// order. Returns what the panel held in sugarloaf, for the caller
+    /// to release; `None` when nothing was removed, as for the last
+    /// panel of a grid.
+    pub fn remove_current(&mut self) -> Option<RemovedPanel> {
         if self.inner.is_empty() {
             tracing::error!("Attempted to remove from empty grid");
-            return;
+            return None;
         }
 
         // Can't remove the last panel
         if self.inner.len() == 1 {
             tracing::warn!("Cannot remove the last remaining context");
-            return;
+            return None;
         }
 
         let to_remove = self.current;
 
-        if !self.inner.contains_key(&to_remove) {
+        let Some(item) = self.inner.get(&to_remove) else {
             tracing::error!("Current key {:?} not found in grid", to_remove);
-            return;
-        }
-
-        // Get rich text ID before removing
-        let rich_text_id = self.inner.get(&to_remove).map(|item| item.val.rich_text_id);
-        let route_id = self.inner.get(&to_remove).map(|item| item.val.route_id);
+            return None;
+        };
+        let removed = RemovedPanel {
+            rich_text_id: item.val.rich_text_id,
+            route_id: item.val.route_id,
+        };
 
         // Select next panel before removing (use visual ordering)
         let ordered_keys = self.get_ordered_keys();
@@ -1555,15 +1569,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Remove from inner map
         self.inner.remove(&to_remove);
 
-        // Drop image overlays for the removed panel — sugarloaf has
-        // no other panel state to clean up post-Content removal.
-        if let Some(id) = rich_text_id {
-            sugarloaf.clear_image_overlays_for(id);
-        }
-        if let Some(route_id) = route_id {
-            sugarloaf.remove_route_images(route_id);
-        }
-
         // Update root if necessary
         if Some(to_remove) == self.root {
             self.root = self.inner.keys().next().copied();
@@ -1583,6 +1588,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
             self.apply_taffy_layout(false);
         }
+        Some(removed)
     }
 
     pub fn split_right(&mut self, context: Context<T>) {

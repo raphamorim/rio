@@ -624,7 +624,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // the tab is focused and its focused panel was the one that
         // died, the sibling selection becomes the current route.
         if self.contexts[tab_index].len() > 1 {
-            self.contexts[tab_index].remove_by_route(route_id, sugarloaf);
+            if let Some(removed) = self.contexts[tab_index].remove_by_route(route_id) {
+                removed.release(sugarloaf);
+            }
             if tab_index == self.current_index {
                 self.sync_current_route();
             }
@@ -1172,7 +1174,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn remove_current_grid(&mut self, sugarloaf: &mut Sugarloaf) {
-        self.contexts[self.current_index].remove_current(sugarloaf);
+        if let Some(removed) = self.contexts[self.current_index].remove_current() {
+            removed.release(sugarloaf);
+        }
         self.sync_current_route();
     }
 
