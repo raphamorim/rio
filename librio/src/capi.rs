@@ -910,6 +910,16 @@ pub unsafe extern "C" fn rio_surface_mode_bits(surface: *const Surface) -> u32 {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn rio_surface_set_focus(surface: *mut Surface, focused: bool) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return;
+        }
+        unsafe { &*surface }.set_focus(focused);
+    }));
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn rio_surface_set_alt_is_meta(
     surface: *mut Surface,
     enabled: bool,

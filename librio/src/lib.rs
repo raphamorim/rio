@@ -268,12 +268,15 @@ impl Listener {
                 self.delegate.clipboard_write(self.surface_id, kind, text);
             }
             RioEvent::PtyWrite(_, text) => {
-                #[cfg(feature = "pty")]
-                if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
-                    let _ = channel.send(Msg::Input(Cow::Owned(text.into_bytes())));
-                }
-                #[cfg(not(feature = "pty"))]
-                self.delegate.output(self.surface_id, text.as_bytes());
+                self.write_to_child(Cow::Owned(text.into_bytes()));
+            }
+            // Delivered under the terminal lock, from the parser, so the
+            // state is current and this orders with `Surface::set_focus`,
+            // which also writes under the lock.
+            RioEvent::FocusReport(_, focused) => {
+                self.write_to_child(Cow::Borrowed(
+                    rio_vt::crosswords::focus_report(focused).as_bytes(),
+                ));
             }
             RioEvent::CloseTerminal(_) | RioEvent::Exit => {
                 self.delegate.close_surface(self.surface_id);
@@ -318,6 +321,19 @@ impl Listener {
             }
             _ => {}
         }
+    }
+}
+
+impl Listener {
+    /// Bytes the terminal wants the child to see: the PTY on `pty` builds,
+    /// the delegate otherwise.
+    fn write_to_child(&self, bytes: Cow<'static, [u8]>) {
+        #[cfg(feature = "pty")]
+        if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
+            let _ = channel.send(Msg::Input(bytes));
+        }
+        #[cfg(not(feature = "pty"))]
+        self.delegate.output(self.surface_id, &bytes);
     }
 }
 
@@ -661,6 +677,12 @@ impl Surface {
                 term.selection = None;
             }
         }
+        self.send(bytes);
+    }
+
+    /// Bytes for the child, as they are: the PTY on `pty` builds, the
+    /// delegate otherwise.
+    fn send<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
         #[cfg(feature = "pty")]
         let _ = self.channel.send(Msg::Input(bytes.into()));
         #[cfg(not(feature = "pty"))]
@@ -715,6 +737,24 @@ impl Surface {
 
     pub fn alt_is_meta(&self) -> bool {
         self.alt_is_meta.load(Ordering::Relaxed)
+    }
+
+    /// Tell the terminal whether this surface has keyboard focus. A change
+    /// is reported to a program that asked for focus events (DECSET 1004)
+    /// as CSI I or CSI O, and a program that enables them is told the
+    /// current state right away; nothing else is sent. A surface starts
+    /// unfocused, and a repeated value is ignored. Call it for window focus
+    /// and for the host's own tab or split switches alike: to the program,
+    /// a surface in a background tab is unfocused. Unlike [`Surface::write`]
+    /// this leaves the view and the selection alone; losing focus must not
+    /// scroll or deselect.
+    pub fn set_focus(&self, focused: bool) {
+        // Written under the lock, like the reply to a program enabling
+        // focus events, so the two cannot cross.
+        let mut terminal = self.terminal.lock();
+        if let Some(report) = terminal.set_focus(focused) {
+            self.send(report.as_bytes());
+        }
     }
 
     /// Configure the default for grapheme cluster processing (DEC
@@ -1702,6 +1742,42 @@ mod tests {
         assert_eq!(surface.mode_bits() & (1 << 3), 1 << 3);
         surface.inject_output(b"\x1b[?1h\x1b[?1049h\x1b[?1000h");
         assert_eq!(surface.mode_bits(), 0b1111);
+    }
+
+    // Focus reports ride the terminal's reply path, so they reach the PTY
+    // without the typing side effects of write(). The sleeper child never
+    // reads; what lands in the grid is the tty's echo, ^[[I and ^[[O.
+    #[test]
+    fn focus_reports_reach_the_pty_once_per_change() {
+        let surface = quiet_surface(60, 10);
+        let mut state = RenderState::new(&surface);
+        std::thread::sleep(Duration::from_millis(150));
+        // Enabling the mode on an unfocused surface reports ^[[O at once.
+        surface.inject_output(b"\x1b[?1004h");
+
+        // Not a change, a change, a repeat, a change: ^[[I then ^[[O.
+        surface.set_focus(false);
+        surface.set_focus(true);
+        surface.set_focus(true);
+        surface.set_focus(false);
+
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let text = loop {
+            state.update();
+            let text = (0..state.lines())
+                .map(|i| state.text_row(i))
+                .collect::<Vec<_>>()
+                .join("\n");
+            if text.matches("^[[O").count() == 2 {
+                break text;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "focus reports never echoed: {text:?}"
+            );
+            std::thread::sleep(Duration::from_millis(25));
+        };
+        assert_eq!(text.matches("^[[I").count(), 1, "{text:?}");
     }
 
     // paste() keys off live terminal state: markers go to the child only

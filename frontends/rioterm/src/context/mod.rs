@@ -142,6 +142,12 @@ pub struct ContextManager<T: EventListener> {
     contexts: SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]>,
     current_index: usize,
     current_route: usize,
+    /// Window focus as the platform last reported it. With the active
+    /// pane it decides which pane, if any, a program should consider
+    /// focused.
+    window_focused: bool,
+    /// The pane last told it has focus (CSI I), and so owed a CSI O.
+    focused_route: Option<usize>,
     #[allow(unused)]
     capacity: usize,
     event_proxy: T,
@@ -476,6 +482,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let mut manager = ContextManager {
             current_index: 0,
             current_route: 0,
+            window_focused: false,
+            focused_route: None,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 scaled_margin,
@@ -518,6 +526,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         Ok(ContextManager {
             current_index: 0,
             current_route: 0,
+            window_focused: false,
+            focused_route: None,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 Margin::default(),
@@ -732,7 +742,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.sync_current_route();
             return;
         }
-        self.switch_to_next();
+        if !self.step_tab(true) {
+            return;
+        }
         // Make sure first split is selected - get the root key
         let current_tab = &mut self.contexts[self.current_index];
         if let Some(root) = current_tab.root {
@@ -747,7 +759,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.sync_current_route();
             return;
         }
-        self.switch_to_prev();
+        if !self.step_tab(false) {
+            return;
+        }
         // Make sure last split is selected - get the last key in order
         let current_tab = &mut self.contexts[self.current_index];
         let ordered_keys = current_tab.get_ordered_keys();
@@ -910,12 +924,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// tab of an UNFOCUSED window would otherwise leave no trace at
     /// all. Edge-triggered: a BEL flood marks once and repaints once.
     #[inline]
-    pub fn ring_bell(&mut self, route_id: usize, window_focused: bool) -> bool {
+    pub fn ring_bell(&mut self, route_id: usize) -> bool {
         let Some(tab_index) = self.tab_index_for_route(route_id) else {
             return false;
         };
 
-        if window_focused && tab_index == self.current_index {
+        if self.window_focused && tab_index == self.current_index {
             return false;
         }
 
@@ -1078,6 +1092,46 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             Self::refresh_item_title(&template, context, None);
         }
         self.sync_window_title();
+        self.sync_focus_reports();
+    }
+
+    /// Window focus from the platform. Together with the active pane it
+    /// decides which program is told it has focus.
+    pub fn set_window_focus(&mut self, focused: bool) {
+        self.window_focused = focused;
+        self.sync_focus_reports();
+    }
+
+    /// To a program, focus means "my pane is the active one in a focused
+    /// window". Tell the pane that stops matching (CSI O) and the one that
+    /// starts (CSI I); each terminal speaks only when its program asked for
+    /// focus events. Idempotent, so every active-pane change calls it; a
+    /// pane that died owes nothing.
+    fn sync_focus_reports(&mut self) {
+        let wanted = self.window_focused.then(|| self.current().route_id);
+        if wanted == self.focused_route {
+            return;
+        }
+        if let Some(previous) = self.focused_route.take() {
+            if let Some(item) = self.get_by_route_id(previous) {
+                Self::write_focus(item.context(), false);
+            }
+        }
+        if wanted.is_some() {
+            Self::write_focus(self.current(), true);
+        }
+        self.focused_route = wanted;
+    }
+
+    /// The report goes down the same channel as keys, so a key typed
+    /// right after a focus change cannot overtake it.
+    fn write_focus(context: &Context<T>, focused: bool) {
+        // Under the lock, like the reply to a program enabling focus
+        // events, so the two cannot cross.
+        let mut terminal = context.terminal.lock();
+        if let Some(report) = terminal.set_focus(focused) {
+            context.messenger.send_write(report.as_bytes());
+        }
     }
 
     #[inline]
@@ -1165,20 +1219,14 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         }
 
         let index_to_remove = self.current_index;
-        let mut should_set_current = false;
-        if index_to_remove > 1 {
-            self.set_current(self.current_index - 1);
-        } else {
-            should_set_current = true;
-        }
 
         // Remove all rich text from the grid before removing the context
         self.contexts[index_to_remove].remove_from_sugarloaf(sugarloaf);
         self.contexts.remove(index_to_remove);
 
-        if should_set_current {
-            self.set_current(0);
-        }
+        // The neighbour is selected only now, so no focus report goes to
+        // the pane that just went away.
+        self.set_current(index_to_remove.saturating_sub(1));
 
         self.keep_only_active_context_visible(sugarloaf);
     }
@@ -1203,38 +1251,45 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.contexts[self.current_index].current_mut()
     }
 
+    /// Move to the next or previous tab without syncing the route, so a
+    /// caller that goes on to pick a split in that tab syncs once, for the
+    /// pane that will actually show; a sync in between would tell the
+    /// tab's remembered split it gained and lost focus. With native tabs
+    /// the platform is asked instead and nothing moves here; returns
+    /// whether the index moved.
+    fn step_tab(&mut self, forward: bool) -> bool {
+        if self.config.is_native {
+            let event = if forward {
+                RioEvent::SelectNativeTabNext
+            } else {
+                RioEvent::SelectNativeTabPrev
+            };
+            self.event_proxy.send_event(event, self.window_id);
+            return false;
+        }
+
+        let last = self.contexts.len() - 1;
+        self.current_index = match (forward, self.current_index) {
+            (true, index) if index == last => 0,
+            (true, index) => index + 1,
+            (false, 0) => last,
+            (false, index) => index - 1,
+        };
+        true
+    }
+
     #[inline]
     pub fn switch_to_next(&mut self) {
-        if self.config.is_native {
-            self.event_proxy
-                .send_event(RioEvent::SelectNativeTabNext, self.window_id);
-            return;
+        if self.step_tab(true) {
+            self.sync_current_route();
         }
-
-        if self.contexts.len() - 1 == self.current_index {
-            self.current_index = 0;
-        } else {
-            self.current_index += 1;
-        }
-
-        self.sync_current_route();
     }
 
     #[inline]
     pub fn switch_to_prev(&mut self) {
-        if self.config.is_native {
-            self.event_proxy
-                .send_event(RioEvent::SelectNativeTabPrev, self.window_id);
-            return;
+        if self.step_tab(false) {
+            self.sync_current_route();
         }
-
-        if self.current_index == 0 {
-            self.current_index = self.contexts.len() - 1;
-        } else {
-            self.current_index -= 1;
-        }
-
-        self.sync_current_route();
     }
 
     #[inline]
@@ -1325,15 +1380,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &cloned_config,
         ) {
             Ok(new_context) => {
-                let new_route_id = new_context.route_id;
                 if split_down {
                     self.contexts[self.current_index].split_down(new_context, sugarloaf);
                 } else {
                     self.contexts[self.current_index].split_right(new_context, sugarloaf);
                 }
 
-                self.current_route = new_route_id;
-                self.sync_window_title();
+                // The grid's current pane is the new split when the
+                // split took, and the old one when it did not.
+                self.sync_current_route();
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1389,15 +1444,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &context_manager_config,
         ) {
             Ok(new_context) => {
-                let new_route_id = new_context.route_id;
                 if split_down {
                     self.contexts[self.current_index].split_down(new_context, sugarloaf);
                 } else {
                     self.contexts[self.current_index].split_right(new_context, sugarloaf);
                 }
 
-                self.current_route = new_route_id;
-                self.sync_window_title();
+                // The grid's current pane is the new split when the
+                // split took, and the old one when it did not.
+                self.sync_current_route();
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1550,6 +1605,96 @@ pub mod test {
     use super::*;
     use crate::event::VoidListener;
 
+    #[derive(Clone, Default)]
+    struct FocusRecorder(std::sync::Arc<std::sync::Mutex<Vec<(usize, String)>>>);
+
+    impl EventListener for FocusRecorder {
+        fn send_event(&self, event: RioEvent, _: WindowId) {
+            match event {
+                RioEvent::PtyWrite(route, text) => {
+                    self.0.lock().unwrap().push((route, text));
+                }
+                RioEvent::FocusReport(route, focused) => {
+                    self.0
+                        .lock()
+                        .unwrap()
+                        .push((route, format!("reply:{focused}")));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Focus follows the pane the user is looking at, not just the window:
+    // a tab switch tells the old pane it lost focus and the new one it
+    // gained it, when they asked for focus events.
+    #[test]
+    fn focus_reports_follow_tab_switches() {
+        use rio_backend::performer::handler::Processor;
+        let recorder = FocusRecorder::default();
+        let mut cm =
+            ContextManager::start_with_capacity(5, recorder.clone(), WindowId::from(0))
+                .unwrap();
+        cm.add_context(true, 0);
+        assert_eq!(cm.len(), 2);
+        // Each pane's PTY input lands on a channel the test reads.
+        let mut routes = Vec::new();
+        let mut inputs = Vec::new();
+        for i in 0..2 {
+            let (tx, rx) = corcovado::channel::channel();
+            let context = cm.contexts[i].current_mut();
+            context.messenger = Messenger::new(tx);
+            routes.push(context.route_id);
+            inputs.push(rx);
+            let mut parser = Processor::default();
+            parser.advance(&mut *context.terminal.lock(), b"\x1b[?1004h");
+        }
+        let drain = |rx: &corcovado::channel::Receiver<Msg>| {
+            let mut out = Vec::new();
+            while let Ok(Msg::Input(bytes)) = rx.try_recv() {
+                out.push(bytes.into_owned());
+            }
+            out
+        };
+        let gained = vec![b"\x1b[I".to_vec()];
+        let lost = vec![b"\x1b[O".to_vec()];
+        let none: Vec<Vec<u8>> = Vec::new();
+
+        // The window was never focused: enabling the mode asked for a
+        // reply telling each program it is unfocused, and the switch
+        // add_context made reported nothing.
+        assert_eq!(
+            *recorder.0.lock().unwrap(),
+            vec![
+                (routes[0], "reply:false".to_string()),
+                (routes[1], "reply:false".to_string())
+            ]
+        );
+        assert_eq!(drain(&inputs[0]), none);
+        assert_eq!(drain(&inputs[1]), none);
+
+        cm.set_window_focus(true); // tab 1 gains
+        assert_eq!(drain(&inputs[0]), none);
+        assert_eq!(drain(&inputs[1]), gained);
+
+        cm.switch_to_prev(); // tab 1 loses, tab 0 gains
+        assert_eq!(drain(&inputs[0]), gained);
+        assert_eq!(drain(&inputs[1]), lost);
+
+        cm.set_window_focus(false); // tab 0 loses
+        cm.set_window_focus(false); // a repeat: nothing
+        cm.switch_to_next(); // unfocused window: nothing
+        assert_eq!(drain(&inputs[0]), lost);
+        assert_eq!(drain(&inputs[1]), none);
+
+        cm.set_window_focus(true); // tab 1 gains
+        assert_eq!(drain(&inputs[0]), none);
+        assert_eq!(drain(&inputs[1]), gained);
+
+        // Nothing but the two enable replies rode the event path.
+        assert_eq!(recorder.0.lock().unwrap().len(), 2);
+    }
+
     #[test]
     fn test_capacity() {
         let window_id: WindowId = WindowId::from(0);
@@ -1660,21 +1805,24 @@ pub mod test {
         let background_route = cm.contexts[2].current().route_id;
         let focused_route = cm.contexts[0].current().route_id;
 
-        assert!(cm.ring_bell(background_route, true));
+        cm.set_window_focus(true);
+        assert!(cm.ring_bell(background_route));
         assert!(cm.bell(2));
 
-        assert!(!cm.ring_bell(background_route, true));
+        assert!(!cm.ring_bell(background_route));
         assert!(cm.bell(2));
 
-        assert!(!cm.ring_bell(focused_route, true));
+        assert!(!cm.ring_bell(focused_route));
         assert!(!cm.bell(0));
 
-        assert!(cm.ring_bell(focused_route, false));
+        cm.set_window_focus(false);
+        assert!(cm.ring_bell(focused_route));
         assert!(cm.bell(0));
         cm.contexts[0].bell = false;
+        cm.set_window_focus(true);
 
         // Unknown routes (already-closed panes) are a no-op.
-        assert!(!cm.ring_bell(usize::MAX, true));
+        assert!(!cm.ring_bell(usize::MAX));
 
         // Focusing the tab drops the mark on the next rendered frame.
         cm.set_current(2);

@@ -3595,15 +3595,9 @@ impl Screen<'_> {
             self.mouse.left_button_state = ElementState::Released;
         }
 
-        if self.get_mode().contains(Mode::FOCUS_IN_OUT) {
-            let chr = if is_focused { "I" } else { "O" };
-
-            let msg = format!("\x1b[{chr}");
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_write(msg.into_bytes());
-        }
+        // Which pane, if any, is focused from a program's view is the
+        // context manager's call: it also changes on tab and split switches.
+        self.context_manager.set_window_focus(is_focused);
     }
 
     #[inline]

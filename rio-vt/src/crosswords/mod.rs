@@ -479,6 +479,10 @@ where
     /// don't believe in a protocol nobody acts on) and reports are
     /// dropped here instead of waking the embedder for nothing.
     program_status_enabled: bool,
+    /// Keyboard focus as the host last reported it. To the program a pane
+    /// in a background tab or split is unfocused, so hosts report their
+    /// own pane switches too. Read when a program enables focus events.
+    focused: bool,
     /// Whether an OSC 7501 report arrived since the last full reset.
     /// Until one does, prompts and resets send no program-status events,
     /// so terminals that never use the protocol never wake the embedder
@@ -502,6 +506,16 @@ where
     keyboard_mode_idx: usize,
     inactive_keyboard_mode_stack: [u8; KEYBOARD_MODE_STACK_MAX_DEPTH],
     inactive_keyboard_mode_idx: usize,
+}
+
+/// The focus event a program asked for with DECSET 1004: CSI I when
+/// focused, CSI O when not.
+pub fn focus_report(focused: bool) -> &'static str {
+    if focused {
+        "\x1b[I"
+    } else {
+        "\x1b[O"
+    }
 }
 
 impl<U: EventListener> Crosswords<U> {
@@ -557,6 +571,7 @@ impl<U: EventListener> Crosswords<U> {
             damage_event_in_flight: false,
             sync_update_started: None,
             program_status_enabled: false,
+            focused: false,
             program_status_seen: false,
             command_started_at: None,
             modify_other_keys: 0,
@@ -2443,6 +2458,31 @@ impl<U: EventListener> Crosswords<U> {
         )
     }
 
+    /// Tell the terminal whether it has keyboard focus. Returns the
+    /// report the program is owed, CSI I (gained) or CSI O (lost), when
+    /// this is a change and the program asked for focus events (DECSET
+    /// 1004); the host writes it on its input path, so it keeps its order
+    /// against the keys typed around it. A terminal starts unfocused. To
+    /// a program, a pane in a background tab or split is unfocused, so
+    /// hosts call this for their own pane switches as well as for the
+    /// window.
+    #[must_use]
+    pub fn set_focus(&mut self, focused: bool) -> Option<&'static str> {
+        if self.focused == focused {
+            return None;
+        }
+        self.focused = focused;
+        self.mode
+            .contains(Mode::FOCUS_IN_OUT)
+            .then(|| focus_report(focused))
+    }
+
+    /// The focus report for the current state, for a host answering
+    /// [`RioEvent::FocusReport`] under the terminal lock.
+    pub fn focus_report(&self) -> &'static str {
+        focus_report(self.focused)
+    }
+
     pub fn mode(&self) -> Mode {
         self.mode
     }
@@ -2953,7 +2993,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.event_proxy
                     .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
-            NamedPrivateMode::ReportFocusInOut => self.mode.insert(Mode::FOCUS_IN_OUT),
+            NamedPrivateMode::ReportFocusInOut => {
+                // The program learns where it stands right away: one
+                // started in a background pane would otherwise believe
+                // it is focused until the user looks away from it. A
+                // repeat of the enable, as editors send after a shell
+                // escape, is not news.
+                if !self.mode.contains(Mode::FOCUS_IN_OUT) {
+                    self.mode.insert(Mode::FOCUS_IN_OUT);
+                    self.event_proxy.send_event(
+                        RioEvent::FocusReport(self.route_id, self.focused),
+                        self.window_id,
+                    );
+                }
+            }
             NamedPrivateMode::BracketedPaste => self.mode.insert(Mode::BRACKETED_PASTE),
             // Mouse encodings are mutually exclusive.
             NamedPrivateMode::SgrMouse => {
@@ -6064,6 +6117,47 @@ mod tests {
                 self.0.lock().unwrap().push(text);
             }
         }
+    }
+
+    #[test]
+    fn focus_is_reported_only_while_the_program_asks() {
+        let (mut cw, events) = make_crosswords_with_events(7);
+        // Enable replies, as (route, focused) the host answers with.
+        let replies = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
+            events
+                .borrow()
+                .iter()
+                .filter_map(|e| match e {
+                    RioEvent::FocusReport(route, focused) => Some((*route, *focused)),
+                    RioEvent::PtyWrite(..) => panic!("focus never rides PtyWrite"),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut parser = crate::performer::handler::Processor::default();
+
+        // Without the mode, focus is tracked but nothing is owed.
+        assert_eq!(cw.set_focus(true), None);
+        assert_eq!(cw.set_focus(false), None);
+        assert!(replies(&events).is_empty(), "{:?}", events.borrow());
+
+        // Enabling the mode asks the host to reply with the current state
+        // (unfocused); then a repeat of the enable is not news, a repeat
+        // of the state says nothing, and a change hands the host the
+        // report to write.
+        parser.advance(&mut cw, b"\x1b[?1004h\x1b[?1004h");
+        assert_eq!(replies(&events), vec![(7, false)]);
+        assert_eq!(cw.focus_report(), "\x1b[O");
+        assert_eq!(cw.set_focus(false), None);
+        assert_eq!(cw.set_focus(true), Some("\x1b[I"));
+        assert_eq!(cw.focus_report(), "\x1b[I");
+
+        // Enabling again after a disable, while focused, says so.
+        parser.advance(&mut cw, b"\x1b[?1004l\x1b[?1004h");
+        assert_eq!(replies(&events), vec![(7, false), (7, true)]);
+
+        parser.advance(&mut cw, b"\x1b[?1004l");
+        assert_eq!(cw.set_focus(false), None);
     }
 
     #[test]
