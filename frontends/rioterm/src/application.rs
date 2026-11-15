@@ -1457,6 +1457,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.window.screen.renderer.scrollbar.end_drag();
                         if route.window.screen.resize_state.take().is_some() {
                             route.window.screen.context_manager.end_border_resize();
+                            route.window.winit_window.set_cursor(CursorIcon::Default);
                         }
                     }
                     return;
@@ -2290,9 +2291,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.focus_seen = true;
 
                 // The release of a divider drag never arrives once the
-                // window lost focus, so the drag ends here.
+                // window lost focus, so the drag ends here, button state
+                // included, or the next motion after refocus would read
+                // as a held button.
                 if !focused && route.window.screen.resize_state.take().is_some() {
                     route.window.screen.context_manager.end_border_resize();
+                    route.window.screen.mouse.left_button_state = ElementState::Released;
+                    route.window.screen.mouse.hint_click_latched = None;
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                 }
 
