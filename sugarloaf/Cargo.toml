@@ -300,3 +300,7 @@ web-sys = { version = "0.3.61", features = [
     "WebGl2RenderingContext",
     "CanvasRenderingContext2d",
 ] }
+
+[[bench]]
+name = "shape"
+harness = false
