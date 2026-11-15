@@ -650,19 +650,31 @@ fn test_split_inside_resized_panel_preserves_proportions() {
 
 // Keyboard divider moves. They go through `resize_divider` and
 // `compute_layout` directly, since `apply_taffy_layout` needs a GPU
-// context only to push the new sizes to the terminals.
+// context only to push the new sizes to the terminals. Everything runs
+// at scale 1, the default-config case the linked issues report, and at
+// scale 2, where margins and padding double and taffy rounds differently.
 mod divider_keys {
     use super::*;
     use crate::context::{create_mock_context, ContextDimension};
     use rio_backend::config::layout::Panel;
     use rio_backend::event::{VoidListener, WindowId};
 
-    const SCALE: f32 = 2.0;
-    const MIN: f32 = 50.0 * SCALE;
+    const SCALES: [f32; 2] = [1.0, 2.0];
+    const STEP: f32 = 40.0;
 
-    fn dimension() -> ContextDimension {
+    type Grid = ContextGrid<VoidListener>;
+
+    fn floor(grid: &Grid) -> f32 {
+        50.0 * grid.scale
+    }
+
+    fn step(grid: &Grid) -> f32 {
+        STEP * grid.scale
+    }
+
+    fn dimension(scale: f32) -> ContextDimension {
         let text = TextDimensions {
-            scale: SCALE,
+            scale,
             width: 18.,
             height: 9.,
         };
@@ -677,40 +689,42 @@ mod divider_keys {
         )
     }
 
-    fn grid(panel: Panel) -> ContextGrid<VoidListener> {
-        let ctx = create_mock_context(VoidListener {}, WindowId::from(0), 0, dimension());
-        let mut grid = ContextGrid::new(ctx, Margin::default(), [0.; 4], [0.; 4], panel);
+    fn grid(scale: f32) -> Grid {
+        let ctx =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, dimension(scale));
+        let mut grid =
+            ContextGrid::new(ctx, Margin::default(), [0.; 4], [0.; 4], Panel::default());
         grid.compute_layout().unwrap();
         grid
     }
 
     /// Split the current panel the way `split_right`/`split_down` do,
     /// minus the sugarloaf push, and select the new panel.
-    fn split(grid: &mut ContextGrid<VoidListener>, right: bool) -> NodeId {
+    fn split(grid: &mut Grid, right: bool) -> NodeId {
         let node = if right {
             grid.try_split_right().unwrap()
         } else {
             grid.try_split_down().unwrap()
         };
         let id = grid.inner.len();
-        let ctx =
-            create_mock_context(VoidListener {}, WindowId::from(0), id, dimension());
+        let ctx = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            id,
+            dimension(grid.scale),
+        );
         grid.inner.insert(node, ContextGridItem::new(ctx));
         grid.current = node;
         grid.compute_layout().unwrap();
         node
     }
 
-    fn rect(grid: &ContextGrid<VoidListener>, node: NodeId) -> [f32; 4] {
-        grid.inner[&node].layout_rect
+    fn width(grid: &Grid, node: NodeId) -> f32 {
+        grid.inner[&node].layout_rect[2]
     }
 
-    fn width(grid: &ContextGrid<VoidListener>, node: NodeId) -> f32 {
-        rect(grid, node)[2]
-    }
-
-    fn height(grid: &ContextGrid<VoidListener>, node: NodeId) -> f32 {
-        rect(grid, node)[3]
+    fn height(grid: &Grid, node: NodeId) -> f32 {
+        grid.inner[&node].layout_rect[3]
     }
 
     /// Taffy rounds the final layout to whole pixels.
@@ -723,14 +737,21 @@ mod divider_keys {
     }
 
     /// `resize_divider` followed by the layout pass the real path runs.
-    fn nudge(
-        grid: &mut ContextGrid<VoidListener>,
-        row: bool,
-        toward_start: bool,
-    ) -> bool {
-        let moved = grid.resize_divider(row, toward_start, 40.0);
+    fn nudge(grid: &mut Grid, row: bool, toward_start: bool) -> bool {
+        let moved = grid.resize_divider(row, toward_start, STEP);
         grid.compute_layout().unwrap();
         moved
+    }
+
+    /// Press until the move is refused, guarding against a divider
+    /// that never stops.
+    fn push_to_the_floor(grid: &mut Grid, row: bool, toward_start: bool) {
+        let mut moves = 0;
+        while nudge(grid, row, toward_start) {
+            moves += 1;
+            assert!(moves < 100, "the divider never stopped");
+        }
+        assert!(moves > 0, "the divider did not move at all");
     }
 
     // #1956, #1907, #1550: with the default 2px panel margin the old
@@ -738,121 +759,110 @@ mod divider_keys {
     // tolerance, and every MoveDivider key did nothing.
     #[test]
     fn neighbour_is_found_with_the_default_panel_margin() {
-        let mut grid = grid(Panel::default());
-        let left = grid.current;
-        let right = split(&mut grid, true);
-        for toward_start in [true, false] {
-            assert_eq!(
-                grid.divider_siblings(right, true, toward_start),
-                Some((left, right))
-            );
-            assert_eq!(
-                grid.divider_siblings(left, true, toward_start),
-                Some((left, right))
-            );
-            // No divider runs the other way in a single row.
-            assert_eq!(grid.divider_siblings(right, false, toward_start), None);
+        for scale in SCALES {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            for toward_start in [true, false] {
+                assert_eq!(
+                    grid.divider_siblings(right, true, toward_start),
+                    Some((left, right))
+                );
+                assert_eq!(
+                    grid.divider_siblings(left, true, toward_start),
+                    Some((left, right))
+                );
+                // No divider runs the other way in a single row.
+                assert_eq!(grid.divider_siblings(right, false, toward_start), None);
+            }
         }
     }
 
     #[test]
     fn a_single_pane_has_no_divider() {
-        let mut grid = grid(Panel::default());
-        assert!(!nudge(&mut grid, true, true));
-        assert!(!nudge(&mut grid, false, false));
+        for scale in SCALES {
+            let mut grid = grid(scale);
+            assert!(!nudge(&mut grid, true, true));
+            assert!(!nudge(&mut grid, false, false));
+        }
     }
 
     // The action names where the divider goes. Left shrinks the left
-    // pane by the scaled amount whichever pane is current.
+    // pane by the scaled step whichever pane is current.
     #[test]
     fn left_moves_the_divider_left_from_either_side() {
-        let mut grid = grid(Panel::default());
-        let left = grid.current;
-        let right = split(&mut grid, true);
-        let (lw, rw) = (width(&grid, left), width(&grid, right));
+        for scale in SCALES {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            let (lw, rw, s) = (width(&grid, left), width(&grid, right), step(&grid));
 
-        assert!(nudge(&mut grid, true, true));
-        assert_px(width(&grid, left), lw - 40.0 * SCALE);
-        assert_px(width(&grid, right), rw + 40.0 * SCALE);
+            assert!(nudge(&mut grid, true, true));
+            assert_px(width(&grid, left), lw - s);
+            assert_px(width(&grid, right), rw + s);
 
-        grid.current = left;
-        assert!(nudge(&mut grid, true, true));
-        assert_px(width(&grid, left), lw - 80.0 * SCALE);
-        assert_px(width(&grid, right), rw + 80.0 * SCALE);
+            grid.current = left;
+            assert!(nudge(&mut grid, true, true));
+            assert_px(width(&grid, left), lw - 2.0 * s);
+            assert_px(width(&grid, right), rw + 2.0 * s);
 
-        assert!(nudge(&mut grid, true, false));
-        assert_px(width(&grid, left), lw - 40.0 * SCALE);
-        // Heights are untouched by a horizontal move.
-        assert_px(height(&grid, left), height(&grid, right));
+            assert!(nudge(&mut grid, true, false));
+            assert_px(width(&grid, left), lw - s);
+            // Heights are untouched by a horizontal move.
+            assert_eq!(height(&grid, left), height(&grid, right));
+        }
     }
 
     #[test]
     fn up_and_down_move_a_horizontal_divider() {
-        let mut grid = grid(Panel::default());
-        let top = grid.current;
-        let bottom = split(&mut grid, false);
-        let (th, bh) = (height(&grid, top), height(&grid, bottom));
+        for scale in SCALES {
+            let mut grid = grid(scale);
+            let top = grid.current;
+            let bottom = split(&mut grid, false);
+            let (th, bh, s) = (height(&grid, top), height(&grid, bottom), step(&grid));
 
-        assert!(nudge(&mut grid, false, true));
-        assert_px(height(&grid, top), th - 40.0 * SCALE);
-        assert_px(height(&grid, bottom), bh + 40.0 * SCALE);
+            assert!(nudge(&mut grid, false, true));
+            assert_px(height(&grid, top), th - s);
+            assert_px(height(&grid, bottom), bh + s);
 
-        assert!(nudge(&mut grid, false, false));
-        assert!(nudge(&mut grid, false, false));
-        assert_px(height(&grid, top), th + 40.0 * SCALE);
-        assert_px(height(&grid, bottom), bh - 40.0 * SCALE);
-        // A left/right key finds no divider in a single column.
-        assert!(!nudge(&mut grid, true, true));
+            assert!(nudge(&mut grid, false, false));
+            assert!(nudge(&mut grid, false, false));
+            assert_px(height(&grid, top), th + s);
+            assert_px(height(&grid, bottom), bh - s);
+            // A left/right key finds no divider in a single column.
+            assert!(!nudge(&mut grid, true, true));
+        }
     }
 
     // A pane nested in a column moves the divider between its column
     // and the neighbour, so both panes of the column resize together.
     #[test]
     fn nested_pane_moves_the_enclosing_divider() {
-        let mut grid = grid(Panel::default());
-        let left = grid.current;
-        let top_right = split(&mut grid, true);
-        let bottom_right = split(&mut grid, false);
-        let (lw, trw, brw) = (
-            width(&grid, left),
-            width(&grid, top_right),
-            width(&grid, bottom_right),
-        );
-        assert_px(trw, brw);
+        for scale in SCALES {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let top_right = split(&mut grid, true);
+            let bottom_right = split(&mut grid, false);
+            let s = step(&grid);
+            let (lw, trw, brw) = (
+                width(&grid, left),
+                width(&grid, top_right),
+                width(&grid, bottom_right),
+            );
+            assert_px(trw, brw);
 
-        assert!(nudge(&mut grid, true, true));
-        assert_px(width(&grid, left), lw - 40.0 * SCALE);
-        assert_px(width(&grid, top_right), trw + 40.0 * SCALE);
-        assert_px(width(&grid, bottom_right), brw + 40.0 * SCALE);
+            assert!(nudge(&mut grid, true, true));
+            assert_px(width(&grid, left), lw - s);
+            assert_px(width(&grid, top_right), trw + s);
+            assert_px(width(&grid, bottom_right), brw + s);
 
-        // Up from the bottom-right pane moves the divider inside the column only.
-        let (trh, brh) = (height(&grid, top_right), height(&grid, bottom_right));
-        assert!(nudge(&mut grid, false, true));
-        assert_px(height(&grid, top_right), trh - 40.0 * SCALE);
-        assert_px(height(&grid, bottom_right), brh + 40.0 * SCALE);
-        assert_px(width(&grid, left), lw - 40.0 * SCALE);
-    }
-
-    // The same floor the mouse drag keeps: a pane stops at 50 logical
-    // pixels, the last step is partial, and the next one is refused.
-    #[test]
-    fn a_pane_never_shrinks_under_the_minimum() {
-        let mut grid = grid(Panel::default());
-        let left = grid.current;
-        let right = split(&mut grid, true);
-        let total = width(&grid, left) + width(&grid, right);
-
-        let mut moves = 0;
-        while nudge(&mut grid, true, true) {
-            moves += 1;
-            assert!(moves < 100, "the divider never stopped");
+            // Up from the bottom-right pane moves the divider inside the column only.
+            let (trh, brh) = (height(&grid, top_right), height(&grid, bottom_right));
+            assert!(nudge(&mut grid, false, true));
+            assert_px(height(&grid, top_right), trh - s);
+            assert_px(height(&grid, bottom_right), brh + s);
+            assert_px(width(&grid, left), lw - s);
         }
-        assert_px(width(&grid, left), MIN);
-        assert_px(width(&grid, left) + width(&grid, right), total);
-        assert!(!nudge(&mut grid, true, true));
-        // The other way is still open.
-        assert!(nudge(&mut grid, true, false));
-        assert_px(width(&grid, left), MIN + 40.0 * SCALE);
     }
 
     // A | B | D, with B and D in a nested row. The key names the side:
@@ -864,41 +874,63 @@ mod divider_keys {
     // proportion, as they do when the mouse drags that same border.
     #[test]
     fn the_key_names_the_side_in_a_row_of_three() {
-        let mut grid = grid(Panel::default());
-        let a = grid.current;
-        let b = split(&mut grid, true);
-        let d = split(&mut grid, true);
-        let (aw, bw, dw) = (width(&grid, a), width(&grid, b), width(&grid, d));
-        let group = |grid: &ContextGrid<VoidListener>| width(grid, b) + width(grid, d);
-        let gw = group(&grid);
+        for scale in SCALES {
+            let mut grid = grid(scale);
+            let a = grid.current;
+            let b = split(&mut grid, true);
+            let d = split(&mut grid, true);
+            let s = step(&grid);
+            let (aw, bw, dw) = (width(&grid, a), width(&grid, b), width(&grid, d));
+            let group = |grid: &Grid| width(grid, b) + width(grid, d);
+            let gw = group(&grid);
 
-        grid.current = b;
-        assert!(nudge(&mut grid, true, true));
-        assert_px(width(&grid, a), aw - 40.0 * SCALE);
-        assert_px(group(&grid), gw + 40.0 * SCALE);
+            grid.current = b;
+            assert!(nudge(&mut grid, true, true));
+            assert_px(width(&grid, a), aw - s);
+            assert_px(group(&grid), gw + s);
 
-        assert!(nudge(&mut grid, true, false));
-        assert_px(width(&grid, a), aw - 40.0 * SCALE);
-        assert_px(group(&grid), gw + 40.0 * SCALE);
-        let (bw2, dw2) = (width(&grid, b), width(&grid, d));
-        assert!(
-            bw2 > bw && dw2 < dw,
-            "right from the middle shrinks the right pane"
-        );
+            assert!(nudge(&mut grid, true, false));
+            assert_px(width(&grid, a), aw - s);
+            assert_px(group(&grid), gw + s);
+            assert!(
+                width(&grid, b) > bw && width(&grid, d) < dw,
+                "right from the middle shrinks the right pane"
+            );
 
-        // A has nothing on its left: Left moves the divider on its right.
-        grid.current = a;
-        assert!(nudge(&mut grid, true, true));
-        assert_px(width(&grid, a), aw - 80.0 * SCALE);
-        assert_px(group(&grid), gw + 80.0 * SCALE);
+            // A has nothing on its left: Left moves the divider on its right.
+            grid.current = a;
+            assert!(nudge(&mut grid, true, true));
+            assert_px(width(&grid, a), aw - 2.0 * s);
+            assert_px(group(&grid), gw + 2.0 * s);
 
-        // D has nothing on its right: Right moves the divider on its left.
-        grid.current = d;
-        let (bw3, dw3) = (width(&grid, b), width(&grid, d));
-        assert!(nudge(&mut grid, true, false));
-        assert_px(width(&grid, b), bw3 + 40.0 * SCALE);
-        assert_px(width(&grid, d), dw3 - 40.0 * SCALE);
-        assert_px(width(&grid, a), aw - 80.0 * SCALE);
+            // D has nothing on its right: Right moves the divider on its left.
+            grid.current = d;
+            let (bw3, dw3) = (width(&grid, b), width(&grid, d));
+            assert!(nudge(&mut grid, true, false));
+            assert_px(width(&grid, b), bw3 + s);
+            assert_px(width(&grid, d), dw3 - s);
+            assert_px(width(&grid, a), aw - 2.0 * s);
+        }
+    }
+
+    // The same floor the mouse drag keeps: a pane stops at 50 logical
+    // pixels, the last step is partial, and the next one is refused.
+    #[test]
+    fn a_pane_never_shrinks_under_the_minimum() {
+        for scale in SCALES {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            let total = width(&grid, left) + width(&grid, right);
+
+            push_to_the_floor(&mut grid, true, true);
+            assert_px(width(&grid, left), floor(&grid));
+            assert_px(width(&grid, left) + width(&grid, right), total);
+            assert!(!nudge(&mut grid, true, true));
+            // The other way is still open.
+            assert!(nudge(&mut grid, true, false));
+            assert_px(width(&grid, left), floor(&grid) + step(&grid));
+        }
     }
 
     // The floor holds for the panes inside a container, not for the
@@ -906,22 +938,68 @@ mod divider_keys {
     // reach the minimum width.
     #[test]
     fn panes_inside_a_column_keep_the_minimum() {
-        let mut grid = grid(Panel::default());
-        let left = grid.current;
-        let top_right = split(&mut grid, true);
-        let bottom_right = split(&mut grid, false);
+        for scale in SCALES {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let top_right = split(&mut grid, true);
+            let bottom_right = split(&mut grid, false);
 
-        grid.current = left;
-        let mut moves = 0;
-        while nudge(&mut grid, true, false) {
-            moves += 1;
-            assert!(moves < 100, "the divider never stopped");
+            grid.current = left;
+            push_to_the_floor(&mut grid, true, false);
+            assert_px(width(&grid, top_right), floor(&grid));
+            assert_px(width(&grid, bottom_right), floor(&grid));
+            assert!(!nudge(&mut grid, true, false));
+            assert!(nudge(&mut grid, true, true));
+            assert_px(width(&grid, top_right), floor(&grid) + step(&grid));
         }
-        assert!(moves > 0);
-        assert_px(width(&grid, top_right), MIN);
-        assert_px(width(&grid, bottom_right), MIN);
-        assert!(!nudge(&mut grid, true, false));
-        assert!(nudge(&mut grid, true, true));
-        assert_px(width(&grid, top_right), MIN + 40.0 * SCALE);
+    }
+
+    // A nested row shares the loss between its panes, so the push goes
+    // on until the smaller of them reaches the floor, not earlier.
+    #[test]
+    fn panes_inside_a_row_keep_the_minimum() {
+        for scale in SCALES {
+            let mut grid = grid(scale);
+            let a = grid.current;
+            let b = split(&mut grid, true);
+            let d = split(&mut grid, true);
+            // Make D the smaller one first, so the floor is reached by D.
+            grid.current = d;
+            assert!(nudge(&mut grid, true, false));
+            assert!(width(&grid, d) < width(&grid, b));
+
+            grid.current = a;
+            push_to_the_floor(&mut grid, true, false);
+            assert_px(width(&grid, d), floor(&grid));
+            assert!(width(&grid, b) > floor(&grid));
+            assert!(!nudge(&mut grid, true, false));
+        }
+    }
+
+    // Sizes live in the basis, the unit a container is laid out in too,
+    // so splitting a pane that was resized does not move the divider.
+    #[test]
+    fn splitting_a_resized_pane_keeps_the_divider() {
+        for scale in SCALES {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            for _ in 0..3 {
+                assert!(nudge(&mut grid, true, false));
+            }
+            let (lw, rw) = (width(&grid, left), width(&grid, right));
+
+            grid.current = right;
+            let bottom_right = split(&mut grid, false);
+            assert_px(width(&grid, left), lw);
+            assert_px(width(&grid, right), rw);
+            assert_px(width(&grid, bottom_right), rw);
+
+            grid.current = left;
+            let bottom_left = split(&mut grid, false);
+            assert_px(width(&grid, left), lw);
+            assert_px(width(&grid, bottom_left), lw);
+            assert_px(width(&grid, right), rw);
+        }
     }
 }

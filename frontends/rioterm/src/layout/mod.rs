@@ -84,7 +84,6 @@ fn compute(
     (visible_columns, visible_lines)
 }
 
-#[inline]
 /// Whether a flex direction lays children out left to right, the axis
 /// a vertical divider sits across.
 fn is_row_direction(direction: taffy::FlexDirection) -> bool {
@@ -94,6 +93,16 @@ fn is_row_direction(direction: taffy::FlexDirection) -> bool {
     )
 }
 
+/// `basis` moved by `delta` when it is a length; auto and percent
+/// bases are left alone.
+fn basis_plus(basis: taffy::Dimension, delta: f32) -> taffy::Dimension {
+    match basis.into_option() {
+        Some(value) => length(value + delta),
+        None => basis,
+    }
+}
+
+#[inline]
 fn create_border(color: [f32; 4], position: [f32; 2], size: [f32; 2]) -> Rect {
     Rect::new(position[0], position[1], size[0], size[1], color)
 }
@@ -414,10 +423,24 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         delta: f32,
         sugarloaf: &mut Sugarloaf,
     ) {
-        let min_size = 50.0 * self.scale;
+        // The border moves until a panel on either side, nested or not,
+        // reaches the floor. The floor is a size, so it holds whether
+        // the sizes come from the drag start or from the current layout.
+        let (a, b) = (border.left_or_top, border.right_or_bottom);
+        let row = border.direction == BorderDirection::Vertical;
+        let floor = |grid: &Self, node| {
+            grid.get_panel_size(node, border.direction) - grid.shrink_room(node, row)
+        };
+        let lowest = floor(self, a) - original_sizes.0;
+        let highest = original_sizes.1 - floor(self, b);
+        let delta = if lowest <= highest {
+            delta.clamp(lowest, highest)
+        } else {
+            0.0
+        };
 
-        let new_a = (original_sizes.0 + delta).max(min_size);
-        let new_b = (original_sizes.1 - delta).max(min_size);
+        let new_a = original_sizes.0 + delta;
+        let new_b = original_sizes.1 - delta;
 
         match border.direction {
             BorderDirection::Vertical => {
@@ -621,13 +644,22 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Inherit the current panel's flex properties so the container
         // keeps the same proportion in its parent (e.g. 80/20 split).
+        // The container has no margin, so it takes the panel's margin
+        // box or the margins would turn into free space that shifts
+        // every divider in the parent.
         let current_style = self.tree.style(current_node)?.clone();
+        let margin = self.margin_along(current_node, parent_node);
+        let sized = current_style.flex_basis.into_option().is_some();
         let scale = self.scale;
         let container_style = Style {
             display: Display::Flex,
             flex_direction: direction,
-            flex_basis: current_style.flex_basis,
-            flex_grow: current_style.flex_grow,
+            flex_basis: basis_plus(current_style.flex_basis, margin),
+            flex_grow: if sized {
+                current_style.flex_grow + margin
+            } else {
+                current_style.flex_grow
+            },
             flex_shrink: current_style.flex_shrink,
             gap: geometry::Size {
                 width: length(self.panel_config.column_gap * scale),
@@ -677,27 +709,14 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     ) -> Result<(), TaffyError> {
         let mut style = self.tree.style(node)?.clone();
 
-        // Use flex_grow proportional to the desired size so panels
-        // scale correctly when the window is resized. With a zero
-        // basis taffy hands each child its padding and border first
-        // and shares the rest by flex_grow, so the share has to be the
-        // size inside them or every pane drifts toward equal widths.
-        let layout = self.tree.layout(node)?;
-        if let Some(w) = width {
-            let edges = layout.padding.left
-                + layout.padding.right
-                + layout.border.left
-                + layout.border.right;
-            style.flex_basis = length(0.0_f32);
-            style.flex_grow = (w - edges).max(0.0);
-            style.flex_shrink = 1.0;
-        } else if let Some(h) = height {
-            let edges = layout.padding.top
-                + layout.padding.bottom
-                + layout.border.top
-                + layout.border.bottom;
-            style.flex_basis = length(0.0_f32);
-            style.flex_grow = (h - edges).max(0.0);
+        // The basis is the border-box size, the unit taffy lays out in
+        // for a panel and a container alike, so a split or a collapse
+        // can hand one node's sizing to the other kind unchanged and the
+        // pair lands on the sizes asked for. Grow and shrink weighted by
+        // the same size keep the proportion when the window resizes.
+        if let Some(size) = width.or(height) {
+            style.flex_basis = length(size);
+            style.flex_grow = size;
             style.flex_shrink = 1.0;
         }
 
@@ -756,13 +775,29 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                         let child_idx = children.iter().position(|&c| c == child);
 
                         if let Some(idx) = child_idx {
-                            // Copy container's flex properties to the promoted child
+                            // Copy container's flex properties to the promoted child.
+                            // A promoted panel brings its margins along, so a
+                            // sized basis gives them back (see split_panel).
                             if let Ok(container_style) = self.tree.style(child).cloned() {
                                 if let Ok(mut gc_style) =
                                     self.tree.style(grandchild).cloned()
                                 {
-                                    gc_style.flex_basis = container_style.flex_basis;
-                                    gc_style.flex_grow = container_style.flex_grow;
+                                    let margin = if self.inner.contains_key(&grandchild) {
+                                        self.margin_along(grandchild, node)
+                                    } else {
+                                        0.0
+                                    };
+                                    let sized = container_style
+                                        .flex_basis
+                                        .into_option()
+                                        .is_some();
+                                    gc_style.flex_basis =
+                                        basis_plus(container_style.flex_basis, -margin);
+                                    gc_style.flex_grow = if sized {
+                                        (container_style.flex_grow - margin).max(0.0)
+                                    } else {
+                                        container_style.flex_grow
+                                    };
                                     gc_style.flex_shrink = container_style.flex_shrink;
                                     let _ = self.tree.set_style(grandchild, gc_style);
                                 }
@@ -793,6 +828,25 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             if !collapsed {
                 break;
             }
+        }
+    }
+
+    /// What `node`'s margins add along `parent`'s main axis. A panel
+    /// occupies its border box plus these; a container has none, so a
+    /// size handed from one kind to the other moves by this much.
+    fn margin_along(&self, node: NodeId, parent: NodeId) -> f32 {
+        let Ok(layout) = self.tree.layout(node) else {
+            return 0.0;
+        };
+        let row = self
+            .tree
+            .style(parent)
+            .map(|style| is_row_direction(style.flex_direction))
+            .unwrap_or(true);
+        if row {
+            layout.margin.left + layout.margin.right
+        } else {
+            layout.margin.top + layout.margin.bottom
         }
     }
 
@@ -861,27 +915,47 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         other_side
     }
 
-    /// The smallest extent along an axis of any panel inside `node`,
-    /// `node` itself when it is a panel. A container shrinks through
-    /// the panels in it, so this is what a minimum size has to hold.
-    fn smallest_panel_extent(&self, node: NodeId, row: bool) -> f32 {
-        let mut smallest = f32::INFINITY;
-        let mut stack = vec![node];
-        while let Some(node) = stack.pop() {
-            if self.inner.contains_key(&node) {
-                if let Ok(layout) = self.tree.layout(node) {
-                    let extent = if row {
-                        layout.size.width
-                    } else {
-                        layout.size.height
-                    };
-                    smallest = smallest.min(extent);
-                }
-            } else if let Ok(children) = self.tree.children(node) {
-                stack.extend(children);
+    /// How far `node` can lose along an axis before a panel in it
+    /// reaches the floor the mouse drag keeps: a panel's size less the
+    /// floor. A container across the axis passes the whole loss to each
+    /// child; one along the axis shares it in proportion to the
+    /// children's sizes, so a child's room counts for the container
+    /// scaled by the children's total over that child's size.
+    fn shrink_room(&self, node: NodeId, row: bool) -> f32 {
+        let extent = |layout: &taffy::Layout| {
+            if row {
+                layout.size.width
+            } else {
+                layout.size.height
             }
+        };
+        let Ok(layout) = self.tree.layout(node) else {
+            return 0.0;
+        };
+        if self.inner.contains_key(&node) {
+            return extent(layout) - 50.0 * self.scale;
         }
-        smallest
+        let Ok(children) = self.tree.children(node) else {
+            return 0.0;
+        };
+        let along = self.children_along(node, row).is_some();
+        let sizes: Vec<f32> = children
+            .iter()
+            .map(|&child| self.tree.layout(child).map(extent).unwrap_or(0.0))
+            .collect();
+        let total: f32 = sizes.iter().sum();
+        children
+            .iter()
+            .zip(sizes)
+            .map(|(&child, size)| {
+                let room = self.shrink_room(child, row);
+                if along && size > 0.0 {
+                    room * total / size
+                } else {
+                    room
+                }
+            })
+            .fold(f32::INFINITY, f32::min)
     }
 
     /// Move the divider a key names for the current panel by `amount`
@@ -890,10 +964,8 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// other grows, whichever of the two is current; a container on
     /// either side spreads the change over its panels in proportion,
     /// as the mouse drag of that same border does. No panel on the
-    /// shrinking side drops under the floor the mouse drag keeps, taking
-    /// the whole step as the loss of every panel in a container, which
-    /// is exact for a column losing width and early for a nested row.
-    /// Nothing changes when the divider is already there. Styles only:
+    /// shrinking side drops under the floor the mouse drag keeps, and
+    /// nothing changes when the divider is already there. Styles only:
     /// the caller recomputes the layout.
     fn resize_divider(&mut self, row: bool, toward_start: bool, amount: f32) -> bool {
         let Some((first, second)) =
@@ -916,7 +988,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let (first_size, second_size) = (size(first_layout), size(second_layout));
 
         let shrinking = if toward_start { first } else { second };
-        let room = self.smallest_panel_extent(shrinking, row) - 50.0 * self.scale;
+        let room = self.shrink_room(shrinking, row);
         // Under half a pixel the rounded layout would not change.
         let amount = (amount * self.scale).min(room);
         if amount < 0.5 {
@@ -935,11 +1007,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                 grid.set_panel_size(node, None, Some(value))
             }
         };
-        // Both are applied: a half-applied pair would surface on the
-        // next unrelated layout pass.
-        let first_set = set(self, first, new_first);
-        let second_set = set(self, second, new_second);
-        first_set.is_ok() && second_set.is_ok()
+        // A pair set by halves would surface on the next unrelated
+        // layout pass, so the first is put back if the second fails.
+        let Ok(first_style) = self.tree.style(first).cloned() else {
+            return false;
+        };
+        if set(self, first, new_first).is_err() {
+            return false;
+        }
+        if set(self, second, new_second).is_err() {
+            let _ = self.tree.set_style(first, first_style);
+            return false;
+        }
+        true
     }
 
     fn apply_taffy_layout(&mut self, sugarloaf: &mut Sugarloaf) -> bool {
