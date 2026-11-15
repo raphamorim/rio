@@ -2755,6 +2755,30 @@ mod tests {
         );
     }
 
+    // The same shape with an escape instead of a letter after the
+    // completed character: the escape must reach the main loop, or the
+    // sequence it starts is printed as text.
+    #[test]
+    fn partial_utf8_keeps_an_escape_after_the_completed_character() {
+        // "ô" then CSI 1 m.
+        const INPUT: &[u8] = b"\xC3\xB4\x1b[1m";
+
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::default();
+
+        parser.advance(&mut dispatcher, &INPUT[..1]);
+        parser.advance(&mut dispatcher, &INPUT[1..4]);
+        parser.advance(&mut dispatcher, &INPUT[4..]);
+
+        assert_eq!(
+            dispatcher.dispatched,
+            vec![
+                Sequence::Print('ô'),
+                Sequence::Csi(vec![vec![1]], Vec::new(), false, 'm')
+            ]
+        );
+    }
+
     // Every way of chunking a text with one to four byte characters
     // prints exactly its characters, in order.
     #[test]
