@@ -35,7 +35,6 @@ pub struct PanelBorder {
 }
 
 /// What a removed panel held in sugarloaf, for the caller to release.
-#[must_use = "release it with RemovedPanel::release"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RemovedPanel {
     pub rich_text_id: usize,
@@ -188,12 +187,15 @@ fn grid_key(dimension: &ContextDimension) -> GridKey {
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
+        // The terminal and its PTY were created at this dimension, so
+        // the first relayout only pushes what differs from it.
+        let dimension = context.dimension;
         Self {
+            applied_rect: [0.0, 0.0, dimension.width, dimension.height],
+            applied_grid: Some(grid_key(&dimension)),
+            winsize_pending: false,
             val: context,
             layout_rect: [0.0; 4],
-            applied_rect: [0.0; 4],
-            applied_grid: None,
-            winsize_pending: false,
         }
     }
 
