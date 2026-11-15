@@ -647,3 +647,209 @@ fn test_split_inside_resized_panel_preserves_proportions() {
         "Bottom (bottom half) should be ~400px tall, got {bottom_h}"
     );
 }
+
+// Keyboard divider moves. They go through `resize_divider` and
+// `compute_layout` directly, since `apply_taffy_layout` needs a GPU
+// context only to push the new sizes to the terminals.
+mod divider_keys {
+    use super::*;
+    use crate::context::{create_mock_context, ContextDimension};
+    use rio_backend::config::layout::Panel;
+    use rio_backend::event::{VoidListener, WindowId};
+
+    const SCALE: f32 = 2.0;
+    const MIN: f32 = 50.0 * SCALE;
+
+    fn dimension() -> ContextDimension {
+        let text = TextDimensions {
+            scale: SCALE,
+            width: 18.,
+            height: 9.,
+        };
+        ContextDimension::build(
+            1200.0,
+            800.0,
+            text,
+            cell_for(text),
+            1.0,
+            14.0,
+            Margin::default(),
+        )
+    }
+
+    fn grid(panel: Panel) -> ContextGrid<VoidListener> {
+        let ctx = create_mock_context(VoidListener {}, WindowId::from(0), 0, dimension());
+        let mut grid = ContextGrid::new(ctx, Margin::default(), [0.; 4], [0.; 4], panel);
+        grid.compute_layout().unwrap();
+        grid
+    }
+
+    /// Split the current panel the way `split_right`/`split_down` do,
+    /// minus the sugarloaf push, and select the new panel.
+    fn split(grid: &mut ContextGrid<VoidListener>, right: bool) -> NodeId {
+        let node = if right {
+            grid.try_split_right().unwrap()
+        } else {
+            grid.try_split_down().unwrap()
+        };
+        let id = grid.inner.len();
+        let ctx =
+            create_mock_context(VoidListener {}, WindowId::from(0), id, dimension());
+        grid.inner.insert(node, ContextGridItem::new(ctx));
+        grid.current = node;
+        grid.compute_layout().unwrap();
+        node
+    }
+
+    fn rect(grid: &ContextGrid<VoidListener>, node: NodeId) -> [f32; 4] {
+        grid.inner[&node].layout_rect
+    }
+
+    fn width(grid: &ContextGrid<VoidListener>, node: NodeId) -> f32 {
+        rect(grid, node)[2]
+    }
+
+    fn height(grid: &ContextGrid<VoidListener>, node: NodeId) -> f32 {
+        rect(grid, node)[3]
+    }
+
+    /// Taffy rounds the final layout to whole pixels.
+    #[track_caller]
+    fn assert_px(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() <= 1.0,
+            "expected {expected}px, got {actual}px"
+        );
+    }
+
+    /// `resize_divider` followed by the layout pass the real path runs.
+    fn nudge(
+        grid: &mut ContextGrid<VoidListener>,
+        row: bool,
+        toward_start: bool,
+    ) -> bool {
+        let moved = grid.resize_divider(row, toward_start, 40.0);
+        grid.compute_layout().unwrap();
+        moved
+    }
+
+    // #1956, #1907, #1550: with the default 2px panel margin the old
+    // search measured the gap between panes, found it wider than the
+    // tolerance, and every MoveDivider key did nothing.
+    #[test]
+    fn neighbour_is_found_with_the_default_panel_margin() {
+        let mut grid = grid(Panel::default());
+        let left = grid.current;
+        let right = split(&mut grid, true);
+        assert_eq!(
+            grid.divider_siblings(right, true),
+            Some((left, right, true))
+        );
+        assert_eq!(
+            grid.divider_siblings(left, true),
+            Some((left, right, false))
+        );
+        // No divider runs the other way in a single row.
+        assert_eq!(grid.divider_siblings(right, false), None);
+    }
+
+    #[test]
+    fn a_single_pane_has_no_divider() {
+        let mut grid = grid(Panel::default());
+        assert!(!nudge(&mut grid, true, true));
+        assert!(!nudge(&mut grid, false, false));
+    }
+
+    // The action names where the divider goes. Left shrinks the left
+    // pane by the scaled amount whichever pane is current.
+    #[test]
+    fn left_moves_the_divider_left_from_either_side() {
+        let mut grid = grid(Panel::default());
+        let left = grid.current;
+        let right = split(&mut grid, true);
+        let (lw, rw) = (width(&grid, left), width(&grid, right));
+
+        assert!(nudge(&mut grid, true, true));
+        assert_px(width(&grid, left), lw - 40.0 * SCALE);
+        assert_px(width(&grid, right), rw + 40.0 * SCALE);
+
+        grid.current = left;
+        assert!(nudge(&mut grid, true, true));
+        assert_px(width(&grid, left), lw - 80.0 * SCALE);
+        assert_px(width(&grid, right), rw + 80.0 * SCALE);
+
+        assert!(nudge(&mut grid, true, false));
+        assert_px(width(&grid, left), lw - 40.0 * SCALE);
+        // Heights are untouched by a horizontal move.
+        assert_px(height(&grid, left), height(&grid, right));
+    }
+
+    #[test]
+    fn up_and_down_move_a_horizontal_divider() {
+        let mut grid = grid(Panel::default());
+        let top = grid.current;
+        let bottom = split(&mut grid, false);
+        let (th, bh) = (height(&grid, top), height(&grid, bottom));
+
+        assert!(nudge(&mut grid, false, true));
+        assert_px(height(&grid, top), th - 40.0 * SCALE);
+        assert_px(height(&grid, bottom), bh + 40.0 * SCALE);
+
+        assert!(nudge(&mut grid, false, false));
+        assert!(nudge(&mut grid, false, false));
+        assert_px(height(&grid, top), th + 40.0 * SCALE);
+        assert_px(height(&grid, bottom), bh - 40.0 * SCALE);
+        // A left/right key finds no divider in a single column.
+        assert!(!nudge(&mut grid, true, true));
+    }
+
+    // A pane nested in a column moves the divider between its column
+    // and the neighbour, so both panes of the column resize together.
+    #[test]
+    fn nested_pane_moves_the_enclosing_divider() {
+        let mut grid = grid(Panel::default());
+        let left = grid.current;
+        let top_right = split(&mut grid, true);
+        let bottom_right = split(&mut grid, false);
+        let (lw, trw, brw) = (
+            width(&grid, left),
+            width(&grid, top_right),
+            width(&grid, bottom_right),
+        );
+        assert_px(trw, brw);
+
+        assert!(nudge(&mut grid, true, true));
+        assert_px(width(&grid, left), lw - 40.0 * SCALE);
+        assert_px(width(&grid, top_right), trw + 40.0 * SCALE);
+        assert_px(width(&grid, bottom_right), brw + 40.0 * SCALE);
+
+        // Up from the bottom-right pane moves the divider inside the column only.
+        let (trh, brh) = (height(&grid, top_right), height(&grid, bottom_right));
+        assert!(nudge(&mut grid, false, true));
+        assert_px(height(&grid, top_right), trh - 40.0 * SCALE);
+        assert_px(height(&grid, bottom_right), brh + 40.0 * SCALE);
+        assert_px(width(&grid, left), lw - 40.0 * SCALE);
+    }
+
+    // The same floor the mouse drag keeps: a pane stops at 50 logical
+    // pixels, the last step is partial, and the next one is refused.
+    #[test]
+    fn a_pane_never_shrinks_under_the_minimum() {
+        let mut grid = grid(Panel::default());
+        let left = grid.current;
+        let right = split(&mut grid, true);
+        let total = width(&grid, left) + width(&grid, right);
+
+        let mut moves = 0;
+        while nudge(&mut grid, true, true) {
+            moves += 1;
+            assert!(moves < 100, "the divider never stopped");
+        }
+        assert_px(width(&grid, left), MIN);
+        assert_px(width(&grid, left) + width(&grid, right), total);
+        assert!(!nudge(&mut grid, true, true));
+        // The other way is still open.
+        assert!(nudge(&mut grid, true, false));
+        assert_px(width(&grid, left), MIN + 40.0 * SCALE);
+    }
+}
