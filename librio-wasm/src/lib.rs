@@ -385,10 +385,11 @@ impl RioTerm {
         handled
     }
 
-    /// Whether the surface has keyboard focus. A program that asked for
-    /// focus events (DECSET 1004) gets CSI I / CSI O through `output`;
-    /// nothing otherwise, nor for a repeated value. Call it for the page's
-    /// focus and for the host's own tab switches alike.
+    /// Whether the surface has keyboard focus. A change reaches a program
+    /// that asked for focus events (DECSET 1004) as CSI I / CSI O through
+    /// `output`, and a program enabling them is told the current state at
+    /// once; nothing otherwise, nor for a repeated value. Call it for the
+    /// page's focus and for the host's own tab switches alike.
     pub fn set_focus(&self, focused: bool) {
         self.surface.set_focus(focused);
         self.flush();

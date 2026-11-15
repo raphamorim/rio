@@ -1623,9 +1623,16 @@ pub mod test {
                 b"\x1b[?1004h",
             );
         }
-        // The window was never focused, so the switch add_context made
+        let gained = |r: usize| (r, "\x1b[I".to_string());
+        let lost = |r: usize| (r, "\x1b[O".to_string());
+        // The window was never focused: enabling the mode told each
+        // program it is unfocused, and the switch add_context made
         // reported nothing.
-        assert!(recorder.0.lock().unwrap().is_empty());
+        assert_eq!(
+            *recorder.0.lock().unwrap(),
+            vec![lost(routes[0]), lost(routes[1])]
+        );
+        recorder.0.lock().unwrap().clear();
 
         cm.set_window_focus(true); // tab 1 gains
         cm.switch_to_prev(); // tab 1 loses, tab 0 gains
@@ -1634,8 +1641,6 @@ pub mod test {
         cm.switch_to_next(); // unfocused window: nothing
         cm.set_window_focus(true); // tab 1 gains
 
-        let gained = |r: usize| (r, "\x1b[I".to_string());
-        let lost = |r: usize| (r, "\x1b[O".to_string());
         assert_eq!(
             *recorder.0.lock().unwrap(),
             vec![

@@ -427,8 +427,6 @@ fn trailing_url_punctuation(text: &str) -> usize {
 pub struct Surface {
     id: SurfaceId,
     alt_is_meta: std::sync::atomic::AtomicBool,
-    /// Focus as the host last reported it, so a repeat is not sent again.
-    focused: std::sync::atomic::AtomicBool,
     terminal: Arc<FairMutex<Crosswords<Listener>>>,
     /// Compiled URL detector, built on first hover. Hit-testing runs per
     /// pointer event, so the four lazy DFAs must not be rebuilt each time.
@@ -546,7 +544,6 @@ impl Surface {
                 id,
                 // Terminals default alt to meta; the host may override it.
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
-                focused: std::sync::atomic::AtomicBool::new(false),
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
@@ -631,7 +628,6 @@ impl Surface {
                 id,
                 // Terminals default alt to meta; the host may override it.
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
-                focused: std::sync::atomic::AtomicBool::new(false),
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
@@ -721,18 +717,16 @@ impl Surface {
         self.alt_is_meta.load(Ordering::Relaxed)
     }
 
-    /// Tell the terminal whether this surface has keyboard focus. A program
-    /// that asked for focus events (DECSET 1004) gets CSI I or CSI O; one
-    /// that did not gets nothing. A surface starts unfocused, and a
-    /// repeated value is not reported again. Call it for window focus and
-    /// for the host's own tab or split switches alike: to the program, a
-    /// surface in a background tab is unfocused. Unlike [`Surface::write`]
+    /// Tell the terminal whether this surface has keyboard focus. A change
+    /// is reported to a program that asked for focus events (DECSET 1004)
+    /// as CSI I or CSI O, and a program that enables them is told the
+    /// current state right away; nothing else is sent. A surface starts
+    /// unfocused, and a repeated value is ignored. Call it for window focus
+    /// and for the host's own tab or split switches alike: to the program,
+    /// a surface in a background tab is unfocused. Unlike [`Surface::write`]
     /// this leaves the view and the selection alone; losing focus must not
     /// scroll or deselect.
     pub fn set_focus(&self, focused: bool) {
-        if self.focused.swap(focused, Ordering::Relaxed) == focused {
-            return;
-        }
         self.terminal.lock().report_focus(focused);
     }
 
@@ -1731,10 +1725,10 @@ mod tests {
         let surface = quiet_surface(60, 10);
         let mut state = RenderState::new(&surface);
         std::thread::sleep(Duration::from_millis(150));
+        // Enabling the mode on an unfocused surface reports ^[[O at once.
         surface.inject_output(b"\x1b[?1004h");
 
-        // Unfocused from the start, so the first false is not a change;
-        // the second true is a repeat.
+        // Not a change, a change, a repeat, a change: ^[[I then ^[[O.
         surface.set_focus(false);
         surface.set_focus(true);
         surface.set_focus(true);
@@ -1747,7 +1741,7 @@ mod tests {
                 .map(|i| state.text_row(i))
                 .collect::<Vec<_>>()
                 .join("\n");
-            if text.contains("^[[O") {
+            if text.matches("^[[O").count() == 2 {
                 break text;
             }
             assert!(
@@ -1757,7 +1751,6 @@ mod tests {
             std::thread::sleep(Duration::from_millis(25));
         };
         assert_eq!(text.matches("^[[I").count(), 1, "{text:?}");
-        assert_eq!(text.matches("^[[O").count(), 1, "{text:?}");
     }
 
     // paste() keys off live terminal state: markers go to the child only
