@@ -408,6 +408,20 @@ fn version_number(mut version: &str) -> usize {
     version_number
 }
 
+/// Codepoints the narrow run scanner skips without a lookup, eight at a
+/// time.
+const LATIN_LANES: usize = 8;
+
+/// The printable codepoints up to U+00FF: the two ranges `0x20..=0x7E`
+/// and `0xA0..=0xFF`. Exactly the codepoints below U+0100 whose width
+/// is one (the rest are controls with no width), and none of them ever
+/// continues a grapheme cluster, so a run scanner can take them with no
+/// width or class lookup. Pinned against the width table by a test.
+#[inline]
+fn is_latin_printable(cp: u32) -> bool {
+    cp.wrapping_sub(0x20) <= 0x7E - 0x20 || cp.wrapping_sub(0xA0) <= 0xFF - 0xA0
+}
+
 /// Whether a codepoint of class `next` would continue the grapheme
 /// cluster of a cell that holds exactly one codepoint of class `prev`,
 /// freshly written. Inside a bulk run that is the only shape the
@@ -3948,8 +3962,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Insert mode falls back: cell-rotation is per-char and the cost of
         // bulk-handling it correctly outweighs the win. Non-ASCII charsets
         // fall back too: decode runs can carry ASCII that needs mapping.
+        // Without auto-wrap a wide codepoint at the last column is
+        // dropped, so the previous cell is not always the previous
+        // codepoint and the run scanner's pair test does not hold;
+        // the scalar path owns that mode. A single-shift charset, a
+        // horizontal margin or a status display would each need a gate
+        // here too; the terminal has none of them today.
         let active = self.grid.cursor.charsets[self.active_charset];
         if self.mode.contains(Mode::INSERT)
+            || !self.mode.contains(Mode::LINE_WRAP)
             || active != crate::crosswords::pos::StandardCharset::Ascii
         {
             for &cp in codepoints {
@@ -3968,11 +3989,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // continuation ends the run and takes the scalar path, which
         // owns the join.
         let clustering = self.mode.contains(Mode::GRAPHEME_CLUSTER);
-        // With auto-wrap off a wide codepoint at the last column is
-        // dropped, so inside a run the previous cell is not always the
-        // previous codepoint. Wide runs are then one codepoint long and
-        // each gets the real previous cell check.
-        let wide_one_at_a_time = clustering && !self.mode.contains(Mode::LINE_WRAP);
         use crate::grapheme_lut::class_of;
         use rio_unicode::grapheme::GraphemeClass;
         const OTHER: u8 = GraphemeClass::Other as u8;
@@ -4049,15 +4065,35 @@ impl<U: EventListener> Handler for Crosswords<U> {
             // Maximal run of same-width codepoints that each start a
             // new cluster, written in bulk. Inside the run the previous
             // cell is always the previous codepoint written fresh, so
-            // the pair test is the whole break decision. Codepoints up
-            // to U+00FF never continue a cluster and need no class of
-            // their own until something above U+00FF follows them, so
-            // Latin text costs no lookups; letters above are class
-            // Other, which continues nothing but a Prepend, so they
-            // cost one class lookup and no transition.
+            // the pair test is the whole break decision. Printable
+            // Latin-1 is width one and never continues a cluster, so a
+            // narrow run skips over it eight codepoints at a time with
+            // no lookups; letters above U+00FF are class Other, which
+            // continues nothing but a Prepend, so they cost one class
+            // lookup and no transition. Codepoints up to U+00FF need no
+            // class of their own until something above follows them.
             let mut j = i + 1;
             let mut prev_class: Option<u8> = None;
-            while j < n && !(wide_one_at_a_time && width == 2) {
+            while j < n {
+                if width == 1 {
+                    let start = j;
+                    while j + LATIN_LANES <= n
+                        && codepoints[j..j + LATIN_LANES]
+                            .iter()
+                            .fold(true, |all, &cp| all & is_latin_printable(cp))
+                    {
+                        j += LATIN_LANES;
+                    }
+                    while j < n && is_latin_printable(codepoints[j]) {
+                        j += 1;
+                    }
+                    if j != start {
+                        prev_class = None;
+                    }
+                    if j == n {
+                        break;
+                    }
+                }
                 let next = codepoints[j];
                 if next == crate::ansi::kitty_virtual::PLACEHOLDER as u32
                     || crate::codepoint_width::width_in(table, next) != Some(width)
@@ -11941,6 +11977,11 @@ mod tests {
                 vec!["\u{915}\u{94D}\u{937} \u{928}\u{94D}\u{924}\u{947}"],
                 vec!["\u{D4E}\u{416}\u{417} \u{D4E}\u{65E5} \u{D4E}\u{10EEEE}x"],
                 vec!["aaaaaaaaaa\u{1100}", "\u{65E5}\u{1100}"],
+                vec![
+                    "abcdefghijЖklmnopqrstuvwxyzЗ",
+                    "éééééééé日ééééééé\u{AD}\u{A0}ÿ",
+                ],
+                vec!["\u{A9}\u{1F3FD}abcdefghij\u{AE}\u{FE0F}k"],
                 vec!["aaaaaaaaaa\u{1F1E7}", "\u{65E5}\u{1F1E7}\u{1F1E7}"],
                 vec!["aaaaaaaaa\u{1F468}\u{200D}", "\u{65E5}\u{1F469}"],
             ]
@@ -11987,6 +12028,22 @@ mod tests {
         #[test]
         fn bulk_and_scalar_agree_with_clustering_on() {
             run(true, true);
+        }
+
+        // The range the narrow scanner skips without a lookup is exactly
+        // the codepoints below U+0100 with width one.
+        #[test]
+        fn latin_printable_is_exactly_width_one_below_0x100() {
+            let table = crate::codepoint_width::width_table();
+            for cp in 0u32..=0xFF {
+                assert_eq!(
+                    is_latin_printable(cp),
+                    crate::codepoint_width::width_in(table, cp) == Some(1),
+                    "U+{cp:04X}"
+                );
+            }
+            assert!(!is_latin_printable(0x100));
+            assert!(!is_latin_printable(u32::MAX));
         }
 
         #[test]
