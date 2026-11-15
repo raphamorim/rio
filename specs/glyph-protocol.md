@@ -111,14 +111,15 @@ codepoints, decimal for integers, base64 for binary payloads, and
 lowercase ASCII names for enums (single value, or comma-separated
 for lists). The `status` field's shape is verb-specific: `r` and
 `c` return a `u8` (`0` = success, nonzero paired with `reason=`);
-`q` returns a comma-separated coverage list (§5.2).
+`q` returns a comma-separated coverage list (§5.2), or no `status`
+and a `reason=` when it cannot answer (§5.4).
 
 ### 3.3 Verbs
 
 | Verb | Meaning |
 |------|---------|
-| `s`  | Advertise supported payload formats. Doubles as a protocol-detection ping: any reply confirms Glyph Protocol; a timeout means unsupported. |
-| `q`  | Query the state of a codepoint. |
+| `s`  | Advertise supported payload formats and optional capabilities. Doubles as a protocol-detection ping — any reply confirms Glyph Protocol; a timeout means unsupported. |
+| `q`  | Query the state of a codepoint or of a grapheme cluster. |
 | `r`  | Register a glyph for a codepoint in the registration block. |
 | `c`  | Clear one slot or every slot in this session's glossary. |
 
@@ -149,6 +150,23 @@ registration (`reason=malformed_payload` is acceptable for
 parser-level rejection). Clients SHOULD check the `s` reply
 before emitting colour registrations so they can fall back to a
 monochrome `fmt=glyf` without making a doomed round-trip.
+
+The reply also lists optional capabilities in the `cap` key, in the
+same form:
+
+```
+ESC _ 25a1 ; s ; fmt=glyf,colrv0,colrv1 ; cap=cps ESC \
+```
+
+Capability names defined in v1.14:
+
+| Name  | Capability                                       |
+|-------|--------------------------------------------------|
+| `cps` | `q` answers for a grapheme cluster, `cps=` (§5.3). |
+
+A terminal with no optional capabilities MAY leave `cap` out; a
+missing `cap` and an empty `cap=` mean the same. Clients MUST treat
+the value as a set and ignore names they do not recognise.
 
 ## 4. Glossary namespace
 
@@ -188,14 +206,19 @@ different glyph. Registrations MUST NOT leak between sessions.
 
 ```
 ESC _ 25a1 ; q ; cp=<hex> ESC \
+ESC _ 25a1 ; q ; cps=<hex>,<hex>,... ESC \
 ```
 
-Parameters:
+Parameters, exactly one of:
 
 - `cp`: codepoint in hex. Any valid Unicode scalar value (not a
   surrogate). May be inside or outside the registration block, so a
   client can ask whether the user's font already has an icon (for
   example a Nerd Fonts codepoint) before registering its own.
+- `cps` — one grapheme cluster, as 1 to 32 comma-separated hex
+  scalar values in logical order. OPTIONAL for terminals; a client
+  MUST NOT send it unless the `s` reply lists `cps` in `cap` (§3.3).
+  See §5.3.
 
 ### 5.2 Response
 
@@ -217,6 +240,80 @@ significant; clients MUST treat the value as a set.
 For codepoints outside the registration block only the empty value
 and `status=system` are possible. Clients MUST ignore unknown
 coverage names so future sources are forward-compatible.
+
+### 5.3 Grapheme query
+
+A codepoint query answers whether each codepoint has a glyph. It
+cannot answer whether a cluster renders correctly: a ZWJ emoji
+sequence can have every codepoint covered and still come out as
+three separate people, and an emoji presentation selector has no
+glyph of its own, so asking for it alone reports tofu. `cps` asks
+about the cluster as a whole.
+
+```
+ESC _ 25a1 ; q ; cps=1f468,200d,1f469,200d,1f467 ESC \
+ESC _ 25a1 ; q ; cps=1f468,200d,1f469,200d,1f467 ; status=system ESC \
+```
+
+The reply echoes `cps` in lowercase hex. `status` keeps the meaning
+of §5.2, the set of sources that draw the cluster, with one
+difference: it is empty unless the terminal would render the whole
+cluster correctly, in the current mode, if it were printed at the
+cursor. In particular, `status` is empty when:
+
+- a codepoint that is not default-ignorable has no glyph from any
+  source, or
+- the terminal would not draw the cluster as one unit: it would split
+  it across separate cells (for example because grapheme cluster
+  mode 2027 is off), or shaping would not join a sequence the font
+  is meant to draw as one glyph, such as a ZWJ emoji sequence the
+  font does not support.
+
+Default-ignorable codepoints (`U+200D`, the variation selectors
+`U+FE00`–`U+FE0F`, tag characters, and the rest of Unicode's
+`Default_Ignorable_Code_Point` set) have no glyph of their own and
+are never reported as missing. They count only through their effect
+on the cluster.
+
+The client segments the text; the terminal answers for exactly the
+codepoints it was given. A terminal does not re-segment `cps` or
+report how it would cluster it. If the codepoints would not form a
+single cluster in the terminal, they do not render as one unit and
+`status` is empty.
+
+`glossary` appears when the cluster contains a registered
+registration-block codepoint. A registered glyph is a single
+codepoint and never joins with its neighbours (§10), so a cluster
+that pairs one with another visible codepoint answers empty.
+
+The answer is for the regular face. It does not report widths: a
+cluster's cell width is the business of the terminal's width tables
+and mode 2027, and a registered glyph's render span is set by its
+`width` (§8.5).
+
+### 5.4 Errors
+
+When a terminal cannot answer a query it replies with `reason=` and
+no `status`, echoing the request's `cp` or `cps` when it parsed one:
+
+```
+ESC _ 25a1 ; q ; cps=1f468,200d,1f469 ; reason=unsupported ESC \
+```
+
+| `reason=`         | Meaning |
+|-------------------|---------|
+| `unsupported`     | `cps` was sent but the terminal does not list `cps` in `cap`. |
+| `malformed_query` | Neither or both of `cp` and `cps`, an invalid hex value, a surrogate, or more than 32 codepoints in `cps`. |
+
+Terminals written for v1.13 and earlier may ignore a `q` without
+`cp` and send nothing, which is why clients check `cap` first.
+Clients MUST ignore unknown `reason` values.
+
+### 5.5 Ordering
+
+A terminal answers `q` requests in the order it received them, so a
+client can send several queries, one per cluster, without waiting
+for each reply.
 
 ## 6. Register (`r`)
 
@@ -798,6 +895,9 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
    copy, and search return the raw codepoint.
 9. Ignores unrecognized parameters rather than failing the
    request.
+10. Answers `q` requests in order (§5.5). If it lists `cps` in the
+    `s` reply's `cap`, answers grapheme queries per §5.3; otherwise
+    replies to them with `reason=unsupported` (§5.4).
 
 A client (application) is Glyph Protocol v1 conformant if it:
 
@@ -809,6 +909,8 @@ A client (application) is Glyph Protocol v1 conformant if it:
 4. Handles all `reason=*` error codes without crashing.
 5. Leaves the cell after every `width=2` codepoint blank (emits a
    space), so the render-span overflow lands on empty space.
+6. Sends `q` with `cps` only when the `s` reply lists `cps` in
+   `cap`, and falls back to `cp` otherwise.
 
 ## 12. Reference implementation
 
@@ -858,6 +960,21 @@ q(0xE0A0)
 #   status=system → the user's font has the icon; emit U+E0A0 itself
 #   status=       → nothing covers it; register your own outline at a
 #                   block codepoint (e.g. U+100000) and emit that
+```
+
+With `cap=cps` in the `s` reply, a client can ask about an emoji
+before using it:
+
+```python
+def q_cluster(cps: list[int]) -> None:
+    hexes = ",".join(f"{cp:x}" for cp in cps)
+    sys.stdout.write(f"\x1b_25a1;q;cps={hexes}\x1b\\")
+    sys.stdout.flush()
+
+# Family: man, ZWJ, woman, ZWJ, girl
+q_cluster([0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467])
+#   status=system → drawn as one joined family
+#   status=       → tofu, or three separate people; use a fallback
 ```
 
 ## Appendix C. Implementation notes
@@ -927,3 +1044,4 @@ fresh bytes rather than serving a stale bitmap.
 | 2026-08-17 | v1.11   | Redefined `width` as a render-level span, matching the reference implementation (rio#1649, rio#1650): the codepoint's logical cell width always stays its system `wcwidth`, because interactive applications (shells, line editors, multiplexers) compute column counts independently and a terminal-only width override desyncs the cursor between terminal and application. A `width=2` glyph overflows into the following cell in pixels, and the client MUST leave that cell blank. v1.7's "authoritative for all layout decisions" wording is withdrawn. |
 | 2026-11-08 | v1.12   | Made the authored extent explicit: added `ymin`, the extent's bottom in upm units, because `lh` alone did not say where the extent sits and implementations had to guess. Placement now uses the declared extent and never the outline's bounds; with no `aw`, `lh`, or `ymin`, the extent is the outline's bounding box and `contain` is capped by the em. A client written for v1.11 that sends `lh` for an outline with descenders must add `ymin`, since `ymin` defaults to `0`. Changed the `size` default from `height` to `contain`, so a client that says nothing about sizing gets a whole glyph inside its span. Terminals MUST clip a glyph to its render span (§8.5.7). An invalid sizing value now rejects with `reason=malformed_payload`. A `width=2` glyph with no blank following cell renders with a one-cell span. |
 | 2026-11-15 | v1.13   | Restricted registration to one reserved block, `U+100000`–`U+1003FF` (the first 1024 codepoints of Supplementary PUA-B); `r` and `c` reject every other codepoint, including the rest of the Private Use Areas, with `reason=out_of_namespace`. Allowing all of PUA let a program redefine a Nerd Fonts icon such as the git branch glyph and exit, leaving the user's prompt drawing it for the rest of the session. Raised by Kovid Goyal in kitty#10872; Nerd Fonts confirmed it will not use the block (nerd-fonts#2105). The block is the size of the glossary, so FIFO eviction is removed. Clients MUST register every block codepoint they emit, since registrations outlive the program that made them. Clients registering in the Basic PUA, PUA-A, or elsewhere in PUA-B must move into the block. Removed the claim that an `svg2glyf` helper ships with the reference implementation; it was never published. |
+| 2026-11-15 | v1.14   | Added the grapheme query `q;cps=`: one grapheme cluster as up to 32 codepoints, answered for the cluster as a whole. `status` keeps its meaning as a set of sources but is empty unless the cluster renders correctly in the current mode, so a ZWJ emoji sequence the font does not join, or a cluster the terminal would split across cells, reports empty. Default-ignorable codepoints are never reported as missing. It is optional: the `s` reply gains a `cap` key listing optional capabilities, the first being `cps`, and a terminal without it replies `reason=unsupported`. `q` replies can now carry `reason=` (`unsupported`, `malformed_query`) and arrive in request order. Registration stays per codepoint. Raised by Jeff Quast in contour#2019, for tofu detection in blessed and ucs-detect. |
