@@ -802,12 +802,29 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // The basis is the border-box size, the unit taffy lays out in
         // for a panel and a container alike, so a split or a collapse
         // can hand one node's sizing to the other kind unchanged and the
-        // pair lands on the sizes asked for. Grow and shrink weighted by
-        // the same size keep the proportion when the window resizes.
+        // pair lands on the sizes asked for. Grow weighted by the same
+        // size keeps the proportion when the window grows. Taffy shares
+        // negative space by flex_shrink times the content-box basis, so
+        // a panel's padding would make it give up less than its share
+        // when the window shrinks; weighting shrink by border box over
+        // content box puts the share back in proportion to what is seen.
         if let Some(size) = width.or(height) {
+            let layout = self.tree.layout(node)?;
+            let edges = if width.is_some() {
+                layout.padding.left
+                    + layout.padding.right
+                    + layout.border.left
+                    + layout.border.right
+            } else {
+                layout.padding.top
+                    + layout.padding.bottom
+                    + layout.border.top
+                    + layout.border.bottom
+            };
+            let inner = size - edges;
             style.flex_basis = length(size);
             style.flex_grow = size;
-            style.flex_shrink = 1.0;
+            style.flex_shrink = if inner > 0.0 { size / inner } else { 1.0 };
         }
 
         self.tree.set_style(node, style)?;
