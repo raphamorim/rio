@@ -139,10 +139,13 @@ pub struct ContextManagerConfig {
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 
-/// A divider drag: the tab it started on and where it started.
+/// A divider drag: the grid it started on, named by a pane in it since
+/// tab indices shift when tabs close, how many panes that grid had, and
+/// where the drag started.
 #[derive(Debug, Clone, Copy)]
 struct BorderDrag {
-    grid: usize,
+    route: usize,
+    panels: usize,
     state: ResizeState,
 }
 
@@ -979,7 +982,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             grid.get_panel_size(border.right_or_bottom, border.direction),
         );
         self.border_drag = Some(BorderDrag {
-            grid: self.current_index,
+            route: grid.current().route_id,
+            panels: grid.panel_count(),
             state: ResizeState {
                 border,
                 start_pos,
@@ -990,16 +994,23 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     /// Move the dragged divider to the pointer. The grid it started on
-    /// is the one resized, whichever tab is showing now. Returns the
-    /// divider's direction, or `None` when no drag is in progress.
+    /// is the one resized, whichever tab is showing now and however the
+    /// tabs were renumbered since. A grid that lost or gained a pane
+    /// mid-drag is left alone: its tree is not the one the drag knows.
+    /// Returns the divider's direction, or `None` when no drag is in
+    /// progress.
     pub fn drag_border_to(&mut self, x: f32, y: f32) -> Option<BorderDirection> {
-        let drag = self.border_drag.as_ref()?;
+        let drag = *self.border_drag.as_ref()?;
         let state = drag.state;
         let current_pos = match state.border.direction {
             BorderDirection::Vertical => x,
             BorderDirection::Horizontal => y,
         };
-        let grid = self.contexts.get_mut(drag.grid)?;
+        let tab = self.tab_index_for_route(drag.route)?;
+        let grid = &mut self.contexts[tab];
+        if grid.panel_count() != drag.panels {
+            return None;
+        }
         grid.resize_border(
             &state.border,
             state.original_sizes,
@@ -1013,11 +1024,13 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// a tab switch or a focus loss mid-drag cannot leave a panel with a
     /// stale pixel size. Returns whether a drag was in progress.
     pub fn end_border_drag(&mut self) -> bool {
-        let was_dragging = self.border_drag.take().is_some();
+        if self.border_drag.take().is_none() {
+            return false;
+        }
         for context_grid in self.contexts.iter_mut() {
             context_grid.end_border_resize();
         }
-        was_dragging
+        true
     }
 
     #[inline]
@@ -2422,5 +2435,73 @@ mod sugarloaf_free {
             (l - (lw + 150.0)).abs() <= 1.0,
             "ending the drag keeps the size"
         );
+    }
+
+    // Tabs are renumbered when one closes. A drag pinned to tab 1
+    // keeps resizing that grid after tab 0 is closed and it becomes
+    // tab 0.
+    #[test]
+    fn a_divider_drag_survives_a_tab_closing_before_it() {
+        let mut cm = manager();
+        cm.add_context(true, 1);
+        assert_eq!(cm.current_index, 1);
+        cm.split(2, false);
+        let (x, y, lw, _) = separator(&cm, 1);
+        assert_eq!(cm.begin_border_drag(x, y), Some(BorderDirection::Vertical));
+        assert_eq!(
+            cm.drag_border_to(x + 50.0, y),
+            Some(BorderDirection::Vertical)
+        );
+
+        cm.select_tab(0);
+        let mut images = Images::default();
+        cm.close_current_context(&mut images);
+        assert_eq!(cm.len(), 1);
+        assert_eq!(
+            cm.contexts[0].panel_count(),
+            2,
+            "the split tab is now tab 0"
+        );
+
+        assert_eq!(
+            cm.drag_border_to(x + 120.0, y),
+            Some(BorderDirection::Vertical)
+        );
+        let (l, _) = widths(&cm, 0);
+        assert!((l - (lw + 120.0)).abs() <= 1.0, "left {l} from {lw}");
+        assert!(cm.end_border_drag());
+    }
+
+    // A pane closing in the dragged grid changes its tree: the drag
+    // stops moving anything but still counts as a drag until released.
+    #[test]
+    fn a_divider_drag_stops_when_its_grid_changes_shape() {
+        let mut cm = manager();
+        cm.split(1, false);
+        cm.split(2, true);
+        assert_eq!(cm.current_grid_len(), 3);
+        let rects = |cm: &ContextManager<VoidListener>| -> Vec<[f32; 4]> {
+            let mut rects: Vec<[f32; 4]> = cm
+                .current_grid()
+                .contexts()
+                .values()
+                .map(|i| i.layout_rect)
+                .collect();
+            rects.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            rects
+        };
+        let r = rects(&cm);
+        let m = cm.current_grid().scaled_margin;
+        let x = m.left + ((r[0][0] + r[0][2]) + r[1][0]) / 2.0;
+        let y = m.top + r[0][1] + 1.0;
+        assert_eq!(cm.begin_border_drag(x, y), Some(BorderDirection::Vertical));
+
+        let mut images = Images::default();
+        cm.remove_current_grid(&mut images);
+        assert_eq!(cm.current_grid_len(), 2);
+        let before = rects(&cm);
+        assert_eq!(cm.drag_border_to(x + 80.0, y), None);
+        assert_eq!(rects(&cm), before, "nothing moved");
+        assert!(cm.end_border_drag(), "the release still ends the drag");
     }
 }
