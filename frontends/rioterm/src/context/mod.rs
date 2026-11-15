@@ -17,7 +17,7 @@ use rio_backend::config::layout::Margin;
 use rio_backend::config::Shell;
 use smallvec::{smallvec, SmallVec};
 
-use crate::layout::{BorderDirection, PanelImages, ResizeState};
+use crate::layout::{BorderDirection, GridId, PanelImages, ResizeState};
 use rio_backend::crosswords::pos::{CharsetIndex, StandardCharset};
 use rio_backend::crosswords::{Crosswords, MIN_COLUMNS, MIN_LINES};
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
@@ -33,6 +33,12 @@ use std::time::Instant;
 
 // Global atomic counter for generating unique route IDs
 static ROUTE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+/// A route id no pane has had before. Starts at one: zero is the
+/// manager's "no route yet" sentinel.
+pub fn next_route_id() -> usize {
+    ROUTE_ID_COUNTER.fetch_add(1, Ordering::SeqCst)
+}
 
 // Global atomic counter for generating unique rich text IDs
 static RICH_TEXT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -144,7 +150,7 @@ const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 /// started.
 #[derive(Debug, Clone, Copy)]
 struct BorderDrag {
-    grid: usize,
+    grid: GridId,
     shape: u64,
     state: ResizeState,
 }
@@ -287,7 +293,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         dimension: ContextDimension,
         config: &ContextManagerConfig,
     ) -> Result<Context<T>, Box<dyn Error>> {
-        let route_id = ROUTE_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let route_id = next_route_id();
 
         #[cfg(test)]
         if config.dead_pty {
@@ -446,7 +452,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         cursor_state: (&Cursor, bool),
         event_proxy: T,
         window_id: WindowId,
-        route_id: usize,
         rich_text_id: usize,
         ctx_config: ContextManagerConfig,
         size: ContextDimension,
@@ -475,10 +480,12 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                     window_id,
                 );
 
+                // A dead pane is still a pane: it takes a minted route
+                // like any other, so the grid named after it is unique.
                 create_dead_context(
                     event_proxy.clone(),
                     window_id,
-                    route_id,
+                    next_route_id(),
                     0,
                     ContextDimension::default(),
                 )
@@ -976,7 +983,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         std::mem::replace(&mut grid.bell, false)
     }
 
-    fn tab_index_for_grid(&self, id: usize) -> Option<usize> {
+    fn tab_index_for_grid(&self, id: GridId) -> Option<usize> {
         self.contexts.iter().position(|grid| grid.id() == id)
     }
 
@@ -2540,5 +2547,18 @@ mod sugarloaf_free {
             "the drag does not resize a rebuilt tree"
         );
         assert!(cm.end_border_drag(), "the release still ends the drag");
+    }
+
+    // Route ids are minted once, never zero, never reused: that is what
+    // lets a grid be named by its first pane's route.
+    #[test]
+    fn route_ids_are_minted_once_and_never_zero() {
+        let first = next_route_id();
+        let second = next_route_id();
+        assert!(first > 0);
+        assert!(second > first);
+        let cm = manager();
+        assert!(cm.current().route_id > second);
+        assert_eq!(cm.current_grid().id(), GridId(cm.current().route_id));
     }
 }

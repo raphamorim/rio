@@ -1682,6 +1682,23 @@ mod grid {
         assert!(grid.get_panel_borders().is_empty());
     }
 
+    // The name is the first pane's route, it stays when that pane goes,
+    // and two grids never share one.
+    #[test]
+    fn a_grid_is_named_by_the_route_of_its_first_pane_for_good() {
+        let mut grid = grid(1.0);
+        let first_route = grid.current().route_id;
+        assert_eq!(grid.id(), GridId(first_route));
+        let other = self::grid(1.0);
+        assert_ne!(other.id(), grid.id());
+
+        split(&mut grid, true);
+        assert!(grid.remove_by_route(first_route).is_some());
+        assert_eq!(grid.panel_count(), 1);
+        assert_ne!(grid.current().route_id, first_route);
+        assert_eq!(grid.id(), GridId(first_route), "the name outlives the pane");
+    }
+
     #[test]
     fn the_last_pane_cannot_be_removed() {
         let mut grid = grid(1.0);
