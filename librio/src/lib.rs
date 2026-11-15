@@ -157,6 +157,17 @@ pub trait MaybeSendSync {}
 impl<T> MaybeSendSync for T {}
 
 pub trait SurfaceDelegate: MaybeSendSync + 'static {
+    /// The surface changed, and a [`RenderState::update`] would show it.
+    ///
+    /// It is not repeated for later output until the next `update` of the
+    /// surface. A host that keeps its own "needs render" flag clears it
+    /// before calling `update`, not after: a wakeup that lands between the
+    /// update and the clear would otherwise be lost, and with it the output
+    /// that follows.
+    ///
+    /// Called with the surface's terminal locked, on librio's IO thread or
+    /// inside [`Surface::inject_output`]. Only flag or schedule work here;
+    /// calling back into the surface deadlocks.
     fn wakeup(&self, surface: SurfaceId);
     fn action(&self, _surface: SurfaceId, _action: Action) {}
     fn clipboard_write(&self, _surface: SurfaceId, _kind: ClipboardType, _text: String) {}
