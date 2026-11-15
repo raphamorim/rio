@@ -1690,3 +1690,89 @@ mod grid {
         assert_px(width(&grid, b), bw + 40.0);
     }
 }
+
+// `update_dimensions` with cell metrics from a stand-in for sugarloaf.
+mod metrics {
+    use super::*;
+    use crate::context::{create_mock_context, ContextDimension};
+    use rio_backend::config::layout::Panel;
+    use rio_backend::event::{VoidListener, WindowId};
+    use rio_backend::sugarloaf::layout::CellMetrics;
+
+    /// Every pane gets cells of this height, whatever its font size.
+    struct Cells(f32);
+
+    impl CellMetricsSource for Cells {
+        fn cell_metrics(
+            &self,
+            _font_size: f32,
+            _line_height: f32,
+            scale: f32,
+        ) -> (TextDimensions, CellMetrics) {
+            let text = TextDimensions {
+                scale,
+                width: 18.,
+                height: self.0,
+            };
+            (text, cell_for(text))
+        }
+    }
+
+    fn grid() -> ContextGrid<VoidListener> {
+        let text = TextDimensions {
+            scale: 1.0,
+            width: 18.,
+            height: 9.,
+        };
+        let dim = ContextDimension::build(
+            1200.0,
+            800.0,
+            text,
+            cell_for(text),
+            1.0,
+            14.0,
+            Margin::default(),
+        );
+        let ctx = create_mock_context(VoidListener {}, WindowId::from(0), 0, dim);
+        let mut grid =
+            ContextGrid::new(ctx, Margin::default(), [0.; 4], [0.; 4], Panel::default());
+        let ctx = create_mock_context(VoidListener {}, WindowId::from(0), 1, dim);
+        grid.split_right(ctx);
+        grid
+    }
+
+    #[test]
+    fn new_cell_metrics_reflow_every_pane() {
+        let mut grid = grid();
+        let nodes: Vec<NodeId> = grid.inner.keys().copied().collect();
+        let lines_before = grid.inner[&nodes[0]].val.dimension.lines;
+
+        grid.update_dimensions(&Cells(18.0));
+        for node in &nodes {
+            let dim = grid.inner[node].val.dimension;
+            assert_eq!(dim.cell.cell_height, 18);
+            assert!(dim.lines < lines_before, "taller cells, fewer lines");
+            let terminal = grid.inner[node].val.terminal.lock();
+            assert_eq!(terminal.grid.screen_lines(), dim.lines);
+        }
+    }
+
+    // A pane with no font size has no metrics to recompute, as the
+    // placeholder panes of a restored session; it keeps its grid.
+    #[test]
+    fn a_pane_without_a_font_size_keeps_its_grid() {
+        let mut grid = grid();
+        let nodes: Vec<NodeId> = grid.inner.keys().copied().collect();
+        grid.inner
+            .get_mut(&nodes[0])
+            .unwrap()
+            .val
+            .dimension
+            .font_size = 0.0;
+        let lines = grid.inner[&nodes[0]].val.dimension.lines;
+
+        grid.update_dimensions(&Cells(18.0));
+        assert_eq!(grid.inner[&nodes[0]].val.dimension.lines, lines);
+        assert!(grid.inner[&nodes[1]].val.dimension.lines < lines);
+    }
+}

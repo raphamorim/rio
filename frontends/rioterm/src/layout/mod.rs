@@ -34,6 +34,46 @@ pub struct PanelBorder {
     pub right_or_bottom: NodeId,
 }
 
+/// What sugarloaf keeps per panel: image overlays by rich text id and
+/// the images a route drew. The layout and the context manager release
+/// them through this, so both run in tests without a GPU context.
+pub trait PanelImages {
+    fn clear_image_overlays_for(&mut self, rich_text_id: usize);
+    fn remove_route_images(&mut self, route_id: usize);
+}
+
+impl PanelImages for Sugarloaf<'_> {
+    fn clear_image_overlays_for(&mut self, rich_text_id: usize) {
+        Sugarloaf::clear_image_overlays_for(self, rich_text_id);
+    }
+
+    fn remove_route_images(&mut self, route_id: usize) {
+        Sugarloaf::remove_route_images(self, route_id);
+    }
+}
+
+/// Cell metrics for a font size, line height and scale: the font
+/// library's answer, which only sugarloaf has outside of tests.
+pub trait CellMetricsSource {
+    fn cell_metrics(
+        &self,
+        font_size: f32,
+        line_height: f32,
+        scale: f32,
+    ) -> (TextDimensions, rio_backend::sugarloaf::layout::CellMetrics);
+}
+
+impl CellMetricsSource for Sugarloaf<'_> {
+    fn cell_metrics(
+        &self,
+        font_size: f32,
+        line_height: f32,
+        scale: f32,
+    ) -> (TextDimensions, rio_backend::sugarloaf::layout::CellMetrics) {
+        self.compute_cell_metrics(font_size, line_height, scale)
+    }
+}
+
 /// What a removed panel held in sugarloaf, for the caller to release.
 #[must_use = "release it with RemovedPanel::release"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,9 +85,9 @@ pub struct RemovedPanel {
 impl RemovedPanel {
     /// Drop the image overlays and route images the panel owned;
     /// sugarloaf keeps no other per-panel state.
-    pub fn release(self, sugarloaf: &mut Sugarloaf) {
-        sugarloaf.clear_image_overlays_for(self.rich_text_id);
-        sugarloaf.remove_route_images(self.route_id);
+    pub fn release(self, images: &mut impl PanelImages) {
+        images.clear_image_overlays_for(self.rich_text_id);
+        images.remove_route_images(self.route_id);
     }
 }
 
@@ -1456,22 +1496,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
-        // Per-panel cell metrics are recomputed locally now — sugarloaf
-        // is consulted only for the font library it owns. Each panel's
-        // `dimension.font_size` / `line_height` / `dimension.scale`
-        // drive the result, so panels with per-panel zoom keep
-        // independent cell strides.
+    /// Recompute every panel's cell metrics and lay the tree out again.
+    /// Each panel's `font_size`, `line_height` and scale drive the
+    /// result, so panels with per-panel zoom keep independent strides.
+    pub fn update_dimensions(&mut self, metrics: &impl CellMetricsSource) {
         for context in self.inner.values_mut() {
             let dim = &mut context.val.dimension;
             if dim.font_size <= 0.0 {
                 continue;
             }
-            let (text_dims, cell) = sugarloaf.compute_cell_metrics(
-                dim.font_size,
-                dim.line_height,
-                dim.dimension.scale,
-            );
+            let (text_dims, cell) =
+                metrics.cell_metrics(dim.font_size, dim.line_height, dim.dimension.scale);
             dim.update_dimensions(text_dims, cell);
         }
 
@@ -1662,12 +1697,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// active. (Naming preserved for callers; the function used to
     /// drive sugarloaf's content visibility flag, which is gone.)
     #[inline]
-    pub fn set_all_rich_text_visibility(&self, sugarloaf: &mut Sugarloaf, visible: bool) {
+    pub fn set_all_rich_text_visibility(
+        &self,
+        images: &mut impl PanelImages,
+        visible: bool,
+    ) {
         if visible {
             return;
         }
         for item in self.inner.values() {
-            sugarloaf.clear_image_overlays_for(item.val.rich_text_id);
+            images.clear_image_overlays_for(item.val.rich_text_id);
         }
     }
 
@@ -1678,10 +1717,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     #[inline]
     /// Release everything this grid's panels hold in sugarloaf: image
     /// overlays and the images they drew.
-    pub fn remove_from_sugarloaf(&self, sugarloaf: &mut Sugarloaf) {
+    pub fn remove_from_sugarloaf(&self, images: &mut impl PanelImages) {
         for item in self.inner.values() {
-            sugarloaf.clear_image_overlays_for(item.val.rich_text_id);
-            sugarloaf.remove_route_images(item.val.route_id);
+            images.clear_image_overlays_for(item.val.rich_text_id);
+            images.remove_route_images(item.val.route_id);
         }
     }
 }

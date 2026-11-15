@@ -1455,8 +1455,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             island.cancel_drag();
                         }
                         route.window.screen.renderer.scrollbar.end_drag();
-                        if route.window.screen.resize_state.take().is_some() {
-                            route.window.screen.context_manager.end_border_resize();
+                        if route.window.screen.context_manager.end_border_drag() {
+                            route.window.winit_window.set_cursor(CursorIcon::Default);
                         }
                     }
                     return;
@@ -1508,32 +1508,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         let chrome_press = route.window.screen.take_chrome_press();
 
                         if let MouseButton::Left = button {
-                            // Check if clicking on a panel border to start resize
+                            // A press on a panel border starts a divider drag.
                             {
                                 let mx = route.window.screen.mouse.x as f32;
                                 let my = route.window.screen.mouse.y as f32;
-                                let grid =
-                                    route.window.screen.context_manager.current_grid();
-                                if let Some(border) = grid.find_border_at_position(mx, my)
+                                if route
+                                    .window
+                                    .screen
+                                    .context_manager
+                                    .begin_border_drag(mx, my)
+                                    .is_some()
                                 {
-                                    let start_pos = match border.direction {
-                                        crate::layout::BorderDirection::Vertical => mx,
-                                        crate::layout::BorderDirection::Horizontal => my,
-                                    };
-                                    let size_a = grid.get_panel_size(
-                                        border.left_or_top,
-                                        border.direction,
-                                    );
-                                    let size_b = grid.get_panel_size(
-                                        border.right_or_bottom,
-                                        border.direction,
-                                    );
-                                    route.window.screen.resize_state =
-                                        Some(crate::layout::ResizeState {
-                                            border,
-                                            start_pos,
-                                            original_sizes: (size_a, size_b),
-                                        });
                                     return;
                                 }
                             }
@@ -1709,8 +1694,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        if route.window.screen.resize_state.take().is_some() {
-                            route.window.screen.context_manager.end_border_resize();
+                        if route.window.screen.context_manager.end_border_drag() {
                             route.window.winit_window.set_cursor(CursorIcon::Default);
                             return;
                         }
@@ -1956,26 +1940,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                // Handle panel border resize
-                if route.window.screen.resize_state.is_some() {
-                    let state = route.window.screen.resize_state.unwrap();
-                    let current_pos = match state.border.direction {
-                        crate::layout::BorderDirection::Vertical => x as f32,
-                        crate::layout::BorderDirection::Horizontal => y as f32,
-                    };
-                    let delta = current_pos - state.start_pos;
-                    let border = state.border;
-                    let original_sizes = state.original_sizes;
-                    route
-                        .window
-                        .screen
-                        .context_manager
-                        .current_grid_mut()
-                        .resize_border(&border, original_sizes, delta);
+                // A divider drag in progress follows the pointer.
+                if let Some(direction) = route
+                    .window
+                    .screen
+                    .context_manager
+                    .drag_border_to(x as f32, y as f32)
+                {
                     // Dragging a split divider displaces panel origins;
                     // that is layout, not cursor travel.
                     route.window.screen.renderer.trail_cursor.snap();
-                    let cursor = match border.direction {
+                    let cursor = match direction {
                         crate::layout::BorderDirection::Vertical => CursorIcon::ColResize,
                         crate::layout::BorderDirection::Horizontal => {
                             CursorIcon::RowResize
@@ -2291,8 +2266,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 // The release of a divider drag never arrives once the
                 // window lost focus, so the drag ends here.
-                if !focused && route.window.screen.resize_state.take().is_some() {
-                    route.window.screen.context_manager.end_border_resize();
+                if !focused && route.window.screen.context_manager.end_border_drag() {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                 }
 
