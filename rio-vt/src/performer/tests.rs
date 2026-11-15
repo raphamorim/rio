@@ -13,6 +13,8 @@ struct TestPty {
     exhausted: Option<mpsc::Sender<()>>,
     writer: Vec<u8>,
     child: Option<corcovado::Registration>,
+    // Registered at the child-event token alongside a `child` read source.
+    exit: Option<corcovado::Registration>,
     registration_error: bool,
     read_event: bool,
     shutdown_calls: usize,
@@ -83,6 +85,14 @@ impl ProcessReadWrite for TestPty {
                 PollOpt::edge(),
             )?;
         }
+        if let Some(exit) = &self.exit {
+            poll.register(
+                exit,
+                self.child_event_token(),
+                Ready::readable(),
+                PollOpt::edge(),
+            )?;
+        }
         Ok(())
     }
     fn reregister(
@@ -129,6 +139,7 @@ fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidLi
             exhausted: None,
             writer: Vec::new(),
             child: None,
+            exit: None,
             registration_error: false,
             read_event: false,
             shutdown_calls: 0,
@@ -231,6 +242,61 @@ fn child_exit_drains_multiple_budgets_and_finishes_pending_sync() {
 #[test]
 fn eio_preserves_buffered_output_under_lock_contention() {
     read_with_contended_terminal(None, Some(libc::EIO));
+}
+
+#[derive(Clone)]
+struct ExitStatus(mpsc::Sender<Option<i32>>);
+
+impl EventListener for ExitStatus {
+    fn send_event(&self, event: RioEvent, _: WindowId) {
+        if let RioEvent::ChildExited(_, status) = event {
+            self.0.send(status).unwrap();
+        }
+    }
+}
+
+// The slave closing (EIO on Linux) can reach the reader before the
+// child-exit event. The child's status must still be reported, not the
+// `None` of a reader failure.
+#[cfg(target_os = "linux")]
+#[test]
+fn eio_before_child_exit_keeps_the_exit_status() {
+    let (statuses, status) = mpsc::channel();
+    let listener = ExitStatus(statuses);
+    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        listener.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let mut pty = machine(b"final output".to_vec(), None).pty;
+    pty.raw_error = Some(libc::EIO);
+    let (exhausted, read_eio) = mpsc::channel();
+    pty.exhausted = Some(exhausted);
+    let (read, read_ready) = corcovado::Registration::new2();
+    pty.child = Some(read);
+    pty.read_event = true;
+    let (exit, exit_ready) = corcovado::Registration::new2();
+    pty.exit = Some(exit);
+    read_ready.set_readiness(Ready::readable()).unwrap();
+
+    let machine = Machine::new(terminal, pty, listener, WindowId::from(0), 0).unwrap();
+    let worker = machine.spawn();
+    read_eio.recv_timeout(Duration::from_secs(5)).unwrap();
+    exit_ready.set_readiness(Ready::readable()).unwrap();
+    assert_eq!(
+        status.recv_timeout(Duration::from_secs(5)).unwrap(),
+        Some(0),
+        "the reader's EIO replaced the child's exit status"
+    );
+    let (machine, _) = worker.join().unwrap();
+    let terminal = machine.terminal.lock();
+    let text: String = (0..12)
+        .map(|col| terminal.grid[Line(0)][Column(col)].c())
+        .collect();
+    assert_eq!(text, "final output");
 }
 
 #[test]

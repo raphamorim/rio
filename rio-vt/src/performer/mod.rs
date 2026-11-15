@@ -438,6 +438,9 @@ where
 
         let mut events = Events::with_capacity(1024);
         let mut last_interest = Ready::readable();
+        // Set once the slave side is gone: the PTY is no longer read,
+        // and the loop only waits for the child-exit event.
+        let mut slave_closed = false;
 
         loop {
             // Wakeup the event loop when a synchronized update timeout was reached.
@@ -495,9 +498,32 @@ where
                         let hung_up = UnixReady::from(event.readiness()).is_hup();
                         #[cfg(not(unix))]
                         let hung_up = false;
+                        if slave_closed {
+                            continue;
+                        }
                         // HUP can accompany unread final output.
                         if event.readiness().is_readable() || hung_up {
-                            self.pty_read(state, buf)?;
+                            match self.pty_read(state, buf) {
+                                // Linux reports EIO once every slave fd is
+                                // closed, which can come before the
+                                // child-exit event. Wait for that event so
+                                // the child's real exit status is reported,
+                                // not a reader failure. A level registration
+                                // would report the hangup on every poll, so
+                                // switch to edge and stop reading.
+                                #[cfg(target_os = "linux")]
+                                Err(err) if err.raw_os_error() == Some(libc::EIO) => {
+                                    slave_closed = true;
+                                    self.pty.reregister(
+                                        &self.poll,
+                                        Ready::readable(),
+                                        PollOpt::edge(),
+                                    )?;
+                                    continue;
+                                }
+                                Err(err) => return Err(err),
+                                Ok(_) => (),
+                            }
                         }
 
                         if !hung_up && event.readiness().is_writable() {
@@ -513,7 +539,7 @@ where
             if state.needs_write() {
                 interest.insert(Ready::writable());
             }
-            if interest != last_interest {
+            if !slave_closed && interest != last_interest {
                 self.pty.reregister(&self.poll, interest, poll_opts)?;
                 last_interest = interest;
             }
