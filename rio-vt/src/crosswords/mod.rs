@@ -4075,8 +4075,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
             let mut j = i + 1;
             let mut prev_class: Option<u8> = None;
             while j < n {
-                if width == 1 {
-                    let start = j;
+                if width == 1 && is_latin_printable(codepoints[j]) {
+                    j += 1;
                     while j + LATIN_LANES <= n
                         && codepoints[j..j + LATIN_LANES]
                             .iter()
@@ -4087,9 +4087,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     while j < n && is_latin_printable(codepoints[j]) {
                         j += 1;
                     }
-                    if j != start {
-                        prev_class = None;
-                    }
+                    prev_class = None;
                     if j == n {
                         break;
                     }
