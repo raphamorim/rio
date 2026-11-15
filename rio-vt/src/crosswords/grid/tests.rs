@@ -873,3 +873,40 @@ fn a_scrolled_viewport_keeps_its_distance_when_rows_are_popped() {
     assert_eq!(text_of(&grid, 0), "abcd");
     assert_eq!(grid.cursor.pos, Pos::new(Line(0), Column(3)));
 }
+
+// A grow that gives rows back at the bottom while the viewport is
+// scrolled into history: the viewport keeps showing the same rows, as
+// it does when a shrink pops rows under it.
+#[test]
+fn a_scrolled_viewport_stays_put_when_rows_are_given_back() {
+    let mut grid = Grid::<Square>::new(4, 4, 10);
+    for word in ["gggg", "hhhh", "iiii", "jjjj", "kkkk"] {
+        fill(&mut grid, 0, word, false);
+        grid.scroll_up(&(Line(0)..Line(4)), 1);
+    }
+    fill(&mut grid, 0, "abcd", true);
+    fill(&mut grid, 1, "efgh", true);
+    fill(&mut grid, 2, "ij", false);
+    grid.cursor.pos = Pos::new(Line(2), Column(2));
+    assert_eq!(grid.history_size(), 5);
+    grid.scroll_display(Scroll::Delta(5));
+    assert_eq!(grid.display_offset(), 5);
+    assert_eq!(text_of(&grid, -5), "gggg", "the viewport starts at gggg");
+
+    grid.resize(true, 4, 10);
+
+    assert_eq!(
+        grid.history_size(),
+        5,
+        "no history row slid onto the screen"
+    );
+    assert_eq!(text_of(&grid, 0), "abcdefghij");
+    assert_eq!(text_of(&grid, 1), "");
+    assert_eq!(grid.cursor.pos, Pos::new(Line(0), Column(9)));
+    assert_eq!(grid.display_offset(), 5);
+    assert_eq!(
+        text_of(&grid, -5),
+        "gggg",
+        "the viewport still starts at gggg"
+    );
+}

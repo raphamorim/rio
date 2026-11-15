@@ -8044,6 +8044,141 @@ mod tests {
         ));
     }
 
+    // Reported on #2058: after `clear` the old output is in history
+    // and the prompt is on the top row. The shrink wraps the prompt
+    // line into the blank rows under it, and the grow back gives those
+    // rows back blank instead of sliding the cleared output onto the
+    // screen. The cursor ends after its text with no pending wrap, so
+    // the next character lands on the same row.
+    #[test]
+    fn a_round_trip_after_clear_keeps_the_history() {
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(10, 4),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+        // `old` scrolls into history and the prompt starts on the top
+        // row, as after `clear`.
+        parser.advance(&mut cw, b"old\r\n\n\n\n\x1b[H$ abcdefg");
+        assert_eq!(cw.history_size(), 1);
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(9)));
+
+        cw.resize(CrosswordsSize::new(4, 4));
+        cw.resize(CrosswordsSize::new(10, 4));
+
+        let text = |cw: &Crosswords<VoidListener>, line: i32| -> String {
+            let row = &cw.grid[Line(line)];
+            (0..row.len())
+                .map(|c| row[Column(c)].c())
+                .collect::<String>()
+                .trim_end_matches('\0')
+                .to_string()
+        };
+        assert_eq!(cw.history_size(), 1, "old stays cleared");
+        assert_eq!(text(&cw, -1), "old");
+        assert_eq!(text(&cw, 0), "$ abcdefg");
+        for line in 1..4 {
+            assert_eq!(text(&cw, line), "", "row {line} is blank again");
+        }
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(9)));
+        assert!(!cw.grid.cursor.should_wrap, "the row has a column left");
+        parser.advance(&mut cw, b"h");
+        assert_eq!(text(&cw, 0), "$ abcdefgh");
+    }
+
+    // With history above and blank room below, the shrink pays with
+    // the room and pushes nothing up. The grow back must then give back
+    // every history row the rejoin slid onto the screen, even when the
+    // rows it slid in outnumber the blank rows still left.
+    #[test]
+    fn a_grow_gives_back_every_row_it_slid_in_while_there_is_room() {
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(10, 4),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"old1\r\nold2\r\n\n\n\n\x1b[H$ abcdefg");
+        assert_eq!(cw.history_size(), 2);
+
+        cw.resize(CrosswordsSize::new(4, 4));
+        assert_eq!(cw.history_size(), 2, "the blank rows took the wrap");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(2), Column(1)));
+        cw.resize(CrosswordsSize::new(10, 4));
+
+        let text = |line: i32| -> String {
+            let row = &cw.grid[Line(line)];
+            (0..row.len())
+                .map(|c| row[Column(c)].c())
+                .collect::<String>()
+                .trim_end_matches('\0')
+                .to_string()
+        };
+        assert_eq!(cw.history_size(), 2);
+        assert_eq!(text(-2), "old1");
+        assert_eq!(text(-1), "old2");
+        assert_eq!(text(0), "$ abcdefg");
+        assert_eq!(text(1), "");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(9)));
+    }
+
+    // The other side of the rule: a screen full to the bottom has no
+    // room, so the shrink pushed rows into history and the grow back
+    // pulls them onto the screen again. The round trip is the identity
+    // either way.
+    #[test]
+    fn a_round_trip_on_a_full_screen_brings_its_rows_back() {
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(10, 4),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let rows = ["aaaaaaaaaa", "bbbbbbbbbb", "cccccccccc", "$ abcdefg"];
+        for (i, word) in rows.iter().enumerate() {
+            if i > 0 {
+                cw.carriage_return();
+                cw.linefeed();
+            }
+            cw.input_str(word);
+        }
+        assert_eq!(cw.history_size(), 0);
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(3), Column(9)));
+
+        cw.resize(CrosswordsSize::new(5, 4));
+        assert_eq!(
+            cw.history_size(),
+            4,
+            "every row wrapped and nothing was blank"
+        );
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(3), Column(4)));
+        cw.resize(CrosswordsSize::new(10, 4));
+
+        let text = |line: i32| -> String {
+            let row = &cw.grid[Line(line)];
+            (0..row.len())
+                .map(|c| row[Column(c)].c())
+                .collect::<String>()
+                .trim_end_matches('\0')
+                .to_string()
+        };
+        assert_eq!(cw.history_size(), 0, "the pushed rows came back");
+        for (i, word) in rows.iter().enumerate() {
+            assert_eq!(text(i as i32), *word);
+        }
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(3), Column(9)));
+        assert!(!cw.grid.cursor.should_wrap);
+    }
+
     // A resize that keeps the columns rotates the selection with the
     // rows it covers, through a grow that pulls history back and a
     // shrink that pushes rows into it.

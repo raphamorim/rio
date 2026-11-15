@@ -145,6 +145,10 @@ impl Grid<Square> {
             base_abs: self.lines_evicted(),
             new_pos: vec![-1; old_len],
         });
+        // Rows of the new buffer whose head was in history. They are a
+        // prefix of `reversed`, so this count tells how many history
+        // rows a shorter buffer would pull onto the screen.
+        let mut history_rows = 0usize;
 
         for (i, mut row) in rows.drain(..).enumerate().rev() {
             // Index of the merge target while `last_row` holds the
@@ -156,6 +160,7 @@ impl Grid<Square> {
                 Some(last_row) if should_reflow(last_row) => last_row,
                 _ => {
                     reversed.push(row);
+                    history_rows += (i >= self.lines) as usize;
                     if let Some(r) = remap.as_mut() {
                         r.new_pos[old_len - 1 - i] = (reversed.len() - 1) as i64;
                     }
@@ -233,11 +238,17 @@ impl Grid<Square> {
                     (1, last_len + col)
                 };
 
-                // Clamp to the last column, if no content was reflown with the cursor.
+                // A cursor right after the cells that left, with nothing
+                // after it on this row, follows them: it is after them
+                // on the previous row. Only when they filled that row to
+                // the last column does it stay on it with a pending wrap.
                 if target_col == 0 && row.is_clear() {
-                    self.cursor.should_wrap = true;
-                    target_col = columns - 1;
-                    line_delta += 1;
+                    line_delta = 1;
+                    target_col = last_len + moved;
+                    if target_col >= columns {
+                        self.cursor.should_wrap = true;
+                        target_col = columns - 1;
+                    }
                 }
                 self.cursor.pos.col = Column(target_col);
 
@@ -274,6 +285,7 @@ impl Grid<Square> {
             }
 
             reversed.push(row);
+            history_rows += (i >= self.lines) as usize;
             if !first_cell_moved {
                 if let Some(r) = remap.as_mut() {
                     r.new_pos[old_len - 1 - i] = (reversed.len() - 1) as i64;
@@ -288,26 +300,36 @@ impl Grid<Square> {
             reversed.resize_with(self.lines, || Row::new(columns));
         }
 
-        // Pull content down to put cursor in correct position, or move cursor up if there's no
-        // more lines to delete below the cursor. Only blank bottom rows
-        // are removed: a grow must not destroy output. When the rows
-        // under the cursor hold content, the cursor moves up instead,
-        // and a cursor already on the top row stays there while its text
-        // is the row above the screen.
+        // The cursor moved up onto the joined row. Nothing is dropped
+        // under it to keep its screen row: a grow must not destroy
+        // output, and blank rows under the cursor are room, given back
+        // below. A cursor already on the top row stays there while its
+        // text is the row above the screen.
         if cursor_line_delta != 0 {
-            let cursor_buffer_line = self.lines - self.cursor.pos.row.0 as usize - 1;
-            let blank_tail = reversed
-                .iter()
-                .rev()
-                .take_while(|row| row.is_clear())
-                .count();
-            let available = min(
-                min(cursor_buffer_line, reversed.len() - self.lines),
-                blank_tail,
-            );
-            let overflow = cursor_line_delta.saturating_sub(available);
-            reversed.truncate(reversed.len() + overflow - cursor_line_delta);
-            self.cursor.pos.row = max(self.cursor.pos.row - overflow, Line(0));
+            self.cursor.pos.row =
+                max(self.cursor.pos.row - cursor_line_delta as i32, Line(0));
+        }
+
+        // The mirror of the room a shrink takes: rows a rejoin frees
+        // slide history onto the screen only when the screen is full
+        // to the bottom. A blank row under the cursor is room the
+        // shrink paid with, which means it pushed nothing into history,
+        // so every history row that slid on is pushed back out by a
+        // blank row at the bottom and the cursor goes up with its text.
+        // Cleared output thus stays cleared across a shrink and grow.
+        // A cursor on a row that itself came from history keeps it.
+        let history_after = reversed.len() - self.lines;
+        let pulled = history_rows.saturating_sub(history_after);
+        let cursor_row = self.cursor.pos.row.0 as usize;
+        let has_room = cursor_row + 1 < self.lines
+            && reversed.last().is_some_and(|row| row.is_clear());
+        let given_back = if has_room { min(pulled, cursor_row) } else { 0 };
+        if given_back > 0 {
+            reversed.extend((0..given_back).map(|_| Row::new(columns)));
+            self.cursor.pos.row -= given_back as i32;
+            if self.display_offset > 0 {
+                self.display_offset += given_back;
+            }
         }
 
         // Restore oldest-first order in place and fill all rows that are
