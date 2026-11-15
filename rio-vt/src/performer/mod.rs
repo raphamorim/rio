@@ -384,6 +384,11 @@ where
 
         'write_many: while let Some(mut current) = state.take_current() {
             'write_one: loop {
+                // An empty input would read as a full PTY below and block every later one.
+                if current.finished() {
+                    state.goto_next();
+                    break 'write_one;
+                }
                 match self.pty.writer().write(current.remaining_bytes()) {
                     Ok(0) => {
                         state.set_current(Some(current));

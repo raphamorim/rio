@@ -608,3 +608,14 @@ fn sync_hold_times_out_and_wakes_the_renderer() {
     );
     assert!(!terminal.lock().synchronized_output());
 }
+
+#[test]
+fn an_empty_input_does_not_hold_back_the_next_one() {
+    let mut machine = machine(Vec::new(), None);
+    let mut state = State::default();
+    state.write_list.push_back(Cow::Borrowed(b""));
+    state.write_list.push_back(Cow::Borrowed(b"ls\r"));
+    machine.pty_write(&mut state).unwrap();
+    assert_eq!(machine.pty.writer.bytes, b"ls\r");
+    assert!(!state.needs_write());
+}
