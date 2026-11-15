@@ -144,7 +144,7 @@ const DEFAULT_CONTEXT_CAPACITY: usize = 28;
 /// started.
 #[derive(Debug, Clone, Copy)]
 struct BorderDrag {
-    grid: u64,
+    grid: usize,
     shape: u64,
     state: ResizeState,
 }
@@ -976,7 +976,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         std::mem::replace(&mut grid.bell, false)
     }
 
-    fn tab_index_for_grid(&self, id: u64) -> Option<usize> {
+    fn tab_index_for_grid(&self, id: usize) -> Option<usize> {
         self.contexts.iter().position(|grid| grid.id() == id)
     }
 
