@@ -268,12 +268,15 @@ impl Listener {
                 self.delegate.clipboard_write(self.surface_id, kind, text);
             }
             RioEvent::PtyWrite(_, text) => {
-                #[cfg(feature = "pty")]
-                if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
-                    let _ = channel.send(Msg::Input(Cow::Owned(text.into_bytes())));
-                }
-                #[cfg(not(feature = "pty"))]
-                self.delegate.output(self.surface_id, text.as_bytes());
+                self.write_to_child(Cow::Owned(text.into_bytes()));
+            }
+            // Delivered under the terminal lock, from the parser, so the
+            // state is current and this orders with `Surface::set_focus`,
+            // which also writes under the lock.
+            RioEvent::FocusReport(_, focused) => {
+                self.write_to_child(Cow::Borrowed(
+                    rio_vt::crosswords::focus_report(focused).as_bytes(),
+                ));
             }
             RioEvent::CloseTerminal(_) | RioEvent::Exit => {
                 self.delegate.close_surface(self.surface_id);
@@ -318,6 +321,19 @@ impl Listener {
             }
             _ => {}
         }
+    }
+}
+
+impl Listener {
+    /// Bytes the terminal wants the child to see: the PTY on `pty` builds,
+    /// the delegate otherwise.
+    fn write_to_child(&self, bytes: Cow<'static, [u8]>) {
+        #[cfg(feature = "pty")]
+        if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
+            let _ = channel.send(Msg::Input(bytes));
+        }
+        #[cfg(not(feature = "pty"))]
+        self.delegate.output(self.surface_id, &bytes);
     }
 }
 
@@ -733,8 +749,10 @@ impl Surface {
     /// this leaves the view and the selection alone; losing focus must not
     /// scroll or deselect.
     pub fn set_focus(&self, focused: bool) {
-        let report = self.terminal.lock().set_focus(focused);
-        if let Some(report) = report {
+        // Written under the lock, like the reply to a program enabling
+        // focus events, so the two cannot cross.
+        let mut terminal = self.terminal.lock();
+        if let Some(report) = terminal.set_focus(focused) {
             self.send(report.as_bytes());
         }
     }

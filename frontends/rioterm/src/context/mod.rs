@@ -742,7 +742,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.sync_current_route();
             return;
         }
-        self.step_tab(true);
+        if !self.step_tab(true) {
+            return;
+        }
         // Make sure first split is selected - get the root key
         let current_tab = &mut self.contexts[self.current_index];
         if let Some(root) = current_tab.root {
@@ -757,7 +759,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             self.sync_current_route();
             return;
         }
-        self.step_tab(false);
+        if !self.step_tab(false) {
+            return;
+        }
         // Make sure last split is selected - get the last key in order
         let current_tab = &mut self.contexts[self.current_index];
         let ordered_keys = current_tab.get_ordered_keys();
@@ -1122,8 +1126,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     /// The report goes down the same channel as keys, so a key typed
     /// right after a focus change cannot overtake it.
     fn write_focus(context: &Context<T>, focused: bool) {
-        let report = context.terminal.lock().set_focus(focused);
-        if let Some(report) = report {
+        // Under the lock, like the reply to a program enabling focus
+        // events, so the two cannot cross.
+        let mut terminal = context.terminal.lock();
+        if let Some(report) = terminal.set_focus(focused) {
             context.messenger.send_write(report.as_bytes());
         }
     }
@@ -1374,16 +1380,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &cloned_config,
         ) {
             Ok(new_context) => {
-                let new_route_id = new_context.route_id;
                 if split_down {
                     self.contexts[self.current_index].split_down(new_context, sugarloaf);
                 } else {
                     self.contexts[self.current_index].split_right(new_context, sugarloaf);
                 }
 
-                self.current_route = new_route_id;
-                self.sync_window_title();
-                self.sync_focus_reports();
+                // The grid's current pane is the new split when the
+                // split took, and the old one when it did not.
+                self.sync_current_route();
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1439,16 +1444,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             &context_manager_config,
         ) {
             Ok(new_context) => {
-                let new_route_id = new_context.route_id;
                 if split_down {
                     self.contexts[self.current_index].split_down(new_context, sugarloaf);
                 } else {
                     self.contexts[self.current_index].split_right(new_context, sugarloaf);
                 }
 
-                self.current_route = new_route_id;
-                self.sync_window_title();
-                self.sync_focus_reports();
+                // The grid's current pane is the new split when the
+                // split took, and the old one when it did not.
+                self.sync_current_route();
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1606,8 +1610,17 @@ pub mod test {
 
     impl EventListener for FocusRecorder {
         fn send_event(&self, event: RioEvent, _: WindowId) {
-            if let RioEvent::PtyWrite(route, text) = event {
-                self.0.lock().unwrap().push((route, text));
+            match event {
+                RioEvent::PtyWrite(route, text) => {
+                    self.0.lock().unwrap().push((route, text));
+                }
+                RioEvent::FocusReport(route, focused) => {
+                    self.0
+                        .lock()
+                        .unwrap()
+                        .push((route, format!("reply:{focused}")));
+                }
+                _ => {}
             }
         }
     }
@@ -1647,14 +1660,14 @@ pub mod test {
         let lost = vec![b"\x1b[O".to_vec()];
         let none: Vec<Vec<u8>> = Vec::new();
 
-        // The window was never focused: enabling the mode told each
-        // program it is unfocused, as a terminal reply, and the switch
+        // The window was never focused: enabling the mode asked for a
+        // reply telling each program it is unfocused, and the switch
         // add_context made reported nothing.
         assert_eq!(
             *recorder.0.lock().unwrap(),
             vec![
-                (routes[0], "\x1b[O".to_string()),
-                (routes[1], "\x1b[O".to_string())
+                (routes[0], "reply:false".to_string()),
+                (routes[1], "reply:false".to_string())
             ]
         );
         assert_eq!(drain(&inputs[0]), none);

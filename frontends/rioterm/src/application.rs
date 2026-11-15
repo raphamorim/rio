@@ -1058,6 +1058,25 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::FocusReport(route_id, _)) => {
+                if let Some(route) = self.router.routes.get_mut(&window_id) {
+                    if let Some(item) = route
+                        .window
+                        .screen
+                        .context_manager
+                        .get_by_route_id(route_id)
+                    {
+                        // Read and written under the lock, like the
+                        // context manager's own reports, so a tab switch
+                        // between the program's request and this reply
+                        // cannot leave it with a stale state.
+                        let terminal = item.val.terminal.lock();
+                        item.val
+                            .messenger
+                            .send_write(terminal.focus_report().as_bytes());
+                    }
+                }
+            }
             RioEventType::Rio(RioEvent::PtyWrite(route_id, text)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     // Route reply bytes (CSI / OSC responses) back to the

@@ -508,8 +508,9 @@ where
     inactive_keyboard_mode_idx: usize,
 }
 
-/// The focus event a program asked for with DECSET 1004.
-fn focus_report(focused: bool) -> &'static str {
+/// The focus event a program asked for with DECSET 1004: CSI I when
+/// focused, CSI O when not.
+pub fn focus_report(focused: bool) -> &'static str {
     if focused {
         "\x1b[I"
     } else {
@@ -2476,6 +2477,12 @@ impl<U: EventListener> Crosswords<U> {
             .then(|| focus_report(focused))
     }
 
+    /// The focus report for the current state, for a host answering
+    /// [`RioEvent::FocusReport`] under the terminal lock.
+    pub fn focus_report(&self) -> &'static str {
+        focus_report(self.focused)
+    }
+
     pub fn mode(&self) -> Mode {
         self.mode
     }
@@ -2987,17 +2994,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     .send_event(RioEvent::MouseCursorDirty, self.window_id);
             }
             NamedPrivateMode::ReportFocusInOut => {
-                self.mode.insert(Mode::FOCUS_IN_OUT);
                 // The program learns where it stands right away: one
                 // started in a background pane would otherwise believe
-                // it is focused until the user looks away from it.
-                self.event_proxy.send_event(
-                    RioEvent::PtyWrite(
-                        self.route_id,
-                        focus_report(self.focused).to_string(),
-                    ),
-                    self.window_id,
-                );
+                // it is focused until the user looks away from it. A
+                // repeat of the enable, as editors send after a shell
+                // escape, is not news.
+                if !self.mode.contains(Mode::FOCUS_IN_OUT) {
+                    self.mode.insert(Mode::FOCUS_IN_OUT);
+                    self.event_proxy.send_event(
+                        RioEvent::FocusReport(self.route_id, self.focused),
+                        self.window_id,
+                    );
+                }
             }
             NamedPrivateMode::BracketedPaste => self.mode.insert(Mode::BRACKETED_PASTE),
             // Mouse encodings are mutually exclusive.
@@ -6114,36 +6122,39 @@ mod tests {
     #[test]
     fn focus_is_reported_only_while_the_program_asks() {
         let (mut cw, events) = make_crosswords_with_events(7);
-        let reports = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
+        // Enable replies, as (route, focused) the host answers with.
+        let replies = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
             events
                 .borrow()
                 .iter()
                 .filter_map(|e| match e {
-                    RioEvent::PtyWrite(route, text) => Some((*route, text.clone())),
+                    RioEvent::FocusReport(route, focused) => Some((*route, *focused)),
+                    RioEvent::PtyWrite(..) => panic!("focus never rides PtyWrite"),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
         };
         let mut parser = crate::performer::handler::Processor::default();
-        let gained = (7, "\x1b[I".to_string());
-        let lost = (7, "\x1b[O".to_string());
 
         // Without the mode, focus is tracked but nothing is owed.
         assert_eq!(cw.set_focus(true), None);
         assert_eq!(cw.set_focus(false), None);
-        assert!(reports(&events).is_empty(), "{:?}", events.borrow());
+        assert!(replies(&events).is_empty(), "{:?}", events.borrow());
 
-        // Enabling the mode replies with the current state (unfocused);
-        // then a repeat says nothing and a change hands the host the
+        // Enabling the mode asks the host to reply with the current state
+        // (unfocused); then a repeat of the enable is not news, a repeat
+        // of the state says nothing, and a change hands the host the
         // report to write.
-        parser.advance(&mut cw, b"\x1b[?1004h");
-        assert_eq!(reports(&events), vec![lost.clone()]);
+        parser.advance(&mut cw, b"\x1b[?1004h\x1b[?1004h");
+        assert_eq!(replies(&events), vec![(7, false)]);
+        assert_eq!(cw.focus_report(), "\x1b[O");
         assert_eq!(cw.set_focus(false), None);
         assert_eq!(cw.set_focus(true), Some("\x1b[I"));
+        assert_eq!(cw.focus_report(), "\x1b[I");
 
-        // Enabling while focused says so.
+        // Enabling again after a disable, while focused, says so.
         parser.advance(&mut cw, b"\x1b[?1004l\x1b[?1004h");
-        assert_eq!(reports(&events), vec![lost, gained]);
+        assert_eq!(replies(&events), vec![(7, false), (7, true)]);
 
         parser.advance(&mut cw, b"\x1b[?1004l");
         assert_eq!(cw.set_focus(false), None);

@@ -245,6 +245,15 @@ pub enum RioEvent {
     /// even if the user focuses a different split mid-flight.
     PtyWrite(usize, String),
 
+    /// The program on `route_id` just enabled focus events (DECSET 1004)
+    /// and is owed the current state, `focused` at the time. A host that
+    /// also writes its own focus reports answers with
+    /// `Crosswords::focus_report()` read under the terminal lock and
+    /// written on the same path as those reports, so the two can never
+    /// reach the program out of order; one that handles events
+    /// synchronously under the lock can use `focused` as is.
+    FocusReport(usize, bool),
+
     /// Request to write the text area size to the PTY of `route_id`.
     TextAreaSizeRequest(
         usize,
@@ -327,6 +336,9 @@ impl Debug for RioEvent {
             }
             RioEvent::PtyWrite(route_id, text) => {
                 write!(f, "PtyWrite(route={route_id}, {text})")
+            }
+            RioEvent::FocusReport(route_id, focused) => {
+                write!(f, "FocusReport(route={route_id}, focused={focused})")
             }
             RioEvent::Title(route_id, title) => {
                 write!(f, "Title route {route_id} ({title})")
