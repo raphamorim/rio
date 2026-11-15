@@ -30,7 +30,7 @@ if [ "$current" = "$version" ]; then
     exit 1
 fi
 # The changelog lives in the tree too, so the tag carries its own notes.
-if ! grep -q "^## $version\( \|\$\)" CHANGELOG.md; then
+if ! grep -Eq "^## $version( |\$)" CHANGELOG.md; then
     echo "error: CHANGELOG.md has no '## $version' entry; write it first" >&2
     exit 1
 fi
