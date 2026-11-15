@@ -76,6 +76,7 @@ int main(void) {
       paste_surface ? rio_render_state_new(paste_surface) : NULL;
   int found_paste = 0;
   int found_bracketed = 0;
+  int found_focus = 0;
   if (paste_surface) {
     const char *pasted = "librio-pgate";
     rio_surface_paste(paste_surface, pasted, strlen(pasted));
@@ -95,6 +96,31 @@ int main(void) {
     const char *bracketed = "librio-bgate";
     rio_surface_paste(paste_surface, bracketed, strlen(bracketed));
     found_bracketed = wait_for(paste_state, "[200~librio-bgate");
+
+    /* Focus events (mode 1004) the same way. Until cat has copied the
+     * sequence back, a focus change reports nothing, so keep toggling
+     * until one report is echoed as ^[[O. */
+    const char *focus = "\x1b[?1004h\n";
+    rio_surface_text(paste_surface, focus, strlen(focus));
+    for (int attempt = 0; attempt < 200 && !found_focus; attempt++) {
+      rio_surface_set_focus(paste_surface, true);
+      rio_surface_set_focus(paste_surface, false);
+      rio_render_state_update(paste_state);
+      uint16_t lines = rio_render_state_lines(paste_state);
+      uint16_t cols = rio_render_state_columns(paste_state);
+      for (uint16_t line = 0; line < lines && !found_focus; line++) {
+        char text[512] = {0};
+        uint16_t limit = cols < 511 ? cols : 511;
+        for (uint16_t col = 0; col < limit; col++) {
+          rio_cell_s cell = rio_render_state_cell(paste_state, line, col);
+          text[col] = (cell.codepoint >= 32 && cell.codepoint < 127)
+                          ? (char)cell.codepoint
+                          : ' ';
+        }
+        found_focus = strstr(text, "^[[O") != NULL;
+      }
+      usleep(25 * 1000);
+    }
   }
 
   rio_cursor_s cursor = rio_render_state_cursor(state);
@@ -106,9 +132,9 @@ int main(void) {
   int image_resolved =
       rio_render_state_image_placement(state, 0, 8.0f, 16.0f, &image_placement);
   printf("wakeups=%d cursor=%u,%u found=%d found_paste=%d found_bracketed=%d "
-         "images=%zu images_generation=%llu image_resolved=%d\n",
+         "found_focus=%d images=%zu images_generation=%llu image_resolved=%d\n",
          atomic_load(&wakeups), cursor.line, cursor.column, found,
-         found_paste, found_bracketed, images,
+         found_paste, found_bracketed, found_focus, images,
          (unsigned long long)images_generation, image_resolved);
 
   if (paste_state) {
@@ -121,7 +147,7 @@ int main(void) {
   rio_surface_free(surface);
   rio_engine_free(engine);
 
-  if (!found || !found_paste || !found_bracketed ||
+  if (!found || !found_paste || !found_bracketed || !found_focus ||
       atomic_load(&wakeups) == 0 || images != 0 || images_generation != 0 ||
       image_resolved) {
     fprintf(stderr, "gate failed\n");

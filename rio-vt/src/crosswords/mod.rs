@@ -2443,6 +2443,22 @@ impl<U: EventListener> Crosswords<U> {
         )
     }
 
+    /// Tell the program whether its terminal has keyboard focus. When it
+    /// asked for focus events (DECSET 1004) this sends CSI I on gain and
+    /// CSI O on loss; otherwise nothing. To a program, a pane in a
+    /// background tab or split is unfocused, so hosts call this for their
+    /// own pane switches as well as for the window.
+    pub fn report_focus(&self, focused: bool) {
+        if !self.mode.contains(Mode::FOCUS_IN_OUT) {
+            return;
+        }
+        let text = if focused { "\x1b[I" } else { "\x1b[O" };
+        self.event_proxy.send_event(
+            RioEvent::PtyWrite(self.route_id, text.to_string()),
+            self.window_id,
+        );
+    }
+
     pub fn mode(&self) -> Mode {
         self.mode
     }
@@ -6064,6 +6080,38 @@ mod tests {
                 self.0.lock().unwrap().push(text);
             }
         }
+    }
+
+    #[test]
+    fn focus_is_reported_only_while_the_program_asks() {
+        let (mut cw, events) = make_crosswords_with_events(7);
+        let reports = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
+            events
+                .borrow()
+                .iter()
+                .filter_map(|e| match e {
+                    RioEvent::PtyWrite(route, text) => Some((*route, text.clone())),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut parser = crate::performer::handler::Processor::default();
+
+        cw.report_focus(true);
+        cw.report_focus(false);
+        assert!(reports(&events).is_empty(), "{:?}", events.borrow());
+
+        parser.advance(&mut cw, b"\x1b[?1004h");
+        cw.report_focus(false);
+        cw.report_focus(true);
+        assert_eq!(
+            reports(&events),
+            vec![(7, "\x1b[O".to_string()), (7, "\x1b[I".to_string())]
+        );
+
+        parser.advance(&mut cw, b"\x1b[?1004l");
+        cw.report_focus(false);
+        assert_eq!(reports(&events).len(), 2);
     }
 
     #[test]

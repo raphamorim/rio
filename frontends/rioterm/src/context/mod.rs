@@ -142,6 +142,12 @@ pub struct ContextManager<T: EventListener> {
     contexts: SmallVec<[ContextGrid<T>; DEFAULT_CONTEXT_CAPACITY]>,
     current_index: usize,
     current_route: usize,
+    /// Window focus as the platform last reported it. With the active
+    /// pane it decides which pane, if any, a program should consider
+    /// focused.
+    window_focused: bool,
+    /// The pane last told it has focus (CSI I), and so owed a CSI O.
+    focused_route: Option<usize>,
     #[allow(unused)]
     capacity: usize,
     event_proxy: T,
@@ -476,6 +482,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         let mut manager = ContextManager {
             current_index: 0,
             current_route: 0,
+            window_focused: false,
+            focused_route: None,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 scaled_margin,
@@ -518,6 +526,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         Ok(ContextManager {
             current_index: 0,
             current_route: 0,
+            window_focused: false,
+            focused_route: None,
             contexts: smallvec![ContextGrid::new(
                 initial_context,
                 Margin::default(),
@@ -1078,6 +1088,35 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             Self::refresh_item_title(&template, context, None);
         }
         self.sync_window_title();
+        self.sync_focus_reports();
+    }
+
+    /// Window focus from the platform. Together with the active pane it
+    /// decides which program is told it has focus.
+    pub fn set_window_focus(&mut self, focused: bool) {
+        self.window_focused = focused;
+        self.sync_focus_reports();
+    }
+
+    /// To a program, focus means "my pane is the active one in a focused
+    /// window". Tell the pane that stops matching (CSI O) and the one that
+    /// starts (CSI I); each terminal speaks only when its program asked for
+    /// focus events. Idempotent, so every active-pane change calls it; a
+    /// pane that died owes nothing.
+    fn sync_focus_reports(&mut self) {
+        let wanted = self.window_focused.then(|| self.current().route_id);
+        if wanted == self.focused_route {
+            return;
+        }
+        if let Some(previous) = self.focused_route.take() {
+            if let Some(item) = self.get_by_route_id(previous) {
+                item.context().terminal.lock().report_focus(false);
+            }
+        }
+        if wanted.is_some() {
+            self.current().terminal.lock().report_focus(true);
+        }
+        self.focused_route = wanted;
     }
 
     #[inline]
@@ -1334,6 +1373,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
                 self.current_route = new_route_id;
                 self.sync_window_title();
+                self.sync_focus_reports();
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1398,6 +1438,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
                 self.current_route = new_route_id;
                 self.sync_window_title();
+                self.sync_focus_reports();
             }
             Err(..) => {
                 tracing::error!("not able to create a new context");
@@ -1549,6 +1590,63 @@ pub fn process_open_url(
 pub mod test {
     use super::*;
     use crate::event::VoidListener;
+
+    #[derive(Clone, Default)]
+    struct FocusRecorder(std::sync::Arc<std::sync::Mutex<Vec<(usize, String)>>>);
+
+    impl EventListener for FocusRecorder {
+        fn send_event(&self, event: RioEvent, _: WindowId) {
+            if let RioEvent::PtyWrite(route, text) = event {
+                self.0.lock().unwrap().push((route, text));
+            }
+        }
+    }
+
+    // Focus follows the pane the user is looking at, not just the window:
+    // a tab switch tells the old pane it lost focus and the new one it
+    // gained it, when they asked for focus events.
+    #[test]
+    fn focus_reports_follow_tab_switches() {
+        use rio_backend::performer::handler::Processor;
+        let recorder = FocusRecorder::default();
+        let mut cm =
+            ContextManager::start_with_capacity(5, recorder.clone(), WindowId::from(0))
+                .unwrap();
+        cm.add_context(true, 0);
+        assert_eq!(cm.len(), 2);
+        let routes: Vec<usize> =
+            (0..2).map(|i| cm.contexts[i].current().route_id).collect();
+        for i in 0..2 {
+            let mut parser = Processor::default();
+            parser.advance(
+                &mut *cm.contexts[i].current_mut().terminal.lock(),
+                b"\x1b[?1004h",
+            );
+        }
+        // The window was never focused, so the switch add_context made
+        // reported nothing.
+        assert!(recorder.0.lock().unwrap().is_empty());
+
+        cm.set_window_focus(true); // tab 1 gains
+        cm.switch_to_prev(); // tab 1 loses, tab 0 gains
+        cm.set_window_focus(false); // tab 0 loses
+        cm.set_window_focus(false); // a repeat: nothing
+        cm.switch_to_next(); // unfocused window: nothing
+        cm.set_window_focus(true); // tab 1 gains
+
+        let gained = |r: usize| (r, "\x1b[I".to_string());
+        let lost = |r: usize| (r, "\x1b[O".to_string());
+        assert_eq!(
+            *recorder.0.lock().unwrap(),
+            vec![
+                gained(routes[1]),
+                lost(routes[1]),
+                gained(routes[0]),
+                lost(routes[0]),
+                gained(routes[1]),
+            ]
+        );
+    }
 
     #[test]
     fn test_capacity() {

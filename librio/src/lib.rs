@@ -427,6 +427,8 @@ fn trailing_url_punctuation(text: &str) -> usize {
 pub struct Surface {
     id: SurfaceId,
     alt_is_meta: std::sync::atomic::AtomicBool,
+    /// Focus as the host last reported it, so a repeat is not sent again.
+    focused: std::sync::atomic::AtomicBool,
     terminal: Arc<FairMutex<Crosswords<Listener>>>,
     /// Compiled URL detector, built on first hover. Hit-testing runs per
     /// pointer event, so the four lazy DFAs must not be rebuilt each time.
@@ -544,6 +546,7 @@ impl Surface {
                 id,
                 // Terminals default alt to meta; the host may override it.
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
+                focused: std::sync::atomic::AtomicBool::new(false),
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
@@ -628,6 +631,7 @@ impl Surface {
                 id,
                 // Terminals default alt to meta; the host may override it.
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
+                focused: std::sync::atomic::AtomicBool::new(false),
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
@@ -715,6 +719,21 @@ impl Surface {
 
     pub fn alt_is_meta(&self) -> bool {
         self.alt_is_meta.load(Ordering::Relaxed)
+    }
+
+    /// Tell the terminal whether this surface has keyboard focus. A program
+    /// that asked for focus events (DECSET 1004) gets CSI I or CSI O; one
+    /// that did not gets nothing. A surface starts unfocused, and a
+    /// repeated value is not reported again. Call it for window focus and
+    /// for the host's own tab or split switches alike: to the program, a
+    /// surface in a background tab is unfocused. Unlike [`Surface::write`]
+    /// this leaves the view and the selection alone; losing focus must not
+    /// scroll or deselect.
+    pub fn set_focus(&self, focused: bool) {
+        if self.focused.swap(focused, Ordering::Relaxed) == focused {
+            return;
+        }
+        self.terminal.lock().report_focus(focused);
     }
 
     /// Configure the default for grapheme cluster processing (DEC
@@ -1702,6 +1721,43 @@ mod tests {
         assert_eq!(surface.mode_bits() & (1 << 3), 1 << 3);
         surface.inject_output(b"\x1b[?1h\x1b[?1049h\x1b[?1000h");
         assert_eq!(surface.mode_bits(), 0b1111);
+    }
+
+    // Focus reports ride the terminal's reply path, so they reach the PTY
+    // without the typing side effects of write(). The sleeper child never
+    // reads; what lands in the grid is the tty's echo, ^[[I and ^[[O.
+    #[test]
+    fn focus_reports_reach_the_pty_once_per_change() {
+        let surface = quiet_surface(60, 10);
+        let mut state = RenderState::new(&surface);
+        std::thread::sleep(Duration::from_millis(150));
+        surface.inject_output(b"\x1b[?1004h");
+
+        // Unfocused from the start, so the first false is not a change;
+        // the second true is a repeat.
+        surface.set_focus(false);
+        surface.set_focus(true);
+        surface.set_focus(true);
+        surface.set_focus(false);
+
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let text = loop {
+            state.update();
+            let text = (0..state.lines())
+                .map(|i| state.text_row(i))
+                .collect::<Vec<_>>()
+                .join("\n");
+            if text.contains("^[[O") {
+                break text;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "focus reports never echoed: {text:?}"
+            );
+            std::thread::sleep(Duration::from_millis(25));
+        };
+        assert_eq!(text.matches("^[[I").count(), 1, "{text:?}");
+        assert_eq!(text.matches("^[[O").count(), 1, "{text:?}");
     }
 
     // paste() keys off live terminal state: markers go to the child only
