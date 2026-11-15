@@ -983,8 +983,11 @@ impl Parser {
                 let valid_bytes = err.valid_up_to();
 
                 // If we have any valid bytes, that means we partially copied another
-                // utf8 character into `partial_utf8`. Since we only care about the
-                // first character, we just ignore the rest.
+                // utf8 character into `partial_utf8`. Only the first character is
+                // ours to print here; whatever follows it goes back to the main
+                // loop, so the bytes consumed are the first character's, not every
+                // valid byte. Consuming them all dropped the characters between the
+                // completed one and the next partial sequence.
                 if valid_bytes > 0 {
                     // SAFETY: `valid_bytes > 0` and the slice up to `valid_bytes` was
                     // reported as valid UTF-8, so it contains at least one full
@@ -998,7 +1001,7 @@ impl Parser {
                     performer.print(c);
 
                     self.partial_utf8_len = 0;
-                    return valid_bytes - old_bytes;
+                    return c.len_utf8() - old_bytes;
                 }
 
                 match err.error_len() {
@@ -2723,6 +2726,49 @@ mod tests {
         assert_eq!(dispatcher.dispatched.len(), 2);
         assert_eq!(dispatcher.dispatched[0], Sequence::Print('ĸ'));
         assert_eq!(dispatcher.dispatched[1], Sequence::Print('🎉'));
+    }
+
+    // A chunk that completes the pending character, carries a whole
+    // character after it, and ends in the start of a third. Only the
+    // completed character is printed from the partial buffer; the one
+    // after it must reach the main loop. It used to be consumed with
+    // the partial buffer and never printed.
+    #[test]
+    fn partial_utf8_keeps_the_character_after_the_completed_one() {
+        // "ôté"
+        const INPUT: &[u8] = b"\xC3\xB4t\xC3\xA9";
+
+        let mut dispatcher = Dispatcher::default();
+        let mut parser = Parser::default();
+
+        parser.advance(&mut dispatcher, &INPUT[..1]);
+        parser.advance(&mut dispatcher, &INPUT[1..4]);
+        parser.advance(&mut dispatcher, &INPUT[4..]);
+
+        assert_eq!(
+            dispatcher.dispatched,
+            vec![
+                Sequence::Print('ô'),
+                Sequence::Print('t'),
+                Sequence::Print('é')
+            ]
+        );
+    }
+
+    // Every way of chunking a text with one to four byte characters
+    // prints exactly its characters, in order.
+    #[test]
+    fn every_chunking_prints_every_character() {
+        let text = "déjà vu à côté, 日本語 and 🎉🚀 then ĸ end";
+        let want: Vec<Sequence> = text.chars().map(Sequence::Print).collect();
+        for chunk in 1..=9 {
+            let mut dispatcher = Dispatcher::default();
+            let mut parser = Parser::default();
+            for bytes in text.as_bytes().chunks(chunk) {
+                parser.advance(&mut dispatcher, bytes);
+            }
+            assert_eq!(dispatcher.dispatched, want, "chunks of {chunk} bytes");
+        }
     }
 
     #[test]
