@@ -4,7 +4,7 @@
 # tagged tree carries its own release entry (Flathub builds from the
 # tag; a post-tag fixup is forever one release behind).
 #
-# Usage: misc/prepare-release.sh 0.5.26
+# Usage: write the CHANGELOG.md entry, then misc/prepare-release.sh 0.5.26
 # Then review the diff, commit, tag vX.Y.Z, and push both.
 set -eu
 
@@ -27,6 +27,11 @@ if [ -z "$current" ]; then
 fi
 if [ "$current" = "$version" ]; then
     echo "error: workspace is already at $version" >&2
+    exit 1
+fi
+# The changelog lives in the tree too, so the tag carries its own notes.
+if ! grep -q "^## $version\( \|\$\)" CHANGELOG.md; then
+    echo "error: CHANGELOG.md has no '## $version' entry; write it first" >&2
     exit 1
 fi
 
