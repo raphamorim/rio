@@ -376,276 +376,210 @@ fn test_context_dimension_update_dimensions() {
     assert_eq!(cd.lines, 12); // 825/66 = 12.5 → 12
 }
 
-/// Reproduces the bug: after resizing a panel to 80%/20% and then
-/// resizing the window, the panel proportions should be preserved
-/// but they are not because set_panel_size uses flex_shrink: 0.0.
-#[test]
-fn test_panel_resize_preserves_proportions_on_window_resize() {
-    use taffy::{FlexDirection, TaffyTree};
+// Divider proportions through the grid itself: a moved divider keeps
+// its ratio when the window grows or shrinks, and a split inside a
+// resized pane keeps the parent's split. Both go through
+// `set_panel_size` and `resize`, the code the app runs, rather than a
+// hand-built taffy tree.
+mod proportions {
+    use super::*;
+    use crate::context::{create_mock_context, ContextDimension};
+    use rio_backend::config::layout::Panel;
+    use rio_backend::event::{VoidListener, WindowId};
 
-    let mut tree: TaffyTree<()> = TaffyTree::new();
+    type Grid = ContextGrid<VoidListener>;
 
-    let initial_width = 1000.0_f32;
+    const WIDTH: f32 = 1200.0;
+    const HEIGHT: f32 = 800.0;
 
-    // Root container (simulates the grid root after margin subtraction)
-    let root = tree
-        .new_leaf(Style {
-            display: Display::Flex,
-            flex_direction: FlexDirection::Row,
-            size: geometry::Size {
-                width: length(initial_width),
-                height: length(800.0_f32),
-            },
-            ..Default::default()
-        })
-        .unwrap();
+    fn dimension(scale: f32) -> ContextDimension {
+        let text = TextDimensions {
+            scale,
+            width: 18.,
+            height: 9.,
+        };
+        ContextDimension::build(
+            WIDTH,
+            HEIGHT,
+            text,
+            cell_for(text),
+            1.0,
+            14.0,
+            Margin::default(),
+        )
+    }
 
-    // Two panels, initially equal (flex_grow: 1.0)
-    let left = tree
-        .new_leaf(Style {
-            display: Display::Flex,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
-            ..Default::default()
-        })
-        .unwrap();
-    let right = tree
-        .new_leaf(Style {
-            display: Display::Flex,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
-            ..Default::default()
-        })
-        .unwrap();
+    fn grid(scale: f32) -> Grid {
+        let ctx =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, dimension(scale));
+        let mut grid =
+            ContextGrid::new(ctx, Margin::default(), [0.; 4], [0.; 4], Panel::default());
+        grid.compute_layout().unwrap();
+        grid
+    }
 
-    tree.add_child(root, left).unwrap();
-    tree.add_child(root, right).unwrap();
+    fn split(grid: &mut Grid, right: bool) -> NodeId {
+        let id = grid.inner.len();
+        let ctx = create_mock_context(
+            VoidListener {},
+            WindowId::from(0),
+            id,
+            dimension(grid.scale),
+        );
+        if right {
+            grid.split_right(ctx);
+        } else {
+            grid.split_down(ctx);
+        }
+        grid.current
+    }
 
-    // Compute initial layout — should be 500/500
-    tree.compute_layout(
-        root,
-        geometry::Size {
-            width: AvailableSpace::MaxContent,
-            height: AvailableSpace::MaxContent,
-        },
-    )
-    .unwrap();
-    let left_w = tree.layout(left).unwrap().size.width;
-    let right_w = tree.layout(right).unwrap().size.width;
-    assert!(
-        (left_w - 500.0).abs() < 1.0,
-        "left should be ~500, got {left_w}"
-    );
-    assert!(
-        (right_w - 500.0).abs() < 1.0,
-        "right should be ~500, got {right_w}"
-    );
+    /// A pane's extent along the row including its margins: where the
+    /// dividers sit, and what a window resize keeps in proportion.
+    fn width(grid: &Grid, node: NodeId) -> f32 {
+        let m = grid.panel_config.margin;
+        grid.inner[&node].layout_rect[2] + (m.left + m.right) * grid.scale
+    }
 
-    // Simulate move_divider: set left to 80%, right to 20%
-    // Uses flex_grow proportional to the size so panels scale on resize
-    let mut left_style = tree.style(left).unwrap().clone();
-    left_style.flex_basis = length(0.0_f32);
-    left_style.flex_grow = 800.0;
-    left_style.flex_shrink = 1.0;
-    tree.set_style(left, left_style).unwrap();
+    fn height(grid: &Grid, node: NodeId) -> f32 {
+        let m = grid.panel_config.margin;
+        grid.inner[&node].layout_rect[3] + (m.top + m.bottom) * grid.scale
+    }
 
-    let mut right_style = tree.style(right).unwrap().clone();
-    right_style.flex_basis = length(0.0_f32);
-    right_style.flex_grow = 200.0;
-    right_style.flex_shrink = 1.0;
-    tree.set_style(right, right_style).unwrap();
+    /// The pair keeps `ratio` (first over second) within the pixel
+    /// taffy rounds each size to.
+    #[track_caller]
+    fn assert_split(first: f32, second: f32, ratio: f32) {
+        let expected = (first + second) * ratio / (1.0 + ratio);
+        assert!(
+            (first - expected).abs() <= 1.5,
+            "ratio {ratio:.3} became {:.3}: {first} of {}, expected {expected:.1}",
+            first / second,
+            first + second
+        );
+    }
 
-    // Verify 80/20 split
-    tree.compute_layout(
-        root,
-        geometry::Size {
-            width: AvailableSpace::MaxContent,
-            height: AvailableSpace::MaxContent,
-        },
-    )
-    .unwrap();
-    let left_w = tree.layout(left).unwrap().size.width;
-    let right_w = tree.layout(right).unwrap().size.width;
-    assert!(
-        (left_w - 800.0).abs() < 1.0,
-        "left should be 800, got {left_w}"
-    );
-    assert!(
-        (right_w - 200.0).abs() < 1.0,
-        "right should be 200, got {right_w}"
-    );
+    #[track_caller]
+    fn assert_px(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() <= 1.0,
+            "expected {expected}px, got {actual}px"
+        );
+    }
 
-    // Now resize the window to 1200px (simulates try_update_size)
-    let new_width = 1200.0;
-    let mut root_style = tree.style(root).unwrap().clone();
-    root_style.size.width = length(new_width);
-    tree.set_style(root, root_style).unwrap();
+    // Taffy shares negative space by the content-box basis, so without
+    // the shrink weighting a padded pane kept more than its share and
+    // the ratio drifted by up to 6% at scale 2 when the window halved.
+    #[test]
+    fn a_moved_divider_keeps_its_ratio_through_window_resizes() {
+        for scale in [1.0, 2.0] {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            for _ in 0..4 {
+                assert!(grid.move_divider_right(40.0));
+            }
+            let ratio = width(&grid, left) / width(&grid, right);
+            assert!(ratio > 1.5, "the divider moved: {ratio}");
 
-    tree.compute_layout(
-        root,
-        geometry::Size {
-            width: AvailableSpace::MaxContent,
-            height: AvailableSpace::MaxContent,
-        },
-    )
-    .unwrap();
+            for (w, h) in [
+                (WIDTH + 600.0, HEIGHT),
+                (WIDTH / 2.0, HEIGHT),
+                (WIDTH / 3.0, HEIGHT * 2.0),
+                (WIDTH, HEIGHT),
+            ] {
+                grid.resize(w, h);
+                assert_split(width(&grid, left), width(&grid, right), ratio);
+                let avail = w
+                    - grid.scaled_margin.left
+                    - grid.scaled_margin.right
+                    - grid.panel_config.column_gap * grid.scale;
+                assert_px(width(&grid, left) + width(&grid, right), avail);
+            }
+        }
+    }
 
-    let left_w = tree.layout(left).unwrap().size.width;
-    let right_w = tree.layout(right).unwrap().size.width;
+    #[test]
+    fn a_moved_horizontal_divider_keeps_its_ratio_too() {
+        for scale in [1.0, 2.0] {
+            let mut grid = grid(scale);
+            let top = grid.current;
+            let bottom = split(&mut grid, false);
+            for _ in 0..4 {
+                assert!(grid.move_divider_down(40.0));
+            }
+            let ratio = height(&grid, top) / height(&grid, bottom);
+            for h in [HEIGHT * 2.0, HEIGHT / 2.0, HEIGHT] {
+                grid.resize(WIDTH, h);
+                assert_split(height(&grid, top), height(&grid, bottom), ratio);
+            }
+        }
+    }
 
-    // The 80/20 proportion should be preserved: 960/240
-    let expected_left = new_width * 0.8;
-    let expected_right = new_width * 0.2;
+    // Two panes at 20/80, then the 80% pane is split down: the parent
+    // keeps 20/80 and both halves of the column take the 80.
+    #[test]
+    fn a_split_inside_a_resized_pane_keeps_the_parent_split() {
+        for scale in [1.0, 2.0] {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            while grid.move_divider_left(40.0) {
+                if width(&grid, left) / (width(&grid, left) + width(&grid, right)) < 0.2 {
+                    break;
+                }
+            }
+            let (lw, rw) = (width(&grid, left), width(&grid, right));
+            assert!(
+                lw < rw / 3.0,
+                "the left pane is the small one: {lw} vs {rw}"
+            );
 
-    assert!(
-        (left_w - expected_left).abs() < 1.0,
-        "After resize, left should be ~{expected_left} (80%), got {left_w}"
-    );
-    assert!(
-        (right_w - expected_right).abs() < 1.0,
-        "After resize, right should be ~{expected_right} (20%), got {right_w}"
-    );
-}
+            grid.current = right;
+            let bottom_right = split(&mut grid, false);
+            assert_px(width(&grid, left), lw);
+            assert_px(width(&grid, right), rw);
+            assert_px(width(&grid, bottom_right), rw);
+            assert_px(height(&grid, right), height(&grid, bottom_right));
 
-/// Reproduces bug: two panels with 20/80 split, then splitting the 80%
-/// panel horizontally should keep the 20/80 proportion in the parent.
-#[test]
-fn test_split_inside_resized_panel_preserves_proportions() {
-    use taffy::{FlexDirection, TaffyTree};
+            // And the parent split still scales with the window, both
+            // ways: the container took the pane's basis, and its shrink
+            // weight is its own, not the padded pane's.
+            grid.resize(WIDTH * 2.0, HEIGHT);
+            assert_split(width(&grid, left), width(&grid, right), lw / rw);
+            grid.resize(WIDTH / 2.0, HEIGHT);
+            assert_split(width(&grid, left), width(&grid, right), lw / rw);
+        }
+    }
 
-    let mut tree: TaffyTree<()> = TaffyTree::new();
+    // Closing the bottom pane of a column hands the column's basis back
+    // to the pane left in it. That pane shrinks by its own weight, so
+    // the outer split keeps its ratio when the window shrinks.
+    #[test]
+    fn a_pane_promoted_by_a_close_shrinks_by_its_own_weight() {
+        for scale in [1.0, 2.0] {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            for _ in 0..4 {
+                assert!(grid.move_divider_right(40.0));
+            }
+            let ratio = width(&grid, left) / width(&grid, right);
 
-    // Root container
-    let root = tree
-        .new_leaf(Style {
-            display: Display::Flex,
-            flex_direction: FlexDirection::Row,
-            size: geometry::Size {
-                width: length(1000.0_f32),
-                height: length(800.0_f32),
-            },
-            ..Default::default()
-        })
-        .unwrap();
+            grid.current = right;
+            let bottom_right = split(&mut grid, false);
+            grid.current = bottom_right;
+            let removed = grid.remove_current().expect("a pane was removed");
+            assert_eq!(removed.rich_text_id, 2);
+            assert_eq!(grid.panel_count(), 2);
+            assert_split(width(&grid, left), width(&grid, right), ratio);
 
-    // Two panels
-    let left = tree
-        .new_leaf(Style {
-            display: Display::Flex,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
-            ..Default::default()
-        })
-        .unwrap();
-    let right = tree
-        .new_leaf(Style {
-            display: Display::Flex,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
-            ..Default::default()
-        })
-        .unwrap();
-
-    tree.add_child(root, left).unwrap();
-    tree.add_child(root, right).unwrap();
-
-    // Resize: left=20%, right=80% (using flex_grow proportional)
-    let mut left_style = tree.style(left).unwrap().clone();
-    left_style.flex_basis = length(0.0_f32);
-    left_style.flex_grow = 200.0;
-    left_style.flex_shrink = 1.0;
-    tree.set_style(left, left_style).unwrap();
-
-    let mut right_style = tree.style(right).unwrap().clone();
-    right_style.flex_basis = length(0.0_f32);
-    right_style.flex_grow = 800.0;
-    right_style.flex_shrink = 1.0;
-    tree.set_style(right, right_style).unwrap();
-
-    // Verify 20/80 split
-    let available = geometry::Size {
-        width: AvailableSpace::MaxContent,
-        height: AvailableSpace::MaxContent,
-    };
-    tree.compute_layout(root, available).unwrap();
-    let left_w = tree.layout(left).unwrap().size.width;
-    let right_w = tree.layout(right).unwrap().size.width;
-    assert!(
-        (left_w - 200.0).abs() < 1.0,
-        "left should be 200, got {left_w}"
-    );
-    assert!(
-        (right_w - 800.0).abs() < 1.0,
-        "right should be 800, got {right_w}"
-    );
-
-    // Now split the right panel horizontally (Column direction).
-    // This simulates what split_panel does:
-    // 1. Create container inheriting right's flex properties
-    // 2. Reset right to flex_grow: 1.0
-    // 3. Create new panel with flex_grow: 1.0
-    // 4. Move right into container, add new panel
-
-    let right_inherited = tree.style(right).unwrap().clone();
-    let container = tree
-        .new_leaf(Style {
-            display: Display::Flex,
-            flex_direction: FlexDirection::Column,
-            flex_basis: right_inherited.flex_basis,
-            flex_grow: right_inherited.flex_grow,
-            flex_shrink: right_inherited.flex_shrink,
-            ..Default::default()
-        })
-        .unwrap();
-
-    // Reset right panel to flexible inside container
-    let mut reset_right = right_inherited;
-    reset_right.flex_basis = taffy::Dimension::auto();
-    reset_right.flex_grow = 1.0;
-    reset_right.flex_shrink = 1.0;
-    tree.set_style(right, reset_right).unwrap();
-
-    let bottom = tree
-        .new_leaf(Style {
-            display: Display::Flex,
-            flex_grow: 1.0,
-            flex_shrink: 1.0,
-            ..Default::default()
-        })
-        .unwrap();
-
-    tree.remove_child(root, right).unwrap();
-    tree.add_child(container, right).unwrap();
-    tree.add_child(container, bottom).unwrap();
-    tree.add_child(root, container).unwrap();
-
-    tree.compute_layout(root, available).unwrap();
-
-    // The container (replacing right) should still be ~800px wide (80%)
-    let container_w = tree.layout(container).unwrap().size.width;
-    assert!(
-        (container_w - 800.0).abs() < 1.0,
-        "Container should keep 80% (800px), got {container_w}"
-    );
-
-    // Left should still be ~200px (20%)
-    let left_w = tree.layout(left).unwrap().size.width;
-    assert!(
-        (left_w - 200.0).abs() < 1.0,
-        "Left should keep 20% (200px), got {left_w}"
-    );
-
-    // The two children inside the container should each be ~400px tall (50/50)
-    let right_h = tree.layout(right).unwrap().size.height;
-    let bottom_h = tree.layout(bottom).unwrap().size.height;
-    assert!(
-        (right_h - 400.0).abs() < 1.0,
-        "Right (top half) should be ~400px tall, got {right_h}"
-    );
-    assert!(
-        (bottom_h - 400.0).abs() < 1.0,
-        "Bottom (bottom half) should be ~400px tall, got {bottom_h}"
-    );
+            grid.resize(WIDTH / 2.0, HEIGHT);
+            assert_split(width(&grid, left), width(&grid, right), ratio);
+            grid.resize(WIDTH * 2.0, HEIGHT);
+            assert_split(width(&grid, left), width(&grid, right), ratio);
+        }
+    }
 }
 
 // Keyboard divider moves. They go through `resize_divider` and
