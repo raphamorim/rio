@@ -7,8 +7,9 @@
 //! alpha-only bytes (mask) or premultiplied RGBA in Display-P3 (color). The
 //! caller stitches this into the existing atlas pipeline unchanged.
 
+use parking_lot::Mutex;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use core_foundation::{
     attributed_string::CFMutableAttributedString,
@@ -215,9 +216,12 @@ struct SizedKey {
     sheared: bool,
 }
 
-/// Sizes a handle remembers before the least recently used is dropped:
-/// a font size change or two, plus the sheared variants.
-const SIZED_FONTS_KEPT: usize = 8;
+/// Sizes a handle remembers before the least recently used is dropped.
+/// The regular font's handle is shared by the grid and the UI text, so
+/// it sees the grid size, the layout size, the handful of UI label
+/// sizes and their sheared variants at once; past the cap every call
+/// would silently pay the cold font again.
+const SIZED_FONTS_KEPT: usize = 16;
 
 impl FontHandle {
     fn new(base_font: CTFont) -> Self {
@@ -234,14 +238,16 @@ impl FontHandle {
             size_bits: size_px.to_bits(),
             sheared,
         };
-        let mut sized = self.sized.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sized = self.sized.lock();
         if let Some(hit) = sized.iter().position(|(k, _)| *k == key) {
             // A hit moves to the back, so the sizes in use stay and
-            // the one not asked for longest is the one dropped.
-            let entry = sized.remove(hit);
-            let font = entry.1.clone();
-            sized.push(entry);
-            return font;
+            // the one not asked for longest is the one dropped. The
+            // common case asks for the newest again and moves nothing.
+            if hit + 1 != sized.len() {
+                let entry = sized.remove(hit);
+                sized.push(entry);
+            }
+            return sized.last().expect("just found").1.clone();
         }
         let font = if sheared {
             ct_font_sheared(&self.base_font, size_px as f64)
@@ -1736,7 +1742,7 @@ mod tests {
         for size in 1..=SIZED_FONTS_KEPT {
             handle.sized(10.0 + size as f32);
         }
-        assert_eq!(handle.sized.lock().unwrap().len(), SIZED_FONTS_KEPT);
+        assert_eq!(handle.sized.lock().len(), SIZED_FONTS_KEPT);
         // The size not asked for longest was dropped, so asking again
         // makes a new object.
         assert_ne!(
