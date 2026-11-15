@@ -434,19 +434,29 @@ mod proportions {
         grid.current
     }
 
+    /// A pane's extent along the row including its margins: where the
+    /// dividers sit, and what a window resize keeps in proportion.
     fn width(grid: &Grid, node: NodeId) -> f32 {
-        grid.inner[&node].layout_rect[2]
+        grid.inner[&node].layout_rect[2] + 2.0 * MARGIN * grid.scale
     }
 
     fn height(grid: &Grid, node: NodeId) -> f32 {
-        grid.inner[&node].layout_rect[3]
+        grid.inner[&node].layout_rect[3] + 2.0 * MARGIN * grid.scale
     }
 
+    /// Default panel margin, per side, in logical pixels.
+    const MARGIN: f32 = 2.0;
+
+    /// The pair keeps `ratio` (first over second) within the pixel
+    /// taffy rounds each size to.
     #[track_caller]
-    fn assert_ratio(actual: f32, expected: f32) {
+    fn assert_split(first: f32, second: f32, ratio: f32) {
+        let expected = (first + second) * ratio / (1.0 + ratio);
         assert!(
-            (actual - expected).abs() / expected < 0.01,
-            "ratio {expected:.3} became {actual:.3}"
+            (first - expected).abs() <= 1.5,
+            "ratio {ratio:.3} became {:.3}: {first} of {}, expected {expected:.1}",
+            first / second,
+            first + second
         );
     }
 
@@ -480,10 +490,9 @@ mod proportions {
                 (WIDTH, HEIGHT),
             ] {
                 grid.resize(w, h);
-                assert_ratio(width(&grid, left) / width(&grid, right), ratio);
-                let margins = 4.0 * 2.0 * scale;
+                assert_split(width(&grid, left), width(&grid, right), ratio);
                 let avail = w - grid.scaled_margin.left - grid.scaled_margin.right;
-                assert_px(width(&grid, left) + width(&grid, right), avail - margins);
+                assert_px(width(&grid, left) + width(&grid, right), avail);
             }
         }
     }
@@ -500,7 +509,7 @@ mod proportions {
             let ratio = height(&grid, top) / height(&grid, bottom);
             for h in [HEIGHT * 2.0, HEIGHT / 2.0, HEIGHT] {
                 grid.resize(WIDTH, h);
-                assert_ratio(height(&grid, top) / height(&grid, bottom), ratio);
+                assert_split(height(&grid, top), height(&grid, bottom), ratio);
             }
         }
     }
@@ -531,9 +540,42 @@ mod proportions {
             assert_px(width(&grid, bottom_right), rw);
             assert_px(height(&grid, right), height(&grid, bottom_right));
 
-            // And the parent split still scales with the window.
+            // And the parent split still scales with the window, both
+            // ways: the container took the pane's basis, and its shrink
+            // weight is its own, not the padded pane's.
             grid.resize(WIDTH * 2.0, HEIGHT);
-            assert_ratio(width(&grid, left) / width(&grid, right), lw / rw);
+            assert_split(width(&grid, left), width(&grid, right), lw / rw);
+            grid.resize(WIDTH / 2.0, HEIGHT);
+            assert_split(width(&grid, left), width(&grid, right), lw / rw);
+        }
+    }
+
+    // Closing the bottom pane of a column hands the column's basis back
+    // to the pane left in it. That pane shrinks by its own weight, so
+    // the outer split keeps its ratio when the window shrinks.
+    #[test]
+    fn a_pane_promoted_by_a_close_shrinks_by_its_own_weight() {
+        for scale in [1.0, 2.0] {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            for _ in 0..4 {
+                assert!(grid.move_divider_right(40.0));
+            }
+            let ratio = width(&grid, left) / width(&grid, right);
+
+            grid.current = right;
+            let bottom_right = split(&mut grid, false);
+            grid.current = bottom_right;
+            let removed = grid.remove_current().expect("a pane was removed");
+            assert_eq!(removed.rich_text_id, 2);
+            assert_eq!(grid.panel_count(), 2);
+            assert_split(width(&grid, left), width(&grid, right), ratio);
+
+            grid.resize(WIDTH / 2.0, HEIGHT);
+            assert_split(width(&grid, left), width(&grid, right), ratio);
+            grid.resize(WIDTH * 2.0, HEIGHT);
+            assert_split(width(&grid, left), width(&grid, right), ratio);
         }
     }
 }

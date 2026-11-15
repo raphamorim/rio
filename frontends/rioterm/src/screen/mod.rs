@@ -588,6 +588,13 @@ impl Screen<'_> {
                 let mut terminal = current_context.terminal.lock();
                 current_context.renderable_content =
                     RenderableContent::from_cursor_config(&config.cursor);
+                // The relayout above marked the pane dirty on the content
+                // just replaced; mark the new one, or an idle terminal in
+                // a background split keeps presenting the old metrics.
+                current_context
+                    .renderable_content
+                    .pending_update
+                    .set_dirty();
                 let shape = config.cursor.shape;
                 terminal.cursor_shape = shape;
                 terminal.default_cursor_shape = shape;

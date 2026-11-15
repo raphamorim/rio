@@ -261,10 +261,12 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
 
         if reflowed {
             self.applied_grid = Some(key);
-            let mut terminal = self.val.terminal.lock();
-            terminal.end_sync_update();
-            terminal.resize::<ContextDimension>(self.val.dimension);
-            drop(terminal);
+            // The terminal ends a synchronized update itself when its
+            // grid or cell size changes.
+            self.val
+                .terminal
+                .lock()
+                .resize::<ContextDimension>(self.val.dimension);
             self.send_winsize();
         } else if resized || self.winsize_pending {
             if mid_drag {
@@ -779,18 +781,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // every divider in the parent.
         let current_style = self.tree.style(current_node)?.clone();
         let margin = self.margin_along(current_node, parent_node);
-        let sized = current_style.flex_basis.into_option().is_some();
         let scale = self.scale;
         let container_style = Style {
             display: Display::Flex,
             flex_direction: direction,
             flex_basis: basis_plus(current_style.flex_basis, margin),
-            flex_grow: if sized {
-                current_style.flex_grow + margin
-            } else {
-                current_style.flex_grow
-            },
-            flex_shrink: current_style.flex_shrink,
+            // The weights are already in margin box units; with no
+            // padding the container's content box is its basis.
+            flex_grow: current_style.flex_grow,
+            flex_shrink: 1.0,
             gap: geometry::Size {
                 width: length(self.panel_config.column_gap * scale),
                 height: length(self.panel_config.row_gap * scale),
@@ -849,26 +848,59 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // when the window shrinks; weighting shrink by border box over
         // content box puts the share back in proportion to what is seen.
         if let Some(size) = width.or(height) {
-            let layout = self.tree.layout(node)?;
-            let edges = if width.is_some() {
-                layout.padding.left
-                    + layout.padding.right
-                    + layout.border.left
-                    + layout.border.right
-            } else {
-                layout.padding.top
-                    + layout.padding.bottom
-                    + layout.border.top
-                    + layout.border.bottom
-            };
-            let inner = size - edges;
             style.flex_basis = length(size);
-            style.flex_grow = size;
-            style.flex_shrink = if inner > 0.0 { size / inner } else { 1.0 };
+            let (grow, shrink) =
+                self.flex_weights(node, style.flex_basis, width.is_some());
+            style.flex_grow = grow;
+            style.flex_shrink = shrink;
         }
 
         self.tree.set_style(node, style)?;
         Ok(())
+    }
+
+    /// Grow and shrink weights for a node with a sized basis, in one
+    /// unit for panels and containers alike: the margin box. A panel's
+    /// basis is its border box and its margins sit outside; a container
+    /// has no margin and its basis is the margin box of the panel it
+    /// replaced. Taffy grows by `flex_grow` and shrinks by `flex_shrink`
+    /// times the content box, so grow is the margin box and shrink is
+    /// margin box over content box: a panel's padding does not shield
+    /// it, and a basis handed between a panel and a container keeps the
+    /// proportion. An unsized node keeps the default weights.
+    fn flex_weights(
+        &self,
+        node: NodeId,
+        basis: taffy::Dimension,
+        row: bool,
+    ) -> (f32, f32) {
+        let Some(size) = basis.into_option() else {
+            return (1.0, 1.0);
+        };
+        let Ok(layout) = self.tree.layout(node) else {
+            return (size, 1.0);
+        };
+        let (margins, edges) = if row {
+            (
+                layout.margin.left + layout.margin.right,
+                layout.padding.left
+                    + layout.padding.right
+                    + layout.border.left
+                    + layout.border.right,
+            )
+        } else {
+            (
+                layout.margin.top + layout.margin.bottom,
+                layout.padding.top
+                    + layout.padding.bottom
+                    + layout.border.top
+                    + layout.border.bottom,
+            )
+        };
+        let visible = size + margins;
+        let inner = size - edges;
+        let shrink = if inner > 0.0 { visible / inner } else { 1.0 };
+        (visible, shrink)
     }
 
     /// Reset all panels to flexible sizing so they expand to fill available space
@@ -934,18 +966,23 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                                     } else {
                                         0.0
                                     };
-                                    let sized = container_style
-                                        .flex_basis
-                                        .into_option()
-                                        .is_some();
                                     gc_style.flex_basis =
                                         basis_plus(container_style.flex_basis, -margin);
-                                    gc_style.flex_grow = if sized {
-                                        (container_style.flex_grow - margin).max(0.0)
-                                    } else {
-                                        container_style.flex_grow
-                                    };
-                                    gc_style.flex_shrink = container_style.flex_shrink;
+                                    // Grow is in margin box units on both sides;
+                                    // shrink is the promoted node's own.
+                                    gc_style.flex_grow = container_style.flex_grow;
+                                    let row = self
+                                        .tree
+                                        .style(node)
+                                        .map(|s| is_row_direction(s.flex_direction))
+                                        .unwrap_or(true);
+                                    gc_style.flex_shrink = self
+                                        .flex_weights(
+                                            grandchild,
+                                            gc_style.flex_basis,
+                                            row,
+                                        )
+                                        .1;
                                     let _ = self.tree.set_style(grandchild, gc_style);
                                 }
                             }
@@ -1550,6 +1587,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// one being removed, in which case `remove_current`'s sibling
     /// selection applies. Returns what the panel held in sugarloaf,
     /// or `None` when no panel was removed.
+    #[must_use = "release the panel's images with RemovedPanel::release"]
     pub fn remove_by_route(&mut self, route_id: usize) -> Option<RemovedPanel> {
         let key = self
             .inner
@@ -1570,6 +1608,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// order. Returns what the panel held in sugarloaf, for the caller
     /// to release; `None` when nothing was removed, as for the last
     /// panel of a grid.
+    #[must_use = "release the panel's images with RemovedPanel::release"]
     pub fn remove_current(&mut self) -> Option<RemovedPanel> {
         if self.inner.is_empty() {
             tracing::error!("Attempted to remove from empty grid");
