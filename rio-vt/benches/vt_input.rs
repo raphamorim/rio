@@ -29,6 +29,42 @@ fn plain(total: usize) -> Vec<u8> {
     line.repeat(total / line.len() + 1).into_bytes()
 }
 
+/// Non-ASCII text, mode 2027 on (the default): Latin-1 accents, a
+/// two-byte alphabet, wide CJK, and emoji with modifiers and ZWJ
+/// sequences. These take the codepoint path, not the ASCII one.
+fn text_lines(line: &str, total: usize) -> Vec<u8> {
+    let line = format!("{line}\r\n");
+    line.repeat(total / line.len() + 1).into_bytes()
+}
+
+fn latin1(total: usize) -> Vec<u8> {
+    text_lines(
+        "déjà vu à côté de l'hôtel, señor Núñez pagó ñandú über straße façade naïve",
+        total,
+    )
+}
+
+fn cyrillic(total: usize) -> Vec<u8> {
+    text_lines(
+        "Съешь же ещё этих мягких французских булок, да выпей чаю 0123456789",
+        total,
+    )
+}
+
+fn cjk(total: usize) -> Vec<u8> {
+    text_lines(
+        "日本語のテキストを端末に表示する。中文字符宽度为二。한국어 문장도 포함한다 0123",
+        total,
+    )
+}
+
+fn emoji(total: usize) -> Vec<u8> {
+    text_lines(
+        "status: \u{2705} ok \u{1F680} deploy \u{1F44D}\u{1F3FD} \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} \u{1F1E7}\u{1F1F7} done \u{2764}\u{FE0F} \u{1F600}\u{1F601}\u{1F602}",
+        total,
+    )
+}
+
 /// The benchmark suite's ANSI mix: 256-color pairs, truecolor bold,
 /// italic/underline toggles, resets between every word.
 fn ansi_mixed(total: usize) -> Vec<u8> {
@@ -127,8 +163,12 @@ impl rio_vt::performer::parser::Perform for NoopPerform {
 
 fn bench(c: &mut Criterion) {
     const BYTES: usize = 4 * 1024 * 1024;
-    let cases: [(&str, Vec<u8>); 5] = [
+    let cases: [(&str, Vec<u8>); 9] = [
         ("plain", plain(BYTES)),
+        ("latin1", latin1(BYTES)),
+        ("cyrillic", cyrillic(BYTES)),
+        ("cjk", cjk(BYTES)),
+        ("emoji", emoji(BYTES)),
         ("ansi_mixed", ansi_mixed(BYTES)),
         ("ansi_two_styles", ansi_two_styles(BYTES)),
         ("ansi_bare_csi", ansi_bare_csi(BYTES)),
