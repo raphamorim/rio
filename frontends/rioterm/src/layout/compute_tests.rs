@@ -437,15 +437,14 @@ mod proportions {
     /// A pane's extent along the row including its margins: where the
     /// dividers sit, and what a window resize keeps in proportion.
     fn width(grid: &Grid, node: NodeId) -> f32 {
-        grid.inner[&node].layout_rect[2] + 2.0 * MARGIN * grid.scale
+        let m = grid.panel_config.margin;
+        grid.inner[&node].layout_rect[2] + (m.left + m.right) * grid.scale
     }
 
     fn height(grid: &Grid, node: NodeId) -> f32 {
-        grid.inner[&node].layout_rect[3] + 2.0 * MARGIN * grid.scale
+        let m = grid.panel_config.margin;
+        grid.inner[&node].layout_rect[3] + (m.top + m.bottom) * grid.scale
     }
-
-    /// Default panel margin, per side, in logical pixels.
-    const MARGIN: f32 = 2.0;
 
     /// The pair keeps `ratio` (first over second) within the pixel
     /// taffy rounds each size to.
@@ -491,7 +490,10 @@ mod proportions {
             ] {
                 grid.resize(w, h);
                 assert_split(width(&grid, left), width(&grid, right), ratio);
-                let avail = w - grid.scaled_margin.left - grid.scaled_margin.right;
+                let avail = w
+                    - grid.scaled_margin.left
+                    - grid.scaled_margin.right
+                    - grid.panel_config.column_gap * grid.scale;
                 assert_px(width(&grid, left) + width(&grid, right), avail);
             }
         }

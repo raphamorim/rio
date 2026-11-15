@@ -1940,24 +1940,32 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                // A divider drag in progress follows the pointer.
-                if let Some(direction) = route
+                // A divider drag in progress follows the pointer and
+                // swallows the motion until it ends, whether or not the
+                // grid it moves is the one on screen.
+                if let Some(step) = route
                     .window
                     .screen
                     .context_manager
                     .drag_border_to(x as f32, y as f32)
                 {
-                    // Dragging a split divider displaces panel origins;
-                    // that is layout, not cursor travel.
-                    route.window.screen.renderer.trail_cursor.snap();
-                    let cursor = match direction {
-                        crate::layout::BorderDirection::Vertical => CursorIcon::ColResize,
-                        crate::layout::BorderDirection::Horizontal => {
-                            CursorIcon::RowResize
-                        }
-                    };
-                    route.window.winit_window.set_cursor(cursor);
-                    route.window.screen.context_manager.request_render();
+                    if step.visible {
+                        // Dragging a split divider displaces panel origins;
+                        // that is layout, not cursor travel.
+                        route.window.screen.renderer.trail_cursor.snap();
+                        let cursor = match step.direction {
+                            crate::layout::BorderDirection::Vertical => {
+                                CursorIcon::ColResize
+                            }
+                            crate::layout::BorderDirection::Horizontal => {
+                                CursorIcon::RowResize
+                            }
+                        };
+                        route.window.winit_window.set_cursor(cursor);
+                        route.window.screen.context_manager.request_render();
+                    } else {
+                        route.window.winit_window.set_cursor(CursorIcon::Default);
+                    }
                     route.request_redraw();
                     return;
                 }
@@ -2265,8 +2273,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.focus_seen = true;
 
                 // The release of a divider drag never arrives once the
-                // window lost focus, so the drag ends here.
+                // window lost focus, so the drag ends here, button state
+                // included, or the next motion after refocus would read
+                // as a held button.
                 if !focused && route.window.screen.context_manager.end_border_drag() {
+                    route.window.screen.mouse.left_button_state = ElementState::Released;
+                    route.window.screen.mouse.hint_click_latched = None;
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                 }
 

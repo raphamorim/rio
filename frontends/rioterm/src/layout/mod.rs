@@ -17,8 +17,10 @@ use taffy::{
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
 
+static NEXT_GRID_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Direction of a draggable panel border
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BorderDirection {
     /// Border between left/right panels (drag horizontally)
     Vertical,
@@ -75,7 +77,6 @@ impl CellMetricsSource for Sugarloaf<'_> {
 }
 
 /// What a removed panel held in sugarloaf, for the caller to release.
-#[must_use = "release it with RemovedPanel::release"]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RemovedPanel {
     pub rich_text_id: usize,
@@ -199,6 +200,12 @@ pub struct ContextGrid<T: EventListener> {
     tree: TaffyTree<()>,
     root_node: NodeId,
     border_config: BorderConfig,
+    /// Unique for the life of the process, so a grid can be found again
+    /// after the tabs were renumbered.
+    id: u64,
+    /// Bumped whenever a panel is added or removed, so a reference to
+    /// the tree taken earlier can tell the tree changed under it.
+    shape: u64,
 }
 
 pub struct ContextGridItem<T: EventListener> {
@@ -228,12 +235,15 @@ fn grid_key(dimension: &ContextDimension) -> GridKey {
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
+        // The terminal and its PTY were created at this dimension, so
+        // the first relayout only pushes what differs from it.
+        let dimension = context.dimension;
         Self {
+            applied_rect: [0.0, 0.0, dimension.width, dimension.height],
+            applied_grid: Some(grid_key(&dimension)),
+            winsize_pending: false,
             val: context,
             layout_rect: [0.0; 4],
-            applied_rect: [0.0; 4],
-            applied_grid: None,
-            winsize_pending: false,
         }
     }
 
@@ -392,9 +402,23 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             tree,
             root_node,
             border_config,
+            id: NEXT_GRID_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            shape: 0,
         };
         grid.calculate_positions();
         grid
+    }
+
+    /// This grid's identity, unique for the life of the process.
+    #[inline]
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// A number that changes whenever a panel is added or removed.
+    #[inline]
+    pub fn shape(&self) -> u64 {
+        self.shape
     }
 
     #[inline]
@@ -1662,6 +1686,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Remove from inner map
         self.inner.remove(&to_remove);
+        self.shape += 1;
 
         // Update root if necessary
         if Some(to_remove) == self.root {
@@ -1694,6 +1719,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Ok(new_node) = self.try_split_right() {
             let new_context = ContextGridItem::new(context);
             self.inner.insert(new_node, new_context);
+            self.shape += 1;
             self.apply_taffy_layout(false);
             self.current = new_node;
         }
@@ -1709,6 +1735,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Ok(new_node) = self.try_split_down() {
             let new_context = ContextGridItem::new(context);
             self.inner.insert(new_node, new_context);
+            self.shape += 1;
             self.apply_taffy_layout(false);
             self.current = new_node;
         }
