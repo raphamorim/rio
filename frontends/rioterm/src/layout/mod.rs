@@ -5,7 +5,7 @@ use crate::context::Context;
 use crate::mouse::Mouse;
 use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::grid::Dimensions;
-use rio_backend::event::{EventListener, WindowSize};
+use rio_backend::event::EventListener;
 use rio_backend::sugarloaf::{layout::TextDimensions, Rect, Sugarloaf};
 use rustc_hash::FxHashMap;
 
@@ -150,10 +150,23 @@ pub struct ContextGridItem<T: EventListener> {
     /// The rect the panel was last laid out at, so a relayout only
     /// touches the panels it moved.
     applied_rect: [f32; 4],
-    /// The dimension last pushed into the terminal.
-    applied: Option<ContextDimension>,
-    /// The winsize last sent to the PTY.
-    sent: Option<WindowSize>,
+    /// The grid last pushed into the terminal: columns, lines and cell
+    /// size, the only things its reflow depends on.
+    applied_grid: Option<GridKey>,
+    /// A pixel-only winsize held back during a divider drag.
+    winsize_pending: bool,
+}
+
+/// What a terminal's reflow depends on.
+type GridKey = (usize, usize, u32, u32);
+
+fn grid_key(dimension: &ContextDimension) -> GridKey {
+    (
+        dimension.columns(),
+        dimension.screen_lines(),
+        dimension.square_width().to_bits(),
+        dimension.square_height().to_bits(),
+    )
 }
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
@@ -162,8 +175,57 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
             val: context,
             layout_rect: [0.0; 4],
             applied_rect: [0.0; 4],
-            applied: None,
-            sent: None,
+            applied_grid: None,
+            winsize_pending: false,
+        }
+    }
+
+    /// Push the panel's layout into its terminal and PTY.
+    ///
+    /// A panel whose rect did not move is left alone. One whose grid
+    /// changed is reflowed and told its new winsize. One whose size
+    /// changed only in pixels keeps its grid and gets the winsize now,
+    /// or, `mid_drag`, once the pointer lets go: the pixel fields reach
+    /// the child as a SIGWINCH, and a drag would otherwise raise one
+    /// per pixel in both panels beside the divider.
+    fn push_layout(&mut self, mid_drag: bool) {
+        let moved = self.applied_rect != self.layout_rect;
+        let resized = self.applied_rect[2..] != self.layout_rect[2..];
+        self.applied_rect = self.layout_rect;
+        if moved {
+            // The present gate reads `pending_update.is_dirty()` before
+            // it looks at the terminal, so a moved panel has to be
+            // marked or an idle terminal would not present.
+            self.val.renderable_content.pending_update.set_dirty();
+        }
+
+        let key = grid_key(&self.val.dimension);
+        if self.applied_grid != Some(key) {
+            self.applied_grid = Some(key);
+            let mut terminal = self.val.terminal.lock();
+            terminal.end_sync_update();
+            terminal.resize::<ContextDimension>(self.val.dimension);
+            drop(terminal);
+            self.send_winsize();
+        } else if resized || self.winsize_pending {
+            if mid_drag {
+                self.winsize_pending = true;
+            } else {
+                self.send_winsize();
+            }
+        }
+    }
+
+    fn send_winsize(&mut self) {
+        let winsize = crate::renderer::utils::terminal_dimensions(&self.val.dimension);
+        let _ = self.val.messenger.send_resize(winsize);
+        self.winsize_pending = false;
+    }
+
+    /// Send a winsize held back during a drag.
+    fn flush_winsize(&mut self) {
+        if self.winsize_pending {
+            self.send_winsize();
         }
     }
 
@@ -1031,52 +1093,19 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         true
     }
 
-    /// Lay the tree out and push the result to the panels that changed.
-    ///
-    /// A panel whose rect did not move is left alone: no terminal lock,
-    /// no reflow, no winsize, no dirty mark. One whose grid changed gets
-    /// all of them. One whose size changed only in pixels, not in cells,
-    /// gets a winsize now unless `mid_drag`, in which case it waits for
-    /// `end_border_resize`: the pixel fields reach the child as a
-    /// SIGWINCH, and a pointer drag would otherwise raise one per pixel
-    /// in both panels beside the divider.
+    /// Lay the tree out and push the result to the panels it moved;
+    /// see [`ContextGridItem::push_layout`] for what each one gets.
     fn apply_taffy_layout(&mut self, mid_drag: bool) -> bool {
         if self.compute_layout().is_err() {
             return false;
         }
-
         for item in self.inner.values_mut() {
             let [_, _, width, height] = item.layout_rect;
-
             // Clear margin since Taffy layout already accounts for spacing
             item.val.dimension.margin = Margin::all(0.0);
             item.val.dimension.update_width(width);
             item.val.dimension.update_height(height);
-            let dimension = item.val.dimension;
-
-            if item.applied_rect != item.layout_rect {
-                item.applied_rect = item.layout_rect;
-                // The present gate reads `pending_update.is_dirty()`
-                // before it looks at the terminal, so a moved panel has
-                // to be marked or an idle terminal would not present.
-                item.val.renderable_content.pending_update.set_dirty();
-            }
-
-            if item.applied != Some(dimension) {
-                item.applied = Some(dimension);
-                let mut terminal = item.val.terminal.lock();
-                terminal.end_sync_update();
-                terminal.resize::<ContextDimension>(dimension);
-            }
-
-            let winsize = crate::renderer::utils::terminal_dimensions(&dimension);
-            let grid_changed = item.sent.is_none_or(|sent| {
-                sent.cols != winsize.cols || sent.rows != winsize.rows
-            });
-            if grid_changed || (!mid_drag && item.sent != Some(winsize)) {
-                let _ = item.val.messenger.send_resize(winsize);
-                item.sent = Some(winsize);
-            }
+            item.push_layout(mid_drag);
         }
         true
     }
@@ -1085,12 +1114,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// during the drag get their final winsize now.
     pub fn end_border_resize(&mut self) {
         for item in self.inner.values_mut() {
-            let winsize =
-                crate::renderer::utils::terminal_dimensions(&item.val.dimension);
-            if item.sent != Some(winsize) {
-                let _ = item.val.messenger.send_resize(winsize);
-                item.sent = Some(winsize);
-            }
+            item.flush_winsize();
         }
     }
 

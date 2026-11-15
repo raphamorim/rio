@@ -1205,4 +1205,46 @@ mod relayout {
         assert_eq!(grid.inner[&a].val.terminal.lock().grid.columns(), cols);
         assert_eq!(columns(&grid, a), cols);
     }
+
+    // A pixel-only drag step must not touch the terminal: a program
+    // inside a synchronized update (mode 2026) would otherwise have its
+    // frame cut short on every pixel. A step that changes the columns
+    // reflows, and ends the update as any resize does.
+    #[test]
+    fn a_pixel_only_drag_step_leaves_the_terminal_alone() {
+        use rio_backend::performer::handler::Processor;
+        let (mut grid, [_a, b, d], _rxs) = row_of_three();
+        let mut parser = Processor::default();
+        parser.advance(&mut *grid.inner[&b].val.terminal.lock(), b"\x1b[?2026h");
+        assert!(grid.inner[&b].val.terminal.lock().synchronized_output());
+
+        grid.current = d;
+        assert!(grid.resize_divider(true, true, SMALL));
+        assert!(grid.apply_taffy_layout(true));
+        assert!(
+            grid.inner[&b].val.terminal.lock().synchronized_output(),
+            "a pixel-only step ended the synchronized update"
+        );
+
+        assert!(grid.resize_divider(true, true, LARGE));
+        assert!(grid.apply_taffy_layout(true));
+        assert!(!grid.inner[&b].val.terminal.lock().synchronized_output());
+    }
+
+    // A winsize held back by a drag is not lost if the drag never gets
+    // its release: the next relayout of any kind sends it.
+    #[test]
+    fn a_held_back_winsize_goes_out_with_the_next_relayout() {
+        let (mut grid, [_a, _b, d], [rx_a, rx_b, rx_d]) = row_of_three();
+        grid.current = d;
+        assert!(grid.resize_divider(true, true, SMALL));
+        assert!(grid.apply_taffy_layout(true));
+        for rx in [&rx_a, &rx_b, &rx_d] {
+            assert!(winsizes(rx).is_empty());
+        }
+        assert!(grid.apply_taffy_layout(false));
+        assert!(winsizes(&rx_a).is_empty());
+        assert_eq!(winsizes(&rx_b).len(), 1);
+        assert_eq!(winsizes(&rx_d).len(), 1);
+    }
 }

@@ -1456,12 +1456,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
                         route.window.screen.renderer.scrollbar.end_drag();
                         if route.window.screen.resize_state.take().is_some() {
-                            route
-                                .window
-                                .screen
-                                .context_manager
-                                .current_grid_mut()
-                                .end_border_resize();
+                            route.window.screen.context_manager.end_border_resize();
                         }
                     }
                     return;
@@ -1715,12 +1710,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         }
 
                         if route.window.screen.resize_state.take().is_some() {
-                            route
-                                .window
-                                .screen
-                                .context_manager
-                                .current_grid_mut()
-                                .end_border_resize();
+                            route.window.screen.context_manager.end_border_resize();
                             route.window.winit_window.set_cursor(CursorIcon::Default);
                             return;
                         }
@@ -2298,6 +2288,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let focus_changed = route.window.is_focused != focused;
                 route.window.is_focused = focused;
                 route.window.focus_seen = true;
+
+                // The release of a divider drag never arrives once the
+                // window lost focus, so the drag ends here.
+                if !focused && route.window.screen.resize_state.take().is_some() {
+                    route.window.screen.context_manager.end_border_resize();
+                }
 
                 // Focus is a cheap checkpoint to catch backing-scale changes
                 // whose ScaleFactorChanged never arrived (sleep/wake display

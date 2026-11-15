@@ -951,6 +951,15 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         std::mem::replace(&mut grid.bell, false)
     }
 
+    /// A divider drag ended, however it ended: every grid sends the
+    /// winsizes it held back, so a tab switch or a focus loss mid-drag
+    /// cannot leave a panel with a stale pixel size.
+    pub fn end_border_resize(&mut self) {
+        for context_grid in self.contexts.iter_mut() {
+            context_grid.end_border_resize();
+        }
+    }
+
     #[inline]
     pub fn resize_all_grids(&mut self, width: f32, height: f32) {
         for context_grid in self.contexts.iter_mut() {

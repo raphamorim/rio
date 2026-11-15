@@ -623,8 +623,6 @@ impl Screen<'_> {
         } else {
             self.sugarloaf.clear_background_image();
         }
-
-        self.resize_all_contexts();
     }
 
     #[inline]
@@ -654,7 +652,6 @@ impl Screen<'_> {
             .update_dimensions(&mut self.sugarloaf);
 
         self.mark_dirty();
-        self.resize_all_contexts();
         self.refresh_titles();
         // Reflowed cursor displacement is layout, not travel.
         self.renderer.trail_cursor.snap();
@@ -754,24 +751,6 @@ impl Screen<'_> {
         self.renderer.trail_cursor.snap();
 
         self
-    }
-
-    #[inline]
-    pub fn resize_all_contexts(&mut self) {
-        // whenever a resize update happens: it will stored in
-        // the next layout, so once the messenger.send_resize triggers
-        // the wakeup from pty it will also trigger a sugarloaf.render()
-        // and then eventually a render with the new layout computation.
-        for context_grid in self.context_manager.contexts_mut() {
-            for context in context_grid.contexts_mut().values_mut() {
-                let ctx = context.context_mut();
-                let mut terminal = ctx.terminal.lock();
-                terminal.resize::<ContextDimension>(ctx.dimension);
-                drop(terminal);
-                let winsize = crate::renderer::utils::terminal_dimensions(&ctx.dimension);
-                let _ = ctx.messenger.send_resize(winsize);
-            }
-        }
     }
 
     #[inline]
