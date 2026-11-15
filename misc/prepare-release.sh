@@ -29,9 +29,13 @@ if [ "$current" = "$version" ]; then
     echo "error: workspace is already at $version" >&2
     exit 1
 fi
-# The changelog lives in the tree too, so the tag carries its own notes.
-if ! grep -Eq "^## $version( |\$)" CHANGELOG.md; then
-    echo "error: CHANGELOG.md has no '## $version' entry; write it first" >&2
+# The changelog lives in the tree too, so the tag carries its own notes:
+# its first entry must be this version, dated, and that date is the one
+# the metainfo release gets, so the two records cannot drift apart.
+top="$(grep -m1 '^## ' CHANGELOG.md)"
+release_date="$(printf '%s\n' "$top" | sed -n "s/^## $version (\([0-9]\{4\}-[0-9][0-9]-[0-9][0-9]\)[^)]*).*/\1/p")"
+if [ -z "$release_date" ]; then
+    echo "error: the first CHANGELOG.md entry must be '## $version (YYYY-MM-DD)', found '$top'" >&2
     exit 1
 fi
 
@@ -49,7 +53,7 @@ metainfo="misc/com.rioterm.Rio.metainfo.xml"
 if grep -q "release version=\"$version\"" "$metainfo"; then
     echo "metainfo already has $version, leaving it as is"
 else
-    NEW="$version" TODAY="$(date +%Y-%m-%d)" perl -pi -e 'print qq(    <release version="$ENV{NEW}" date="$ENV{TODAY}">\n      <url type="details">https://github.com/raphamorim/rio/releases/tag/v$ENV{NEW}</url>\n    </release>\n) if $. == $insert_line; $insert_line = $. + 1 if /^  <releases>$/' "$metainfo"
+    NEW="$version" TODAY="$release_date" perl -pi -e 'print qq(    <release version="$ENV{NEW}" date="$ENV{TODAY}">\n      <url type="details">https://github.com/raphamorim/rio/releases/tag/v$ENV{NEW}</url>\n    </release>\n) if $. == $insert_line; $insert_line = $. + 1 if /^  <releases>$/' "$metainfo"
     grep -q "release version=\"$version\"" "$metainfo" || {
         echo "error: failed to insert the metainfo release entry" >&2
         exit 1

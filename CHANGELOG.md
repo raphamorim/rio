@@ -76,7 +76,7 @@
 
 - `cargo install rioterm` works on Windows again. The window icon was compiled into the published `rio-window` library crate from a path outside the crate — a file cargo cannot package — so every registry build of the crate on Windows died in its build script ([#1887](https://github.com/raphamorim/rio/issues/1887), diagnosed by [@milkowski](https://github.com/milkowski)). The resource now lives in the binary crate, embedding the identical icon it already ships for the runtime window, which fixes two quieter bugs in the same motion: on the GNU toolchain the linker could prune the icon out of the library archive entirely, and right-clicking rio.exe → Properties used to advertise `rio-window` — "Winit fork maintained for Rio terminal" — as the product, because the resource compiler stamps version info from whichever crate runs it ([#1898](https://github.com/raphamorim/rio/pull/1898)).
 
-## 0.5.26 (2026-08-24)
+## 0.5.26 (2026-08-23)
 
 - Massive PTY throughput improvement, most visible in programs that repaint the whole screen with truecolor (gradients, animations, terminal video, heavy TUIs). Rio's pseudo-terminal was created with a baud rate of 0, which makes the BSD/XNU kernel clamp the tty output queue to its ~100-byte floor — every write/read handshake moved ~150 bytes through a syscall round trip, capping drain throughput at a fraction of what the kernel can do. The pty now opens at 230400 baud (the kernel sizes its queue from the baud rate on macOS/BSD; on Linux it only fixes `stty` reporting "0 baud"), and the reader drains until the queue is empty before returning to poll. An unthrottled full-screen truecolor benchmark went from ~340 fps to ~1900 fps.
 - Per-cell truecolor styles no longer degrade over long sessions: the style intern table is now garbage-collected with a mark-and-sweep driven by per-row hints, so gradient- and animation-heavy output can run indefinitely. Previously the table could saturate at 65,535 distinct styles, after which new colors silently rendered with the default style.
@@ -382,7 +382,7 @@
 
 - OSC 52 clipboard support is now advertised in the primary device attributes response, so applications that probe DA1 before enabling remote clipboard writes (tcell-based tools over ssh, for example) will use it (closes [#1398](https://github.com/raphamorim/rio/issues/1398)).
 
-## 0.4.12
+## 0.4.12 (2026-07-22)
 
 - Quake mode: bind `ToggleQuake` and a dropdown terminal slides in from the top of the monitor under your cursor. The binding also works as a system wide hotkey while Rio is unfocused (no accessibility permission needed on macOS), hiding it restores focus to the app you were in, and the size is configurable via [`window.quake-width-percentage`](https://rioterm.com/docs/config#windowquake-width-percentage) and [`window.quake-height-percentage`](https://rioterm.com/docs/config#windowquake-height-percentage). Binding changes live reload (closes [#89](https://github.com/raphamorim/rio/issues/89)).
 
@@ -419,7 +419,7 @@
 
 - Fixed `[shell] args` containing spaces being word split on macOS: custom commands are now passed directly to `login(1)` instead of going through an intermediate shell string, so arguments like `args = ["-c", "tmux attach || tmux"]` survive intact.
 
-## 0.4.11
+## 0.4.11 (2026-07-20)
 
 - Font caches and glyph atlases are now cleared when the font library changes. Stale entries could serve the old font's shaping, metrics and bitmaps after a config reload, or crash on font ids past the new library's length (closes [#1639](https://github.com/raphamorim/rio/issues/1639), [#1110](https://github.com/raphamorim/rio/issues/1110), [#818](https://github.com/raphamorim/rio/issues/818)).
 - Glyph atlases recover when full: instead of silently dropping characters once the atlas hit its size limit, it is cleared and every row re-emitted against the fresh atlas.
@@ -434,21 +434,21 @@
 - Fixed font size changing by two steps per keypress: the increase/decrease defaults were registered twice on every platform.
 - Updated `swash` to 0.2.10, which fixes a hinting cache regression that rebuilt hinting state per glyph.
 
-## 0.4.10
+## 0.4.10 (2026-07-09)
 
 - New `SelectAll` action: selects the entire terminal content, including the scrollback history, so it can be copied. Bound to `Command + A` on macOS by default, and available on every platform for custom [key bindings](https://rioterm.com/docs/key-bindings) via `action = "SelectAll"`.
 - Fixed hint label rendering: keyboard hint labels (hyperlink hints) are now drawn as proper grid overlays using the configured hint foreground/background colors, with the leading character of each label highlighted.
 - Tab strip refresh: tab island backgrounds are now derived automatically from the window background color. `colors.tabs` and `colors.tabs-active` now set the inactive and active tab title colors, and the `bar`, `tab-border`, `tabs-foreground`, `tabs-active-foreground` and `tabs-active-highlight` color options were removed.
 
-## 0.4.9
+## 0.4.9 (2026-07-07)
 
 - Updated `wgpu` to 30.0.0 and the `librashader` filter chain to 0.12 (the wgpu path used for RetroArch shaders on Windows/WASM and behind the `wgpu` feature flag elsewhere). librashader 0.12 brings a smarter framebuffer pool that only allocates intermediate framebuffers for the shader passes that actually need them.
 
-## 0.4.8
+## 0.4.8 (2026-06-27)
 
 - Adaptive theme on Linux: Rio now follows the system light/dark preference on Wayland and X11. With [`adaptive-theme`](https://rioterm.com/docs/config#adaptive-theme) configured, Rio watches the XDG Desktop Portal `color-scheme` setting (the same one Firefox and GNOME/KDE use) and switches between your light and dark themes live when the system appearance changes, no restart required. This previously worked only on macOS and Windows ([#408](https://github.com/raphamorim/rio/issues/408); based on [#1358](https://github.com/raphamorim/rio/pull/1358) by [@pinpox](https://github.com/pinpox)).
 
-## 0.4.7
+## 0.4.7 (2026-06-09)
 
 - Tabs can now be reordered by dragging them along the tab strip. Displaced tabs slide into place with a spring animation, and a released tab settles into its new slot.
 - Font fallback discovery now works on Linux and Windows: glyphs missing from your primary font (Nerd Font icons, CJK, emoji, and box/symbol characters) are discovered from installed system fonts (fontconfig on Linux, font-kit on Windows) and registered on the fly, instead of rendering as tofu (missing-glyph boxes). Previously only macOS did this. ([#1630](https://github.com/raphamorim/rio/pull/1630) by [@nikicat](https://github.com/nikicat), [#1642](https://github.com/raphamorim/rio/pull/1642) by [@pinpox](https://github.com/pinpox); closes [#1015](https://github.com/raphamorim/rio/issues/1015)).
@@ -456,19 +456,19 @@
 - New tabs show `~` as a placeholder title until the running program sets one.
 - The smooth (trail) cursor no longer animates between tabs and panels: switching tab or split places the cursor directly instead of sliding a trail across the screen.
 
-## 0.4.6
+## 0.4.6 (2026-06-05)
 
 - Box-drawing and related symbols render again. Box-drawing, block elements, braille, powerline separators, geometric shapes, and legacy computing symbols are now drawn as crisp, pixel-aligned atlas sprites that tile seamlessly at any font size and scale factor: they no longer fall back to the font's (often gappy) glyphs. These had been dropped during the v0.4.x grid rewrite.
 - Kitty graphics: the `X=`/`Y=` sub-cell pixel offset is now applied when placing images ([#1645](https://github.com/raphamorim/rio/pull/1645) by [@floens](https://github.com/floens)): the parser already understood it, but placements were pinned to the cell boundary. Offsets are clamped to the cell box per the kitty spec, and an offset that spills the image into an extra row/column is now accounted for in cursor movement and row occupation.
 - Updated `wgpu` to 29.0.3 and the `librashader` filter chain to 0.11 (the wgpu path used for RetroArch shaders on Windows/WASM and behind the `wgpu` feature flag elsewhere).
 
-## 0.4.5
+## 0.4.5 (2026-05-21)
 
 - Tab color picker now also opens on right-click (previously Control + left-click only).
 - New reset swatch in the tab color picker: a slashed box at the end of the swatch row clears the tab's custom color back to the default.
 - Fix clicks and cursor overrides being intercepted over the empty band at the top of the window when `navigation.hide-if-single` hides the tab strip on a single tab. New shared `Navigation::island_visible(num_tabs)` predicate keeps the renderer, click router, and cursor handler aligned: the empty band now passes through to the grid for selection and double-click maximize.
 
-## 0.4.4
+## 0.4.4 (2026-05-12)
 
 - fix characters disappearing while typing on macOS: e.g. "agg" rendering as "ag", "355" as "35" ([#1595](https://github.com/raphamorim/rio/issues/1595)). The text-run iterator now breaks the run around the cursor cell so speculative substitutions on later cells can't blank earlier ones.
 - fix panic on window resize / maximize ([#1593](https://github.com/raphamorim/rio/issues/1593), [#1596](https://github.com/raphamorim/rio/pull/1596) by [@kronberger-droid](https://github.com/kronberger-droid)). Grid dimensions are now sourced from the same snapshot that sized the row buffers, not from a live value that could race ahead.
@@ -476,7 +476,7 @@
 - reduce per-frame allocations in the rioterm renderer: per-cell styles are materialized once per snapshot, per-row dirty bits skip unchanged rows on partial damage, and visible-cell extras live in a per-frame map.
 - text-run shape cache key is now position-independent, and runs no longer break on space: adjacent words shape in a single call and cache hits stay high as the cursor walks a row.
 
-## 0.4.3
+## 0.4.3 (2026-05-08)
 
 - fix wrong font size and window chrome alignment after connecting/disconnecting an external monitor ([#1588](https://github.com/raphamorim/rio/pull/1588) by [@tauil](https://github.com/tauil)).
 - drop the `copa` and `rio-proc-macros` crates: the escape-sequence parser now lives in
@@ -484,18 +484,18 @@
 codepoint-width table, fused validate+decode).
 - adopt `simdutf` for SIMD UTF-8 transcoding, validation, and base64 decoding.
 
-## 0.4.2
+## 0.4.2 (2026-05-03)
 
 - macOS Metal: window transparency now actually renders. The `CAMetalLayer` is flipped to non-opaque whenever `window.opacity < 1` or a blur style is set, so the alpha in the drawable's pixels reaches the compositor. Default windows stay opaque so the macOS opaque-window fast path is preserved.
 - Per-cell background alpha: cells that don't paint an explicit background color now write `alpha = 0` instead of stamping the default theme background at full alpha. The drawable's translucent clear shows through, which is what makes the window actually look transparent (not just the margins). Cells with an SGR-set background, selection / search highlights, and inverse-video cells stay fully opaque.
 - New `window.opacity-cells` config option. Off by default: cells with an SGR-set background stay fully opaque so syntax-highlighted regions and TUI panels (Neovim, tmux, lazygit) keep their contrast. Set to `true` to apply the opacity multiplier to those cells too, so the entire terminal, including TUI surfaces, shares the configured translucency.
 - `window.blur` now accepts the macOS liquid-glass styles in addition to the existing bool. New string values: `"macos-glass-regular"` (regular opacity) and `"macos-glass-clear"` (highly transparent), both available on macOS 26 (Tahoe) and later. Older macOS / other platforms fall back to the standard system blur and emit a warning instead of failing. Existing `blur = true` / `blur = false` configs are unchanged.
 
-## 0.4.1
+## 0.4.1 (2026-05-02)
 
 - small updates on goreleaser build config for perf optimizations.
 
-## 0.4.0
+## 0.4.0 (2026-04-29)
 
 Note: There's a decent chance v0.4.0 may not work for many users. I've done my best to test it on my very old Windows and Linux machines, but it's difficult to cover all cases. This version includes many rewrites, so I recommend checking that it works properly before updating.
 
@@ -521,7 +521,7 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
 | GPU exec time (both)           | ~700–1000 µs                  | ~700–1500 µs                    | comparable               |
 | First-frame setup              | 15 638 µs                     | 9 397 µs                        | v4 ~40% faster           |
 
-## 0.3.11
+## 0.3.11 (2026-04-17)
 
 - Windows: native `MessageBoxW` close-confirmation dialog when `confirm-before-quit = true` (default), mirroring macOS's `applicationShouldTerminate` `NSAlert` in `rio-window/src/platform_impl/macos/app_delegate.rs`. Replaces rio's in-window GPU-rendered confirmation modal on Windows. New `EventLoopRunner.confirm_before_quit: Cell<bool>` set via the same public `EventLoop::set_confirm_before_quit` that macOS already uses (cfg gate widened to `any(target_os = "macos", target_os = "windows")`). The `WM_CLOSE` handler in `event_loop.rs` checks the flag and `vsync_state.window_count() <= 1` (only the *last* window prompts, matching macOS's app-wide quit semantics) and on confirm-No swallows the message so the window stays open. rioterm's `WindowEvent::CloseRequested` handler now follows the same fast path on Windows as on macOS (`routes.remove(&window_id)` + maybe-`exit()`) since the user already confirmed at the OS layer.
 - Windows render loop now matches the macOS / CVDisplayLink model exactly: `Window::request_redraw` sets a per-window `Arc<AtomicBool>` dirty flag instead of immediately calling `RedrawWindow(RDW_INTERNALPAINT)`. The DwmFlush worker thread (`rio-window/src/platform_impl/windows/event_loop/vsync.rs`) is the single source of frame timing: per composition cycle it iterates the window registry and, for each window where `dirty || should_present_after_input` (1 s post-input window, identical to macOS), calls `RedrawWindow(.., RDW_INVALIDATE)`. Existing `WM_PAINT` → `RedrawRequested` path is unchanged. Plumbing: new `vsync::VSyncSharedState` (`Arc<RwLock<HashMap<HWND, Arc<AtomicBool>>>>` registry + `Mutex<Instant>` for last input) lives on `ActiveEventLoop`, threaded into `WindowData` and the `Window` struct so input handlers, `request_redraw`, and the worker all share it. `Window::Drop` unregisters before `DESTROY_MSG_ID`. Replaces the earlier "always invalidate per vsync" zed mirror; that approach worked but didn't compose with the app's own `request_redraw`, which made scroll feel locked to DWM tick. Now scroll-driven renders queue immediately into the next vsync (≤16 ms wait) and idle frames are skipped entirely. Net behaviour matches macOS one-to-one.
@@ -542,11 +542,11 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
 - `Sugarloaf::font_family_names()` + `FontLibrary::family_names()` for enumerating the host font catalog.
 - Rio `Attributes` re-exported at the sugarloaf crate root so downstream callers don't have to reach into `font_introspector`.
 
-## 0.3.10
+## 0.3.10 (2026-04-15)
 
 - Fix tab-title overflow spilling into neighbour tabs / off-screen when the title is longer than the tab width (issue [#1508](https://github.com/raphamorim/rio/issues/1508)). The island was adding the full title as a text span, measuring it, and centering, with no truncation, so a wide `text_width` produced a negative x offset and the text bled left of the tab's origin. Added `Sugarloaf::char_advance(ch, attrs, font_size)` (and extended `ResolvedGlyph` with `advance_units` + `units_per_em`, populated once at resolve time alongside the existing fallback walk) so the tab bar can walk titles char-by-char and truncate with a trailing `…` to fit `tab_width - 2·TAB_PADDING_X`. Wired `TAB_PADDING_X` up and dropped its `#[allow(dead_code)]`.
 
-## 0.3.9
+## 0.3.9 (2026-04-15)
 
 - Fix progress bar visually freezing at the left edge when a TUI heartbeats `OSC 9;4` faster than the indeterminate animation cycle (issue [#1509](https://github.com/raphamorim/rio/issues/1509)). The island had one `progress_last_update` field doing double duty as the animation phase reference *and* the stale-bar dismissal timestamp; every report yanked the animation back to t=0. Now split into `progress_started_at` (only reset on actual state transitions) and `progress_last_seen` (bumped every report, drives the 15 s timeout): same separation ghostty's GTK apprt gets for free from `GtkProgressBar.pulse()` plus a side `glib.timeoutAdd`.
 - Fix emoji with VS16 variation selector (e.g. `🎟️`, `⚠️`) visually overflowing into the next grid cell. Rio's font shaper correctly uses cmap format 14 to pick the wide emoji glyph for `(base, U+FE0F)` clusters, but the grid still budgeted only one cell for the base, so the glyph painted over its neighbour: misaligning vim/tmux vertical split lines on any row containing a text-presentation emoji. Rio now promotes the cell to `Wide` + `Spacer` on VS16 (and narrows it back on VS15) for any sequence listed in Unicode's `emoji-variation-sequences.txt`, matching kitty and ghostty. New workspace crate `rio-grapheme-width` carries the table (forked from `wezterm-char-props`, MIT).
@@ -562,19 +562,19 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
 - Fix hover hint underline not appearing on the very first hover after startup. `update_highlighted_hints` now marks the renderer's `pending_update` with full terminal damage when the hint changes, mirroring the pre-refactor `set_hyperlink_range` behaviour, so the partial-damage render path can no longer skip the re-shape.
 - Fix two `context::title` tests panicking under sandboxed builds (e.g. Void's xbps-src) where `$HOME=/tmp` collapsed the test path to `~`. The tests now use a path prefix that can't plausibly be `$HOME`.
 
-## 0.3.8
+## 0.3.8 (2026-04-13)
 
 - Fix click between panels not working if it's on alternative screen.
 - Fix divider not appearing (regression of 0.3.7).
 
-## 0.3.7
+## 0.3.7 (2026-04-13)
 
 - Reduced GPU upload.
   - ~17k quads before: **~8.5 MB**
   - ~17k quads after: **~1.55 MB**
   - 5.5x reduction.
 
-## 0.3.6
+## 0.3.6 (2026-04-13)
 
 - Performance improvements.
 - Now a cell is 8 bytes.
@@ -601,7 +601,7 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
 - Fix macOS window close button (red semaphore) showing quit confirmation dialog. Clicking the close button now always closes the window. Quit confirmation is only triggered by Cmd+Q.
 - Remove `window.macos-use-quit-dialog` configuration option.
 
-## 0.3.5
+## 0.3.5 (2026-04-12)
 
 - Fix underline cursor rendering.
 - Fix underline cursor disappearing on blank cells when `window.background-image` is set or `window.opacity < 1.0`. The empty-run dispatch in the renderer now also paints decoration-only spans.
@@ -613,28 +613,28 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
 - Surface background-image load failures (missing path, decode error) through the in-window assistant warning popup instead of a silent log line.
 - Fix FreeBSD build.
 
-## 0.3.4
+## 0.3.4 (2026-04-11)
 
 - Fix kitty image protocol overlay when has a new tab.
 - Fix kitty image protocol placeholder content being rendered.
 
-## 0.3.3
+## 0.3.3 (2026-04-10)
 
 - CPU rendering support by `renderer.use-cpu`.
 - Removed Font char cache friction.
 - Fix kitty image protocol and sixel.
 
-## 0.3.2
+## 0.3.2 (2026-04-08)
 - Performance: Skip shaping for empty cells, perf gain can be over 50% depending of the visible rows.
 - Private user area should adjust based on cells.
 - Cells now by default are created with \0.
 - Selection ignore \0 cells.
 
-## 0.3.1
+## 0.3.1 (2026-04-03)
 
 - Fix crash when filters option is on.
 
-## 0.3.0
+## 0.3.0 (2026-04-03)
 
 - **Quit Confirmation Dialog**: New in-window quit screen with Rio logo, triggered by Cmd+Q / confirm-before-quit
   - Respond with `y` to quit or `n` to cancel
@@ -711,37 +711,33 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
 - Graphics cleanup with LRU eviction strategy (evicts up to 5 oldest when atlas full)
 - Added 5 unit tests for graphics rendering (positioning, LRU, deduplication)
 
-## 0.2.36
-
-- Fix DECSCUSR.
-
-## 0.2.38
+## 0.2.38 (never tagged, released as 0.3.0)
 
 - Update wgpu to v0.28.
 - Update Rust to v1.92.
 
-## 0.2.37
+## 0.2.37 (2025-12-19)
 
 - Support window bg color via OSC.
 - Fix vi cursor not displayed when moving.
 - Fix font loader for fallbacks and extra.
 - Fix font size updating through config.
 
-## 0.2.36
+## 0.2.36 (2025-11-18)
 
 - Fix handler should process two intermediate bytes in CSI sequences by [@aymanbagabas](https://github.com/aymanbagabas).
 - Fix DECSCUSR.
 
-## 0.2.35
+## 0.2.35 (2025-11-03)
 
 - GPU memory usage drop 83%.
 - Sync input render logic (macos).
 
-## 0.2.34
+## 0.2.34 (2025-11-03)
 
 - Fix issue for finding fonts introduced with the v0.2.33 new font loader.
 
-## 0.2.33
+## 0.2.33 (2025-10-30)
 
 - **Platform-specific configuration improvements** [#1341](https://github.com/raphamorim/rio/issues/1341):
   - Added support for platform-specific environment variables via `env-vars` field in platform config
@@ -757,12 +753,12 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
 - Fix kitty keyboard protocol.
 - Support reporting terminal version via XTVERSION.
 
-## 0.2.32
+## 0.2.32 (2025-10-16)
 
 - Updated WGPU to v27.0.1.
 - Fix No backend are enabled on FreeBSD #1235.
 
-## 0.2.31
+## 0.2.31 (2025-09-27)
 
 - Update Rust to v1.90.
 - Fix kitty keyboard recognition.
@@ -776,7 +772,7 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
   - Simplified binding conflict resolution logic to automatically remove conflicting default bindings
   - User-defined bindings now always take precedence without requiring placeholder "None" entries
 
-## 0.2.30
+## 0.2.30 (2025-09-13)
 
 - **Fix Debian/Ubuntu package installation**: Resolved terminfo conflicts with system packages [#1264](https://github.com/raphamorim/rio/issues/1264)
   - Debian (.deb) packages no longer include terminfo files to avoid conflicts with ncurses-term
@@ -785,13 +781,13 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
   - RPM packages continue to include terminfo as before
 - Add audible & visual bell support [#1284](https://github.com/raphamorim/rio/pull/1284).
 
-## 0.2.29
+## 0.2.29 (2025-08-17)
 
 - Fix blinking cursor issue [#1269](https://github.com/raphamorim/rio/issues/1269).
 - Fix Rio uses UNC (\?\) path as working directory, breaking Neovim subprocesses on Windows.
 - Add NSCameraUseContinuityCameraDeviceType to plist for macOS.
 
-## 0.2.28
+## 0.2.28 (2025-08-10)
 
 - **Optimized rendering pipeline for improved performance**: Implemented deferred damage checking and render coalescing
   - Added Wakeup events to batch multiple rapid terminal updates into single render passes
@@ -801,7 +797,7 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
   - Improved damage merging to always accumulate updates even when already marked dirty
   - Enhanced performance for rapid terminal output by coalescing non-synchronized updates
 
-## 0.2.27
+## 0.2.27 (2025-08-07)
 
 - Breaking: If `xterm-rio` is installed we prioritized it over `rio` terminfo.
 - **Fix sixel/iterm2 graphics persistence issue**: Fixed graphics remaining visible when overwritten by text
@@ -815,7 +811,7 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
   - Created consistent cell dimensions across different font types
   - Developed extensive test suite with 40+ font-related tests to verify fixes
 
-## 0.2.26
+## 0.2.26 (2025-08-04)
 
 - **Fix frame dropping in release builds**: Fixed an issue where release builds would drop frames due to damage event timing
   - Damage events are now emitted directly after parsing PTY data, ensuring proper batching
@@ -823,7 +819,7 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
   - Synchronized update timeouts now properly emit damage events
   - Significantly improves rendering smoothness in optimized builds
 
-## 0.2.25
+## 0.2.25 (2025-08-03)
 
 - Fix: Rio doesn't launch from context menu on Windows.
 - Fix: Rio lacks embedded icon on Windows 10 by [@christianjann](https://github.com/christianjann).
@@ -831,7 +827,7 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
   - On macOS, Rio now uses `/usr/bin/login` to spawn shells, ensuring proper login shell environment with full PATH
   - Custom shells like Fish, Nushell, or custom Zsh installations in `/usr/local/bin` will now work correctly
 
-## 0.2.24
+## 0.2.24 (2025-08-01)
 
 - Fix game mode regression.
 - **Hint Label Damage Tracking**: Improved hint label rendering performance with proper damage tracking
@@ -848,17 +844,17 @@ tested with 7e222ef2f1bc0a9eb4ff7f111b8f4c94faa9be97
   - All hint configuration sections now use `hints.rules.*` instead of `hints.enabled.*`
   - Functionality remains the same, only the configuration key names changed
 
-## 0.2.23
+## 0.2.23 (2025-07-23)
 
 - Fix some rendering regressions introduced by 0.2.21.
 - Improve performance by stopping locking on rendering run steps.
 - Fix: [X11: WM_CLASS has an empty string property](https://github.com/raphamorim/rio/issues/1155).
 
-## 0.2.22
+## 0.2.22 (2025-07-18)
 
 - Fix some regressions introduced by 0.2.21.
 
-## 0.2.21
+## 0.2.21 (2025-07-16)
 
 - Breaking: `navigation.use-current-directory` has been renamed to `navigation.current-working-directory`.
 
@@ -999,7 +995,7 @@ These changes are particularly beneficial for:
   - Ensures compatibility with applications expecting xterm-256color backspace behavior
   - Fixes issue where vim would display `^?` instead of performing backspace operation
 
-## 0.2.20
+## 0.2.20 (2025-06-20)
 
 - Performance: Implemented SIMD-accelerated UTF-8 validation throughout Rio terminal using the `simdutf8` crate.
   - Architecture support: AVX2/SSE4.2 (x86-64), NEON (ARM64), SIMD128 (WASM)
@@ -1008,7 +1004,7 @@ These changes are particularly beneficial for:
 - Font library is now under a RWLock instead of Mutex to allow multiple tabs readings same font data.
 - Fix: crash on openSUSE Tumbleweed [#1160](https://github.com/raphamorim/rio/issues/1160).
 
-## 0.2.19
+## 0.2.19 (2025-06-17)
 
 - Reduced the bundle size by ~20.81% (MacOS, Linux, BSD).
 - Performance: stop saving empty images in the image cache.
@@ -1019,11 +1015,11 @@ These changes are particularly beneficial for:
 - Search matching a wrapping fullwidth character in the last column.
 - Update Rust to 1.87.0.
 
-## 0.2.18
+## 0.2.18 (2025-06-05)
 
 - Fix image display crashing the application whenever f16 is available.
 
-## 0.2.17
+## 0.2.17 (2025-06-03)
 
 - _Breaking:_ Decorations as `Enabled` is default on MacOS (instead of `Transparent`).
 - F16 Texture supports whenever is available.
@@ -1031,22 +1027,22 @@ These changes are particularly beneficial for:
 - Skip passing sandbox env in Flatpak, fixes user environment in spawned shell [#1116](https://github.com/raphamorim/rio/pull/1116) by [@ranisalt](https://github.com/ranisalt).
 - On Windows, fixed crash in should_apps_use_dark_mode() for Windows versions < 17763.
 
-## 0.2.16
+## 0.2.16 (2025-05-15)
 
 - _Breaking_: support reading from config directory using `$XDG_CONFIG_HOME` on Linux [#1105](https://github.com/raphamorim/rio/pull/1105) by [@ranisalt](https://github.com/ranisalt).
 - Fix: Crash on whenever attempting to clean an invalid line index.
 - Add metainfo and screenshots for appstream by [@ranisalt](https://github.com/ranisalt).
 
-## 0.2.15
+## 0.2.15 (2025-05-08)
 
 - Fix: In some cases, the first typed character doesn't display until after a delay, or until another key is hit [#1098](https://github.com/raphamorim/rio/issues/1098).
 - Fix: Anomalous behavior occurs with the Bookmark tab style in the new versions 0.14 and 0.13. [#1094](https://github.com/raphamorim/rio/issues/1094).
 
-## 0.2.14
+## 0.2.14 (2025-05-05)
 
 - Fix: panic and crash of terminal window during sudo apt update [#1093](https://github.com/raphamorim/rio/issues/1093).
 
-## 0.2.13
+## 0.2.13 (2025-05-05)
 
 - _Breaking change_: For Windows and Linux users, hyperlink trigger whenever hovering a link was changed from `alt` to `shift`.
 - Fix dimension for whenever a new tab is created from a view with splits.
@@ -1077,11 +1073,11 @@ These changes are particularly beneficial for:
 - Fix: Issue regarding split not updating opacity style when getting unfocused.
 - Add support for custom parsing of APC, SOS and PM sequences.
 
-## 0.2.12
+## 0.2.12 (2025-03-28)
 
 - Fix crash regarding fonts not found whenever trying to run Rio.
 
-## 0.2.11
+## 0.2.11 (2025-03-27)
 
 - Fix filter scanlines not appearing.
 - rt(wgpu): clamp texture size to device limits by [@chyyran](https://github.com/chyyran).
@@ -1092,7 +1088,7 @@ These changes are particularly beneficial for:
 - _Breaking:_ `renderer.strategy = "Continuous"` was renamed to `renderer.strategy = "Game"`
 - Fix search bar can't show chinese [#844](https://github.com/raphamorim/rio/issues/844).
 
-## 0.2.10
+## 0.2.10 (2025-03-13)
 
 - Fix computation of lines on screen.
 - Fix dimension of the first tab whenever TopTab or BottomTab is created.
@@ -1100,7 +1096,7 @@ These changes are particularly beneficial for:
 - Support to `navigation.unfocused_split_opacity`, default is `0.5`.
 - Sugarloaf: Fix foreground color opacity not being computed.
 
-## 0.2.9
+## 0.2.9 (2025-03-10)
 
 - Support to symbol map configuration: `fonts.symbol-map`:
 
@@ -1112,7 +1108,7 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - Add Switch to Next/Prev Split or Tab command by [@vlabo](https://github.com/vlabo).
 - Fix issue whenever the first main font cannot be found.
 
-## 0.2.8
+## 0.2.8 (2025-02-26)
 
 - Support to `.rpm` files! (thanks [@vedantmgoyal9](https://github.com/vedantmgoyal9) and [@caarlos0](https://github.com/caarlos0))
 - OSC 7 Escape sequences to advise the terminal of the working directory.
@@ -1121,14 +1117,14 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - Updated `windows-sys` to `v0.59`.
   - To match the corresponding changes in `windows-sys`, the `HWND`, `HMONITOR`, and `HMENU` types now alias to `*mut c_void` instead of `isize`.
 
-## 0.2.7
+## 0.2.7 (2025-02-11)
 
 - Shifted key reported without a shift when using kitty keyboard protocol.
 - fix: Set cursor color via ANSI escape sequence [#945](https://github.com/raphamorim/rio/issues/945).
 - fix: Can the "base 16" colors be changed at runtime through Ansi escape sequences? [#188](https://github.com/raphamorim/rio/issues/188)
 - fix: Changing release and nightly build Ubuntu runners for x86 (`ubuntu-latest` to `ubuntu-22.04`) and arm (`ubuntu-24.04-arm` to `ubuntu-22.04-arm`)
 
-## 0.2.6
+## 0.2.6 (2025-02-08)
 
 - Fix: 0.2.5 doesn't render grey scale font on macOS [#937](https://github.com/raphamorim/rio/issues/937).
 - fix: fix duplicate tab_id by monotonic counter for unique tab IDs by [@hilaolu](https://github.com/hilaolu).
@@ -1137,7 +1133,7 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - fix: CMD+W open new tab but not new window occasionally [#756](https://github.com/raphamorim/rio/issues/756).
 - fix: Error getting window dimensions on Wayland [#768](https://github.com/raphamorim/rio/issues/768).
 
-## 0.2.5
+## 0.2.5 (2025-01-30)
 
 - Introduced `draw-bold-text-with-light-colors` config, default is `false`.
 - If light or dark colors are not specified Rio will try to convert it based on the regular color.
@@ -1147,7 +1143,7 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - Fix: Looking forward to having a color converter [#850](https://github.com/raphamorim/rio/issues/850).
 - Fix: Unexpected basic 16 terminal colors displayed on some apps [#464](https://github.com/raphamorim/rio/issues/464).
 
-## 0.2.4
+## 0.2.4 (2025-01-17)
 
 - Breaking: Rio now doesn't allow anymore disable kitty keyboard protocol.
 - Fullwidth semantic escape characters.
@@ -1157,7 +1153,7 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - Downgrade MSRV to 1.80.1
 - Update wgpu to 24.0.0.
 
-## 0.2.3
+## 0.2.3 (2025-01-13)
 
 - Rio now allows you to configure window title through configuration via template. Possible options:
   - `TITLE`: terminal title via OSC sequences for setting terminal title
@@ -1194,7 +1190,7 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - Wayland: disable title text drawn with crossfont crate, use ab_glyph crate instead.
 - Sugarloaf: Expose wgpu.
 
-## 0.2.2
+## 0.2.2 (2024-11-23)
 
 - Fix iterm2 image protocol.
 - Allow setting initial window title [#806](https://github.com/raphamorim/rio/pull/806) by [@xsadia](https://github.com/xsadia).
@@ -1202,7 +1198,7 @@ fonts.symbol-map = [{ start = "2297", end = "2299", font-family = "Cascadia Code
 - Makes editor.args and shell.args optional in config.toml [#801](https://github.com/raphamorim/rio/pull/803) by [@Nylme](https://github.com/Nylme).
 - Introduce `navigation.open-config-with-split`.
 
-## 0.2.1
+## 0.2.1 (2024-11-16)
 
 - Fix: Search seems broken in 0.2.0 [#785](https://github.com/raphamorim/rio/issues/785).
 - Regular font is now 400 as default weight.
@@ -1231,7 +1227,7 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 - Update window title straight away ([#779](https://github.com/raphamorim/rio/pull/779) by [@hunger](https://github.com/hunger))
 - Always update the title on windows and MacOS ([#780](https://github.com/raphamorim/rio/pull/780) by [@hunger](https://github.com/hunger))
 
-## 0.2.0
+## 0.2.0 (2024-11-13)
 
 - Note: The migration from 0.1.x to v0.2.x changed considerably the renderer source code, although it was tested for 3 weeks it's entirely possible that introduced bugs (hopefully not!).
 - Performance gains!
@@ -1259,7 +1255,7 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 - Fix: Window output lost when rio loses focus [#706](https://github.com/raphamorim/rio/issues/706).
 - Updated wgpu to `23.0.0`.
 
-## 0.1.17
+## 0.1.17 (2024-10-06)
 
 - Fix flash of white during startup on Microsoft Windows [#640](https://github.com/raphamorim/rio/issues/640).
 - Add DWMWA_CLOAK support on Microsoft Windows.
@@ -1270,7 +1266,7 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 - Fix IME color for underline and beam cursors.
 - Add default for Style property on Sugarloaf font.
 
-## 0.1.16
+## 0.1.16 (2024-09-24)
 
 - Support auto bold on fonts.
 - Support auto italic on fonts.
@@ -1280,7 +1276,7 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 - MacOS: Support to native modal that asks if wants to close app.
 - MacOS: Fix `confirm-before-quit` property.
 
-## 0.1.15
+## 0.1.15 (2024-09-19)
 
 - Introduce `cursor.blinking-interval`, default value is 800ms.
 - Fix blinking cursor lag issue.
@@ -1291,7 +1287,7 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 - `keyboard.use-kitty-keyboard-protocol` is now `false` by default.
 - Add support for msys2/mingw builds release [#635](https://github.com/raphamorim/rio/issues/635) by [@Kreijstal](https://github.com/Kreijstal).
 
-## 0.1.14
+## 0.1.14 (2024-09-17)
 
 - `developer.log-file` has been renamed to `developer.enable-log-file`.
 - **breaking**: `CollapsedTab` has been renamed to `Bookmark`.
@@ -1305,7 +1301,7 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 - Fix font emoji width.
 - Fix MacOS tabbing when spawned from a new window.
 
-## 0.1.13
+## 0.1.13 (2024-09-09)
 
 - Support to iTerm2 image protocol.
 - Fix: Issue building rio for Void Linux [#656](https://github.com/raphamorim/rio/issues/656).
@@ -1315,7 +1311,7 @@ linux.shell.args = ["new-session", "-c", "/var/www"]
 - Implement LRU to cache on layout and draw methods.
 - Reenable set subtitle on MacOS native tabs.
 
-## 0.1.12
+## 0.1.12 (2024-09-07)
 
 - Introduce: `renderer.max-fps`.
 - Fix: Cursor making text with ligatures hidden.
@@ -1362,7 +1358,7 @@ shape = 'block'
 blinking = false
 ```
 
-## 0.1.11
+## 0.1.11 (2024-09-04)
 
 - Experimental support to Sixel protocol.
 - Clipboard has been moved to Application level and shared to all windows.
@@ -1386,7 +1382,7 @@ blinking = false
 - Cleanup selection once happens a resize.
 - Windows: Reduce WM_PAINT messages of thread target window.
 
-## 0.1.10
+## 0.1.10 (2024-08-27)
 
 - Refactor/Simplify close tabs logic internally.
 - Fix: NativeTab margin top when `hide-if-single` is true.
@@ -1399,7 +1395,7 @@ blinking = false
 - Enable search functionality as default on Microsoft Windows.
 - Add command for closing all tabs except the current one (`CloseUnfocusedTabs`)
 
-## 0.1.9
+## 0.1.9 (2024-08-25)
 
 - Search support.
 - New theme properties `search-match-background`, `search-match-foreground`, `search-focused-match-background` and `search-focused-match-foreground`.
@@ -1411,7 +1407,7 @@ blinking = false
 - Fix scale update on transitioning between screens with different DPI.
 - Support a short variant (`-w`) for `--working-dir` argument.
 
-## 0.1.8
+## 0.1.8 (2024-08-21)
 
 - **breaking:** Introduced a new property in theme called `tabs-active-highlight`, default color is `#ff00ff`.
 - **breaking:** Removed breadcrumb navigation.
@@ -1424,7 +1420,7 @@ blinking = false
 - Sugarloaf API has changed from `Sugar` primitives to `Content`.
 - Fix: `[editor]` overshadow headerless parameters in default config. (Ref: #601)
 
-## 0.1.7
+## 0.1.7 (2024-08-16)
 
 **Breaking**
 
@@ -1448,7 +1444,7 @@ args = ["-w"]
 - Fix: Weird rendering behaviour on setting padding-x in config [#590](https://github.com/raphamorim/rio/issues/590).
 - Upgrade Rust to 1.80.1.
 
-## 0.1.6
+## 0.1.6 (2024-08-12)
 
 - Support custom colors on all underlines.
 - Support for advaned formatting (squiggly underline?) [#370](https://github.com/raphamorim/rio/issues/370)
@@ -1457,14 +1453,14 @@ args = ["-w"]
   - Render backgrounds and cursors in one pass.
 - Update tokio
 
-## 0.1.5
+## 0.1.5 (2024-08-08)
 
 - Fix Bug cell disappearance [#579](https://github.com/raphamorim/rio/issues/579).
 - Fix Bug Rendering problem with TUIs using cursor movement control sequences in rio (v0.1.1+) [#574](https://github.com/raphamorim/rio/issues/574).
 - Changed default font family to Cascadia Code.
 - Changed default width to 800 and default height to 500.
 
-## 0.1.4
+## 0.1.4 (2024-08-05)
 
 - Fix Bug Text Rendering Bug [#543](https://github.com/raphamorim/rio/issues/543).
 - Fix Abnormal font display and incomplete Navigation content display [#554](https://github.com/raphamorim/rio/issues/554).
@@ -1487,7 +1483,7 @@ padding-y = [30, 10]
 
 - Update swash (0.1.18), ab_glyph (0.2.28) and remove double hashmap implementation.
 
-## 0.1.3
+## 0.1.3 (2024-07-27)
 
 - Added support to font features (ref: #548 #551)
 
@@ -1503,7 +1499,7 @@ Note: Font features do not have support to live reload on configuration, so to r
 - fix: IO Safety violation from dropping RawFd (fatal runtime error: IO Safety violation: owned file descriptor already closed).
 - Upgrade to Rust 1.80.0.
 
-## 0.1.2
+## 0.1.2 (2024-07-21)
 
 - Upgrade wgpu to v22.0.0.
 - Restrict of cells width.
@@ -1511,7 +1507,7 @@ Note: Font features do not have support to live reload on configuration, so to r
 - Wayland: avoid crashing when compositor is misbehaving. (ref: raphamorim/winit 22522c9b37e9734c9a2408fae8d34b2599ff4574).
 - Performance upgrades for lines rendered previously.
 
-## 0.1.1
+## 0.1.1 (2024-06-16)
 
 - Fix the validation errors whenever a surface is used with the vulkan backend.
 - Clean up weak references to texture views and bind groups to prevent memory leaks.
@@ -1519,7 +1515,7 @@ Note: Font features do not have support to live reload on configuration, so to r
 - Improvements on font loader (avoid set weight or style in the lookup if isn't defined).
 - Fallbacks fonts doesn't trigger alerts anymore.
 
-## 0.1.0
+## 0.1.0 (2024-06-10)
 
 **Breaking change: Opacity API has changed**
 
@@ -1566,16 +1562,16 @@ opacity = 0.8
 - closed: #307 default offset height is above the bottom position since update
 - closed: #392 Box drawing issue with Berkeley Mono on MacOS
 
-## 0.0.39
+## 0.0.39 (2024-05-23)
 
 - Minor fix on fixed transparency on backgrounds for Welcome/Dialog.
 
-## 0.0.38
+## 0.0.38 (2024-05-23)
 
 - Corrections for transparency and blur for MacOS windows.
 - Apply dynamic background logic only for images and keep alpha channel on background.
 
-## 0.0.37
+## 0.0.37 (2024-05-01)
 
 - _Breaking change:_ Reduced font size to `16.0`.
 - _Breaking change:_ Set `VI mode` trigger with CTRL + SHIFT + SPACE on Windows.
@@ -1583,13 +1579,13 @@ opacity = 0.8
 - Update rust version to 1.77.2.
 - Initial touch support by [@androw](https://github.com/androw) [#226](https://github.com/raphamorim/rio/pull/226)
 
-## 0.0.36
+## 0.0.36 (2024-03-14)
 
 - fixes for x11 freeze issue.
 - update winit to 0.29.15.
 - update wix (toolset that builds Windows Installer) from 4.0.1 to 4.0.4.
 
-## 0.0.35
+## 0.0.35 (2024-02-27)
 
 - Bump wayland dependencies: `wayland-backend`, `wayland-client`, `wayland-cursor` and `wayland-scanner`.
 - Refactor: disable cursor blink on selection (ref #437) #441 by @hougesen .
@@ -1598,12 +1594,12 @@ opacity = 0.8
 - update rust version to 1.75.0.
 - update winit to 0.29.11.
 
-## 0.0.34
+## 0.0.34 (2024-01-07)
 
 - use Fowler–Noll–Vo hash function implementation for sugar cache (more efficient for smaller hash keys)
 - update winit to 0.29.9
 
-## 0.0.33
+## 0.0.33 (2023-12-18)
 
 - **Breaking**: Removed `macos-hide-toolbar-buttons` in favor of `window.decorations` api.
 - Fix: Rio failing to draw blur upon launch #379
@@ -1611,12 +1607,12 @@ opacity = 0.8
 - Added support for path based color automation.
 - Added `window.decorations` property, available options are `Enabled`, `Disabled`, `Transparent` and `Buttonless`.
 
-## 0.0.32
+## 0.0.32 (2023-12-13)
 
 - Fix: font order priority.
 - Fix: add default values to keyboard config (#382)
 
-## 0.0.31
+## 0.0.31 (2023-12-12)
 
 - **Breaking**: Configuration `performance` has moved to `renderer.performance`.
 - **Breaking**: Configuration `disable-renderer-when-unfocused` has moved to `renderer.disable-renderer-when-unfocused`.
@@ -1655,13 +1651,13 @@ backend = "Automatic"
 - Fix: remove duplicate kitty backspace keybinds [#375](https://github.com/raphamorim/rio/pull/375) by [@hougesen](https://github.com/hougesen)
 - Fix: Kitty-keyboard-protocol causes Backspace to delete 2 characters. [#344](https://github.com/raphamorim/rio/issues/344) by [@hougesen](https://github.com/hougesen)
 
-## 0.0.30
+## 0.0.30 (2023-12-10)
 
 - Fix regression with color ansi when transparency is off.
 - **Breaking**: Config `navigation.macos-hide-window-buttons` has moved to `window.macos-hide-toolbar-buttons`.
 - **Breaking**: Config property `padding-x` has been updated from 5.0 to 0.0 on MacOS.
 
-## 0.0.29
+## 0.0.29 (2023-12-05)
 
 - Fix compiled binary shows nothing inside the app window [#366](https://github.com/raphamorim/rio/issues/366).
 - Fix command key + left and right strange behavior [#359](https://github.com/raphamorim/rio/issues/359).
@@ -1675,7 +1671,7 @@ divider = 1.0
 
 - Corrections for TMUX scroll calculations.
 
-## 0.0.28
+## 0.0.28 (2023-11-29)
 
 - **Breaking**: Settings UI has been removed and `editor` property has been added.
 - **Breaking**: default `padding-x` for MacOS has moved from `10.0` to `5.0`.
@@ -1715,18 +1711,18 @@ y = 0.0
 - Update `.icns` file with more format and add new icon (Ref: [#329](https://github.com/raphamorim/rio/pull/329)) by [@nix6839](https://github.com/nix6839).
 - Update `.ico` files with more resolution and add new icon (Ref: [#329](https://github.com/raphamorim/rio/pull/329)) by [@nix6839](https://github.com/nix6839).
 
-## 0.0.27
+## 0.0.27 (2023-11-05)
 
 - Activate the hyperlink check whenever a modifier is changed (`alt` for windows/linux/bsd and `command` for macos).
 - Fix Error when Double click on terminal side (Ref [#316](https://github.com/raphamorim/rio/issues/316)).
 
-## 0.0.26
+## 0.0.26 (2023-10-28)
 
 - Upgrade winit to 0.29.3.
 - Support for `Run` actions key bindings for Microsoft Windows.
 - Hyperlink support (Ref [#60](https://github.com/raphamorim/rio/issues/60))
 
-## 0.0.25
+## 0.0.25 (2023-10-25)
 
 - Upgrade wgpu to 0.18.0.
 - Desktop OpenGL 3.3+ Support on Windows through WebGPU.
@@ -1736,14 +1732,14 @@ y = 0.0
 - Fix MacOS fullscreen empty space on margin top.
 - Upgrade winit to 0.29.2.
 
-## 0.0.24
+## 0.0.24 (2023-10-20)
 
 - Improvements on selection text for scale factor >= 2.0.
 - Improvements on cursor sugar creation, dropped unnecessary usage of clone.
 - Colors/Themes got a new property called `vi-cursor`, you can specify any color you wish for VI Cursor.
 - Alacritty's VI Mode.
 
-## 0.0.23
+## 0.0.23 (2023-10-18)
 
 #### Breaking changes
 
@@ -1802,7 +1798,7 @@ keys = [
 
 - Upgrade rust to 1.73.0 by @igorvieira.
 
-## 0.0.22
+## 0.0.22 (2023-10-02)
 
 - Now you can add extra fonts to load:
 
@@ -1820,13 +1816,13 @@ extras = [{ family = "Microsoft JhengHei" }]
 - Forked and embedded glyph-brush project to sugarloaf. Glyph-brush was originally created @alexheretic and is licensed under Apache-2.0 license.
 - Upgrade wgpu to 0.17.1.
 
-## 0.0.21
+## 0.0.21 (2023-09-30)
 
 - Hide other applications in MacOS #262 by @sonbui00.
 - Implemented `working-dir` parameter to cli https://github.com/raphamorim/rio/issues/258.
 - Remove legacy icns icons from bundle.
 
-## 0.0.20
+## 0.0.20 (2023-09-24)
 
 - Fix retrieve foreground process name to tabs.
 - Fix cursor disappearing in the first tab whenever a new tab is created with NativeTab.
@@ -1843,7 +1839,7 @@ extras = [{ family = "Microsoft JhengHei" }]
 - Use fixed dependency versions in sugarloaf
 - Added split support along with the following actions `SplitVertically`, `SplitHorizontally` and `ClosePane` (support to split is still not available).
 
-## 0.0.19
+## 0.0.19 (2023-09-19)
 
 **Breaking change**
 
@@ -1910,13 +1906,13 @@ x = 0.0
 - Implemented `TERM_PROGRAM` and `TERM_PROGRAM_VERSION` (Ref: https://github.com/raphamorim/rio/issues/200).
 - Whenever native tabs is on disable macos deadzone logic.
 
-## 0.0.18
+## 0.0.18 (2023-08-29)
 
 - Upgraded to Rust 1.72.0.
 - Fix delete key inputs square character.
 - Fix Breadcrumb navigation crash.
 
-## 0.0.17
+## 0.0.17 (2023-08-29)
 
 #### Breaking changes
 
@@ -1964,12 +1960,12 @@ weight = 800
 - Support startup notify protocol to raise initial window on Wayland/X11.
 - Fix Double-tap by touchpad on the titlebar doesn't maximize/unmaximize the window in GNOME 44, Wayland.
 
-## 0.0.16
+## 0.0.16 (2023-08-03)
 
 - Fix tab/breadcrumb bug introduced in 0.0.15
 - Introduce new configuration property: `navigation.macos-hide-window-button`.
 
-## 0.0.15
+## 0.0.15 (2023-08-01)
 
 - Introduce configurable navigation with the following options: `CollapsedTab` (default), `Breadcrumb`, `TopTab` and `BottomTab`.
 
@@ -1991,7 +1987,7 @@ clickable = false
 - Default colors `selection-foreground` and `selection-background` has changed.
 - Default colors `tab` and `tab-active` has changed.
 
-## 0.0.14
+## 0.0.14 (2023-07-23)
 
 - Implementation of custom key bindings ([#117](https://github.com/raphamorim/rio/issues/117)).
 - Fix .deb packing in GH Actions.
@@ -1999,7 +1995,7 @@ clickable = false
 - Fix scroll when copying text outside of offset.
 - Fix copy key bindings.
 
-## 0.0.13
+## 0.0.13 (2023-07-21)
 
 - Fix Fuzzy Finder issue ([#132](https://github.com/raphamorim/rio/issues/132)).
 - Introduce Copa (Alacritty's VTE forked version to introduce new sequences/instructions in next versions).
@@ -2012,7 +2008,7 @@ clickable = false
 - Set `padding-x` to 0 for non-macos.
 - Set `app_id`/`WM_CLASS` property on Wayland/X11.
 
-## 0.0.12
+## 0.0.12 (2023-07-20)
 
 - Strip binary is on for release builds.
 - Each paste or key binding that has writing leads to clear selection and scroll bottom.
@@ -2022,11 +2018,11 @@ clickable = false
 - Fix for MacOS deadzone changing cursor to draggable on window buttons.
 - Fix for scroll using tmux.
 
-## 0.0.11
+## 0.0.11 (2023-07-19)
 
 - Fix for font styles using CachedSugar.
 
-## 0.0.10
+## 0.0.10 (2023-07-19)
 
 - Major refactor of Sugarloaf.
   - Performance improvements around 80-110%.
@@ -2045,7 +2041,7 @@ clickable = false
 - Rio creates `.deb` packages (canary and release).
 - Binary size optimization (ref: [#152](https://github.com/raphamorim/rio/pull/152)) by [@OlshaMB]
 
-## 0.0.9
+## 0.0.9 (2023-07-14)
 
 - Created "rio" terminfo.
 - Breaking changes for configuration file regarding `Advanced`. The configuration `Advanced` has moved to root level and `disable-render-when-unfocused` renamed to `disable-unfocused-render`.
@@ -2087,7 +2083,7 @@ use-fork = true
 - Teletypewriter: Fixes for musl as target_env (related: [#119](https://github.com/raphamorim/rio/issues/119)).
 - FreeBSD support, implementation by [yurivict](https://github.com/yurivict) ([Commit](https://github.com/freebsd/freebsd-ports/commit/8582b8c59459a7dc5112a94a39de45f6cc124c3e), Ref: [#115](https://github.com/raphamorim/rio/issues/115))
 
-## 0.0.8
+## 0.0.8 (2023-07-03)
 
 - Added generation of `.msi` and `.exe` files to the release pipeline (stable and canary).
 - Support to Microsoft Windows.
@@ -2102,7 +2098,7 @@ use-fork = true
 - Changed default black color to `#4c4345`.
 - Fix mouse position for when selecting text.
 
-## 0.0.7
+## 0.0.7 (2023-06-20)
 
 - Breaking changes for configuration file regarding `Style` property.
 
@@ -2141,7 +2137,7 @@ font-size = 18
 - Fix `exit` command not closing the app ([#87](https://github.com/raphamorim/rio/issues/87)).
 - Changed default `light-black` color.
 
-## 0.0.6
+## 0.0.6 (2023-06-06)
 
 - Fix: support to clipboard in linux by [@joseemds](https://github.com/joseemds).
 - Font style for custom fonts by [@OlshaMB](https://github.com/OlshaMB) (closed [#80](https://github.com/raphamorim/rio/issues/80) and [#81](https://github.com/raphamorim/rio/issues/81))
@@ -2154,7 +2150,7 @@ font-size = 18
 - Fix panics if custom font is not found [#68](https://github.com/raphamorim/rio/issues/68).
 - MacOs ignore alt key in cntrlseq (same behavior as Terminal.app, Hyper, iTerm and etecetera).
 
-## 0.0.5
+## 0.0.5 (2023-05-30)
 
 - Fix ctlseqs modifiers for bindings.
 - Add RioEvent::ColorRequest events to write color updates on pty.
@@ -2168,7 +2164,7 @@ font-size = 18
 - Fix scale issues for 1.0 scale factor or using monitor with different scale factor. (https://github.com/raphamorim/rio/issues/50)
 - Improve `make pack-osx-arm` and `make pack-osx-x86` to only contain Rio.app file. (https://github.com/raphamorim/rio/issues/54)
 
-## 0.0.4
+## 0.0.4 (2023-05-24)
 
 - Fix CPU large usage when scrolling.
 - Task scheduler.
@@ -2180,7 +2176,7 @@ font-size = 18
 - Hide cursor when typing and make it visible again with scroll and cursor interactions.
 - Implementation of paste files to string path.
 
-## 0.0.3
+## 0.0.3 (2023-05-19)
 
 - Added Input Method Engine (IME) support. Note: only works for preedit with single character now, which means that still need to fix for other keyboards as Japanese, Chinese [...].
 - Common Keybindings and keybindings for MacOS.
