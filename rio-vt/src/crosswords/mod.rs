@@ -2305,6 +2305,7 @@ impl<U: EventListener> Crosswords<U> {
             // keep their buffers: `copy_from` writes into them, and only
             // slots that do not exist yet allocate.
             dst.truncate(count);
+            dst.reserve(count.saturating_sub(dst.len()));
             row_styles.resize_with(count, Vec::new);
             extras.clear();
             for (i, row_idx) in (start..end).enumerate() {
