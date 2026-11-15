@@ -34,6 +34,22 @@ pub struct PanelBorder {
     pub right_or_bottom: NodeId,
 }
 
+/// What a removed panel held in sugarloaf, for the caller to release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RemovedPanel {
+    pub rich_text_id: usize,
+    pub route_id: usize,
+}
+
+impl RemovedPanel {
+    /// Drop the image overlays and route images the panel owned;
+    /// sugarloaf keeps no other per-panel state.
+    pub fn release(self, sugarloaf: &mut Sugarloaf) {
+        sugarloaf.clear_image_overlays_for(self.rich_text_id);
+        sugarloaf.remove_route_images(self.route_id);
+    }
+}
+
 /// Active resize drag state
 #[derive(Debug, Clone, Copy)]
 pub struct ResizeState {
@@ -147,13 +163,92 @@ pub struct ContextGrid<T: EventListener> {
 pub struct ContextGridItem<T: EventListener> {
     pub val: Context<T>,
     pub layout_rect: [f32; 4],
+    /// The rect the panel was last laid out at, so a relayout only
+    /// touches the panels it moved.
+    applied_rect: [f32; 4],
+    /// The grid last pushed into the terminal: columns, lines and cell
+    /// size, the only things its reflow depends on.
+    applied_grid: Option<GridKey>,
+    /// A pixel-only winsize held back during a divider drag.
+    winsize_pending: bool,
+}
+
+/// What a terminal's reflow depends on.
+type GridKey = (usize, usize, u32, u32);
+
+fn grid_key(dimension: &ContextDimension) -> GridKey {
+    (
+        dimension.columns(),
+        dimension.screen_lines(),
+        dimension.square_width().to_bits(),
+        dimension.square_height().to_bits(),
+    )
 }
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
     pub fn new(context: Context<T>) -> Self {
+        // The terminal and its PTY were created at this dimension, so
+        // the first relayout only pushes what differs from it.
+        let dimension = context.dimension;
         Self {
+            applied_rect: [0.0, 0.0, dimension.width, dimension.height],
+            applied_grid: Some(grid_key(&dimension)),
+            winsize_pending: false,
             val: context,
             layout_rect: [0.0; 4],
+        }
+    }
+
+    /// Push the panel's layout into its terminal and PTY.
+    ///
+    /// A panel whose rect did not move is left alone. One whose grid
+    /// changed is reflowed and told its new winsize. One whose size
+    /// changed only in pixels keeps its grid and gets the winsize now,
+    /// or, `mid_drag`, once the pointer lets go: the pixel fields reach
+    /// the child as a SIGWINCH, and a drag would otherwise raise one
+    /// per pixel in both panels beside the divider.
+    fn push_layout(&mut self, mid_drag: bool) {
+        let moved = self.applied_rect != self.layout_rect;
+        let resized = self.applied_rect[2..] != self.layout_rect[2..];
+        self.applied_rect = self.layout_rect;
+        let key = grid_key(&self.val.dimension);
+        let reflowed = self.applied_grid != Some(key);
+        if moved || reflowed {
+            // The present gate reads `pending_update.is_dirty()` before
+            // it looks at the terminal, so a panel that moved or was
+            // reflowed in place (a font size change keeps the rect) has
+            // to be marked or an idle terminal would not present.
+            self.val.renderable_content.pending_update.set_dirty();
+        }
+
+        if reflowed {
+            self.applied_grid = Some(key);
+            // The terminal ends a synchronized update itself when its
+            // grid or cell size changes.
+            self.val
+                .terminal
+                .lock()
+                .resize::<ContextDimension>(self.val.dimension);
+            self.send_winsize();
+        } else if resized || self.winsize_pending {
+            if mid_drag {
+                self.winsize_pending = true;
+            } else {
+                self.send_winsize();
+            }
+        }
+    }
+
+    fn send_winsize(&mut self) {
+        let winsize = crate::renderer::utils::terminal_dimensions(&self.val.dimension);
+        let _ = self.val.messenger.send_resize(winsize);
+        self.winsize_pending = false;
+    }
+
+    /// Send a winsize held back during a drag.
+    fn flush_winsize(&mut self) {
+        if self.winsize_pending {
+            self.send_winsize();
         }
     }
 
@@ -421,7 +516,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         border: &PanelBorder,
         original_sizes: (f32, f32),
         delta: f32,
-        sugarloaf: &mut Sugarloaf,
     ) {
         // The border moves until a panel on either side, nested or not,
         // reaches the floor. The floor is a size, so it holds whether
@@ -453,7 +547,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
 
-        self.apply_taffy_layout(sugarloaf);
+        self.apply_taffy_layout(true);
     }
 
     /// Get separator lines between adjacent panels for rendering.
@@ -649,18 +743,15 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // every divider in the parent.
         let current_style = self.tree.style(current_node)?.clone();
         let margin = self.margin_along(current_node, parent_node);
-        let sized = current_style.flex_basis.into_option().is_some();
         let scale = self.scale;
         let container_style = Style {
             display: Display::Flex,
             flex_direction: direction,
             flex_basis: basis_plus(current_style.flex_basis, margin),
-            flex_grow: if sized {
-                current_style.flex_grow + margin
-            } else {
-                current_style.flex_grow
-            },
-            flex_shrink: current_style.flex_shrink,
+            // The weights are already in margin box units; with no
+            // padding the container's content box is its basis.
+            flex_grow: current_style.flex_grow,
+            flex_shrink: 1.0,
             gap: geometry::Size {
                 width: length(self.panel_config.column_gap * scale),
                 height: length(self.panel_config.row_gap * scale),
@@ -712,16 +803,66 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // The basis is the border-box size, the unit taffy lays out in
         // for a panel and a container alike, so a split or a collapse
         // can hand one node's sizing to the other kind unchanged and the
-        // pair lands on the sizes asked for. Grow and shrink weighted by
-        // the same size keep the proportion when the window resizes.
+        // pair lands on the sizes asked for. Grow weighted by the same
+        // size keeps the proportion when the window grows. Taffy shares
+        // negative space by flex_shrink times the content-box basis, so
+        // a panel's padding would make it give up less than its share
+        // when the window shrinks; weighting shrink by border box over
+        // content box puts the share back in proportion to what is seen.
         if let Some(size) = width.or(height) {
             style.flex_basis = length(size);
-            style.flex_grow = size;
-            style.flex_shrink = 1.0;
+            let (grow, shrink) =
+                self.flex_weights(node, style.flex_basis, width.is_some());
+            style.flex_grow = grow;
+            style.flex_shrink = shrink;
         }
 
         self.tree.set_style(node, style)?;
         Ok(())
+    }
+
+    /// Grow and shrink weights for a node with a sized basis, in one
+    /// unit for panels and containers alike: the margin box. A panel's
+    /// basis is its border box and its margins sit outside; a container
+    /// has no margin and its basis is the margin box of the panel it
+    /// replaced. Taffy grows by `flex_grow` and shrinks by `flex_shrink`
+    /// times the content box, so grow is the margin box and shrink is
+    /// margin box over content box: a panel's padding does not shield
+    /// it, and a basis handed between a panel and a container keeps the
+    /// proportion. An unsized node keeps the default weights.
+    fn flex_weights(
+        &self,
+        node: NodeId,
+        basis: taffy::Dimension,
+        row: bool,
+    ) -> (f32, f32) {
+        let Some(size) = basis.into_option() else {
+            return (1.0, 1.0);
+        };
+        let Ok(layout) = self.tree.layout(node) else {
+            return (size, 1.0);
+        };
+        let (margins, edges) = if row {
+            (
+                layout.margin.left + layout.margin.right,
+                layout.padding.left
+                    + layout.padding.right
+                    + layout.border.left
+                    + layout.border.right,
+            )
+        } else {
+            (
+                layout.margin.top + layout.margin.bottom,
+                layout.padding.top
+                    + layout.padding.bottom
+                    + layout.border.top
+                    + layout.border.bottom,
+            )
+        };
+        let visible = size + margins;
+        let inner = size - edges;
+        let shrink = if inner > 0.0 { visible / inner } else { 1.0 };
+        (visible, shrink)
     }
 
     /// Reset all panels to flexible sizing so they expand to fill available space
@@ -787,18 +928,23 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
                                     } else {
                                         0.0
                                     };
-                                    let sized = container_style
-                                        .flex_basis
-                                        .into_option()
-                                        .is_some();
                                     gc_style.flex_basis =
                                         basis_plus(container_style.flex_basis, -margin);
-                                    gc_style.flex_grow = if sized {
-                                        (container_style.flex_grow - margin).max(0.0)
-                                    } else {
-                                        container_style.flex_grow
-                                    };
-                                    gc_style.flex_shrink = container_style.flex_shrink;
+                                    // Grow is in margin box units on both sides;
+                                    // shrink is the promoted node's own.
+                                    gc_style.flex_grow = container_style.flex_grow;
+                                    let row = self
+                                        .tree
+                                        .style(node)
+                                        .map(|s| is_row_direction(s.flex_direction))
+                                        .unwrap_or(true);
+                                    gc_style.flex_shrink = self
+                                        .flex_weights(
+                                            grandchild,
+                                            gc_style.flex_basis,
+                                            row,
+                                        )
+                                        .1;
                                     let _ = self.tree.set_style(grandchild, gc_style);
                                 }
                             }
@@ -1022,51 +1168,29 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         true
     }
 
-    fn apply_taffy_layout(&mut self, sugarloaf: &mut Sugarloaf) -> bool {
+    /// Lay the tree out and push the result to the panels it moved;
+    /// see [`ContextGridItem::push_layout`] for what each one gets.
+    fn apply_taffy_layout(&mut self, mid_drag: bool) -> bool {
         if self.compute_layout().is_err() {
             return false;
         }
-
-        let scale = sugarloaf.ctx.scale();
-        let is_multi_panel = self.inner.len() > 1;
-
         for item in self.inner.values_mut() {
-            let [abs_x, abs_y, width, height] = item.layout_rect;
-
-            let x = (abs_x + self.scaled_margin.left) / scale;
-            let y = (abs_y + self.scaled_margin.top) / scale;
-
+            let [_, _, width, height] = item.layout_rect;
             // Clear margin since Taffy layout already accounts for spacing
             item.val.dimension.margin = Margin::all(0.0);
-            let resized =
-                item.val.dimension.width != width || item.val.dimension.height != height;
             item.val.dimension.update_width(width);
             item.val.dimension.update_height(height);
-
-            // Update terminal size
-            let mut terminal = item.val.terminal.lock();
-            if resized {
-                terminal.end_sync_update();
-            }
-            terminal.resize::<ContextDimension>(item.val.dimension);
-            drop(terminal);
-
-            let winsize =
-                crate::renderer::utils::terminal_dimensions(&item.val.dimension);
-            let _ = item.val.messenger.send_resize(winsize);
-
-            // The reflow damages the Crosswords, but the present gate reads
-            // `pending_update.is_dirty()` and skips the panel before reading
-            // that. Mark it dirty so an idle terminal still presents.
-            item.val.renderable_content.pending_update.set_dirty();
-
-            // Panel position / clipping bounds are tracked rio-side
-            // now; the grid pass reads `panel_rect` from the renderer's
-            // own per-panel iteration. Sugarloaf no longer carries
-            // panel metadata.
-            let _ = (x, y, abs_x, abs_y, width, height, is_multi_panel);
+            item.push_layout(mid_drag);
         }
         true
+    }
+
+    /// The pointer let go of a divider: panels whose pixel size moved
+    /// during the drag get their final winsize now.
+    pub fn end_border_resize(&mut self) {
+        for item in self.inner.values_mut() {
+            item.flush_winsize();
+        }
     }
 
     #[inline]
@@ -1391,11 +1515,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         // Always apply Taffy layout for consistent positioning
-        self.apply_taffy_layout(sugarloaf);
+        self.apply_taffy_layout(false);
     }
 
     /// Resize grid - always uses Taffy for consistent layout
-    pub fn resize(&mut self, new_width: f32, new_height: f32, sugarloaf: &mut Sugarloaf) {
+    pub fn resize(&mut self, new_width: f32, new_height: f32) {
         self.width = new_width;
         self.height = new_height;
 
@@ -1403,7 +1527,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let _ = self.try_update_size(new_width, new_height);
 
         // Apply layout - works for both single and multi-panel
-        self.apply_taffy_layout(sugarloaf);
+        self.apply_taffy_layout(false);
     }
 
     #[inline]
@@ -1428,52 +1552,52 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// Remove the panel owning `route_id`, wherever it sits in the
     /// grid. The grid's focused panel is preserved unless it is the
     /// one being removed, in which case `remove_current`'s sibling
-    /// selection applies. Returns whether a panel was removed.
-    pub fn remove_by_route(
-        &mut self,
-        route_id: usize,
-        sugarloaf: &mut Sugarloaf,
-    ) -> bool {
-        let Some(key) = self
+    /// selection applies. Returns what the panel held in sugarloaf,
+    /// or `None` when no panel was removed.
+    #[must_use = "release the panel's images with RemovedPanel::release"]
+    pub fn remove_by_route(&mut self, route_id: usize) -> Option<RemovedPanel> {
+        let key = self
             .inner
             .iter()
             .find(|(_, item)| item.val.route_id == route_id)
-            .map(|(key, _)| *key)
-        else {
-            return false;
-        };
+            .map(|(key, _)| *key)?;
 
         let previous = self.current;
         self.current = key;
-        self.remove_current(sugarloaf);
+        let removed = self.remove_current();
         if previous != key && self.inner.contains_key(&previous) {
             self.current = previous;
         }
-        true
+        removed
     }
 
-    pub fn remove_current(&mut self, sugarloaf: &mut Sugarloaf) {
+    /// Remove the current panel and select its neighbour in visual
+    /// order. Returns what the panel held in sugarloaf, for the caller
+    /// to release; `None` when nothing was removed, as for the last
+    /// panel of a grid.
+    #[must_use = "release the panel's images with RemovedPanel::release"]
+    pub fn remove_current(&mut self) -> Option<RemovedPanel> {
         if self.inner.is_empty() {
             tracing::error!("Attempted to remove from empty grid");
-            return;
+            return None;
         }
 
         // Can't remove the last panel
         if self.inner.len() == 1 {
             tracing::warn!("Cannot remove the last remaining context");
-            return;
+            return None;
         }
 
         let to_remove = self.current;
 
-        if !self.inner.contains_key(&to_remove) {
+        let Some(item) = self.inner.get(&to_remove) else {
             tracing::error!("Current key {:?} not found in grid", to_remove);
-            return;
-        }
-
-        // Get rich text ID before removing
-        let rich_text_id = self.inner.get(&to_remove).map(|item| item.val.rich_text_id);
-        let route_id = self.inner.get(&to_remove).map(|item| item.val.route_id);
+            return None;
+        };
+        let removed = RemovedPanel {
+            rich_text_id: item.val.rich_text_id,
+            route_id: item.val.route_id,
+        };
 
         // Select next panel before removing (use visual ordering)
         let ordered_keys = self.get_ordered_keys();
@@ -1506,15 +1630,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         // Remove from inner map
         self.inner.remove(&to_remove);
 
-        // Drop image overlays for the removed panel — sugarloaf has
-        // no other panel state to clean up post-Content removal.
-        if let Some(id) = rich_text_id {
-            sugarloaf.clear_image_overlays_for(id);
-        }
-        if let Some(route_id) = route_id {
-            sugarloaf.remove_route_images(route_id);
-        }
-
         // Update root if necessary
         if Some(to_remove) == self.root {
             self.root = self.inner.keys().next().copied();
@@ -1532,11 +1647,12 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             if self.panel_count() == 1 {
                 self.reset_panel_styles_to_flexible();
             }
-            self.apply_taffy_layout(sugarloaf);
+            self.apply_taffy_layout(false);
         }
+        Some(removed)
     }
 
-    pub fn split_right(&mut self, context: Context<T>, sugarloaf: &mut Sugarloaf) {
+    pub fn split_right(&mut self, context: Context<T>) {
         if !self.inner.contains_key(&self.current) {
             return;
         }
@@ -1545,13 +1661,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Ok(new_node) = self.try_split_right() {
             let new_context = ContextGridItem::new(context);
             self.inner.insert(new_node, new_context);
-            self.apply_taffy_layout(sugarloaf);
+            self.apply_taffy_layout(false);
             self.current = new_node;
         }
     }
 
     /// Split down - create new panel below using Taffy
-    pub fn split_down(&mut self, context: Context<T>, sugarloaf: &mut Sugarloaf) {
+    pub fn split_down(&mut self, context: Context<T>) {
         if !self.inner.contains_key(&self.current) {
             return;
         }
@@ -1560,25 +1676,25 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Ok(new_node) = self.try_split_down() {
             let new_context = ContextGridItem::new(context);
             self.inner.insert(new_node, new_context);
-            self.apply_taffy_layout(sugarloaf);
+            self.apply_taffy_layout(false);
             self.current = new_node;
         }
     }
 
-    pub fn move_divider_up(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.resize_divider(false, true, amount) && self.apply_taffy_layout(sugarloaf)
+    pub fn move_divider_up(&mut self, amount: f32) -> bool {
+        self.resize_divider(false, true, amount) && self.apply_taffy_layout(false)
     }
 
-    pub fn move_divider_down(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.resize_divider(false, false, amount) && self.apply_taffy_layout(sugarloaf)
+    pub fn move_divider_down(&mut self, amount: f32) -> bool {
+        self.resize_divider(false, false, amount) && self.apply_taffy_layout(false)
     }
 
-    pub fn move_divider_left(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.resize_divider(true, true, amount) && self.apply_taffy_layout(sugarloaf)
+    pub fn move_divider_left(&mut self, amount: f32) -> bool {
+        self.resize_divider(true, true, amount) && self.apply_taffy_layout(false)
     }
 
-    pub fn move_divider_right(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.resize_divider(true, false, amount) && self.apply_taffy_layout(sugarloaf)
+    pub fn move_divider_right(&mut self, amount: f32) -> bool {
+        self.resize_divider(true, false, amount) && self.apply_taffy_layout(false)
     }
 
     /// Hide the panel set by clearing per-panel image overlays. The

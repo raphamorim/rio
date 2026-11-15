@@ -624,7 +624,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // the tab is focused and its focused panel was the one that
         // died, the sibling selection becomes the current route.
         if self.contexts[tab_index].len() > 1 {
-            self.contexts[tab_index].remove_by_route(route_id, sugarloaf);
+            if let Some(removed) = self.contexts[tab_index].remove_by_route(route_id) {
+                removed.release(sugarloaf);
+            }
             if tab_index == self.current_index {
                 self.sync_current_route();
             }
@@ -772,23 +774,23 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     }
 
     #[inline]
-    pub fn move_divider_up(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.contexts[self.current_index].move_divider_up(amount, sugarloaf)
+    pub fn move_divider_up(&mut self, amount: f32) -> bool {
+        self.contexts[self.current_index].move_divider_up(amount)
     }
 
     #[inline]
-    pub fn move_divider_down(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.contexts[self.current_index].move_divider_down(amount, sugarloaf)
+    pub fn move_divider_down(&mut self, amount: f32) -> bool {
+        self.contexts[self.current_index].move_divider_down(amount)
     }
 
     #[inline]
-    pub fn move_divider_left(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.contexts[self.current_index].move_divider_left(amount, sugarloaf)
+    pub fn move_divider_left(&mut self, amount: f32) -> bool {
+        self.contexts[self.current_index].move_divider_left(amount)
     }
 
     #[inline]
-    pub fn move_divider_right(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.contexts[self.current_index].move_divider_right(amount, sugarloaf)
+    pub fn move_divider_right(&mut self, amount: f32) -> bool {
+        self.contexts[self.current_index].move_divider_right(amount)
     }
 
     #[inline]
@@ -951,15 +953,19 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         std::mem::replace(&mut grid.bell, false)
     }
 
-    #[inline]
-    pub fn resize_all_grids(
-        &mut self,
-        width: f32,
-        height: f32,
-        sugarloaf: &mut Sugarloaf,
-    ) {
+    /// A divider drag ended, however it ended: every grid sends the
+    /// winsizes it held back, so a tab switch or a focus loss mid-drag
+    /// cannot leave a panel with a stale pixel size.
+    pub fn end_border_resize(&mut self) {
         for context_grid in self.contexts.iter_mut() {
-            context_grid.resize(width, height, sugarloaf);
+            context_grid.end_border_resize();
+        }
+    }
+
+    #[inline]
+    pub fn resize_all_grids(&mut self, width: f32, height: f32) {
+        for context_grid in self.contexts.iter_mut() {
+            context_grid.resize(width, height);
         }
     }
 
@@ -1168,7 +1174,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
     #[inline]
     pub fn remove_current_grid(&mut self, sugarloaf: &mut Sugarloaf) {
-        self.contexts[self.current_index].remove_current(sugarloaf);
+        if let Some(removed) = self.contexts[self.current_index].remove_current() {
+            removed.release(sugarloaf);
+        }
         self.sync_current_route();
     }
 
@@ -1334,12 +1342,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.set_current(target);
     }
 
-    pub fn split(
-        &mut self,
-        rich_text_id: usize,
-        split_down: bool,
-        sugarloaf: &mut Sugarloaf,
-    ) {
+    pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
         let mut working_dir = self.config.working_dir.clone();
         if self.config.cwd {
             #[cfg(not(target_os = "windows"))]
@@ -1381,9 +1384,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         ) {
             Ok(new_context) => {
                 if split_down {
-                    self.contexts[self.current_index].split_down(new_context, sugarloaf);
+                    self.contexts[self.current_index].split_down(new_context);
                 } else {
-                    self.contexts[self.current_index].split_right(new_context, sugarloaf);
+                    self.contexts[self.current_index].split_right(new_context);
                 }
 
                 // The grid's current pane is the new split when the
@@ -1401,7 +1404,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         rich_text_id: usize,
         split_down: bool,
         config: rio_backend::config::Config,
-        sugarloaf: &mut Sugarloaf,
     ) {
         let (shell, working_dir) = process_open_url(
             config.shell.to_owned(),
@@ -1445,9 +1447,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         ) {
             Ok(new_context) => {
                 if split_down {
-                    self.contexts[self.current_index].split_down(new_context, sugarloaf);
+                    self.contexts[self.current_index].split_down(new_context);
                 } else {
-                    self.contexts[self.current_index].split_right(new_context, sugarloaf);
+                    self.contexts[self.current_index].split_right(new_context);
                 }
 
                 // The grid's current pane is the new split when the

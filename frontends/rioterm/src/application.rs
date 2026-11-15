@@ -1455,7 +1455,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             island.cancel_drag();
                         }
                         route.window.screen.renderer.scrollbar.end_drag();
-                        route.window.screen.resize_state = None;
+                        if route.window.screen.resize_state.take().is_some() {
+                            route.window.screen.context_manager.end_border_resize();
+                            route.window.winit_window.set_cursor(CursorIcon::Default);
+                        }
                     }
                     return;
                 }
@@ -1707,8 +1710,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        if route.window.screen.resize_state.is_some() {
-                            route.window.screen.resize_state = None;
+                        if route.window.screen.resize_state.take().is_some() {
+                            route.window.screen.context_manager.end_border_resize();
                             route.window.winit_window.set_cursor(CursorIcon::Default);
                             return;
                         }
@@ -1969,12 +1972,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .screen
                         .context_manager
                         .current_grid_mut()
-                        .resize_border(
-                            &border,
-                            original_sizes,
-                            delta,
-                            &mut route.window.screen.sugarloaf,
-                        );
+                        .resize_border(&border, original_sizes, delta);
                     // Dragging a split divider displaces panel origins;
                     // that is layout, not cursor travel.
                     route.window.screen.renderer.trail_cursor.snap();
@@ -2291,6 +2289,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let focus_changed = route.window.is_focused != focused;
                 route.window.is_focused = focused;
                 route.window.focus_seen = true;
+
+                // The release of a divider drag never arrives once the
+                // window lost focus, so the drag ends here, button state
+                // included, or the next motion after refocus would read
+                // as a held button.
+                if !focused && route.window.screen.resize_state.take().is_some() {
+                    route.window.screen.context_manager.end_border_resize();
+                    route.window.screen.mouse.left_button_state = ElementState::Released;
+                    route.window.screen.mouse.hint_click_latched = None;
+                    route.window.winit_window.set_cursor(CursorIcon::Default);
+                }
 
                 // Focus is a cheap checkpoint to catch backing-scale changes
                 // whose ScaleFactorChanged never arrived (sleep/wake display
