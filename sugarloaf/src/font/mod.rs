@@ -2780,6 +2780,43 @@ mod postscript_resolver_tests {
             "the second resolve must not register a duplicate font"
         );
     }
+
+    /// A codepoint no installed font has must not register macOS's
+    /// `LastResort`. Its charmap covers everything, so once in the
+    /// library it would answer every later lookup: a codepoint a real
+    /// font has but Rio hadn't discovered yet would draw as a
+    /// placeholder box, and Glyph Protocol's `q` would report every
+    /// codepoint as covered.
+    #[test]
+    fn a_missing_codepoint_does_not_register_last_resort() {
+        use crate::SpanStyle;
+        use std::sync::Arc;
+
+        let mut data = FontLibraryData::default();
+        data.insert(FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load"));
+        let lib = FontLibrary {
+            inner: Arc::new(parking_lot::RwLock::new(data)),
+        };
+        let starting_len = lib.inner.read().inner.len();
+
+        // U+0378 is unassigned: no font has it.
+        let (font_id, _) =
+            lib.resolve_font_for_char('\u{378}', &SpanStyle::default(), None);
+        assert_eq!(font_id, 0, "a missing codepoint resolves to the primary");
+        assert_eq!(lib.inner.read().inner.len(), starting_len);
+
+        // A codepoint a real system font has is still discovered.
+        let (cjk, _) = lib.resolve_font_for_char('\u{6C34}', &SpanStyle::default(), None);
+        assert_ne!(cjk, 0);
+        assert!(lib
+            .ct_font(cjk)
+            .is_some_and(|h| !crate::font::macos::is_last_resort(&h)));
+
+        assert!(!lib.covers_codepoint(0x378));
+        assert!(!lib.covers_codepoint(0x10_0000));
+        assert!(lib.covers_codepoint(0x6C34));
+        assert!(lib.covers_codepoint('a' as u32));
+    }
 }
 
 #[cfg(test)]

@@ -1644,21 +1644,17 @@ impl GridGlyphRasterizer {
     }
 }
 
-/// Whether the font registered under `font_id` has a real glyph for
-/// `ch`.
-///
-/// On macOS, CoreText's cascade ends in `LastResort`, which maps every
-/// codepoint to a placeholder showing the codepoint's block: the
-/// system's own missing-glyph box. A cluster drawn from it is tofu, so
-/// it covers nothing here.
+/// Whether the font registered under `font_id` has a glyph for `ch`.
+/// Font discovery never registers macOS's `LastResort` (see
+/// `sugarloaf::font::macos::discover_fallback`), so a codepoint no
+/// font has resolves to the primary, which lacks it.
 fn font_covers(font_library: &FontLibrary, font_id: u32, ch: char) -> bool {
     #[cfg(target_os = "macos")]
     {
         font_library
             .ct_font(font_id as usize)
             .is_some_and(|handle| {
-                handle.postscript_name() != "LastResort"
-                    && rio_backend::sugarloaf::font::macos::font_has_char(&handle, ch)
+                rio_backend::sugarloaf::font::macos::font_has_char(&handle, ch)
             })
     }
     #[cfg(not(target_os = "macos"))]
