@@ -201,13 +201,7 @@ impl Application<'_> {
 
         if self.config.bell.tab_indicator {
             if let Some(route) = self.router.routes.get_mut(&window_id) {
-                let focused = route.window.is_focused;
-                if route
-                    .window
-                    .screen
-                    .context_manager
-                    .ring_bell(route_id, focused)
-                {
+                if route.window.screen.context_manager.ring_bell(route_id) {
                     route.request_overlay_redraw();
                 }
             }

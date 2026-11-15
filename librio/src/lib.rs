@@ -661,6 +661,12 @@ impl Surface {
                 term.selection = None;
             }
         }
+        self.send(bytes);
+    }
+
+    /// Bytes for the child, as they are: the PTY on `pty` builds, the
+    /// delegate otherwise.
+    fn send<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
         #[cfg(feature = "pty")]
         let _ = self.channel.send(Msg::Input(bytes.into()));
         #[cfg(not(feature = "pty"))]
@@ -727,7 +733,10 @@ impl Surface {
     /// this leaves the view and the selection alone; losing focus must not
     /// scroll or deselect.
     pub fn set_focus(&self, focused: bool) {
-        self.terminal.lock().report_focus(focused);
+        let report = self.terminal.lock().set_focus(focused);
+        if let Some(report) = report {
+            self.send(report.as_bytes());
+        }
     }
 
     /// Configure the default for grapheme cluster processing (DEC

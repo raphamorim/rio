@@ -508,6 +508,15 @@ where
     inactive_keyboard_mode_idx: usize,
 }
 
+/// The focus event a program asked for with DECSET 1004.
+fn focus_report(focused: bool) -> &'static str {
+    if focused {
+        "\x1b[I"
+    } else {
+        "\x1b[O"
+    }
+}
+
 impl<U: EventListener> Crosswords<U> {
     pub fn new<D: Dimensions>(
         dimensions: D,
@@ -2448,28 +2457,23 @@ impl<U: EventListener> Crosswords<U> {
         )
     }
 
-    /// Tell the terminal whether it has keyboard focus. A change is
-    /// reported to the program as CSI I (gained) or CSI O (lost) while it
-    /// has asked for focus events (DECSET 1004); a repeat is not. A
-    /// terminal starts unfocused. To a program, a pane in a background
-    /// tab or split is unfocused, so hosts call this for their own pane
-    /// switches as well as for the window.
-    pub fn report_focus(&mut self, focused: bool) {
+    /// Tell the terminal whether it has keyboard focus. Returns the
+    /// report the program is owed, CSI I (gained) or CSI O (lost), when
+    /// this is a change and the program asked for focus events (DECSET
+    /// 1004); the host writes it on its input path, so it keeps its order
+    /// against the keys typed around it. A terminal starts unfocused. To
+    /// a program, a pane in a background tab or split is unfocused, so
+    /// hosts call this for their own pane switches as well as for the
+    /// window.
+    #[must_use]
+    pub fn set_focus(&mut self, focused: bool) -> Option<&'static str> {
         if self.focused == focused {
-            return;
+            return None;
         }
         self.focused = focused;
-        if self.mode.contains(Mode::FOCUS_IN_OUT) {
-            self.send_focus_report();
-        }
-    }
-
-    fn send_focus_report(&self) {
-        let text = if self.focused { "\x1b[I" } else { "\x1b[O" };
-        self.event_proxy.send_event(
-            RioEvent::PtyWrite(self.route_id, text.to_string()),
-            self.window_id,
-        );
+        self.mode
+            .contains(Mode::FOCUS_IN_OUT)
+            .then(|| focus_report(focused))
     }
 
     pub fn mode(&self) -> Mode {
@@ -2987,7 +2991,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 // The program learns where it stands right away: one
                 // started in a background pane would otherwise believe
                 // it is focused until the user looks away from it.
-                self.send_focus_report();
+                self.event_proxy.send_event(
+                    RioEvent::PtyWrite(
+                        self.route_id,
+                        focus_report(self.focused).to_string(),
+                    ),
+                    self.window_id,
+                );
             }
             NamedPrivateMode::BracketedPaste => self.mode.insert(Mode::BRACKETED_PASTE),
             // Mouse encodings are mutually exclusive.
@@ -6118,25 +6128,25 @@ mod tests {
         let gained = (7, "\x1b[I".to_string());
         let lost = (7, "\x1b[O".to_string());
 
-        // Without the mode, focus changes are tracked but not reported.
-        cw.report_focus(true);
-        cw.report_focus(false);
+        // Without the mode, focus is tracked but nothing is owed.
+        assert_eq!(cw.set_focus(true), None);
+        assert_eq!(cw.set_focus(false), None);
         assert!(reports(&events).is_empty(), "{:?}", events.borrow());
 
-        // Enabling the mode tells the program where it stands (unfocused),
-        // a repeat says nothing, a change is reported.
+        // Enabling the mode replies with the current state (unfocused);
+        // then a repeat says nothing and a change hands the host the
+        // report to write.
         parser.advance(&mut cw, b"\x1b[?1004h");
-        cw.report_focus(false);
-        cw.report_focus(true);
-        assert_eq!(reports(&events), vec![lost.clone(), gained.clone()]);
+        assert_eq!(reports(&events), vec![lost.clone()]);
+        assert_eq!(cw.set_focus(false), None);
+        assert_eq!(cw.set_focus(true), Some("\x1b[I"));
 
         // Enabling while focused says so.
         parser.advance(&mut cw, b"\x1b[?1004l\x1b[?1004h");
-        assert_eq!(reports(&events), vec![lost.clone(), gained.clone(), gained]);
+        assert_eq!(reports(&events), vec![lost, gained]);
 
         parser.advance(&mut cw, b"\x1b[?1004l");
-        cw.report_focus(false);
-        assert_eq!(reports(&events).len(), 3);
+        assert_eq!(cw.set_focus(false), None);
     }
 
     #[test]
