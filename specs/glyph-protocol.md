@@ -2,14 +2,14 @@
 
 **Author:** Raphael Amorim
 **Year:** 2026
-**Last updated:** 2026-11-08
+**Last updated:** 2026-11-15
 
 **See also:**
 - Blog post introducing the protocol and its rationale:
   <https://rapha.land/introducing-glyph-protocol-for-terminals/>
 - Reference implementation: [Rio terminal](https://raphamorim.io/rio)
 - Example apps (ratatui, bubbletea v2, ink) registering real Nerd Font
-  outlines and colrv1/colrv0 emojis at empty PUA-B slots:
+  outlines and colrv1/colrv0 emojis in the registration block:
   [glyph-protocol-examples](https://github.com/raphamorim/glyph-protocol-examples)
 
 ---
@@ -21,10 +21,10 @@ custom vector glyphs to the terminal at runtime (monochrome via
 OpenType `glyf`, or full-colour via OpenType `COLR` v0, flat layered
 colour, and `COLR` v1, a paint graph with gradients, transforms, and
 composites) without requiring the user to install a patched font
-(Nerd Fonts, Powerline, etc.). Registrations are restricted to the
-Unicode Private Use Areas, ranges the user never types and existing
-text never contains, so the protocol cannot be used to modify the
-appearance of real text.
+(Nerd Fonts, Powerline, etc.). Registrations are restricted to one
+reserved block of Supplementary Private Use Area-B, which no font or
+convention assigns, so the protocol cannot be used to modify the
+appearance of real text or of icons from an installed font.
 
 The protocol is transported over APC (Application Program Command)
 sequences. The default payload is the OpenType `glyf` simple-glyph
@@ -75,9 +75,9 @@ it can render before it renders it.
 - **Graceful degradation.** Terminals that do not implement the
   protocol ignore the APC message. Applications detect support by
   sending a query and watching for a reply.
-- **No override of user text.** Registrations are confined to PUA
-  codepoints, ranges no user types and no pre-existing text
-  contains. The rendered appearance of `a`, `ssh`, or any URL
+- **No override of user text.** Registrations are confined to a
+  reserved block that nothing else assigns. The rendered appearance
+  of `a`, `ssh`, any URL, or a Nerd Fonts icon in the user's prompt
   cannot be changed by any program that writes to the terminal.
   See §9.
 - **Small on the wire.** Typical icons are 50–400 bytes of
@@ -119,7 +119,7 @@ for lists). The `status` field's shape is verb-specific: `r` and
 |------|---------|
 | `s`  | Advertise supported payload formats. Doubles as a protocol-detection ping: any reply confirms Glyph Protocol; a timeout means unsupported. |
 | `q`  | Query the state of a codepoint. |
-| `r`  | Register a glyph for a PUA codepoint. |
+| `r`  | Register a glyph for a codepoint in the registration block. |
 | `c`  | Clear one slot or every slot in this session's glossary. |
 
 The `s` verb takes no parameters. The reply lists the terminal's
@@ -153,28 +153,32 @@ monochrome `fmt=glyf` without making a doomed round-trip.
 ## 4. Glossary namespace
 
 Registrations target codepoints the application picks, constrained
-to the three Unicode Private Use Areas:
+to the **registration block**: the 1024 codepoints
+**`U+100000`–`U+1003FF`**, at the start of Supplementary Private Use
+Area-B (plane 16).
 
-| Range                        | Plane | Common use |
-|------------------------------|-------|------------|
-| `U+E000`–`U+F8FF`             | BMP   | Basic PUA. Nerd Fonts, Powerline, Font Awesome all live here. |
-| `U+F0000`–`U+FFFFD`           | 15    | Supplementary PUA-A. Nerd Fonts v3 Material icons live here. |
-| `U+100000`–`U+10FFFD`         | 16    | Supplementary PUA-B. No common convention: clean space for apps that want it. |
+Any other codepoint is rejected by `r` and `c` with
+`reason=out_of_namespace`. That includes the rest of the Private Use
+Areas: the Basic PUA (`U+E000`–`U+F8FF`) and Supplementary PUA-A
+(`U+F0000`–`U+FFFFD`) are where Nerd Fonts, Powerline, and Font
+Awesome put their icons, and a registration there would replace an
+icon the user's font already draws (§9).
 
-Any other codepoint (ASCII, Latin-1, CJK, emoji, control chars)
-is rejected by `r` and `c` with `reason=out_of_namespace`.
+Nothing assigns codepoints in the block. Nerd Fonts has no glyphs in
+plane 16 (its v3.5.1 glyph list stops at `U+F1AF0`), and keeping the
+block free in future releases is being agreed with the project
+(nerd-fonts#2105). kitty's Unicode placeholder `U+10EEEE` is outside
+it.
 
-Each terminal session holds at most **1024 simultaneous
-registrations**. One codepoint = one slot regardless of payload
-format: a `fmt=colrv1` registration with 500 inner outlines still
-consumes exactly one glossary slot. When the glossary is full and
-a new `r` arrives, the terminal evicts the oldest registration in
-FIFO order; the new registration succeeds. Applications that
-cannot tolerate silent eviction SHOULD query their codepoint with
-`q` before emitting.
+The block is exactly as large as the glossary: each terminal session
+holds at most **1024 registrations**, one per codepoint in the block.
+One codepoint = one slot regardless of payload format: a `fmt=colrv1`
+registration with 500 inner outlines still consumes exactly one
+glossary slot. Every codepoint in the block can be registered at
+once, so a registration is never evicted to make room for another.
 
 Each terminal session (tab, pane, PTY) owns its own glossary. Two
-sessions can independently register `U+E0A0`, each pointing at a
+sessions can independently register `U+100000`, each pointing at a
 different glyph. Registrations MUST NOT leak between sessions.
 
 ## 5. Query (`q`)
@@ -188,7 +192,9 @@ ESC _ 25a1 ; q ; cp=<hex> ESC \
 Parameters:
 
 - `cp`: codepoint in hex. Any valid Unicode scalar value (not a
-  surrogate). May be inside or outside PUA.
+  surrogate). May be inside or outside the registration block, so a
+  client can ask whether the user's font already has an icon (for
+  example a Nerd Fonts codepoint) before registering its own.
 
 ### 5.2 Response
 
@@ -203,12 +209,12 @@ significant; clients MUST treat the value as a set.
 | `status=` value     | Meaning |
 |---------------------|---------|
 | (empty)             | No font in the fallback chain renders `cp`, and the glossary has no registration for it. The cell will render as tofu. |
-| `system`            | Some font in the fallback chain renders `cp`. No glossary registration (or `cp` is outside PUA). |
-| `glossary`          | `cp` is in PUA and has a live registration in this session. No system font covers it. |
-| `system,glossary`   | `cp` is in PUA, has a live registration, AND a system font also covers it. The registration shadows the system font at render time. |
+| `system`            | Some font in the fallback chain renders `cp`. No glossary registration (or `cp` is outside the registration block). |
+| `glossary`          | `cp` is in the registration block and has a live registration in this session. No system font covers it. |
+| `system,glossary`   | `cp` is in the registration block, has a live registration, AND a system font also covers it. The registration takes precedence at render time. |
 
-For non-PUA codepoints only the empty value and `status=system`
-are possible. Clients MUST ignore unknown coverage names so
+For codepoints outside the registration block only the empty value
+and `status=system` are possible. Clients MUST ignore unknown coverage names so
 future sources are forward-compatible.
 
 ## 6. Register (`r`)
@@ -221,7 +227,7 @@ ESC _ 25a1 ; r ; cp=<hex> ; fmt=glyf ; reply=<0|1|2> ; upm=<int> ; aw=<int> ; lh
 
 Parameters:
 
-- `cp`: target codepoint in hex. MUST be in one of the PUA ranges
+- `cp`: target codepoint in hex. MUST be in the registration block
   defined in §4. Otherwise the request is rejected with
   `reason=out_of_namespace`.
 - `fmt`: payload format. One of `glyf`, `colrv0`, `colrv1`.
@@ -300,30 +306,36 @@ Defined error codes:
 
 | Code                    | Meaning |
 |-------------------------|---------|
-| `out_of_namespace`      | `cp` is not in any PUA range. |
+| `out_of_namespace`      | `cp` is not in the registration block. |
 | `composite_unsupported` | Payload contains composite glyphs. |
 | `hinting_unsupported`   | Payload contains hinting instructions. |
 | `malformed_payload`     | Payload failed to parse as `glyf`, or a sizing parameter has an invalid value. |
 | `payload_too_large`     | Payload exceeds 64 KiB post-base64-decode. |
 | `outline_too_large`     | An outline (or a colour container's outlines in aggregate) exceeds the 64 KiB decoded-size budget (§8.2). |
 
-### 6.3 Overwrite and eviction
+### 6.3 Overwrite
 
 A second `r` on the same `cp` overwrites the first. This is how
 applications update a glyph or react to theme changes.
 
-When the glossary already holds 1024 registrations and the new `r`
-is for a `cp` that is NOT already registered, the terminal evicts
-the oldest registration (FIFO) to make room. Eviction silently
-invalidates the evicted codepoint: subsequent emissions fall
-through to the system font (or tofu). Applications SHOULD query
-before emitting if they cannot tolerate silent eviction.
+There is no eviction: the glossary has a slot for every codepoint in
+the registration block (§4), so a registration stays until it is
+overwritten, cleared, or the session ends.
 
 ### 6.4 Lifetime
 
 Registrations live for the duration of the terminal session. A
 terminal reset (e.g. `ESC c`) MAY clear the entire glossary.
 Registrations MUST NOT persist across terminal restarts.
+
+A registration can outlive the program that made it. A later
+program in the same session that emits a block codepoint without
+registering it first gets whatever was registered there last, or
+the system font, or tofu. Programs MUST register every block
+codepoint they emit, rather than relying on what the session
+already holds. Because the block holds only application-drawn
+glyphs, a leftover registration can only affect other programs
+using the block, never text or an installed font's icons.
 
 ## 7. Clear (`c`)
 
@@ -335,8 +347,8 @@ ESC _ 25a1 ; c [ ; cp=<hex> ] ESC \
 
 If `cp` is omitted, every slot in the session's glossary is
 cleared. Otherwise the slot corresponding to `cp` is cleared. `cp`
-MUST be in a PUA range; otherwise the request is rejected with
-`reason=out_of_namespace`.
+MUST be in the registration block; otherwise the request is
+rejected with `reason=out_of_namespace`.
 
 ### 7.2 Response
 
@@ -356,8 +368,8 @@ ESC _ 25a1 ; c ; status=1 ; reason=out_of_namespace ESC \
 
 ### 7.3 Cache invalidation
 
-When a slot is cleared (explicitly, via overwrite, or via
-eviction), the terminal MUST invalidate any rasterization cached
+When a slot is cleared (explicitly, via overwrite, or via a
+terminal reset), the terminal MUST invalidate any rasterization cached
 for that codepoint. A subsequent `r` that reuses the codepoint
 MUST rasterize the new outline fresh, not serve stale pixels.
 
@@ -663,11 +675,11 @@ on foreground change for any glyph whose paint graph references
 `0xFFFF`.
 
 **Security.** The colour formats add no new attack surface beyond
-§9: `cp` is still PUA-only, the cell buffer is still authoritative
-for copy/selection, and registrations are still session-scoped.
-A malformed `COLR` is a rendering error, not an injection vector:
-the rendered pixels can only affect cells the client itself
-emits at a PUA codepoint.
+§9: `cp` is still confined to the registration block, the cell
+buffer is still authoritative for copy/selection, and registrations
+are still session-scoped. A malformed `COLR` is a rendering error,
+not an injection vector: the rendered pixels can only affect cells
+holding a block codepoint.
 
 ### 8.8 Authoring
 
@@ -684,28 +696,34 @@ Typical flows:
 ## 9. Security considerations
 
 The core property Glyph Protocol must preserve is that **an
-application cannot change how existing text looks**. Enforcement
-is structural:
+application cannot change how existing text, or an icon the user's
+font draws, looks**. Enforcement is structural:
 
-- Register accepts a `cp` parameter, but `cp` MUST be in one of the
-  three Unicode Private Use Areas (§4). Any non-PUA codepoint is
-  rejected with `reason=out_of_namespace`.
-- Users never type PUA codepoints. No pre-existing text
-  (filenames, URLs, commands, variable names, log lines) contains
-  them. A program that registers a glyph can only affect how PUA
-  codepoints render, and PUA codepoints only appear in text the
-  same application (or another one opting into the same
-  convention) has deliberately emitted.
+- Register accepts a `cp` parameter, but `cp` MUST be in the
+  registration block (§4). Any other codepoint is rejected with
+  `reason=out_of_namespace`.
+- Nothing else assigns the block. Users don't type its codepoints,
+  no pre-existing text contains them, and no font in use puts an
+  icon there. A block codepoint only shows up in output from a
+  program that uses Glyph Protocol, so it only ever stands for a
+  glyph some program registered.
+- The rest of the Private Use Areas stays out of reach. A Nerd
+  Fonts codepoint such as `U+E0A0` (the git branch icon) is drawn
+  by the user's font, in their prompt and in every program, for
+  the whole session. If it could be registered, a program could
+  redefine it and exit, and the prompt would keep drawing that
+  program's glyph after it was gone (§6.4).
 - The cell buffer is authoritative. Selection, copy, search,
   hyperlinks, shell history, and any other text extraction MUST
   return the codepoint the application emitted, never the
   rendered glyph.
 
 Without these properties, a program writing to the PTY could
-register a glyph for `a` that looks like `o` and mislead the
-reader. With them, the worst a program can do is render a
-weird-looking character at a PUA codepoint the user never types
-and the cell buffer honestly reports.
+register a glyph for `a` that looks like `o`, or swap the git
+branch icon in the user's prompt, and mislead the reader. With
+them, the worst a program can do is draw something unexpected at a
+block codepoint, which only other Glyph Protocol programs emit and
+which the cell buffer honestly reports.
 
 Other considerations:
 
@@ -727,8 +745,8 @@ Other considerations:
 
 ## 10. Non-goals (v1)
 
-- **No non-PUA codepoints.** Registration is restricted to the
-  three PUA ranges (see §4).
+- **No codepoints outside the registration block.** Registration is
+  restricted to `U+100000`–`U+1003FF` (see §4).
 - **No ligatures.** Registration applies to a single codepoint.
   Sequence-keyed substitution is out of scope; programming
   ligatures are already handled by OpenType fonts.
@@ -753,10 +771,11 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
 2. Implements the `s`, `q`, `r`, and `c` verbs with the semantics
    defined in this specification, and lists every accepted payload
    format by name in the `fmt=` value of the `s` reply.
-3. Restricts register/clear `cp` to the three PUA ranges; rejects
-   anything else with `reason=out_of_namespace`.
-4. Holds at most 1024 simultaneous registrations per session and
-   evicts in FIFO order when full.
+3. Restricts register/clear `cp` to the registration block
+   `U+100000`–`U+1003FF`; rejects anything else with
+   `reason=out_of_namespace`.
+4. Can hold a registration for every codepoint in the block at
+   once, per session.
 5. Accepts the `glyf` simple-glyph subset defined in §8.2 and
    enforces its 64 KiB decoded-size budget, per outline and per
    registration, rejecting violations with
@@ -780,7 +799,8 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
 
 A client (application) is Glyph Protocol v1 conformant if it:
 
-1. Emits `cp` only from the three PUA ranges.
+1. Registers `cp` only from the registration block, and registers
+   every block codepoint before emitting it (§6.4).
 2. Treats query timeout as "terminal does not implement Glyph
    Protocol."
 3. Emits only the `glyf` subset defined in §8.2.
@@ -790,11 +810,13 @@ A client (application) is Glyph Protocol v1 conformant if it:
 
 ## 12. Reference implementation
 
-The reference implementation ships in Rio terminal. A companion
-helper, `svg2glyf`, ships alongside to convert existing SVG assets
-to the accepted `glyf` subset at build time.
+The reference implementation ships in Rio terminal. The
+[glyph-protocol-examples](https://github.com/raphamorim/glyph-protocol-examples)
+repository has example applications and the scripts they use to
+extract `glyf`, `colrv0`, and `colrv1` payloads from existing fonts.
+There is no SVG converter yet.
 
-## Appendix A. Worked example: register an icon in empty PUA
+## Appendix A. Worked example: register an icon
 
 ```python
 import base64, sys
@@ -807,9 +829,9 @@ pen.closePath()
 
 payload = base64.b64encode(pen.glyph().compile(None)).decode("ascii")
 
-# Register at U+100000, the first codepoint of Supplementary PUA-B.
-# No known font covers this range, so the registration is the sole
-# source of the rendered glyph and the demo is unambiguous.
+# Register at U+100000, the first codepoint of the registration
+# block (U+100000-U+1003FF). No font covers the block, so the
+# registration is the only source of the rendered glyph.
 sys.stdout.write(
     f"\x1b_25a1;r;cp=100000;upm=1000;{payload}\x1b\\"
 )
@@ -831,8 +853,9 @@ def q(cp: int) -> None:
 # Does the user already have Nerd Fonts installed?
 q(0xE0A0)
 # Expected reply parsed from the PTY:
-#   status=system → system font covers it; don't register, just emit cp
-#   status=       → empty list (nothing covers it); register and emit
+#   status=system → the user's font has the icon; emit U+E0A0 itself
+#   status=       → nothing covers it; register your own outline at a
+#                   block codepoint (e.g. U+100000) and emit that
 ```
 
 ## Appendix C. Implementation notes
@@ -868,18 +891,16 @@ the `c` altogether (registrations expire with the session anyway).
 2. For each codepoint of interest, pull the glyph record.
 3. If composite, flatten via `fontTools.pens.ttGlyphPen.TTGlyphPen`.
 4. Strip hinting instructions (`instructionLength := 0`).
-5. Compile to bytes; base64-encode; register at a codepoint of the
-   app's choosing.
+5. Compile to bytes; base64-encode; register at a block codepoint
+   of the app's choosing.
 
-Because the source codepoint in the font is irrelevant to the
-protocol, applications commonly pull outlines from a Nerd Font's
-basic-PUA codepoints (`U+E0A0`, `U+F07B`, …) and register them at
-Supplementary PUA-B slots (`U+100000`+), so that the rendered glyph
-is unambiguously from the registration, not from a system font that
-happens to cover the same codepoint.
+The source codepoint in the font is irrelevant to the protocol:
+applications pull outlines from a Nerd Font's codepoints (`U+E0A0`,
+`U+F07B`, …) and register them in the block (`U+100000`+), which is
+the only place a registration is accepted.
 
 **Atlas cache invalidation.** The cache-invalidation rule in §7.3
-applies to overwrite and eviction too, not only explicit clear.
+applies to overwrite and reset too, not only explicit clear.
 Implementations that key their glyph atlas on some stable slot id
 (rather than `cp`) must ensure the slot id is either released on
 clear/evict or paired with a per-registration invalidation tag, so
@@ -903,3 +924,4 @@ rather than serving a stale bitmap.
 | 2026-08-17 | v1.10   | Added a decoded-size budget to §8.2: 64 KiB of decoded outline data (12 bytes per point, i.e. 5,461 points), enforced per outline and per registration before point storage is allocated; violations reject with the new `reason=outline_too_large`. Closes a decode-amplification hole: repeat-compressed flags and omitted deltas let a 64 KiB wire payload expand to ~768 KiB per monochrome slot (~768 MiB per session at 1024 slots), and a colour container amplifies further via its up-to-1024 carried outlines. Requested by Mitchell Hashimoto, who hit the expansion while implementing the protocol in Ghostty; the budget follows his survey of Apple Symbols, Noto, and Nerd Fonts, where the largest real glyph decodes to ~40 KiB. |
 | 2026-08-17 | v1.11   | Redefined `width` as a render-level span, matching the reference implementation (rio#1649, rio#1650): the codepoint's logical cell width always stays its system `wcwidth`, because interactive applications (shells, line editors, multiplexers) compute column counts independently and a terminal-only width override desyncs the cursor between terminal and application. A `width=2` glyph overflows into the following cell in pixels, and the client MUST leave that cell blank. v1.7's "authoritative for all layout decisions" wording is withdrawn. |
 | 2026-11-08 | v1.12   | Made the authored extent explicit: added `ymin`, the extent's bottom in upm units, because `lh` alone did not say where the extent sits and implementations had to guess. Placement now uses the declared extent and never the outline's bounds; with no `aw`, `lh`, or `ymin`, the extent is the outline's bounding box and `contain` is capped by the em. A client written for v1.11 that sends `lh` for an outline with descenders must add `ymin`, since `ymin` defaults to `0`. Changed the `size` default from `height` to `contain`, so a client that says nothing about sizing gets a whole glyph inside its span. Terminals MUST clip a glyph to its render span (§8.5.7). An invalid sizing value now rejects with `reason=malformed_payload`. A `width=2` glyph with no blank following cell renders with a one-cell span. |
+| 2026-11-15 | v1.13   | Restricted registration to one reserved block, `U+100000`–`U+1003FF` (the first 1024 codepoints of Supplementary PUA-B); `r` and `c` reject every other codepoint, including the rest of the Private Use Areas, with `reason=out_of_namespace`. Allowing all of PUA let a program redefine a Nerd Fonts icon such as the git branch glyph and exit, leaving the user's prompt drawing it for the rest of the session. Raised by Kovid Goyal in kitty#10872; keeping the block free in Nerd Fonts is tracked in nerd-fonts#2105. The block is the size of the glossary, so FIFO eviction is removed. Clients MUST register every block codepoint they emit, since registrations outlive the program that made them. Clients registering in the Basic PUA, PUA-A, or elsewhere in PUA-B must move into the block. Removed the claim that an `svg2glyf` helper ships with the reference implementation; it was never published. |
