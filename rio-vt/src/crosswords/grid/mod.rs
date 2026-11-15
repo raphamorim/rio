@@ -1088,9 +1088,9 @@ impl<'a, T> Iterator for GridIterator<'a, T> {
 impl<'a, T> GridIterator<'a, T> {
     /// The cell at `pos`, or `None` when `pos` is past the live grid.
     /// Positions can be stale relative to the grid (#1713: a resize
-    /// between capture and use), and history rows keep their old
-    /// length across column growth. Ending the iteration beats
-    /// panicking.
+    /// between capture and use), and the column guard also covers a
+    /// row that is somehow shorter than the width, which no resize
+    /// path leaves behind today. Ending the iteration beats panicking.
     #[inline]
     fn cell_at(&self, pos: Pos) -> Option<Indexed<&'a T>> {
         let screen_lines = self.grid.screen_lines() as i32;
