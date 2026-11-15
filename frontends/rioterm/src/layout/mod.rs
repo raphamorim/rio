@@ -221,10 +221,12 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
 
         if reflowed {
             self.applied_grid = Some(key);
-            let mut terminal = self.val.terminal.lock();
-            terminal.end_sync_update();
-            terminal.resize::<ContextDimension>(self.val.dimension);
-            drop(terminal);
+            // The terminal ends a synchronized update itself when its
+            // grid or cell size changes.
+            self.val
+                .terminal
+                .lock()
+                .resize::<ContextDimension>(self.val.dimension);
             self.send_winsize();
         } else if resized || self.winsize_pending {
             if mid_drag {
@@ -1498,6 +1500,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// one being removed, in which case `remove_current`'s sibling
     /// selection applies. Returns what the panel held in sugarloaf,
     /// or `None` when no panel was removed.
+    #[must_use = "release the panel's images with RemovedPanel::release"]
     pub fn remove_by_route(&mut self, route_id: usize) -> Option<RemovedPanel> {
         let key = self
             .inner
@@ -1518,6 +1521,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// order. Returns what the panel held in sugarloaf, for the caller
     /// to release; `None` when nothing was removed, as for the last
     /// panel of a grid.
+    #[must_use = "release the panel's images with RemovedPanel::release"]
     pub fn remove_current(&mut self) -> Option<RemovedPanel> {
         if self.inner.is_empty() {
             tracing::error!("Attempted to remove from empty grid");
