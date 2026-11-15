@@ -137,9 +137,12 @@ typedef struct {
 
 typedef struct {
   void *userdata;
-  /* May fire on librio's PTY IO thread. Callbacks must only flag or
-     schedule work; calling back into rio_* from inside a callback is
-     undefined behavior. */
+  /* May fire on librio's PTY IO thread, or synchronously inside any
+     rio_surface_* call that changes what is shown. Callbacks must only
+     flag or schedule work; calling back into rio_* from inside a callback
+     is undefined behavior. wakeup_cb may not be repeated for later output
+     until the next rio_render_state_update: clear a "needs render" flag
+     before that call, not after, or a wakeup between the two is lost. */
   void (*wakeup_cb)(void *userdata, rio_surface_id_t surface);
   void (*action_cb)(void *userdata, rio_surface_id_t surface, rio_action_s action);
   void (*clipboard_write_cb)(void *userdata, rio_surface_id_t surface, uint8_t kind,
