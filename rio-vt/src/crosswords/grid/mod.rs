@@ -1061,26 +1061,20 @@ impl<'a, T> GridIterator<'a, T> {
 impl<'a, T> Iterator for GridIterator<'a, T> {
     type Item = Indexed<&'a T>;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         // Stop once we've reached the end of the grid.
         if self.current >= self.end {
             return None;
         }
 
-        // A shorter row ends before the grid's last column; the walk
-        // leaves it from its real end, as `prev` enters it there. A
-        // position past the live grid ends the walk, while one above
-        // it, the row `display_iter` starts from, enters the grid at
-        // the next row.
-        let screen_lines = self.grid.screen_lines() as i32;
-        if self.current.row.0 >= screen_lines {
-            return None;
-        }
-        let at_row_end = self.current.row < self.grid.topmost_line() || {
-            let row_end = Column(self.grid[self.current.row].len().saturating_sub(1));
-            self.current.col == row_end || self.current.col == self.grid.last_column()
-        };
-        if at_row_end {
+        // One compare and one row lookup per cell: this walk is the
+        // regex search's inner loop. A row ends at the grid's last
+        // column; rows are never shorter than the width today, and a
+        // position past a row's end ends the walk like any stale one.
+        // The row above the grid, where `display_iter` starts, enters
+        // it at its first cell.
+        if self.current.col == self.grid.last_column() {
             self.current.col = Column(0);
             self.current.row += 1;
         } else {
@@ -1097,6 +1091,7 @@ impl<'a, T> GridIterator<'a, T> {
     /// between capture and use), and history rows keep their old
     /// length across column growth. Ending the iteration beats
     /// panicking.
+    #[inline]
     fn cell_at(&self, pos: Pos) -> Option<Indexed<&'a T>> {
         let screen_lines = self.grid.screen_lines() as i32;
         if pos.row.0 >= screen_lines || pos.row < self.grid.topmost_line() {
@@ -1119,6 +1114,7 @@ pub trait BidirectionalIterator: Iterator {
 }
 
 impl<T> BidirectionalIterator for GridIterator<'_, T> {
+    #[inline]
     fn prev(&mut self) -> Option<Self::Item> {
         let topmost_line = self.grid.topmost_line();
         let last_column = self.grid.last_column();
