@@ -8090,6 +8090,50 @@ mod tests {
         assert_eq!(text(&cw, 0), "$ abcdefgh");
     }
 
+    // A long line in history wraps too when the width shrinks, but its
+    // new rows are history: they take no room from the screen and move
+    // no cursor. Otherwise a fragment of the cleared output surfaced
+    // right after `clear`.
+    #[test]
+    fn a_wrap_in_history_takes_no_room_from_the_screen() {
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(10, 4),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"oldoldold1\r\n\n\n\n\x1b[H$ abcdefg");
+        assert_eq!(cw.history_size(), 1);
+
+        cw.resize(CrosswordsSize::new(4, 4));
+
+        let text = |cw: &Crosswords<VoidListener>, line: i32| -> String {
+            let row = &cw.grid[Line(line)];
+            (0..row.len())
+                .map(|c| row[Column(c)].c())
+                .collect::<String>()
+                .trim_end_matches('\0')
+                .to_string()
+        };
+        assert_eq!(cw.history_size(), 3, "the old line is three history rows");
+        assert_eq!(text(&cw, -3), "oldo");
+        assert_eq!(text(&cw, -1), "d1");
+        assert_eq!(text(&cw, 0), "$ ab");
+        assert_eq!(text(&cw, 1), "cdef");
+        assert_eq!(text(&cw, 2), "g");
+        assert_eq!(text(&cw, 3), "");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(2), Column(1)));
+
+        cw.resize(CrosswordsSize::new(10, 4));
+        assert_eq!(cw.history_size(), 1);
+        assert_eq!(text(&cw, -1), "oldoldold1");
+        assert_eq!(text(&cw, 0), "$ abcdefg");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(0), Column(9)));
+    }
+
     // With history above and blank room below, the shrink pays with
     // the room and pushes nothing up. The grow back must then give back
     // every history row the rejoin slid onto the screen, even when the

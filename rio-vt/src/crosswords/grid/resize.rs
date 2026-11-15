@@ -154,6 +154,7 @@ impl Grid<Square> {
             // Index of the merge target while `last_row` holds the
             // mutable borrow below.
             let merge_target = reversed.len().wrapping_sub(1);
+            let last_is_history = reversed.len() == history_rows;
 
             // Check if reflowing should be performed.
             let last_row = match reversed.last_mut() {
@@ -167,6 +168,13 @@ impl Grid<Square> {
                     continue;
                 }
             };
+
+            // A screen row joining the last history row makes that row
+            // part of the screen: its text was visible, so it is not
+            // history that slid on.
+            if i < self.lines && last_is_history {
+                history_rows -= 1;
+            }
 
             // Remove wrap flag before appending additional cells.
             if let Some(cell) = last_row.last_mut() {
@@ -300,14 +308,28 @@ impl Grid<Square> {
             reversed.resize_with(self.lines, || Row::new(columns));
         }
 
-        // The cursor moved up onto the joined row. Nothing is dropped
-        // under it to keep its screen row: a grow must not destroy
-        // output, and blank rows under the cursor are room, given back
-        // below. A cursor already on the top row stays there while its
-        // text is the row above the screen.
+        // The cursor moved up onto the joined row. When that row is now
+        // above the screen, blank rows at the bottom are dropped to pull
+        // it down, as many as needed and no more, so the cursor keeps
+        // its text. Content under the cursor is never dropped: a grow
+        // must not destroy output. Without blank rows the cursor stays
+        // on the top row while its text is the row above the screen.
         if cursor_line_delta != 0 {
-            self.cursor.pos.row =
-                max(self.cursor.pos.row - cursor_line_delta as i32, Line(0));
+            let target = self.cursor.pos.row - cursor_line_delta as i32;
+            let mut pulled_down = 0;
+            if target < Line(0) {
+                let blank_tail = reversed
+                    .iter()
+                    .rev()
+                    .take_while(|row| row.is_clear())
+                    .count();
+                pulled_down = min(
+                    min(-target.0 as usize, blank_tail),
+                    reversed.len() - self.lines,
+                );
+                reversed.truncate(reversed.len() - pulled_down);
+            }
+            self.cursor.pos.row = max(target + pulled_down as i32, Line(0));
         }
 
         // The mirror of the room a shrink takes: rows a rejoin frees
@@ -600,7 +622,10 @@ impl Grid<Square> {
                         self.cursor.pos.col -= kept;
                     }
                     let above_cursor = on_new_row || i > cursor_i;
-                    if room > 0 {
+                    // A row added in history changes nothing on the
+                    // screen: it takes no room and moves no cursor.
+                    if i >= self.lines {
+                    } else if room > 0 {
                         room -= 1;
                         pull += 1;
                         if above_cursor {

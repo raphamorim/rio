@@ -1069,15 +1069,18 @@ impl<'a, T> Iterator for GridIterator<'a, T> {
 
         // A shorter row ends before the grid's last column; the walk
         // leaves it from its real end, as `prev` enters it there. A
-        // position past the live grid ends the walk.
+        // position past the live grid ends the walk, while one above
+        // it, the row `display_iter` starts from, enters the grid at
+        // the next row.
         let screen_lines = self.grid.screen_lines() as i32;
-        if self.current.row.0 >= screen_lines
-            || self.current.row < self.grid.topmost_line()
-        {
+        if self.current.row.0 >= screen_lines {
             return None;
         }
-        let row_end = Column(self.grid[self.current.row].len().saturating_sub(1));
-        if self.current.col == row_end || self.current.col == self.grid.last_column() {
+        let at_row_end = self.current.row < self.grid.topmost_line() || {
+            let row_end = Column(self.grid[self.current.row].len().saturating_sub(1));
+            self.current.col == row_end || self.current.col == self.grid.last_column()
+        };
+        if at_row_end {
             self.current.col = Column(0);
             self.current.row += 1;
         } else {

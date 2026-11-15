@@ -844,24 +844,27 @@ fn popped_rows_leave_no_remap_entry() {
     assert_eq!(text_of(&grid, 2), "ij");
 }
 
-// The rows popped were below a scrolled viewport, which keeps its
-// distance to the new bottom instead of jumping up.
+// A viewport scrolled into history is anchored at its bottom row. When
+// the rows popped by a shrink are all under it, that row is still its
+// bottom row afterwards and the offset shrinks by the popped rows.
 #[test]
-fn a_scrolled_viewport_keeps_its_distance_when_rows_are_popped() {
-    let mut grid = Grid::<Square>::new(3, 10, 5);
-    fill(&mut grid, 0, "hhhh", false);
-    grid.scroll_up(&(Line(0)..Line(3)), 1);
+fn a_scrolled_viewport_follows_its_bottom_row_when_rows_under_it_are_popped() {
+    let mut grid = Grid::<Square>::new(4, 10, 5);
+    for word in ["gggg", "hhhh"] {
+        fill(&mut grid, 0, word, false);
+        grid.scroll_up(&(Line(0)..Line(4)), 1);
+    }
     fill(&mut grid, 0, "abcdefghij", false);
     grid.cursor.pos = Pos::new(Line(0), Column(3));
-    assert_eq!(grid.history_size(), 1);
-    grid.scroll_display(Scroll::Delta(1));
-    assert_eq!(grid.display_offset(), 1);
+    assert_eq!(grid.history_size(), 2);
+    grid.scroll_display(Scroll::Delta(2));
+    assert_eq!(grid.display_offset(), 2, "the viewport ends on a blank row");
 
-    grid.resize(true, 3, 4);
+    grid.resize(true, 4, 4);
 
     assert_eq!(
         grid.history_size(),
-        1,
+        2,
         "the two blank rows paid for the two added"
     );
     assert_eq!(
@@ -869,8 +872,10 @@ fn a_scrolled_viewport_keeps_its_distance_when_rows_are_popped() {
         0,
         "both popped rows were under the viewport"
     );
-    assert_eq!(text_of(&grid, -1), "hhhh");
+    assert_eq!(text_of(&grid, -2), "gggg");
     assert_eq!(text_of(&grid, 0), "abcd");
+    assert_eq!(text_of(&grid, 2), "ij");
+    assert_eq!(text_of(&grid, 3), "", "the viewport still ends on it");
     assert_eq!(grid.cursor.pos, Pos::new(Line(0), Column(3)));
 }
 
@@ -909,4 +914,70 @@ fn a_scrolled_viewport_stays_put_when_rows_are_given_back() {
         "gggg",
         "the viewport still starts at gggg"
     );
+}
+
+// A line whose head is in history and whose tail is on the screen was
+// visible, so a grow that joins it is not sliding history onto the
+// screen: the joined row stays where its tail was.
+#[test]
+fn a_line_straddling_the_top_of_the_screen_stays_visible_after_a_grow() {
+    let mut grid = Grid::<Square>::new(4, 2, 10);
+    fill(&mut grid, 0, "ab", true);
+    grid.scroll_up(&(Line(0)..Line(4)), 1);
+    fill(&mut grid, 0, "cd", true);
+    fill(&mut grid, 1, "e", false);
+    fill(&mut grid, 2, "x", false);
+    grid.cursor.pos = Pos::new(Line(2), Column(1));
+    assert_eq!(grid.history_size(), 1);
+
+    grid.resize(true, 4, 6);
+
+    assert_eq!(grid.history_size(), 0);
+    assert_eq!(text_of(&grid, 0), "abcde");
+    assert_eq!(text_of(&grid, 1), "x");
+    assert_eq!(text_of(&grid, 2), "");
+    assert_eq!(grid.cursor.pos, Pos::new(Line(1), Column(1)));
+}
+
+// A cursor on the top row whose cells join a row in history: the
+// joined row is pulled down through the blank rows at the bottom, one
+// row, so the cursor stays on its character.
+#[test]
+fn a_top_row_cursor_pulls_its_joined_row_down_through_blank_rows() {
+    let mut grid = Grid::<Square>::new(4, 5, 10);
+    fill(&mut grid, 0, "abcde", true);
+    grid.scroll_up(&(Line(0)..Line(4)), 1);
+    fill(&mut grid, 0, "fghij", false);
+    grid.cursor.pos = Pos::new(Line(0), Column(1));
+    assert_eq!(grid[grid.cursor.pos].c(), 'g');
+
+    grid.resize(true, 4, 7);
+
+    assert_eq!(grid.history_size(), 0, "one blank row was dropped");
+    assert_eq!(text_of(&grid, 0), "abcdefg");
+    assert!(grid[Line(0)][Column(6)].wrapline());
+    assert_eq!(text_of(&grid, 1), "hij");
+    assert_eq!(text_of(&grid, 3), "");
+    assert_eq!(grid.cursor.pos, Pos::new(Line(0), Column(6)));
+    assert_eq!(grid[grid.cursor.pos].c(), 'g');
+}
+
+// `display_iter` starts one row above the viewport so that the first
+// `next` lands on its first cell, also when the viewport is scrolled to
+// the very top of history.
+#[test]
+fn display_iter_starts_at_the_top_of_the_viewport() {
+    let mut grid = Grid::<Square>::new(2, 3, 5);
+    fill(&mut grid, 0, "abc", false);
+    fill(&mut grid, 1, "xyz", false);
+    let visible = |grid: &Grid<Square>| -> String {
+        grid.display_iter().map(|cell| cell.square.c()).collect()
+    };
+    assert_eq!(visible(&grid), "abcxyz", "no history at all");
+
+    grid.scroll_up(&(Line(0)..Line(2)), 1);
+    fill(&mut grid, 1, "def", false);
+    assert_eq!(visible(&grid), "xyzdef");
+    grid.scroll_display(Scroll::Delta(1));
+    assert_eq!(visible(&grid), "abcxyz", "scrolled to the top of history");
 }
