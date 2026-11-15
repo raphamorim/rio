@@ -392,6 +392,9 @@ pub trait Handler {
     /// OSC 133 `A`: a shell prompt began.
     fn prompt_start(&mut self) {}
 
+    /// The program's output resumes: a chunk is about to be parsed.
+    fn output_begins(&mut self) {}
+
     /// OSC 133 `C`: the command line ended and its output begins.
     fn command_start(&mut self) {}
 
@@ -580,6 +583,7 @@ impl Processor {
     where
         H: Handler,
     {
+        handler.output_begins();
         let mut performer = Performer::new(&mut self.state, handler);
         self.parser.advance(&mut performer, bytes);
     }
