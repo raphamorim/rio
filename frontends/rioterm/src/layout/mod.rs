@@ -17,8 +17,10 @@ use taffy::{
 const MIN_COLS: usize = 2;
 const MIN_LINES: usize = 1;
 
+static NEXT_GRID_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Direction of a draggable panel border
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BorderDirection {
     /// Border between left/right panels (drag horizontally)
     Vertical,
@@ -34,6 +36,46 @@ pub struct PanelBorder {
     pub right_or_bottom: NodeId,
 }
 
+/// What sugarloaf keeps per panel: image overlays by rich text id and
+/// the images a route drew. The layout and the context manager release
+/// them through this, so both run in tests without a GPU context.
+pub trait PanelImages {
+    fn clear_image_overlays_for(&mut self, rich_text_id: usize);
+    fn remove_route_images(&mut self, route_id: usize);
+}
+
+impl PanelImages for Sugarloaf<'_> {
+    fn clear_image_overlays_for(&mut self, rich_text_id: usize) {
+        Sugarloaf::clear_image_overlays_for(self, rich_text_id);
+    }
+
+    fn remove_route_images(&mut self, route_id: usize) {
+        Sugarloaf::remove_route_images(self, route_id);
+    }
+}
+
+/// Cell metrics for a font size, line height and scale: the font
+/// library's answer, which only sugarloaf has outside of tests.
+pub trait CellMetricsSource {
+    fn cell_metrics(
+        &self,
+        font_size: f32,
+        line_height: f32,
+        scale: f32,
+    ) -> (TextDimensions, rio_backend::sugarloaf::layout::CellMetrics);
+}
+
+impl CellMetricsSource for Sugarloaf<'_> {
+    fn cell_metrics(
+        &self,
+        font_size: f32,
+        line_height: f32,
+        scale: f32,
+    ) -> (TextDimensions, rio_backend::sugarloaf::layout::CellMetrics) {
+        self.compute_cell_metrics(font_size, line_height, scale)
+    }
+}
+
 /// What a removed panel held in sugarloaf, for the caller to release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RemovedPanel {
@@ -44,9 +86,9 @@ pub struct RemovedPanel {
 impl RemovedPanel {
     /// Drop the image overlays and route images the panel owned;
     /// sugarloaf keeps no other per-panel state.
-    pub fn release(self, sugarloaf: &mut Sugarloaf) {
-        sugarloaf.clear_image_overlays_for(self.rich_text_id);
-        sugarloaf.remove_route_images(self.route_id);
+    pub fn release(self, images: &mut impl PanelImages) {
+        images.clear_image_overlays_for(self.rich_text_id);
+        images.remove_route_images(self.route_id);
     }
 }
 
@@ -158,6 +200,12 @@ pub struct ContextGrid<T: EventListener> {
     tree: TaffyTree<()>,
     root_node: NodeId,
     border_config: BorderConfig,
+    /// Unique for the life of the process, so a grid can be found again
+    /// after the tabs were renumbered.
+    id: u64,
+    /// Bumped whenever a panel is added or removed, so a reference to
+    /// the tree taken earlier can tell the tree changed under it.
+    shape: u64,
 }
 
 pub struct ContextGridItem<T: EventListener> {
@@ -354,9 +402,23 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             tree,
             root_node,
             border_config,
+            id: NEXT_GRID_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            shape: 0,
         };
         grid.calculate_positions();
         grid
+    }
+
+    /// This grid's identity, unique for the life of the process.
+    #[inline]
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// A number that changes whenever a panel is added or removed.
+    #[inline]
+    pub fn shape(&self) -> u64 {
+        self.shape
     }
 
     #[inline]
@@ -1495,22 +1557,17 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
     }
 
-    pub fn update_dimensions(&mut self, sugarloaf: &mut Sugarloaf) {
-        // Per-panel cell metrics are recomputed locally now — sugarloaf
-        // is consulted only for the font library it owns. Each panel's
-        // `dimension.font_size` / `line_height` / `dimension.scale`
-        // drive the result, so panels with per-panel zoom keep
-        // independent cell strides.
+    /// Recompute every panel's cell metrics and lay the tree out again.
+    /// Each panel's `font_size`, `line_height` and scale drive the
+    /// result, so panels with per-panel zoom keep independent strides.
+    pub fn update_dimensions(&mut self, metrics: &impl CellMetricsSource) {
         for context in self.inner.values_mut() {
             let dim = &mut context.val.dimension;
             if dim.font_size <= 0.0 {
                 continue;
             }
-            let (text_dims, cell) = sugarloaf.compute_cell_metrics(
-                dim.font_size,
-                dim.line_height,
-                dim.dimension.scale,
-            );
+            let (text_dims, cell) =
+                metrics.cell_metrics(dim.font_size, dim.line_height, dim.dimension.scale);
             dim.update_dimensions(text_dims, cell);
         }
 
@@ -1629,6 +1686,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
 
         // Remove from inner map
         self.inner.remove(&to_remove);
+        self.shape += 1;
 
         // Update root if necessary
         if Some(to_remove) == self.root {
@@ -1661,6 +1719,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Ok(new_node) = self.try_split_right() {
             let new_context = ContextGridItem::new(context);
             self.inner.insert(new_node, new_context);
+            self.shape += 1;
             self.apply_taffy_layout(false);
             self.current = new_node;
         }
@@ -1676,6 +1735,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Ok(new_node) = self.try_split_down() {
             let new_context = ContextGridItem::new(context);
             self.inner.insert(new_node, new_context);
+            self.shape += 1;
             self.apply_taffy_layout(false);
             self.current = new_node;
         }
@@ -1703,12 +1763,16 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     /// active. (Naming preserved for callers; the function used to
     /// drive sugarloaf's content visibility flag, which is gone.)
     #[inline]
-    pub fn set_all_rich_text_visibility(&self, sugarloaf: &mut Sugarloaf, visible: bool) {
+    pub fn set_all_rich_text_visibility(
+        &self,
+        images: &mut impl PanelImages,
+        visible: bool,
+    ) {
         if visible {
             return;
         }
         for item in self.inner.values() {
-            sugarloaf.clear_image_overlays_for(item.val.rich_text_id);
+            images.clear_image_overlays_for(item.val.rich_text_id);
         }
     }
 
@@ -1719,10 +1783,10 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     #[inline]
     /// Release everything this grid's panels hold in sugarloaf: image
     /// overlays and the images they drew.
-    pub fn remove_from_sugarloaf(&self, sugarloaf: &mut Sugarloaf) {
+    pub fn remove_from_sugarloaf(&self, images: &mut impl PanelImages) {
         for item in self.inner.values() {
-            sugarloaf.clear_image_overlays_for(item.val.rich_text_id);
-            sugarloaf.remove_route_images(item.val.route_id);
+            images.clear_image_overlays_for(item.val.rich_text_id);
+            images.remove_route_images(item.val.route_id);
         }
     }
 }

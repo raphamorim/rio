@@ -97,7 +97,6 @@ pub struct Screen<'screen> {
     /// link is skippable, so text changing under a shown underline
     /// still refreshes it. Reset on wheel scroll and highlight clears.
     last_hint_probe: Option<(Pos, rio_window::keyboard::ModifiersState)>,
-    pub resize_state: Option<crate::layout::ResizeState>,
     #[cfg(target_os = "macos")]
     pub allow_manual_dragging: bool,
     last_chrome_press: Option<ChromePress>,
@@ -347,7 +346,6 @@ impl Screen<'_> {
             renderer,
             bindings,
             last_ime_cursor_pos: None,
-            resize_state: None,
             #[cfg(target_os = "macos")]
             allow_manual_dragging: config.navigation.is_enabled(),
             last_chrome_press: None,
@@ -583,7 +581,7 @@ impl Screen<'_> {
                 current_context.dimension.line_height = config.line_height;
             }
 
-            context_grid.update_dimensions(&mut self.sugarloaf);
+            context_grid.update_dimensions(&self.sugarloaf);
 
             for current_context in context_grid.contexts_mut().values_mut() {
                 let current_context = current_context.context_mut();
@@ -656,7 +654,7 @@ impl Screen<'_> {
 
         self.context_manager
             .current_grid_mut()
-            .update_dimensions(&mut self.sugarloaf);
+            .update_dimensions(&self.sugarloaf);
 
         self.mark_dirty();
         self.refresh_titles();
@@ -745,7 +743,7 @@ impl Screen<'_> {
                     .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
             }
 
-            context_grid.update_dimensions(&mut self.sugarloaf);
+            context_grid.update_dimensions(&self.sugarloaf);
         }
 
         let width = new_size.width as f32;
@@ -1678,8 +1676,7 @@ impl Screen<'_> {
         // Update the old tab's rich text positions to reflect the new margin
         // (on Linux/Windows when hide_if_single transitions from hidden to visible)
         #[cfg(not(target_os = "macos"))]
-        self.context_manager.contexts_mut()[old_index]
-            .update_dimensions(&mut self.sugarloaf);
+        self.context_manager.contexts_mut()[old_index].update_dimensions(&self.sugarloaf);
 
         // Allocate panel id; the layout pass handles positioning via
         // `ContextDimension` once the new tab's grid is built.
@@ -1728,7 +1725,7 @@ impl Screen<'_> {
                 self.resize_top_or_bottom_line(1);
                 self.context_manager
                     .current_grid_mut()
-                    .update_dimensions(&mut self.sugarloaf);
+                    .update_dimensions(&self.sugarloaf);
                 self.mark_dirty();
             }
             return;
@@ -1778,7 +1775,7 @@ impl Screen<'_> {
                 scaled_bottom,
                 margin.left,
             ));
-            context_grid.update_dimensions(&mut self.sugarloaf);
+            context_grid.update_dimensions(&self.sugarloaf);
         }
 
         // The tab strip appearing or vanishing shifts every panel;
