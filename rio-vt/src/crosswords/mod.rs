@@ -2300,15 +2300,21 @@ impl<U: EventListener> Crosswords<U> {
         // holds no style ids at all: sweeps reusing ids, table growth,
         // and grid swaps can't affect rows copied on earlier frames.
         if needs_full {
-            dst.clear();
-            dst.reserve(count);
+            // Every full-screen scroll lands here, so a flood of output
+            // takes this path on every frame. The rows already in `dst`
+            // keep their buffers: `copy_from` writes into them, and only
+            // slots that do not exist yet allocate.
+            dst.truncate(count);
+            dst.reserve(count - dst.len());
             row_styles.resize_with(count, Vec::new);
             extras.clear();
             for (i, row_idx) in (start..end).enumerate() {
                 let src = &self.grid[Line(row_idx)];
-                let mut copied = src.clone();
-                copied.dirty = true;
-                dst.push(copied);
+                match dst.get_mut(i) {
+                    Some(row) => row.copy_from(src),
+                    None => dst.push(src.clone()),
+                }
+                dst[i].dirty = true;
                 self.grid.resolve_row_styles(src, &mut row_styles[i]);
                 self.refresh_row_extras(src, extras);
             }
@@ -6446,6 +6452,49 @@ mod tests {
         // And the cleared alt cells were stamped with a local id too.
         let sq = cw.grid[Line(0)][Column(0)];
         assert_eq!(cw.grid.style_of(&sq).bg, red);
+    }
+
+    // A full snapshot used to clone every visible row into a fresh Vec,
+    // one allocation per row per frame while output scrolls. The rows
+    // already held by the snapshot keep their buffers across it.
+    #[test]
+    fn full_snapshot_reuses_the_row_buffers() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let lines = cw.grid.screen_lines();
+        let mut rows = Vec::new();
+        let mut row_styles = Vec::new();
+        let mut extras = rustc_hash::FxHashMap::default();
+        for line in 0..lines {
+            cw.input_str(&format!("{line}\r\n"));
+        }
+        cw.snapshot_visible(
+            &TerminalDamage::Full,
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        assert_eq!(rows.len(), lines);
+        let buffers: Vec<*const Square> = rows.iter().map(|r| r.inner.as_ptr()).collect();
+        let text = |rows: &Vec<Row<Square>>| -> Vec<char> {
+            rows[0].inner.iter().map(|c| c.c()).collect()
+        };
+        let first = text(&rows);
+
+        for line in lines..2 * lines {
+            cw.input_str(&format!("{line}\r\n"));
+        }
+        cw.snapshot_visible(
+            &TerminalDamage::Full,
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        let after: Vec<*const Square> = rows.iter().map(|r| r.inner.as_ptr()).collect();
+        assert_eq!(buffers, after, "a full snapshot reallocated its rows");
+        assert!(rows.iter().all(|r| r.dirty));
+        // The reused buffers carry the new content, not the old.
+        assert_ne!(text(&rows), first);
     }
 
     #[test]

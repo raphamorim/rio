@@ -1003,3 +1003,800 @@ mod divider_keys {
         }
     }
 }
+
+// What a relayout pushes to the panels. `apply_taffy_layout` runs for
+// real here: each panel's messenger is swapped for a channel so the
+// winsizes it sends can be counted.
+mod relayout {
+    use super::*;
+    use crate::context::{create_mock_context, ContextDimension};
+    use crate::event::Msg;
+    use crate::messenger::Messenger;
+    use corcovado::channel::Receiver;
+    use rio_backend::config::layout::Panel;
+    use rio_backend::event::{VoidListener, WindowId, WindowSize};
+
+    type Grid = ContextGrid<VoidListener>;
+
+    // 18px cells: a 4 logical px move keeps the columns, a 40px move
+    // changes them.
+    const CELL: f32 = 18.0;
+    const SMALL: f32 = 4.0;
+    const LARGE: f32 = 40.0;
+
+    fn dimension() -> ContextDimension {
+        let text = TextDimensions {
+            scale: 1.0,
+            width: CELL,
+            height: 9.,
+        };
+        ContextDimension::build(
+            1200.0,
+            800.0,
+            text,
+            cell_for(text),
+            1.0,
+            14.0,
+            Margin::default(),
+        )
+    }
+
+    fn tapped_context(
+        id: usize,
+    ) -> (crate::context::Context<VoidListener>, Receiver<Msg>) {
+        let mut ctx =
+            create_mock_context(VoidListener {}, WindowId::from(0), id, dimension());
+        let (tx, rx) = corcovado::channel::channel();
+        ctx.messenger = Messenger::new(tx);
+        (ctx, rx)
+    }
+
+    fn winsizes(rx: &Receiver<Msg>) -> Vec<WindowSize> {
+        let mut out = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            if let Msg::Resize(size) = msg {
+                out.push(size);
+            }
+        }
+        out
+    }
+
+    /// A | [B | D]: three panes in a row, the right two nested. The
+    /// receivers come back in that order, drained after the splits.
+    fn row_of_three() -> (Grid, [NodeId; 3], [Receiver<Msg>; 3]) {
+        let (ctx, rx_a) = tapped_context(0);
+        let mut grid =
+            ContextGrid::new(ctx, Margin::default(), [0.; 4], [0.; 4], Panel::default());
+        let a = grid.current;
+        let split = |grid: &mut Grid, id| {
+            let node = grid.try_split_right().unwrap();
+            let (ctx, rx) = tapped_context(id);
+            grid.inner.insert(node, ContextGridItem::new(ctx));
+            grid.current = node;
+            assert!(grid.apply_taffy_layout(false));
+            (node, rx)
+        };
+        let (b, rx_b) = split(&mut grid, 1);
+        let (d, rx_d) = split(&mut grid, 2);
+        for rx in [&rx_a, &rx_b, &rx_d] {
+            winsizes(rx);
+        }
+        (grid, [a, b, d], [rx_a, rx_b, rx_d])
+    }
+
+    fn columns(grid: &Grid, node: NodeId) -> usize {
+        grid.inner[&node].val.dimension.columns
+    }
+
+    fn pixel_width(grid: &Grid, node: NodeId) -> u16 {
+        crate::renderer::utils::terminal_dimensions(&grid.inner[&node].val.dimension)
+            .width
+    }
+
+    // Splitting sent each pane its first winsize; a relayout that moves
+    // nothing sends nothing and keeps every terminal where it was.
+    #[test]
+    fn a_relayout_that_moves_nothing_sends_nothing() {
+        let (mut grid, nodes, rxs) = row_of_three();
+        let before: Vec<usize> = nodes.iter().map(|&n| columns(&grid, n)).collect();
+        assert!(grid.apply_taffy_layout(false));
+        assert!(grid.apply_taffy_layout(true));
+        for rx in &rxs {
+            assert!(winsizes(rx).is_empty());
+        }
+        let after: Vec<usize> = nodes.iter().map(|&n| columns(&grid, n)).collect();
+        assert_eq!(before, after);
+    }
+
+    // Mid drag, a step that keeps the columns sends no winsize, so the
+    // programs beside the divider get no SIGWINCH per pixel. Letting go
+    // sends the final pixel size once to the two panes that moved.
+    #[test]
+    fn a_drag_step_that_keeps_the_columns_sends_no_winsize() {
+        let (mut grid, [_a, b, d], [rx_a, rx_b, rx_d]) = row_of_three();
+        let (bw, dw) = (pixel_width(&grid, b), pixel_width(&grid, d));
+        let (bc, dc) = (columns(&grid, b), columns(&grid, d));
+
+        grid.current = d;
+        assert!(grid.resize_divider(true, true, SMALL));
+        assert!(grid.apply_taffy_layout(true));
+        assert_eq!((columns(&grid, b), columns(&grid, d)), (bc, dc));
+        for rx in [&rx_a, &rx_b, &rx_d] {
+            assert!(
+                winsizes(rx).is_empty(),
+                "a pixel-only drag step sent a winsize"
+            );
+        }
+        assert_ne!(pixel_width(&grid, b), bw);
+
+        grid.end_border_resize();
+        assert!(
+            winsizes(&rx_a).is_empty(),
+            "the pane that did not move got a winsize"
+        );
+        let sent_b = winsizes(&rx_b);
+        let sent_d = winsizes(&rx_d);
+        assert_eq!(sent_b.len(), 1);
+        assert_eq!(sent_d.len(), 1);
+        assert_eq!(sent_b[0].width, pixel_width(&grid, b));
+        assert_eq!(sent_d[0].width, pixel_width(&grid, d));
+        assert_ne!(sent_d[0].width, dw);
+        assert_eq!(sent_b[0].cols as usize, columns(&grid, b));
+
+        // Nothing is pending once the final size is out.
+        grid.end_border_resize();
+        for rx in [&rx_a, &rx_b, &rx_d] {
+            assert!(winsizes(rx).is_empty());
+        }
+    }
+
+    // A drag step that changes the columns sends one winsize to each
+    // pane beside the divider, with the pixel size of that moment, and
+    // nothing to the pane that did not move. Letting go then has
+    // nothing left to send.
+    #[test]
+    fn a_drag_step_that_changes_the_columns_sends_one_winsize_per_pane() {
+        let (mut grid, [_a, b, d], [rx_a, rx_b, rx_d]) = row_of_three();
+        let (bc, dc) = (columns(&grid, b), columns(&grid, d));
+
+        grid.current = d;
+        assert!(grid.resize_divider(true, true, LARGE));
+        assert!(grid.apply_taffy_layout(true));
+        assert!(columns(&grid, b) < bc && columns(&grid, d) > dc);
+        assert!(winsizes(&rx_a).is_empty());
+        let sent_b = winsizes(&rx_b);
+        let sent_d = winsizes(&rx_d);
+        assert_eq!(sent_b.len(), 1);
+        assert_eq!(sent_d.len(), 1);
+        assert_eq!(sent_b[0].cols as usize, columns(&grid, b));
+        assert_eq!(sent_b[0].width, pixel_width(&grid, b));
+        assert_eq!(sent_d[0].cols as usize, columns(&grid, d));
+
+        grid.end_border_resize();
+        for rx in [&rx_a, &rx_b, &rx_d] {
+            assert!(winsizes(rx).is_empty());
+        }
+    }
+
+    // A key move is a single step, so the pixel size goes out at once,
+    // whether or not the columns changed.
+    #[test]
+    fn a_key_move_sends_the_pixel_size_at_once() {
+        let (mut grid, [_a, _b, d], [rx_a, rx_b, rx_d]) = row_of_three();
+        grid.current = d;
+        assert!(grid.move_divider_left(SMALL));
+        assert!(winsizes(&rx_a).is_empty());
+        assert_eq!(winsizes(&rx_b).len(), 1);
+        assert_eq!(winsizes(&rx_d).len(), 1);
+    }
+
+    // The terminal is only reflowed when its dimension changed: the
+    // pane left of a nested divider keeps its grid through a drag.
+    #[test]
+    fn an_untouched_pane_keeps_its_grid_through_a_drag() {
+        let (mut grid, [a, _b, d], _rxs) = row_of_three();
+        let cols = grid.inner[&a].val.terminal.lock().grid.columns();
+        grid.current = d;
+        for _ in 0..3 {
+            assert!(grid.resize_divider(true, true, LARGE));
+            assert!(grid.apply_taffy_layout(true));
+        }
+        grid.end_border_resize();
+        assert_eq!(grid.inner[&a].val.terminal.lock().grid.columns(), cols);
+        assert_eq!(columns(&grid, a), cols);
+    }
+
+    // A pixel-only drag step must not touch the terminal: a program
+    // inside a synchronized update (mode 2026) would otherwise have its
+    // frame cut short on every pixel. A step that changes the columns
+    // reflows, and ends the update as any resize does.
+    #[test]
+    fn a_pixel_only_drag_step_leaves_the_terminal_alone() {
+        use rio_backend::performer::handler::Processor;
+        let (mut grid, [_a, b, d], _rxs) = row_of_three();
+        let mut parser = Processor::default();
+        parser.advance(&mut *grid.inner[&b].val.terminal.lock(), b"\x1b[?2026h");
+        assert!(grid.inner[&b].val.terminal.lock().synchronized_output());
+
+        grid.current = d;
+        assert!(grid.resize_divider(true, true, SMALL));
+        assert!(grid.apply_taffy_layout(true));
+        assert!(
+            grid.inner[&b].val.terminal.lock().synchronized_output(),
+            "a pixel-only step ended the synchronized update"
+        );
+
+        assert!(grid.resize_divider(true, true, LARGE));
+        assert!(grid.apply_taffy_layout(true));
+        assert!(!grid.inner[&b].val.terminal.lock().synchronized_output());
+    }
+
+    // A winsize held back by a drag is not lost if the drag never gets
+    // its release: the next relayout of any kind sends it.
+    #[test]
+    fn a_held_back_winsize_goes_out_with_the_next_relayout() {
+        let (mut grid, [_a, _b, d], [rx_a, rx_b, rx_d]) = row_of_three();
+        grid.current = d;
+        assert!(grid.resize_divider(true, true, SMALL));
+        assert!(grid.apply_taffy_layout(true));
+        for rx in [&rx_a, &rx_b, &rx_d] {
+            assert!(winsizes(rx).is_empty());
+        }
+        assert!(grid.apply_taffy_layout(false));
+        assert!(winsizes(&rx_a).is_empty());
+        assert_eq!(winsizes(&rx_b).len(), 1);
+        assert_eq!(winsizes(&rx_d).len(), 1);
+    }
+}
+
+// Grid behaviour reachable now that the layout pass needs no GPU
+// context: mouse-border hit tests and drags, separator geometry,
+// visual ordering, window resizes, scale changes and pane removal.
+//
+// Layout rects and separators are relative to the window margin;
+// pointer positions are window coordinates. `win` converts.
+mod grid {
+    use super::*;
+    use crate::context::{create_mock_context, ContextDimension};
+    use rio_backend::config::layout::Panel;
+    use rio_backend::event::{VoidListener, WindowId};
+
+    type Grid = ContextGrid<VoidListener>;
+
+    const WIDTH: f32 = 1200.0;
+    const HEIGHT: f32 = 800.0;
+    /// Default panel margin, per side, in logical pixels.
+    const MARGIN: f32 = 2.0;
+
+    fn dimension(scale: f32) -> ContextDimension {
+        let text = TextDimensions {
+            scale,
+            width: 18.,
+            height: 9.,
+        };
+        ContextDimension::build(
+            WIDTH,
+            HEIGHT,
+            text,
+            cell_for(text),
+            1.0,
+            14.0,
+            Margin::default(),
+        )
+    }
+
+    fn context(scale: f32, id: usize) -> crate::context::Context<VoidListener> {
+        create_mock_context(VoidListener {}, WindowId::from(0), id, dimension(scale))
+    }
+
+    fn grid(scale: f32) -> Grid {
+        let mut grid = ContextGrid::new(
+            context(scale, 0),
+            Margin::default(),
+            [0.; 4],
+            [0.; 4],
+            Panel::default(),
+        );
+        grid.compute_layout().unwrap();
+        grid
+    }
+
+    fn split(grid: &mut Grid, right: bool) -> NodeId {
+        let id = grid.inner.len();
+        let ctx = context(grid.scale, id);
+        if right {
+            grid.split_right(ctx);
+        } else {
+            grid.split_down(ctx);
+        }
+        grid.current
+    }
+
+    /// The space the panes share, inside the window margin.
+    fn available(grid: &Grid) -> (f32, f32) {
+        let m = grid.scaled_margin;
+        (
+            grid.width - m.left - m.right,
+            grid.height - m.top - m.bottom,
+        )
+    }
+
+    /// A layout-relative point as a window position.
+    fn win(grid: &Grid, x: f32, y: f32) -> (f32, f32) {
+        (x + grid.scaled_margin.left, y + grid.scaled_margin.top)
+    }
+
+    fn rect(grid: &Grid, node: NodeId) -> [f32; 4] {
+        grid.inner[&node].layout_rect
+    }
+
+    fn width(grid: &Grid, node: NodeId) -> f32 {
+        rect(grid, node)[2]
+    }
+
+    #[track_caller]
+    fn assert_px(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() <= 1.0,
+            "expected {expected}px, got {actual}px"
+        );
+    }
+
+    /// The layout x of the separator between two side-by-side panes.
+    fn separator_x(grid: &Grid, left: NodeId, right: NodeId) -> f32 {
+        let l = rect(grid, left);
+        let r = rect(grid, right);
+        ((l[0] + l[2]) + r[0]) / 2.0
+    }
+
+    fn border_between(grid: &Grid, left: NodeId, right: NodeId) -> PanelBorder {
+        let (x, y) = win(
+            grid,
+            separator_x(grid, left, right),
+            rect(grid, left)[1] + 1.0,
+        );
+        grid.find_border_at_position(x, y)
+            .expect("the separator is under the pointer")
+    }
+
+    #[test]
+    fn a_split_selects_the_new_pane_and_sizes_both() {
+        for scale in [1.0, 2.0] {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            assert_ne!(left, right);
+            assert_eq!(grid.current, right);
+            assert_eq!(grid.panel_count(), 2);
+            let margins = 4.0 * MARGIN * scale;
+            assert_px(width(&grid, left), (available(&grid).0 - margins) / 2.0);
+            assert_px(width(&grid, right), width(&grid, left));
+            // The new terminal was told its grid.
+            let cols = grid.inner[&right].val.terminal.lock().grid.columns();
+            assert_eq!(cols, grid.inner[&right].val.dimension.columns);
+            assert_eq!(cols, grid.inner[&left].val.dimension.columns);
+        }
+    }
+
+    #[test]
+    fn separators_sit_between_the_panes() {
+        let mut grid = grid(1.0);
+        let left = grid.current;
+        let right = split(&mut grid, true);
+        let (_, avail_h) = available(&grid);
+        let borders = grid.get_panel_borders();
+        assert_eq!(borders.len(), 1);
+        let b = &borders[0];
+        assert_px(b.x + b.width / 2.0, separator_x(&grid, left, right));
+        assert_px(b.y, MARGIN);
+        assert_px(b.height, avail_h - 2.0 * MARGIN);
+
+        // A column inside the right pane adds one horizontal separator
+        // spanning only that pane.
+        let bottom_right = split(&mut grid, false);
+        let borders = grid.get_panel_borders();
+        assert_eq!(borders.len(), 2);
+        let horizontal = borders
+            .iter()
+            .find(|b| b.width > b.height)
+            .expect("a horizontal separator");
+        let r = rect(&grid, right);
+        assert_px(horizontal.x, r[0]);
+        assert_px(horizontal.width, r[2]);
+        let top_end = r[1] + r[3];
+        let bottom_start = rect(&grid, bottom_right)[1];
+        assert_px(
+            horizontal.y + horizontal.height / 2.0,
+            (top_end + bottom_start) / 2.0,
+        );
+    }
+
+    #[test]
+    fn a_single_pane_draws_no_border() {
+        let grid = grid(1.0);
+        assert!(!grid.should_draw_borders());
+        assert!(grid.get_panel_borders().is_empty());
+        assert!(grid
+            .find_border_at_position(WIDTH / 2.0, HEIGHT / 2.0)
+            .is_none());
+    }
+
+    // The hit box is half the border width plus 3px each side, in
+    // physical pixels, so it doubles at scale 2.
+    #[test]
+    fn the_border_hit_box_scales_with_the_display() {
+        for scale in [1.0, 2.0] {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            let (x, y) = win(
+                &grid,
+                separator_x(&grid, left, right),
+                available(&grid).1 / 2.0,
+            );
+            let hit = grid
+                .find_border_at_position(x, y)
+                .expect("the separator is under the pointer");
+            assert_eq!(hit.direction, BorderDirection::Vertical);
+            assert_eq!((hit.left_or_top, hit.right_or_bottom), (left, right));
+
+            let half = (1.0 + 3.0) * scale;
+            assert!(grid.find_border_at_position(x + half - 0.5, y).is_some());
+            assert!(grid.find_border_at_position(x + half + 0.5, y).is_none());
+            assert!(grid.find_border_at_position(x - half + 0.5, y).is_some());
+            assert!(grid.find_border_at_position(x - half - 0.5, y).is_none());
+            // Above the top of the separator.
+            assert!(grid.find_border_at_position(x, 0.0).is_none());
+        }
+    }
+
+    #[test]
+    fn a_mouse_drag_moves_the_border_by_the_pointer_delta() {
+        for scale in [1.0, 2.0] {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            let border = border_between(&grid, left, right);
+            let sizes = (
+                grid.get_panel_size(left, border.direction),
+                grid.get_panel_size(right, border.direction),
+            );
+            let (lw, rw) = (width(&grid, left), width(&grid, right));
+            assert_eq!(sizes, (lw, rw));
+
+            grid.resize_border(&border, sizes, 100.0);
+            assert_px(width(&grid, left), lw + 100.0);
+            assert_px(width(&grid, right), rw - 100.0);
+
+            // The delta is from the drag start, not from the last event.
+            grid.resize_border(&border, sizes, 30.0);
+            assert_px(width(&grid, left), lw + 30.0);
+            assert_px(width(&grid, right), rw - 30.0);
+
+            grid.resize_border(&border, sizes, -30.0);
+            assert_px(width(&grid, left), lw - 30.0);
+        }
+    }
+
+    // The drag stops where the smallest pane on the shrinking side
+    // reaches 50 logical pixels, nested panes included, and the sum of
+    // the pair is kept.
+    #[test]
+    fn a_mouse_drag_stops_at_the_floor_of_the_nested_panes() {
+        for scale in [1.0, 2.0] {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            let bottom_right = split(&mut grid, false);
+            let border = border_between(&grid, left, right);
+            // The pair is the left pane and the column container.
+            assert_eq!(border.left_or_top, left);
+            assert_ne!(border.right_or_bottom, right);
+            let sizes = (
+                grid.get_panel_size(border.left_or_top, border.direction),
+                grid.get_panel_size(border.right_or_bottom, border.direction),
+            );
+            let total = width(&grid, left) + width(&grid, right);
+
+            grid.resize_border(&border, sizes, 5000.0);
+            assert_px(width(&grid, right), 50.0 * scale);
+            assert_px(width(&grid, bottom_right), 50.0 * scale);
+            assert_px(width(&grid, left) + width(&grid, right), total);
+
+            grid.resize_border(&border, sizes, -5000.0);
+            assert_px(width(&grid, left), 50.0 * scale);
+        }
+    }
+
+    #[test]
+    fn a_point_inside_a_pane_finds_that_pane() {
+        let mut grid = grid(1.0);
+        let left = grid.current;
+        let right = split(&mut grid, true);
+        let bottom_right = split(&mut grid, false);
+        for node in [left, right, bottom_right] {
+            let [x, y, w, h] = rect(&grid, node);
+            for (px, py) in [
+                (x + w / 2.0, y + h / 2.0),
+                (x, y),
+                (x + w - 0.5, y + h - 0.5),
+            ] {
+                let (wx, wy) = win(&grid, px, py);
+                assert_eq!(grid.find_context_at_position(wx, wy), Some(node));
+            }
+        }
+        assert_eq!(grid.find_context_at_position(-1.0, 10.0), None);
+        assert_eq!(grid.find_context_at_position(WIDTH + 1.0, 10.0), None);
+        // In the gap between two panes.
+        let (gx, gy) = win(
+            &grid,
+            separator_x(&grid, left, right),
+            available(&grid).1 / 2.0,
+        );
+        assert_eq!(grid.find_context_at_position(gx, gy), None);
+    }
+
+    // Visual order is top to bottom, then left to right, with wrap.
+    #[test]
+    fn next_and_previous_split_follow_the_visual_order() {
+        let mut grid = grid(1.0);
+        let a = grid.current;
+        let b = split(&mut grid, true);
+        let d = split(&mut grid, false); // under b
+        grid.current = a;
+        let c = split(&mut grid, false); // under a
+                                         // Rows: a | b  then  c | d. Top row first.
+        let expected = [a, b, c, d];
+        grid.current = a;
+        for &want in &expected[1..] {
+            grid.select_next_split();
+            assert_eq!(grid.current, want);
+        }
+        grid.select_next_split();
+        assert_eq!(grid.current, a, "next wraps to the first pane");
+        grid.select_prev_split();
+        assert_eq!(grid.current, d, "previous wraps to the last pane");
+
+        grid.current = d;
+        assert!(!grid.select_next_split_no_loop());
+        assert_eq!(grid.current, d);
+        grid.current = a;
+        assert!(!grid.select_prev_split_no_loop());
+        assert!(grid.select_next_split_no_loop());
+        assert_eq!(grid.current, b);
+    }
+
+    // Growing the window keeps the proportion of a moved divider, and
+    // the panes always fill the available width. (Shrinking drifts by
+    // the padding share; see the follow-up on shrink weighting.)
+    #[test]
+    fn a_window_resize_keeps_the_proportion_when_growing_and_fills_the_width() {
+        for scale in [1.0, 2.0] {
+            let mut grid = grid(scale);
+            let left = grid.current;
+            let right = split(&mut grid, true);
+            for _ in 0..4 {
+                assert!(grid.move_divider_right(40.0));
+            }
+            let ratio = width(&grid, left) / width(&grid, right);
+            let margins = 4.0 * MARGIN * scale;
+
+            grid.resize(WIDTH + 600.0, HEIGHT);
+            let grown = width(&grid, left) / width(&grid, right);
+            assert!(
+                (grown - ratio).abs() / ratio < 0.01,
+                "{ratio} became {grown}"
+            );
+            assert_px(
+                width(&grid, left) + width(&grid, right),
+                available(&grid).0 - margins,
+            );
+
+            grid.resize(WIDTH / 2.0, HEIGHT);
+            assert_px(
+                width(&grid, left) + width(&grid, right),
+                available(&grid).0 - margins,
+            );
+            assert!(width(&grid, left) > width(&grid, right));
+
+            grid.resize(WIDTH, HEIGHT);
+            let back = width(&grid, left) / width(&grid, right);
+            assert!((back - ratio).abs() / ratio < 0.01, "{ratio} became {back}");
+        }
+    }
+
+    #[test]
+    fn a_scale_change_rescales_margins_and_padding() {
+        let mut grid = grid(1.0);
+        let left = grid.current;
+        let right = split(&mut grid, true);
+        let avail = available(&grid).0;
+        assert_px(
+            width(&grid, left) + width(&grid, right),
+            avail - 4.0 * MARGIN,
+        );
+
+        grid.update_scale(2.0);
+        assert!(grid.apply_taffy_layout(false));
+        assert_px(
+            width(&grid, left) + width(&grid, right),
+            avail - 4.0 * MARGIN * 2.0,
+        );
+    }
+
+    #[test]
+    fn only_moved_panes_are_marked_dirty() {
+        let mut grid = grid(1.0);
+        let a = grid.current;
+        let b = split(&mut grid, true);
+        let d = split(&mut grid, true);
+        for node in [a, b, d] {
+            grid.inner
+                .get_mut(&node)
+                .unwrap()
+                .val
+                .renderable_content
+                .pending_update
+                .reset();
+        }
+        grid.current = d;
+        assert!(grid.move_divider_left(40.0));
+        let dirty = |grid: &Grid, node| {
+            grid.inner[&node]
+                .val
+                .renderable_content
+                .pending_update
+                .is_dirty()
+        };
+        assert!(
+            !dirty(&grid, a),
+            "the pane that did not move was marked dirty"
+        );
+        assert!(dirty(&grid, b));
+        assert!(dirty(&grid, d));
+    }
+
+    // A reflow that keeps the rect, as a line height or font size
+    // change does, still has to open the present gate on every pane,
+    // or an idle terminal would keep showing the old cell metrics.
+    #[test]
+    fn a_reflow_in_place_marks_every_pane_dirty() {
+        let mut grid = grid(1.0);
+        let a = grid.current;
+        let b = split(&mut grid, true);
+        for node in [a, b] {
+            grid.inner
+                .get_mut(&node)
+                .unwrap()
+                .val
+                .renderable_content
+                .pending_update
+                .reset();
+        }
+        let rects = [rect(&grid, a), rect(&grid, b)];
+        let lines = grid.inner[&a].val.dimension.lines;
+
+        // What ContextGrid::update_dimensions does after a font size or
+        // line height change: new cell metrics on every pane.
+        let taller = TextDimensions {
+            scale: 1.0,
+            width: 18.,
+            height: 18.,
+        };
+        for node in [a, b] {
+            grid.inner
+                .get_mut(&node)
+                .unwrap()
+                .val
+                .dimension
+                .update_dimensions(taller, cell_for(taller));
+        }
+        assert!(grid.apply_taffy_layout(false));
+        assert_eq!(
+            [rect(&grid, a), rect(&grid, b)],
+            rects,
+            "the rects did not move"
+        );
+        assert!(
+            grid.inner[&a].val.dimension.lines < lines,
+            "the grid changed"
+        );
+        for node in [a, b] {
+            assert!(
+                grid.inner[&node]
+                    .val
+                    .renderable_content
+                    .pending_update
+                    .is_dirty(),
+                "a reflowed pane was not marked dirty"
+            );
+            let terminal = grid.inner[&node].val.terminal.lock();
+            assert_eq!(
+                terminal.grid.screen_lines(),
+                grid.inner[&node].val.dimension.lines
+            );
+        }
+    }
+
+    #[test]
+    fn removing_a_pane_selects_the_next_in_visual_order_and_fills_the_space() {
+        let mut grid = grid(1.0);
+        let a = grid.current;
+        let b = split(&mut grid, true);
+        let d = split(&mut grid, true);
+        let route_b = grid.inner[&b].val.route_id;
+        let avail = available(&grid).0;
+
+        grid.current = b;
+        let removed = grid.remove_current().expect("a pane was removed");
+        assert_eq!(removed.route_id, route_b);
+        assert_eq!(
+            grid.current, d,
+            "the pane after the removed one is selected"
+        );
+        assert_eq!(grid.panel_count(), 2);
+        assert!(!grid.inner.contains_key(&b));
+        assert_px(width(&grid, a) + width(&grid, d), avail - 4.0 * MARGIN);
+        assert_eq!(grid.get_panel_borders().len(), 1);
+
+        // Removing the last pane in visual order selects the previous.
+        grid.current = d;
+        assert!(grid.remove_current().is_some());
+        assert_eq!(grid.current, a);
+        assert_eq!(grid.panel_count(), 1);
+        assert_px(width(&grid, a), avail - 2.0 * MARGIN);
+        assert!(grid.get_panel_borders().is_empty());
+    }
+
+    #[test]
+    fn the_last_pane_cannot_be_removed() {
+        let mut grid = grid(1.0);
+        let a = grid.current;
+        assert!(grid.remove_current().is_none());
+        assert_eq!(grid.panel_count(), 1);
+        assert_eq!(grid.current, a);
+    }
+
+    #[test]
+    fn removing_by_route_keeps_the_focus_where_it_was() {
+        let mut grid = grid(1.0);
+        let a = grid.current;
+        let b = split(&mut grid, true);
+        let d = split(&mut grid, false); // under b
+        let route_d = grid.inner[&d].val.route_id;
+        let (_, avail_h) = available(&grid);
+
+        grid.current = a;
+        let removed = grid.remove_by_route(route_d).expect("a pane was removed");
+        assert_eq!(removed.route_id, route_d);
+        assert_eq!(
+            grid.current, a,
+            "focus stays on the pane that was not removed"
+        );
+        assert_eq!(grid.panel_count(), 2);
+        // b takes the whole right column again.
+        let [_, by, _, bh] = rect(&grid, b);
+        assert_px(by, MARGIN);
+        assert_px(bh, avail_h - 2.0 * MARGIN);
+
+        assert!(grid.remove_by_route(usize::MAX).is_none());
+        assert_eq!(grid.panel_count(), 2);
+    }
+
+    // Closing a nested pane collapses its container, and the divider
+    // between the remaining panes still works.
+    #[test]
+    fn a_collapsed_container_leaves_a_working_divider() {
+        let mut grid = grid(1.0);
+        let a = grid.current;
+        let b = split(&mut grid, true);
+        let d = split(&mut grid, true);
+        grid.current = d;
+        assert!(grid.remove_current().is_some());
+        assert_eq!(grid.current, b);
+        let (aw, bw) = (width(&grid, a), width(&grid, b));
+        assert!(grid.move_divider_left(40.0));
+        assert_px(width(&grid, a), aw - 40.0);
+        assert_px(width(&grid, b), bw + 40.0);
+    }
+}
