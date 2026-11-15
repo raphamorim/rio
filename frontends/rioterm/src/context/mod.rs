@@ -1460,27 +1460,33 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         self.set_current(target);
     }
 
+    /// Directory a split or tab spawned from the current context starts in.
+    fn current_working_dir(&self) -> Option<String> {
+        let current = self.current();
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            teletypewriter::foreground_process_path(*current.main_fd, current.shell_pid)
+                .ok()
+                .map(|path| path.to_string_lossy().into_owned())
+        }
+
+        // Windows has no API to read another process's cwd, so rely on the
+        // directory the shell reported via OSC 7 / OSC 9;9.
+        #[cfg(target_os = "windows")]
+        {
+            let reported = current.terminal.lock().current_directory.clone();
+            reported
+                .filter(|path| path.is_dir())
+                .map(|path| path.to_string_lossy().into_owned())
+        }
+    }
+
     pub fn split(&mut self, rich_text_id: usize, split_down: bool) {
         let mut working_dir = self.config.working_dir.clone();
         if self.config.cwd {
-            #[cfg(not(target_os = "windows"))]
-            {
-                let current_context = self.current();
-                if let Ok(path) = teletypewriter::foreground_process_path(
-                    *current_context.main_fd,
-                    current_context.shell_pid,
-                ) {
-                    working_dir = Some(path.to_string_lossy().to_string());
-                }
-            }
-
-            #[cfg(target_os = "windows")]
-            {
-                // if let Ok(path) = teletypewriter::foreground_process_path() {
-                //     working_dir =
-                //         Some(path.to_string_lossy().to_string());
-                // }
-                working_dir = None;
+            if let Some(path) = self.current_working_dir() {
+                working_dir = Some(path);
             }
         }
 
@@ -1585,24 +1591,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     pub fn add_context(&mut self, redirect: bool, rich_text_id: usize) {
         let mut working_dir = self.config.working_dir.clone();
         if self.config.cwd {
-            #[cfg(not(target_os = "windows"))]
-            {
-                let current_context = self.current();
-                if let Ok(path) = teletypewriter::foreground_process_path(
-                    *current_context.main_fd,
-                    current_context.shell_pid,
-                ) {
-                    working_dir = Some(path.to_string_lossy().to_string());
-                }
-            }
-
-            #[cfg(target_os = "windows")]
-            {
-                // if let Ok(path) = teletypewriter::foreground_process_path() {
-                //     working_dir =
-                //         Some(path.to_string_lossy().to_string());
-                // }
-                working_dir = None;
+            if let Some(path) = self.current_working_dir() {
+                working_dir = Some(path);
             }
         }
 
