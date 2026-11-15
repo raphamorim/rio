@@ -1455,7 +1455,14 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             island.cancel_drag();
                         }
                         route.window.screen.renderer.scrollbar.end_drag();
-                        route.window.screen.resize_state = None;
+                        if route.window.screen.resize_state.take().is_some() {
+                            route
+                                .window
+                                .screen
+                                .context_manager
+                                .current_grid_mut()
+                                .end_border_resize();
+                        }
                     }
                     return;
                 }
@@ -1707,8 +1714,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        if route.window.screen.resize_state.is_some() {
-                            route.window.screen.resize_state = None;
+                        if route.window.screen.resize_state.take().is_some() {
+                            route
+                                .window
+                                .screen
+                                .context_manager
+                                .current_grid_mut()
+                                .end_border_resize();
                             route.window.winit_window.set_cursor(CursorIcon::Default);
                             return;
                         }
@@ -1969,12 +1981,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .screen
                         .context_manager
                         .current_grid_mut()
-                        .resize_border(
-                            &border,
-                            original_sizes,
-                            delta,
-                            &mut route.window.screen.sugarloaf,
-                        );
+                        .resize_border(&border, original_sizes, delta);
                     // Dragging a split divider displaces panel origins;
                     // that is layout, not cursor travel.
                     route.window.screen.renderer.trail_cursor.snap();

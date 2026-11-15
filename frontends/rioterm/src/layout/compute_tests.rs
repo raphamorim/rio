@@ -1003,3 +1003,206 @@ mod divider_keys {
         }
     }
 }
+
+// What a relayout pushes to the panels. `apply_taffy_layout` runs for
+// real here: each panel's messenger is swapped for a channel so the
+// winsizes it sends can be counted.
+mod relayout {
+    use super::*;
+    use crate::context::{create_mock_context, ContextDimension};
+    use crate::event::Msg;
+    use crate::messenger::Messenger;
+    use corcovado::channel::Receiver;
+    use rio_backend::config::layout::Panel;
+    use rio_backend::event::{VoidListener, WindowId, WindowSize};
+
+    type Grid = ContextGrid<VoidListener>;
+
+    // 18px cells: a 4 logical px move keeps the columns, a 40px move
+    // changes them.
+    const CELL: f32 = 18.0;
+    const SMALL: f32 = 4.0;
+    const LARGE: f32 = 40.0;
+
+    fn dimension() -> ContextDimension {
+        let text = TextDimensions {
+            scale: 1.0,
+            width: CELL,
+            height: 9.,
+        };
+        ContextDimension::build(
+            1200.0,
+            800.0,
+            text,
+            cell_for(text),
+            1.0,
+            14.0,
+            Margin::default(),
+        )
+    }
+
+    fn tapped_context(
+        id: usize,
+    ) -> (crate::context::Context<VoidListener>, Receiver<Msg>) {
+        let mut ctx =
+            create_mock_context(VoidListener {}, WindowId::from(0), id, dimension());
+        let (tx, rx) = corcovado::channel::channel();
+        ctx.messenger = Messenger::new(tx);
+        (ctx, rx)
+    }
+
+    fn winsizes(rx: &Receiver<Msg>) -> Vec<WindowSize> {
+        let mut out = Vec::new();
+        while let Ok(msg) = rx.try_recv() {
+            if let Msg::Resize(size) = msg {
+                out.push(size);
+            }
+        }
+        out
+    }
+
+    /// A | [B | D]: three panes in a row, the right two nested. The
+    /// receivers come back in that order, drained after the splits.
+    fn row_of_three() -> (Grid, [NodeId; 3], [Receiver<Msg>; 3]) {
+        let (ctx, rx_a) = tapped_context(0);
+        let mut grid =
+            ContextGrid::new(ctx, Margin::default(), [0.; 4], [0.; 4], Panel::default());
+        let a = grid.current;
+        let split = |grid: &mut Grid, id| {
+            let node = grid.try_split_right().unwrap();
+            let (ctx, rx) = tapped_context(id);
+            grid.inner.insert(node, ContextGridItem::new(ctx));
+            grid.current = node;
+            assert!(grid.apply_taffy_layout(false));
+            (node, rx)
+        };
+        let (b, rx_b) = split(&mut grid, 1);
+        let (d, rx_d) = split(&mut grid, 2);
+        for rx in [&rx_a, &rx_b, &rx_d] {
+            winsizes(rx);
+        }
+        (grid, [a, b, d], [rx_a, rx_b, rx_d])
+    }
+
+    fn columns(grid: &Grid, node: NodeId) -> usize {
+        grid.inner[&node].val.dimension.columns
+    }
+
+    fn pixel_width(grid: &Grid, node: NodeId) -> u16 {
+        crate::renderer::utils::terminal_dimensions(&grid.inner[&node].val.dimension)
+            .width
+    }
+
+    // Splitting sent each pane its first winsize; a relayout that moves
+    // nothing sends nothing and keeps every terminal where it was.
+    #[test]
+    fn a_relayout_that_moves_nothing_sends_nothing() {
+        let (mut grid, nodes, rxs) = row_of_three();
+        let before: Vec<usize> = nodes.iter().map(|&n| columns(&grid, n)).collect();
+        assert!(grid.apply_taffy_layout(false));
+        assert!(grid.apply_taffy_layout(true));
+        for rx in &rxs {
+            assert!(winsizes(rx).is_empty());
+        }
+        let after: Vec<usize> = nodes.iter().map(|&n| columns(&grid, n)).collect();
+        assert_eq!(before, after);
+    }
+
+    // Mid drag, a step that keeps the columns sends no winsize, so the
+    // programs beside the divider get no SIGWINCH per pixel. Letting go
+    // sends the final pixel size once to the two panes that moved.
+    #[test]
+    fn a_drag_step_that_keeps_the_columns_sends_no_winsize() {
+        let (mut grid, [_a, b, d], [rx_a, rx_b, rx_d]) = row_of_three();
+        let (bw, dw) = (pixel_width(&grid, b), pixel_width(&grid, d));
+        let (bc, dc) = (columns(&grid, b), columns(&grid, d));
+
+        grid.current = d;
+        assert!(grid.resize_divider(true, true, SMALL));
+        assert!(grid.apply_taffy_layout(true));
+        assert_eq!((columns(&grid, b), columns(&grid, d)), (bc, dc));
+        for rx in [&rx_a, &rx_b, &rx_d] {
+            assert!(
+                winsizes(rx).is_empty(),
+                "a pixel-only drag step sent a winsize"
+            );
+        }
+        assert_ne!(pixel_width(&grid, b), bw);
+
+        grid.end_border_resize();
+        assert!(
+            winsizes(&rx_a).is_empty(),
+            "the pane that did not move got a winsize"
+        );
+        let sent_b = winsizes(&rx_b);
+        let sent_d = winsizes(&rx_d);
+        assert_eq!(sent_b.len(), 1);
+        assert_eq!(sent_d.len(), 1);
+        assert_eq!(sent_b[0].width, pixel_width(&grid, b));
+        assert_eq!(sent_d[0].width, pixel_width(&grid, d));
+        assert_ne!(sent_d[0].width, dw);
+        assert_eq!(sent_b[0].cols as usize, columns(&grid, b));
+
+        // Nothing is pending once the final size is out.
+        grid.end_border_resize();
+        for rx in [&rx_a, &rx_b, &rx_d] {
+            assert!(winsizes(rx).is_empty());
+        }
+    }
+
+    // A drag step that changes the columns sends one winsize to each
+    // pane beside the divider, with the pixel size of that moment, and
+    // nothing to the pane that did not move. Letting go then has
+    // nothing left to send.
+    #[test]
+    fn a_drag_step_that_changes_the_columns_sends_one_winsize_per_pane() {
+        let (mut grid, [_a, b, d], [rx_a, rx_b, rx_d]) = row_of_three();
+        let (bc, dc) = (columns(&grid, b), columns(&grid, d));
+
+        grid.current = d;
+        assert!(grid.resize_divider(true, true, LARGE));
+        assert!(grid.apply_taffy_layout(true));
+        assert!(columns(&grid, b) < bc && columns(&grid, d) > dc);
+        assert!(winsizes(&rx_a).is_empty());
+        let sent_b = winsizes(&rx_b);
+        let sent_d = winsizes(&rx_d);
+        assert_eq!(sent_b.len(), 1);
+        assert_eq!(sent_d.len(), 1);
+        assert_eq!(sent_b[0].cols as usize, columns(&grid, b));
+        assert_eq!(sent_b[0].width, pixel_width(&grid, b));
+        assert_eq!(sent_d[0].cols as usize, columns(&grid, d));
+
+        grid.end_border_resize();
+        for rx in [&rx_a, &rx_b, &rx_d] {
+            assert!(winsizes(rx).is_empty());
+        }
+    }
+
+    // A key move is a single step, so the pixel size goes out at once,
+    // whether or not the columns changed.
+    #[test]
+    fn a_key_move_sends_the_pixel_size_at_once() {
+        let (mut grid, [_a, _b, d], [rx_a, rx_b, rx_d]) = row_of_three();
+        grid.current = d;
+        assert!(grid.move_divider_left(SMALL));
+        assert!(winsizes(&rx_a).is_empty());
+        assert_eq!(winsizes(&rx_b).len(), 1);
+        assert_eq!(winsizes(&rx_d).len(), 1);
+    }
+
+    // The terminal is only reflowed when its dimension changed: the
+    // pane left of a nested divider keeps its grid through a drag.
+    #[test]
+    fn an_untouched_pane_keeps_its_grid_through_a_drag() {
+        let (mut grid, [a, _b, d], _rxs) = row_of_three();
+        let cols = grid.inner[&a].val.terminal.lock().grid.columns();
+        grid.current = d;
+        for _ in 0..3 {
+            assert!(grid.resize_divider(true, true, LARGE));
+            assert!(grid.apply_taffy_layout(true));
+        }
+        grid.end_border_resize();
+        assert_eq!(grid.inner[&a].val.terminal.lock().grid.columns(), cols);
+        assert_eq!(columns(&grid, a), cols);
+    }
+}

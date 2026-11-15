@@ -675,8 +675,7 @@ impl Screen<'_> {
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
-        self.context_manager
-            .resize_all_grids(width, height, &mut self.sugarloaf);
+        self.context_manager.resize_all_grids(width, height);
 
         // A resize reflows the cursor; that displacement is layout,
         // not travel, and must not animate a smear.
@@ -748,8 +747,7 @@ impl Screen<'_> {
         let width = new_size.width as f32;
         let height = new_size.height as f32;
 
-        self.context_manager
-            .resize_all_grids(width, height, &mut self.sugarloaf);
+        self.context_manager.resize_all_grids(width, height);
         self.refresh_titles();
         self.mark_dirty();
         // Rescaled cursor displacement is layout, not travel.
@@ -1623,12 +1621,8 @@ impl Screen<'_> {
             + self.renderer.island.as_ref().map_or(0.0, |i| i.height());
         let _ = config.margin.left;
         let rich_text_id = next_rich_text_id();
-        self.context_manager.split_from_config(
-            rich_text_id,
-            false,
-            config,
-            &mut self.sugarloaf,
-        );
+        self.context_manager
+            .split_from_config(rich_text_id, false, config);
 
         self.refresh_titles();
         self.mark_dirty();
@@ -1636,8 +1630,7 @@ impl Screen<'_> {
 
     pub fn split_right(&mut self) {
         let rich_text_id = next_rich_text_id();
-        self.context_manager
-            .split(rich_text_id, false, &mut self.sugarloaf);
+        self.context_manager.split(rich_text_id, false);
 
         self.refresh_titles();
         self.mark_dirty();
@@ -1645,8 +1638,7 @@ impl Screen<'_> {
 
     pub fn split_down(&mut self) {
         let rich_text_id = next_rich_text_id();
-        self.context_manager
-            .split(rich_text_id, true, &mut self.sugarloaf);
+        self.context_manager.split(rich_text_id, true);
 
         self.refresh_titles();
         self.mark_dirty();
@@ -1654,10 +1646,7 @@ impl Screen<'_> {
 
     pub fn move_divider_up(&mut self) {
         let amount = 20.0; // logical pixels per keypress
-        if self
-            .context_manager
-            .move_divider_up(amount, &mut self.sugarloaf)
-        {
+        if self.context_manager.move_divider_up(amount) {
             self.mark_dirty();
             // Divider displacement is layout, not cursor travel.
             self.renderer.trail_cursor.snap();
@@ -1666,10 +1655,7 @@ impl Screen<'_> {
 
     pub fn move_divider_down(&mut self) {
         let amount = 20.0; // logical pixels per keypress
-        if self
-            .context_manager
-            .move_divider_down(amount, &mut self.sugarloaf)
-        {
+        if self.context_manager.move_divider_down(amount) {
             self.mark_dirty();
             // Divider displacement is layout, not cursor travel.
             self.renderer.trail_cursor.snap();
@@ -1678,10 +1664,7 @@ impl Screen<'_> {
 
     pub fn move_divider_left(&mut self) {
         let amount = 40.0; // logical pixels per keypress
-        if self
-            .context_manager
-            .move_divider_left(amount, &mut self.sugarloaf)
-        {
+        if self.context_manager.move_divider_left(amount) {
             self.mark_dirty();
             // Divider displacement is layout, not cursor travel.
             self.renderer.trail_cursor.snap();
@@ -1690,10 +1673,7 @@ impl Screen<'_> {
 
     pub fn move_divider_right(&mut self) {
         let amount = 40.0; // logical pixels per keypress
-        if self
-            .context_manager
-            .move_divider_right(amount, &mut self.sugarloaf)
-        {
+        if self.context_manager.move_divider_right(amount) {
             self.mark_dirty();
             // Divider displacement is layout, not cursor travel.
             self.renderer.trail_cursor.snap();

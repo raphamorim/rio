@@ -5,7 +5,7 @@ use crate::context::Context;
 use crate::mouse::Mouse;
 use rio_backend::config::layout::Margin;
 use rio_backend::crosswords::grid::Dimensions;
-use rio_backend::event::EventListener;
+use rio_backend::event::{EventListener, WindowSize};
 use rio_backend::sugarloaf::{layout::TextDimensions, Rect, Sugarloaf};
 use rustc_hash::FxHashMap;
 
@@ -147,6 +147,13 @@ pub struct ContextGrid<T: EventListener> {
 pub struct ContextGridItem<T: EventListener> {
     pub val: Context<T>,
     pub layout_rect: [f32; 4],
+    /// The rect the panel was last laid out at, so a relayout only
+    /// touches the panels it moved.
+    applied_rect: [f32; 4],
+    /// The dimension last pushed into the terminal.
+    applied: Option<ContextDimension>,
+    /// The winsize last sent to the PTY.
+    sent: Option<WindowSize>,
 }
 
 impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
@@ -154,6 +161,9 @@ impl<T: rio_backend::event::EventListener> ContextGridItem<T> {
         Self {
             val: context,
             layout_rect: [0.0; 4],
+            applied_rect: [0.0; 4],
+            applied: None,
+            sent: None,
         }
     }
 
@@ -421,7 +431,6 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         border: &PanelBorder,
         original_sizes: (f32, f32),
         delta: f32,
-        sugarloaf: &mut Sugarloaf,
     ) {
         // The border moves until a panel on either side, nested or not,
         // reaches the floor. The floor is a size, so it holds whether
@@ -453,7 +462,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             }
         }
 
-        self.apply_taffy_layout(sugarloaf);
+        self.apply_taffy_layout(true);
     }
 
     /// Get separator lines between adjacent panels for rendering.
@@ -1022,51 +1031,67 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         true
     }
 
-    fn apply_taffy_layout(&mut self, sugarloaf: &mut Sugarloaf) -> bool {
+    /// Lay the tree out and push the result to the panels that changed.
+    ///
+    /// A panel whose rect did not move is left alone: no terminal lock,
+    /// no reflow, no winsize, no dirty mark. One whose grid changed gets
+    /// all of them. One whose size changed only in pixels, not in cells,
+    /// gets a winsize now unless `mid_drag`, in which case it waits for
+    /// `end_border_resize`: the pixel fields reach the child as a
+    /// SIGWINCH, and a pointer drag would otherwise raise one per pixel
+    /// in both panels beside the divider.
+    fn apply_taffy_layout(&mut self, mid_drag: bool) -> bool {
         if self.compute_layout().is_err() {
             return false;
         }
 
-        let scale = sugarloaf.ctx.scale();
-        let is_multi_panel = self.inner.len() > 1;
-
         for item in self.inner.values_mut() {
-            let [abs_x, abs_y, width, height] = item.layout_rect;
-
-            let x = (abs_x + self.scaled_margin.left) / scale;
-            let y = (abs_y + self.scaled_margin.top) / scale;
+            let [_, _, width, height] = item.layout_rect;
 
             // Clear margin since Taffy layout already accounts for spacing
             item.val.dimension.margin = Margin::all(0.0);
-            let resized =
-                item.val.dimension.width != width || item.val.dimension.height != height;
             item.val.dimension.update_width(width);
             item.val.dimension.update_height(height);
+            let dimension = item.val.dimension;
 
-            // Update terminal size
-            let mut terminal = item.val.terminal.lock();
-            if resized {
-                terminal.end_sync_update();
+            if item.applied_rect != item.layout_rect {
+                item.applied_rect = item.layout_rect;
+                // The present gate reads `pending_update.is_dirty()`
+                // before it looks at the terminal, so a moved panel has
+                // to be marked or an idle terminal would not present.
+                item.val.renderable_content.pending_update.set_dirty();
             }
-            terminal.resize::<ContextDimension>(item.val.dimension);
-            drop(terminal);
 
-            let winsize =
-                crate::renderer::utils::terminal_dimensions(&item.val.dimension);
-            let _ = item.val.messenger.send_resize(winsize);
+            if item.applied != Some(dimension) {
+                item.applied = Some(dimension);
+                let mut terminal = item.val.terminal.lock();
+                terminal.end_sync_update();
+                terminal.resize::<ContextDimension>(dimension);
+            }
 
-            // The reflow damages the Crosswords, but the present gate reads
-            // `pending_update.is_dirty()` and skips the panel before reading
-            // that. Mark it dirty so an idle terminal still presents.
-            item.val.renderable_content.pending_update.set_dirty();
-
-            // Panel position / clipping bounds are tracked rio-side
-            // now; the grid pass reads `panel_rect` from the renderer's
-            // own per-panel iteration. Sugarloaf no longer carries
-            // panel metadata.
-            let _ = (x, y, abs_x, abs_y, width, height, is_multi_panel);
+            let winsize = crate::renderer::utils::terminal_dimensions(&dimension);
+            let grid_changed = item.sent.is_none_or(|sent| {
+                sent.cols != winsize.cols || sent.rows != winsize.rows
+            });
+            if grid_changed || (!mid_drag && item.sent != Some(winsize)) {
+                let _ = item.val.messenger.send_resize(winsize);
+                item.sent = Some(winsize);
+            }
         }
         true
+    }
+
+    /// The pointer let go of a divider: panels whose pixel size moved
+    /// during the drag get their final winsize now.
+    pub fn end_border_resize(&mut self) {
+        for item in self.inner.values_mut() {
+            let winsize =
+                crate::renderer::utils::terminal_dimensions(&item.val.dimension);
+            if item.sent != Some(winsize) {
+                let _ = item.val.messenger.send_resize(winsize);
+                item.sent = Some(winsize);
+            }
+        }
     }
 
     #[inline]
@@ -1391,11 +1416,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         }
 
         // Always apply Taffy layout for consistent positioning
-        self.apply_taffy_layout(sugarloaf);
+        self.apply_taffy_layout(false);
     }
 
     /// Resize grid - always uses Taffy for consistent layout
-    pub fn resize(&mut self, new_width: f32, new_height: f32, sugarloaf: &mut Sugarloaf) {
+    pub fn resize(&mut self, new_width: f32, new_height: f32) {
         self.width = new_width;
         self.height = new_height;
 
@@ -1403,7 +1428,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         let _ = self.try_update_size(new_width, new_height);
 
         // Apply layout - works for both single and multi-panel
-        self.apply_taffy_layout(sugarloaf);
+        self.apply_taffy_layout(false);
     }
 
     #[inline]
@@ -1532,11 +1557,11 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
             if self.panel_count() == 1 {
                 self.reset_panel_styles_to_flexible();
             }
-            self.apply_taffy_layout(sugarloaf);
+            self.apply_taffy_layout(false);
         }
     }
 
-    pub fn split_right(&mut self, context: Context<T>, sugarloaf: &mut Sugarloaf) {
+    pub fn split_right(&mut self, context: Context<T>) {
         if !self.inner.contains_key(&self.current) {
             return;
         }
@@ -1545,13 +1570,13 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Ok(new_node) = self.try_split_right() {
             let new_context = ContextGridItem::new(context);
             self.inner.insert(new_node, new_context);
-            self.apply_taffy_layout(sugarloaf);
+            self.apply_taffy_layout(false);
             self.current = new_node;
         }
     }
 
     /// Split down - create new panel below using Taffy
-    pub fn split_down(&mut self, context: Context<T>, sugarloaf: &mut Sugarloaf) {
+    pub fn split_down(&mut self, context: Context<T>) {
         if !self.inner.contains_key(&self.current) {
             return;
         }
@@ -1560,25 +1585,25 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
         if let Ok(new_node) = self.try_split_down() {
             let new_context = ContextGridItem::new(context);
             self.inner.insert(new_node, new_context);
-            self.apply_taffy_layout(sugarloaf);
+            self.apply_taffy_layout(false);
             self.current = new_node;
         }
     }
 
-    pub fn move_divider_up(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.resize_divider(false, true, amount) && self.apply_taffy_layout(sugarloaf)
+    pub fn move_divider_up(&mut self, amount: f32) -> bool {
+        self.resize_divider(false, true, amount) && self.apply_taffy_layout(false)
     }
 
-    pub fn move_divider_down(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.resize_divider(false, false, amount) && self.apply_taffy_layout(sugarloaf)
+    pub fn move_divider_down(&mut self, amount: f32) -> bool {
+        self.resize_divider(false, false, amount) && self.apply_taffy_layout(false)
     }
 
-    pub fn move_divider_left(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.resize_divider(true, true, amount) && self.apply_taffy_layout(sugarloaf)
+    pub fn move_divider_left(&mut self, amount: f32) -> bool {
+        self.resize_divider(true, true, amount) && self.apply_taffy_layout(false)
     }
 
-    pub fn move_divider_right(&mut self, amount: f32, sugarloaf: &mut Sugarloaf) -> bool {
-        self.resize_divider(true, false, amount) && self.apply_taffy_layout(sugarloaf)
+    pub fn move_divider_right(&mut self, amount: f32) -> bool {
+        self.resize_divider(true, false, amount) && self.apply_taffy_layout(false)
     }
 
     /// Hide the panel set by clearing per-panel image overlays. The
@@ -1611,7 +1636,7 @@ impl<T: rio_backend::event::EventListener> ContextGrid<T> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct ContextDimension {
     pub width: f32,
     pub height: f32,
