@@ -296,6 +296,8 @@ impl Sugarloaf<'_> {
 
         self.state.reset();
         self.state.set_fonts(font_library, &mut self.renderer);
+        // The UI text renderer keeps its own library and caches.
+        self.text.set_fonts(font_library);
     }
 
     /// Look up a single glyph in the font cache without performing
