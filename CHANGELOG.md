@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0 (2026-11-16)
+## 0.6.0 (unreleased)
 
 - **Focus reports follow the active pane.** A program that enables focus reporting (`CSI ? 1004 h`) was told about focus only when the OS window gained or lost it, so switching tabs or splits left vim, tmux and others with a stale focus state. The terminal now keeps the focus state per pane and sends `CSI I` / `CSI O` when the active pane changes, and a program that enables the mode is told the current state at once. librio hosts can send focus reports too ([#2051](https://github.com/raphamorim/rio/pull/2051), closes [#2013](https://github.com/raphamorim/rio/issues/2013), [#2050](https://github.com/raphamorim/rio/issues/2050)).
 
