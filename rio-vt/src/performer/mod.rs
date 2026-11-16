@@ -170,8 +170,6 @@ pub struct State {
     /// Deadline of the terminal's active synchronized update, refreshed
     /// whenever the terminal lock is held.
     sync_deadline: Option<Instant>,
-    /// Answers the owner sent since the terminal last heard of them.
-    answered_queries: usize,
 }
 
 #[cfg(feature = "pty")]
@@ -407,7 +405,10 @@ where
                     if !answer.is_empty() {
                         state.write_list.push_back(answer);
                     }
-                    state.answered_queries += 1;
+                    // Queued ahead of whatever this wakeup's read
+                    // produces, so the terminal may hand the replies
+                    // behind the query back to this thread.
+                    self.terminal.lock().ui_query_answered();
                 }
                 Msg::Resize(window_size) => {
                     let _ = self.pty.set_winsize(window_size.into());
@@ -533,17 +534,6 @@ where
             let queued_before = state.needs_write();
             if !self.drain_recv_channel(state) {
                 return Ok(ExitReason::Shutdown);
-            }
-
-            // The owner's answers are queued ahead of whatever this
-            // wakeup's read produces, so the terminal may hand the
-            // replies behind them back to this thread.
-            if state.answered_queries > 0 {
-                let mut terminal = self.terminal.lock();
-                for _ in 0..state.answered_queries {
-                    terminal.ui_query_answered();
-                }
-                state.answered_queries = 0;
             }
 
             // Input is written on the wakeup that delivered it. The PTY
