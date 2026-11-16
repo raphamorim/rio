@@ -603,6 +603,8 @@ fn a_waiting_thread_gets_the_terminal_after_the_current_chunk() {
             bytes: io::Cursor::new(payload),
             ending: None,
             exhausted: None,
+            feed: None,
+            idle: None,
             before_read: Some(Box::new(before_read)),
             reads: 0,
             writer: RecordingWriter::default(),
@@ -695,6 +697,8 @@ fn a_fence_in_a_later_write_waits_for_the_owners_answer() {
             bytes: io::Cursor::new(b"\x1b[14t".to_vec()),
             feed: Some(feed),
             idle: Some(idle_tx),
+            before_read: None,
+            reads: 0,
             ending: Some(ErrorKind::WouldBlock),
             exhausted: None,
             writer: RecordingWriter {
@@ -796,6 +800,8 @@ fn a_declined_query_lifts_the_fence_without_writing() {
             bytes: io::Cursor::new(b"\x1b[14t".to_vec()),
             feed: Some(feed),
             idle: Some(idle_tx),
+            before_read: None,
+            reads: 0,
             ending: Some(ErrorKind::WouldBlock),
             exhausted: None,
             writer: RecordingWriter {
