@@ -5,53 +5,42 @@
 //! chunk. The renderer, the UI thread and an embedder take it briefly
 //! and rarely: a frame snapshot, a keystroke, a resize. A plain mutex
 //! serves the first kind and starves the second: a running thread that
-//! unlocks and locks again beats a sleeping waiter every time, because
-//! the waiter has to be woken and scheduled first, so under sustained
-//! output a frame could wait for the whole burst.
+//! unlocks and locks again beats a waiter every time, because the
+//! waiter has to be woken and scheduled first, and a waiter that is
+//! still spinning rather than parked when the lock is let go is not
+//! even there to be handed it. Under sustained output the reader is
+//! exactly such a loop, so a frame could wait for a whole burst.
 //!
 //! The second kind locks through [`TerminalLock::lock`], which counts
 //! itself as demand while it waits. The reader checks
-//! [`TerminalLock::has_demand`] between chunks and, holding nothing,
-//! calls [`TerminalLock::yield_to_demand`], which sleeps until one
-//! demander has had the lock and let go of it, or a short timeout
-//! passes. Once the reader has held the lock it never competes for
-//! it while a demander takes it, so the handoff holds whether the
-//! waiter was parked or still spinning, and a demander that
-//! disappears costs the reader at most the timeout.
+//! [`TerminalLock::has_demand`] when it lets go of a chunk and, if a
+//! thread is waiting, hands the lock on fairly and then
+//! [`TerminalLock::yield_to_demand`]s: it waits until the demanders
+//! have taken the lock, or a short bound passes, before it asks for
+//! the lock again. That is the handoff an unfair mutex never does on
+//! its own, and it holds whether the waiter was parked or still
+//! spinning. The counter is a scheduling hint, not a synchronization
+//! boundary: the mutex orders the data, the bound limits staleness.
 
 use parking_lot::{Mutex, MutexGuard};
-use parking_lot_core::{park, unpark_all, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
-use std::mem::ManuallyDrop;
-use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-/// What a release of the lock runs while a reader yields through its
-/// own event loop rather than [`TerminalLock::yield_to_demand`]; see
-/// [`TerminalLock::set_release_hook`].
-type ReleaseHook = Box<dyn Fn() + Send + Sync>;
-
-/// How long a yield waits for a demander to take its turn before
-/// carrying on. A demanding critical section, the renderer's snapshot
-/// or an input event, is microseconds; this bounds the reader's stall
-/// if the demander was descheduled or gave up.
-pub const HANDOFF_TIMEOUT: Duration = Duration::from_millis(1);
+/// How long [`TerminalLock::yield_to_demand`] waits for a demander to
+/// take the lock before the reader carries on. A demanding critical
+/// section, the renderer's snapshot or an input event, is
+/// microseconds; this bounds the reader's stall if the demander was
+/// descheduled or gave up.
+pub(crate) const HANDOFF_TIMEOUT: Duration = Duration::from_millis(1);
 
 pub struct TerminalLock<T> {
     data: Mutex<T>,
     /// Threads inside [`Self::lock`] that do not hold the data yet.
     demand: AtomicUsize,
-    /// Bumped each time a demanding holder lets go; what the reader
-    /// sleeps on in [`Self::yield_to_demand`].
-    handoff: AtomicU32,
-    /// Yields that gave up after [`HANDOFF_TIMEOUT`] with the demander
-    /// still waiting: it was descheduled that long, or whoever held
-    /// the lock kept it that long. A diagnostic.
-    handoff_timeouts: AtomicUsize,
-    /// Whether a reader is yielding through its event loop and wants
-    /// the release hook run; see [`Self::set_release_hook`].
-    yielding: AtomicBool,
-    release_hook: Mutex<Option<ReleaseHook>>,
+    /// Yields that gave up at the bound with a demander still waiting:
+    /// it was descheduled that long. A diagnostic, zero on a quiet
+    /// machine.
+    bound_hits: AtomicUsize,
 }
 
 impl<T> TerminalLock<T> {
@@ -59,58 +48,17 @@ impl<T> TerminalLock<T> {
         TerminalLock {
             data: Mutex::new(data),
             demand: AtomicUsize::new(0),
-            handoff: AtomicU32::new(0),
-            handoff_timeouts: AtomicUsize::new(0),
-            yielding: AtomicBool::new(false),
-            release_hook: Mutex::new(None),
+            bound_hits: AtomicUsize::new(0),
         }
-    }
-
-    /// The handoff generation: bumped each time a demanding holder lets
-    /// go. A reader that yields through its own event loop reads it
-    /// while it still holds the lock, lets go, and knows the demander
-    /// had its turn when it has changed.
-    #[inline]
-    pub fn handoff_generation(&self) -> u32 {
-        self.handoff.load(Ordering::Acquire)
-    }
-
-    /// Run `hook` when a demanding holder lets go while a reader is
-    /// between [`Self::begin_yield`] and [`Self::end_yield`]. For a
-    /// reader that waits for the handoff in its own event loop, so
-    /// that it keeps serving that loop meanwhile: the hook wakes the
-    /// loop, which then sees the generation moved on.
-    pub fn set_release_hook(&self, hook: ReleaseHook) {
-        *self.release_hook.lock() = Some(hook);
-    }
-
-    /// A reader starts waiting for a handoff in its event loop.
-    pub fn begin_yield(&self) {
-        self.yielding.store(true, Ordering::Release);
-    }
-
-    /// The reader's wait is over, by handoff or by the bound.
-    pub fn end_yield(&self) {
-        self.yielding.store(false, Ordering::Release);
-    }
-
-    /// A yield in the reader's event loop reached [`HANDOFF_TIMEOUT`]
-    /// with the demander still waiting.
-    pub fn note_handoff_timeout(&self) {
-        self.handoff_timeouts.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Lock the terminal, counting as demand while waiting. For every
-    /// thread but the reader; the guard's release wakes a reader that
-    /// yielded to it.
-    pub fn lock(&self) -> DemandGuard<'_, T> {
-        self.demand.fetch_add(1, Ordering::AcqRel);
+    /// thread but the reader.
+    pub fn lock(&self) -> MutexGuard<'_, T> {
+        self.demand.fetch_add(1, Ordering::Relaxed);
         let guard = self.data.lock();
-        self.demand.fetch_sub(1, Ordering::AcqRel);
-        DemandGuard {
-            guard: ManuallyDrop::new(guard),
-            lock: self,
-        }
+        self.demand.fetch_sub(1, Ordering::Relaxed);
+        guard
     }
 
     /// Lock the terminal without signalling demand. For the reader
@@ -125,103 +73,41 @@ impl<T> TerminalLock<T> {
         self.data.try_lock()
     }
 
-    /// Whether a thread is waiting in [`Self::lock`]. The reader polls
-    /// this between chunks to cut its work short.
+    /// Whether a thread is waiting in [`Self::lock`].
     #[inline]
     pub fn has_demand(&self) -> bool {
-        self.demand.load(Ordering::Acquire) > 0
+        self.demand.load(Ordering::Relaxed) > 0
     }
 
-    /// For the reader, holding nothing: if a thread waits in
-    /// [`Self::lock`], sleep until one such thread has had the lock
-    /// and let go of it, or [`HANDOFF_TIMEOUT`] passes. Returns at
-    /// once when nobody waits. The handoff counter is read before the
-    /// demand is checked again and validated under the parking lot's
-    /// own lock, so a release between the check and the sleep is seen
-    /// and the sleep skipped, never missed. Letting go is the mark,
-    /// not taking: what the other thread did with the terminal may
-    /// have left work for this one.
+    /// For the reader, holding nothing: if threads wait in
+    /// [`Self::lock`], wait until they have taken the lock, or
+    /// [`HANDOFF_TIMEOUT`] passes, before asking for it again. Spins
+    /// briefly, then yields the processor, which is what a waiter that
+    /// has not run yet needs most.
     pub fn yield_to_demand(&self) {
         if !self.has_demand() {
             return;
         }
-        let generation = self.handoff.load(Ordering::Acquire);
-        if !self.has_demand() {
-            return;
-        }
         let deadline = Instant::now() + HANDOFF_TIMEOUT;
-        // SAFETY: the key is this lock's address, unique while it lives,
-        // and the callbacks neither park nor panic.
-        unsafe {
-            park(
-                self.park_key(),
-                || self.handoff.load(Ordering::Acquire) == generation,
-                || {},
-                |_, _| {
-                    self.handoff_timeouts.fetch_add(1, Ordering::Relaxed);
-                },
-                DEFAULT_PARK_TOKEN,
-                Some(deadline),
-            );
-        }
-    }
-
-    /// How many yields gave up on a demander that had not taken the
-    /// lock within the timeout: the demander was descheduled that long
-    /// or another holder kept the lock that long. Zero on a quiet
-    /// machine with short critical sections.
-    pub fn handoff_timeouts(&self) -> usize {
-        self.handoff_timeouts.load(Ordering::Relaxed)
-    }
-
-    fn park_key(&self) -> usize {
-        &self.handoff as *const AtomicU32 as usize
-    }
-
-    /// A demanding holder let go: wake a reader sleeping for its turn,
-    /// or waiting for it in its event loop.
-    fn released(&self) {
-        self.handoff.fetch_add(1, Ordering::AcqRel);
-        // SAFETY: same key as `yield_to_demand`; no callback.
-        unsafe {
-            unpark_all(self.park_key(), DEFAULT_UNPARK_TOKEN);
-        }
-        if self.yielding.load(Ordering::Acquire) {
-            if let Some(hook) = self.release_hook.lock().as_ref() {
-                hook();
+        let mut spins = 0u32;
+        while self.has_demand() {
+            if Instant::now() >= deadline {
+                self.bound_hits.fetch_add(1, Ordering::Relaxed);
+                return;
             }
+            if spins < 64 {
+                std::hint::spin_loop();
+            } else {
+                std::thread::yield_now();
+            }
+            spins += 1;
         }
     }
-}
 
-/// The guard of [`TerminalLock::lock`]. Letting go wakes a reader that
-/// yielded to the demand.
-pub struct DemandGuard<'a, T> {
-    guard: ManuallyDrop<MutexGuard<'a, T>>,
-    lock: &'a TerminalLock<T>,
-}
-
-impl<T> Deref for DemandGuard<'_, T> {
-    type Target = T;
-    #[inline]
-    fn deref(&self) -> &T {
-        &self.guard
-    }
-}
-
-impl<T> DerefMut for DemandGuard<'_, T> {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.guard
-    }
-}
-
-impl<T> Drop for DemandGuard<'_, T> {
-    fn drop(&mut self) {
-        // The data lock goes first, so the woken reader finds it free.
-        // SAFETY: the guard is dropped exactly once, here.
-        unsafe { ManuallyDrop::drop(&mut self.guard) };
-        self.lock.released();
+    /// How many yields gave up at the bound with a demander still
+    /// waiting. Zero unless the machine is overloaded.
+    pub fn bound_hits(&self) -> usize {
+        self.bound_hits.load(Ordering::Relaxed)
     }
 }
 
@@ -274,12 +160,10 @@ mod tests {
         assert!(started.elapsed() < HANDOFF_TIMEOUT);
     }
 
-    // A reader that lets go and yields does not get the lock back
-    // before the demander had it: when the yield returns the demander
-    // holds the lock or has let go of it, so the reader's next lock
-    // sees its work. Whether the yield slept (the demander was still
-    // waking) or returned at once (it had already taken the lock) is
-    // the scheduler's business.
+    // A reader that lets go fairly and yields does not get the lock
+    // back before the demander has it: when the yield returns the
+    // demander holds the lock or has let go of it, so the reader's
+    // next lock sees its work.
     #[test]
     fn yielding_lets_the_demander_go_first() {
         for _ in 0..50 {
@@ -295,10 +179,10 @@ mod tests {
             });
             spin_until(|| lock.has_demand());
 
-            drop(held);
-            let timeouts = lock.handoff_timeouts();
+            MutexGuard::unlock_fair(held);
+            let hits = lock.bound_hits();
             lock.yield_to_demand();
-            if lock.handoff_timeouts() == timeouts {
+            if lock.bound_hits() == hits {
                 assert!(!lock.has_demand(), "the demander has the lock or had it");
                 assert!(*lock.lock_reader(), "the demander went first");
             }
@@ -310,9 +194,9 @@ mod tests {
     }
 
     // A demander that cannot take the lock, because something else
-    // holds it, only costs the yielding reader the timeout.
+    // holds it, only costs the yielding reader the bound.
     #[test]
-    fn yielding_gives_up_after_the_timeout() {
+    fn yielding_gives_up_after_the_bound() {
         let lock = Arc::new(TerminalLock::new(()));
         let (release_tx, release) = std::sync::mpsc::channel::<()>();
         let (held_tx, held) = std::sync::mpsc::channel::<()>();
@@ -334,10 +218,10 @@ mod tests {
         lock.yield_to_demand();
         let waited = yielded.elapsed();
         assert!(waited >= HANDOFF_TIMEOUT, "gave up early: {waited:?}");
-        assert_eq!(lock.handoff_timeouts(), 1);
+        assert_eq!(lock.bound_hits(), 1);
         assert!(
             waited < HANDOFF_TIMEOUT * 50,
-            "waited far past the timeout: {waited:?}"
+            "waited far past the bound: {waited:?}"
         );
         assert!(lock.has_demand(), "the demander is still waiting");
 
