@@ -1246,11 +1246,9 @@ impl Surface {
         let processor = guard.get_or_insert_with(Default::default);
         let mut term = self.terminal.lock();
         processor.advance(&mut *term, bytes);
-        // With a PTY thread the terminal queues its replies for that
-        // thread; injected bytes are parsed here instead, so their
-        // replies are handed on from here. `send` only enqueues, so
-        // the lock is held a moment longer and nothing is copied twice.
-        term.drain_pty_replies(|reply| self.send(Cow::Owned(reply.into_bytes())));
+        // With a PTY, the replies these bytes produce go to its writer
+        // thread as the parser produces them, in their place among
+        // everything else bound for it; without one they are events.
     }
 
     /// Plain-text URL under a viewport cell, with the run to underline on

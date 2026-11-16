@@ -106,7 +106,7 @@ impl<T> TerminalLock<T> {
 
     /// How many yields gave up at the bound with a demander still
     /// waiting. Zero unless the machine is overloaded.
-    pub fn bound_hits(&self) -> usize {
+    pub(crate) fn bound_hits(&self) -> usize {
         self.bound_hits.load(Ordering::Relaxed)
     }
 }

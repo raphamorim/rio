@@ -627,11 +627,9 @@ struct PileWaiter {
     asked_during: Option<char>,
     /// From asking for the terminal to holding it.
     waited: Duration,
-    /// Replies still queued in the terminal when it held it.
-    queued_replies: usize,
     /// The first line once the whole pile is parsed.
     first_line: String,
-    /// Everything the reader wrote to the PTY.
+    /// Everything written to the PTY.
     written: Vec<u8>,
 }
 
@@ -764,12 +762,10 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
     let (saw_tx, saw) = mpsc::channel();
     let listener = OnTitle::new('1', move |terminal| {
         let asked = std::time::Instant::now();
-        let mut guard = terminal.lock();
+        let guard = terminal.lock();
         let waited = asked.elapsed();
-        let mut queued = 0;
-        guard.drain_pty_replies(|_| queued += 1);
         saw_tx
-            .send((guard.grid[Line(0)][Column(0)].c(), asked, waited, queued))
+            .send((guard.grid[Line(0)][Column(0)].c(), asked, waited))
             .unwrap();
     });
     let terminal = Arc::new(TerminalLock::new(Crosswords::new(
@@ -841,8 +837,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
         .recv_timeout(Duration::from_secs(5))
         .expect("the writer wrote the reply");
     machine.stop_writer();
-    let (saw, asked, waited, queued_replies) =
-        saw.recv_timeout(Duration::from_secs(5)).unwrap();
+    let (saw, asked, waited) = saw.recv_timeout(Duration::from_secs(5)).unwrap();
     let asked_during = listener
         .chunk_at(asked)
         .filter(|c| *c != chunk_char(chunks) && terminal.bound_hits() == 0);
@@ -850,7 +845,6 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
         saw,
         asked_during,
         waited,
-        queued_replies,
         first_line: first_line(&machine, 1),
         written: machine.pty.writer.recorded(),
     }
@@ -861,8 +855,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
 // of between chunks: a thread that asks for it while a chunk is parsed
 // gets it after that chunk, or the next if it was still spinning
 // rather than parked when the reader let go, never after the whole
-// pile. The replies of the chunks already parsed left with the reader
-// before it let go. A waiter so slow to be scheduled that it asked
+// pile. The reply of the first chunk reached the PTY as it was made. A waiter so slow to be scheduled that it asked
 // only during the last chunk, or after the pile, proves nothing; such
 // a run is repeated.
 #[test]
@@ -870,13 +863,9 @@ fn a_waiting_thread_gets_the_terminal_within_a_chunk_of_asking() {
     for _ in 0..10 {
         let waiter = waiter_against_a_pile(4);
         assert_eq!(
-            waiter.queued_replies, 0,
-            "no reply was left for the waiter to drain"
-        );
-        assert_eq!(
             waiter.written,
             b"\x1b[?62;4;6;22;52c".to_vec(),
-            "the reader wrote the reply itself"
+            "the reply was written without the event loop"
         );
         assert_eq!(waiter.first_line, "4", "the rest of the pile followed");
         let Some(asked_during) = waiter.asked_during else {
@@ -1014,50 +1003,150 @@ fn input_is_written_while_another_thread_holds_the_terminal() {
 }
 
 // Everything written to the PTY goes through the writer's one inbox in
-// arrival order, so a reply an embedder produces by parsing its own
-// bytes under the lock during a handoff, and sends the way librio does,
-// is written between the replies of the chunk before and the chunk
-// after.
+// the order it is produced, so a reply an embedder produces by parsing
+// its own bytes under the lock during a handoff, as librio does, is
+// written between the replies of the chunk before and the chunk after.
+// An embedder scheduled so late that it parsed only after chunk 3 was
+// let go of proves nothing; such a run is repeated.
 #[test]
 fn an_injected_reply_during_a_handoff_keeps_its_place() {
-    // DA in chunk 1 (always), DSR injected during the handoff after
-    // chunk 1, DA again in chunk 3.
-    let payload = pile_with(4, Some((3, b"\x1b[c")));
-    let channel_slot: Arc<std::sync::OnceLock<channel::Sender<Msg>>> =
-        Arc::new(std::sync::OnceLock::new());
-    let listener = {
-        let channel_slot = Arc::clone(&channel_slot);
-        OnTitle::new('1', move |terminal| {
+    for _ in 0..10 {
+        // DA in chunk 1 (always), DSR injected during the handoff after
+        // chunk 1, DA again in chunk 3.
+        let payload = pile_with(4, Some((3, b"\x1b[c")));
+        let (asked_tx, asked) = mpsc::channel();
+        let listener = OnTitle::new('1', move |terminal| {
+            asked_tx.send(std::time::Instant::now()).unwrap();
             let mut guard = terminal.lock();
             let mut processor = handler::Processor::default();
             processor.advance(&mut *guard, b"\x1b[6n");
-            let channel = channel_slot.get().expect("set after spawn");
-            guard.drain_pty_replies(|reply| {
-                channel
-                    .send(Msg::Input(std::borrow::Cow::Owned(reply.into_bytes())))
-                    .unwrap()
-            });
-        })
+        });
+        let reader = spawn_reader(payload, Some(4), listener.clone());
+        let timeout = Duration::from_secs(5);
+
+        reader.readiness.set_readiness(Ready::readable()).unwrap();
+        let da = b"\x1b[?62;4;6;22;52c".to_vec();
+        let dsr = b"\x1b[1;2R".to_vec();
+        let mut got = Vec::new();
+        while got.len() < 2 * da.len() + dsr.len() {
+            got.extend(reader.written.recv_timeout(timeout).unwrap());
+        }
+        reader.channel.send(Msg::Shutdown).unwrap();
+        let (machine, _) = reader.handle.join().unwrap();
+        assert_eq!(first_line(&machine, 1), "4", "the whole pile was parsed");
+
+        let asked = asked.recv_timeout(timeout).unwrap();
+        if listener.chunk_at(asked).is_none_or(|chunk| chunk >= '3') {
+            continue;
+        }
+        let mut expected = da.clone();
+        expected.extend(&dsr);
+        expected.extend(&da);
+        assert_eq!(
+            got, expected,
+            "chunk 1's DA, the injected DSR, chunk 3's DA"
+        );
+        return;
+    }
+    panic!("ten piles and the embedder never asked in time");
+}
+
+/// Stands in for the owner of the terminal, as a frontend would: a
+/// query only the owner can answer is answered into the writer's
+/// inbox, and a reply the terminal routes through the owner is passed
+/// on to the same inbox.
+#[derive(Clone)]
+struct Owner {
+    channel: Arc<std::sync::OnceLock<channel::Sender<Msg>>>,
+}
+
+impl EventListener for Owner {
+    fn send_event(&self, event: RioEvent, _: WindowId) {
+        let channel = self.channel.get().expect("set after spawn");
+        match event {
+            RioEvent::TextAreaSizeRequest(_, format) => {
+                let size = crate::event::WindowSize {
+                    rows: 24,
+                    cols: 80,
+                    width: 640,
+                    height: 480,
+                };
+                let _ = channel.send(Msg::Reply(std::borrow::Cow::Owned(
+                    format(size).into_bytes(),
+                )));
+            }
+            RioEvent::PtyWrite(_, text) => {
+                let _ =
+                    channel.send(Msg::Input(std::borrow::Cow::Owned(text.into_bytes())));
+            }
+            _ => {}
+        }
+    }
+}
+
+// Replies reach the writer the moment the parser makes them, so a reply
+// made before a query the owner answers is written before that answer
+// even when both are in one read: a program that asks for the cursor
+// position, the text area in pixels and device attributes in one write
+// gets its answers in that order. Batched to the end of the chunk, the
+// cursor report would have come last.
+#[test]
+fn replies_keep_their_place_before_an_owner_answer_in_the_same_read() {
+    let channel_slot = Arc::new(std::sync::OnceLock::new());
+    let owner = Owner {
+        channel: Arc::clone(&channel_slot),
     };
-    let reader = spawn_reader(payload, Some(4), listener);
-    assert!(channel_slot.set(reader.channel.clone()).is_ok());
+    let (registration, readiness) = corcovado::Registration::new2();
+    let (written_tx, written) = mpsc::channel();
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        owner.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let machine = Machine::new(
+        Arc::clone(&terminal),
+        TestPty {
+            bytes: io::Cursor::new(b"\x1b[6n\x1b[14t\x1b[c".to_vec()),
+            feed: None,
+            idle: None,
+            ending: Some(ErrorKind::WouldBlock),
+            exhausted: None,
+            before_read: None,
+            reads: 0,
+            writer: RecordingWriter {
+                written: Some(written_tx),
+                ..RecordingWriter::default()
+            },
+            child: Some(registration),
+            registration_error: false,
+            read_event: true,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        owner,
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let channel = machine.channel();
+    assert!(channel_slot.set(channel.clone()).is_ok());
+    let handle = machine.spawn();
     let timeout = Duration::from_secs(5);
 
-    reader.readiness.set_readiness(Ready::readable()).unwrap();
-    // Three replies, in however many writes the writer coalesces them.
-    let expected = b"\x1b[?62;4;6;22;52c\x1b[1;2R\x1b[?62;4;6;22;52c".to_vec();
+    readiness.set_readiness(Ready::readable()).unwrap();
+    let expected = b"\x1b[1;1R\x1b[4;480;640t\x1b[?62;4;6;22;52c".to_vec();
     let mut got = Vec::new();
     while got.len() < expected.len() {
-        got.extend(reader.written.recv_timeout(timeout).unwrap());
+        got.extend(written.recv_timeout(timeout).unwrap());
     }
-    assert_eq!(
-        got, expected,
-        "chunk 1's DA, the injected DSR, chunk 3's DA"
-    );
+    assert_eq!(got, expected, "cursor report, the owner's size answer, DA");
 
-    reader.channel.send(Msg::Shutdown).unwrap();
-    let (machine, _) = reader.handle.join().unwrap();
-    assert_eq!(first_line(&machine, 1), "4", "the whole pile was parsed");
+    channel.send(Msg::Shutdown).unwrap();
+    handle.join().unwrap();
 }
 
 // How long a renderer waits when it asks for the terminal while a

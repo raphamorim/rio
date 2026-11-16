@@ -36,7 +36,6 @@ use corcovado::{self, Events, PollOpt, Ready};
 #[cfg(feature = "pty")]
 use std::borrow::Cow;
 #[cfg(feature = "pty")]
-#[cfg(feature = "pty")]
 use std::io::{self, ErrorKind, Read};
 #[cfg(feature = "pty")]
 use std::sync::Arc;
@@ -158,12 +157,15 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     /// the owner sends to the one channel every owner holds, the
     /// writer's, and the writer passes on.
     receiver: PeekableReceiver<Msg>,
-    /// The writer's inbox: the owner's input and answers, this thread's
+    /// The writer's inbox: the owner's input and answers, the parser's
     /// replies, resizes and the shutdown.
     writes: channel::Sender<Msg>,
-    writer: Option<Writer<T::WriteHalf, U>>,
-    writer_thread: Option<JoinHandle<()>>,
     pty: T,
+    /// The writer, until spawned and once joined again, so the write
+    /// half of the PTY is dropped here, after `pty`: on Windows the
+    /// input pipe must close after the console.
+    writer: Option<Writer<T::WriteHalf, U>>,
+    writer_thread: Option<JoinHandle<Writer<T::WriteHalf, U>>>,
     poll: corcovado::Poll,
     terminal: Arc<TerminalLock<Crosswords<U>>>,
     event_proxy: U,
@@ -197,9 +199,17 @@ where
         let (writes, inbox) = channel::channel();
         let poll = corcovado::Poll::new()?;
 
-        // Replies the parser produces go to the writer thread at the end
-        // of the chunk that produced them, not through the owner.
-        terminal.lock().set_enable_pty_reply(true);
+        // Replies the parser produces go to the writer thread the moment
+        // it produces them, like everything else bound for the PTY, so
+        // they keep their place among the owner's input and answers.
+        let reply_writes = writes.clone();
+        terminal
+            .lock()
+            .set_reply_sink(Some(crate::crosswords::ReplySink(Box::new(
+                move |reply: String| {
+                    let _ = reply_writes.send(Msg::Input(Cow::Owned(reply.into_bytes())));
+                },
+            ))));
 
         let writer = Writer {
             inbox: PeekableReceiver::new(inbox),
@@ -301,7 +311,7 @@ where
             while parsed < unprocessed {
                 let end = (parsed + READ_CHUNK).min(unprocessed);
                 if parsed > 0 {
-                    self.let_go(state, terminal);
+                    self.let_go(terminal);
                     terminal = self.terminal.lock_reader();
                 }
                 state.parser.advance(&mut *terminal, &buf[parsed..end]);
@@ -312,11 +322,11 @@ where
 
             if stopped || processed >= MAX_LOCKED_READ {
                 self.end_burst(state, &mut terminal, held_before);
-                self.let_go(state, terminal);
+                self.let_go(terminal);
                 ended = true;
                 break;
             }
-            self.let_go(state, terminal);
+            self.let_go(terminal);
         }
 
         // A burst that ended with an empty read after its last chunk was
@@ -324,7 +334,7 @@ where
         if processed > 0 && !ended {
             let mut terminal = self.terminal.lock_reader();
             self.end_burst(state, &mut terminal, held_before);
-            self.let_go(state, terminal);
+            self.let_go(terminal);
         }
 
         result
@@ -348,23 +358,12 @@ where
         }
     }
 
-    /// Let go of the terminal after a chunk. The replies the chunk
-    /// produced leave for the writer thread first, in order, so another
-    /// drainer of the terminal cannot take them out of order. If a
-    /// thread waits for the terminal, the unlock is fair, so one
-    /// parked on it gets it now, and this thread does not ask for the
-    /// lock again until the waiters have it, so one still spinning
-    /// gets it too; see `TerminalLock::yield_to_demand`.
-    fn let_go(
-        &self,
-        _state: &mut State,
-        mut terminal: parking_lot::MutexGuard<'_, Crosswords<U>>,
-    ) {
-        let mut replies = Vec::new();
-        terminal.drain_pty_replies(|reply| replies.extend_from_slice(reply.as_bytes()));
-        if !replies.is_empty() {
-            let _ = self.writes.send(Msg::Input(Cow::Owned(replies)));
-        }
+    /// Let go of the terminal after a chunk. If a thread waits for the
+    /// terminal, the unlock is fair, so one parked on it gets it now,
+    /// and this thread does not ask for the lock again until the
+    /// waiters have it, so one still spinning gets it too; see
+    /// `TerminalLock::yield_to_demand`.
+    fn let_go(&self, terminal: parking_lot::MutexGuard<'_, Crosswords<U>>) {
         if self.terminal.has_demand() {
             parking_lot::MutexGuard::unlock_fair(terminal);
             self.terminal.yield_to_demand();
@@ -402,21 +401,28 @@ where
     }
 
     fn spawn_writer(&mut self) {
-        if let Some(writer) = self.writer.take() {
+        if let Some(mut writer) = self.writer.take() {
             self.writer_thread = Some(spawn_named("PTY writer", move || {
                 raise_io_thread_priority();
                 if let Err(err) = writer.run() {
+                    // Without a writer the terminal cannot be typed to;
+                    // the reader shuts it down, as its own failure would.
                     error!("PTY writer failed: {err}");
+                    let _ = writer.control.send(Msg::Shutdown);
                 }
+                writer
             }));
         }
     }
 
     /// Stop the writer and wait for it; nothing is left to write to.
+    /// The writer comes back to be dropped with the machine.
     fn stop_writer(&mut self) {
         let _ = self.writes.send(Msg::Shutdown);
         if let Some(writer) = self.writer_thread.take() {
-            let _ = writer.join();
+            if let Ok(writer) = writer.join() {
+                self.writer = Some(writer);
+            }
         }
     }
 
@@ -651,7 +657,7 @@ where
     const INBOX: corcovado::Token = corcovado::Token(0);
     const PTY: corcovado::Token = corcovado::Token(1);
 
-    fn run(mut self) -> io::Result<()> {
+    fn run(&mut self) -> io::Result<()> {
         self.poll.register(
             &self.inbox.rx,
             Self::INBOX,
@@ -663,6 +669,10 @@ where
         self.poll
             .register(&self.half, Self::PTY, Ready::empty(), PollOpt::level())?;
         let mut armed = false;
+        // Set once the PTY hung up: it is left unwatched, since a
+        // hangup is reported whatever the interest and would wake this
+        // loop for nothing until the reader stops it.
+        let mut hung_up = false;
         let mut events = Events::with_capacity(16);
 
         loop {
@@ -677,6 +687,16 @@ where
             let writable = events.iter().any(|event| {
                 event.token() == Self::PTY && event.readiness().is_writable()
             });
+            #[cfg(unix)]
+            let hup_now = events.iter().any(|event| {
+                event.token() == Self::PTY && UnixReady::from(event.readiness()).is_hup()
+            });
+            #[cfg(not(unix))]
+            let hup_now = false;
+            if hup_now && !hung_up {
+                hung_up = true;
+                self.poll.deregister(&self.half)?;
+            }
 
             while let Some(msg) = self.inbox.recv() {
                 match msg {
@@ -702,11 +722,18 @@ where
             // they are not retried on every message that arrives
             // meanwhile, which would cost a failing write each.
             if !armed || writable {
-                self.flush()?;
+                if let Err(err) = self.flush() {
+                    // The PTY is gone, a child that exited and closed
+                    // its side; what was pending has nowhere to go. The
+                    // reader notices the exit and stops this thread.
+                    tracing::debug!("PTY write failed, bytes dropped: {err}");
+                    self.pending.clear();
+                    self.written = 0;
+                }
             }
 
             let backlog = self.written < self.pending.len();
-            if backlog != armed {
+            if backlog != armed && !hung_up {
                 let interest = if backlog {
                     Ready::writable()
                 } else {
