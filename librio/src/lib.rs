@@ -283,7 +283,7 @@ impl Listener {
             RioEvent::PtyWrite(_, text) => {
                 self.write_to_child(Cow::Owned(text.into_bytes()));
             }
-            // Not answered here. The reader thread is told the query is
+            // Not answered here. The terminal is told the query is
             // settled, so the replies behind it take the direct path.
             RioEvent::ColorRequest(..)
             | RioEvent::TextAreaSizeRequest(..)

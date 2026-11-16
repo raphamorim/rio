@@ -36,9 +36,8 @@ use corcovado::{self, Events, PollOpt, Ready};
 #[cfg(feature = "pty")]
 use std::borrow::Cow;
 #[cfg(feature = "pty")]
-use std::collections::VecDeque;
 #[cfg(feature = "pty")]
-use std::io::{self, ErrorKind, Read, Write};
+use std::io::{self, ErrorKind, Read};
 #[cfg(feature = "pty")]
 use std::sync::Arc;
 #[cfg(feature = "pty")]
@@ -148,10 +147,22 @@ impl<T> PeekableReceiver<T> {
     }
 }
 
+/// The reader thread of a terminal: reads the PTY and parses into the
+/// terminal. Writing to the PTY is another thread's, the [`Writer`]
+/// spawned alongside, so input never waits behind parsing; what this
+/// thread has to say to the PTY, the parser's replies, goes to the
+/// writer like any keystroke.
 #[cfg(feature = "pty")]
 pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
-    sender: channel::Sender<Msg>,
+    /// Control from the writer thread: resizes and the shutdown, which
+    /// the owner sends to the one channel every owner holds, the
+    /// writer's, and the writer passes on.
     receiver: PeekableReceiver<Msg>,
+    /// The writer's inbox: the owner's input and answers, this thread's
+    /// replies, resizes and the shutdown.
+    writes: channel::Sender<Msg>,
+    writer: Option<Writer<T::WriteHalf, U>>,
+    writer_thread: Option<JoinHandle<()>>,
     pty: T,
     poll: corcovado::Poll,
     terminal: Arc<TerminalLock<Crosswords<U>>>,
@@ -163,74 +174,10 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
 #[cfg(feature = "pty")]
 #[derive(Default)]
 pub struct State {
-    write_list: VecDeque<Cow<'static, [u8]>>,
-    writing: Option<Writing>,
     parser: handler::Processor,
     /// Deadline of the terminal's active synchronized update, refreshed
     /// whenever the terminal lock is held.
     sync_deadline: Option<Instant>,
-}
-
-#[cfg(feature = "pty")]
-impl State {
-    #[inline]
-    fn ensure_next(&mut self) {
-        if self.writing.is_none() {
-            self.goto_next();
-        }
-    }
-
-    #[inline]
-    fn goto_next(&mut self) {
-        self.writing = self.write_list.pop_front().map(Writing::new);
-    }
-
-    #[inline]
-    fn take_current(&mut self) -> Option<Writing> {
-        self.writing.take()
-    }
-
-    #[inline]
-    fn needs_write(&self) -> bool {
-        self.writing.is_some() || !self.write_list.is_empty()
-    }
-
-    #[inline]
-    fn set_current(&mut self, new: Option<Writing>) {
-        self.writing = new;
-    }
-}
-
-#[cfg(feature = "pty")]
-struct Writing {
-    source: Cow<'static, [u8]>,
-    written: usize,
-}
-
-#[cfg(feature = "pty")]
-impl Writing {
-    #[inline]
-    fn new(c: Cow<'static, [u8]>) -> Writing {
-        Writing {
-            source: c,
-            written: 0,
-        }
-    }
-
-    #[inline]
-    fn advance(&mut self, n: usize) {
-        self.written += n;
-    }
-
-    #[inline]
-    fn remaining_bytes(&self) -> &[u8] {
-        &self.source[self.written..]
-    }
-
-    #[inline]
-    fn finished(&self) -> bool {
-        self.written >= self.source.len()
-    }
 }
 
 #[cfg(feature = "pty")]
@@ -241,21 +188,34 @@ where
 {
     pub fn new(
         terminal: Arc<TerminalLock<Crosswords<U>>>,
-        pty: T,
+        mut pty: T,
         event_proxy: U,
         window_id: WindowId,
         route_id: usize,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
-        let (sender, receiver) = channel::channel();
+        let (control, receiver) = channel::channel();
+        let (writes, inbox) = channel::channel();
         let poll = corcovado::Poll::new()?;
 
-        // Replies the parser produces are written by this thread at the
-        // end of the burst that produced them.
+        // Replies the parser produces go to the writer thread at the end
+        // of the chunk that produced them, not through the owner.
         terminal.lock().set_enable_pty_reply(true);
 
+        let writer = Writer {
+            inbox: PeekableReceiver::new(inbox),
+            control,
+            poll: corcovado::Poll::new()?,
+            half: pty.write_half()?,
+            pending: Vec::new(),
+            written: 0,
+            terminal: Arc::clone(&terminal),
+        };
+
         Ok(Machine {
-            sender,
             receiver: PeekableReceiver::new(receiver),
+            writes,
+            writer: Some(writer),
+            writer_thread: None,
             poll,
             pty,
             terminal,
@@ -294,9 +254,6 @@ where
         let mut result = Ok(ReadOutcome::Budget);
         let mut held_before = None;
         let mut ended = false;
-        // Replies are written below unless bytes were already waiting
-        // on the writable event; then they wait with them.
-        let had_pending = state.needs_write();
 
         loop {
             // Read from the PTY.
@@ -370,14 +327,6 @@ where
             self.let_go(state, terminal);
         }
 
-        // The replies go out as soon as the lock is released. A PTY that
-        // cannot take them now leaves them for the writable event.
-        if !had_pending && state.needs_write() {
-            if let Err(err) = self.pty_write(state) {
-                tracing::debug!("PTY reply deferred to the writable event: {err}");
-            }
-        }
-
         result
     }
 
@@ -400,7 +349,7 @@ where
     }
 
     /// Let go of the terminal after a chunk. The replies the chunk
-    /// produced leave with this thread first, in order, so another
+    /// produced leave for the writer thread first, in order, so another
     /// drainer of the terminal cannot take them out of order. If a
     /// thread waits for the terminal, the unlock is fair, so one
     /// parked on it gets it now, and this thread does not ask for the
@@ -408,12 +357,14 @@ where
     /// gets it too; see `TerminalLock::yield_to_demand`.
     fn let_go(
         &self,
-        state: &mut State,
+        _state: &mut State,
         mut terminal: parking_lot::MutexGuard<'_, Crosswords<U>>,
     ) {
-        terminal.drain_pty_replies(|reply| {
-            state.write_list.push_back(Cow::Owned(reply.into_bytes()))
-        });
+        let mut replies = Vec::new();
+        terminal.drain_pty_replies(|reply| replies.extend_from_slice(reply.as_bytes()));
+        if !replies.is_empty() {
+            let _ = self.writes.send(Msg::Input(Cow::Owned(replies)));
+        }
         if self.terminal.has_demand() {
             parking_lot::MutexGuard::unlock_fair(terminal);
             self.terminal.yield_to_demand();
@@ -425,18 +376,13 @@ where
     /// Drain the channel.
     ///
     /// Returns `false` when a shutdown message was received.
-    fn drain_recv_channel(&mut self, state: &mut State) -> bool {
+    fn drain_recv_channel(&mut self) -> bool {
         while let Some(msg) = self.receiver.recv() {
             match msg {
-                Msg::Input(input) => state.write_list.push_back(input),
-                Msg::Reply(answer) => {
-                    if !answer.is_empty() {
-                        state.write_list.push_back(answer);
-                    }
-                    // Queued ahead of whatever this wakeup's read
-                    // produces, so the terminal may hand the replies
-                    // behind the query back to this thread.
-                    self.terminal.lock().ui_query_answered();
+                // Bytes for the PTY are the writer's; this channel only
+                // ever carries what the writer passed on.
+                Msg::Input(_) | Msg::Reply(_) => {
+                    let _ = self.writes.send(msg);
                 }
                 Msg::Resize(window_size) => {
                     let _ = self.pty.set_winsize(window_size.into());
@@ -448,44 +394,36 @@ where
         true
     }
 
-    #[inline]
-    fn pty_write(&mut self, state: &mut State) -> io::Result<()> {
-        state.ensure_next();
-
-        'write_many: while let Some(mut current) = state.take_current() {
-            'write_one: loop {
-                match self.pty.writer().write(current.remaining_bytes()) {
-                    Ok(0) => {
-                        state.set_current(Some(current));
-                        break 'write_many;
-                    }
-                    Ok(n) => {
-                        current.advance(n);
-                        if current.finished() {
-                            state.goto_next();
-                            break 'write_one;
-                        }
-                    }
-                    Err(err) => {
-                        state.set_current(Some(current));
-                        match err.kind() {
-                            ErrorKind::Interrupted | ErrorKind::WouldBlock => {
-                                break 'write_many
-                            }
-                            _ => return Err(err),
-                        }
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
+    /// The one channel an owner holds: the writer's inbox. Input and
+    /// answers are written from there; resizes and the shutdown are
+    /// passed on to the reader.
     pub fn channel(&self) -> channel::Sender<Msg> {
-        self.sender.clone()
+        self.writes.clone()
     }
 
+    fn spawn_writer(&mut self) {
+        if let Some(writer) = self.writer.take() {
+            self.writer_thread = Some(spawn_named("PTY writer", move || {
+                raise_io_thread_priority();
+                if let Err(err) = writer.run() {
+                    error!("PTY writer failed: {err}");
+                }
+            }));
+        }
+    }
+
+    /// Stop the writer and wait for it; nothing is left to write to.
+    fn stop_writer(&mut self) {
+        let _ = self.writes.send(Msg::Shutdown);
+        if let Some(writer) = self.writer_thread.take() {
+            let _ = writer.join();
+        }
+    }
+
+    /// Start both threads. The writer is joined by the reader on its
+    /// way out, so the one handle covers both.
     pub fn spawn(mut self) -> JoinHandle<(Self, State)> {
+        self.spawn_writer();
         spawn_named("PTY reader", move || {
             raise_io_thread_priority();
             let mut state = State::default();
@@ -515,9 +453,8 @@ where
         // The PTY is level-triggered: pty_read may stop before draining
         // the fd (MAX_LOCKED_READ), which would lose an edge, and level
         // registrations stay armed so no re-registration is needed after
-        // each event. The write interest must be dropped as soon as the
-        // write queue drains or the poll would keep waking up for the
-        // writable PTY.
+        // each event. Only reading is of interest here; the writer
+        // thread watches the write side.
         let poll_opts = PollOpt::level();
 
         // Register TTY through EventedRW interface.
@@ -525,7 +462,6 @@ where
             .register(&self.poll, &mut tokens, Ready::readable(), poll_opts)?;
 
         let mut events = Events::with_capacity(1024);
-        let mut last_interest = Ready::readable();
 
         loop {
             // Wakeup the event loop when a synchronized update timeout was reached.
@@ -558,24 +494,9 @@ where
                 continue;
             }
 
-            // Handle channel events, if there are any.
-            let queued_before = state.needs_write();
-            if !self.drain_recv_channel(state) {
+            // Handle control messages, if there are any.
+            if !self.drain_recv_channel() {
                 return Ok(ExitReason::Shutdown);
-            }
-
-            // Input is written on the wakeup that delivered it. The PTY
-            // is nearly always writable, so waiting for a writable
-            // event cost a re-registration, a second poll round and a
-            // second wakeup per keystroke. Whatever does not fit stays
-            // queued, the writable interest below picks it up, and an
-            // error surfaces through that path as before. Bytes already
-            // waiting on that interest are not retried here: a full PTY
-            // would otherwise cost a failing write on every read wakeup.
-            if state.needs_write() && !queued_before {
-                if let Err(err) = self.pty_write(state) {
-                    tracing::debug!("PTY write deferred to the writable event: {err}");
-                }
             }
 
             for event in events.iter() {
@@ -602,23 +523,9 @@ where
                         if event.readiness().is_readable() || hung_up {
                             self.pty_read(state, buf)?;
                         }
-
-                        if !hung_up && event.readiness().is_writable() {
-                            self.pty_write(state)?;
-                        }
                     }
                     _ => (),
                 }
-            }
-
-            // Update the PTY registration when write interest changed.
-            let mut interest = Ready::readable();
-            if state.needs_write() {
-                interest.insert(Ready::writable());
-            }
-            if interest != last_interest {
-                self.pty.reregister(&self.poll, interest, poll_opts)?;
-                last_interest = interest;
             }
         }
     }
@@ -705,9 +612,136 @@ where
         if let Err(err) = self.pty.shutdown() {
             error!("PTY shutdown failed: {err}");
         }
+        // The writer has nothing left to write to; it stops and is
+        // joined here, so the one handle the owner holds covers both.
+        self.stop_writer();
         // These objects are retained in the returned Machine. Deregistration is
         // best effort because setup may have failed before registering them.
         let _ = self.poll.deregister(&self.receiver.rx);
         let _ = self.pty.deregister(&self.poll);
+    }
+}
+
+/// The writer thread of a terminal: everything that goes to the PTY,
+/// the owner's input and answers and the reader's parser replies,
+/// arrives in one inbox and is written in that order. Nothing here
+/// waits on the reader, so a keystroke is written while a burst is
+/// parsed and while the terminal is handed to the renderer. Resizes and
+/// the shutdown, which the owner sends to the same inbox, are passed on
+/// to the reader.
+#[cfg(feature = "pty")]
+struct Writer<W, U: EventListener> {
+    inbox: PeekableReceiver<Msg>,
+    control: channel::Sender<Msg>,
+    poll: corcovado::Poll,
+    half: W,
+    /// Bytes not yet written, in order; `written` of them already are.
+    /// Adjacent messages are written with one call.
+    pending: Vec<u8>,
+    written: usize,
+    terminal: Arc<TerminalLock<Crosswords<U>>>,
+}
+
+#[cfg(feature = "pty")]
+impl<W, U> Writer<W, U>
+where
+    W: io::Write + corcovado::event::Evented,
+    U: EventListener,
+{
+    const INBOX: corcovado::Token = corcovado::Token(0);
+    const PTY: corcovado::Token = corcovado::Token(1);
+
+    fn run(mut self) -> io::Result<()> {
+        self.poll.register(
+            &self.inbox.rx,
+            Self::INBOX,
+            Ready::readable(),
+            PollOpt::edge(),
+        )?;
+        // Writable interest only while bytes wait, or a writable PTY
+        // would wake this loop for nothing.
+        self.poll
+            .register(&self.half, Self::PTY, Ready::empty(), PollOpt::level())?;
+        let mut armed = false;
+        let mut events = Events::with_capacity(16);
+
+        loop {
+            events.clear();
+            if let Err(err) = self.poll.poll(&mut events, None) {
+                match err.kind() {
+                    ErrorKind::Interrupted => continue,
+                    _ => return Err(err),
+                }
+            }
+
+            let writable = events.iter().any(|event| {
+                event.token() == Self::PTY && event.readiness().is_writable()
+            });
+
+            while let Some(msg) = self.inbox.recv() {
+                match msg {
+                    Msg::Input(bytes) => self.pending.extend_from_slice(&bytes),
+                    Msg::Reply(answer) => {
+                        self.pending.extend_from_slice(&answer);
+                        // Queued ahead of any reply the reader produces
+                        // from here on, so the terminal may hand the
+                        // replies behind the query back to the reader.
+                        self.terminal.lock().ui_query_answered();
+                    }
+                    Msg::Resize(size) => {
+                        let _ = self.control.send(Msg::Resize(size));
+                    }
+                    Msg::Shutdown => {
+                        let _ = self.control.send(Msg::Shutdown);
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Bytes refused by a full PTY wait for its writable event;
+            // they are not retried on every message that arrives
+            // meanwhile, which would cost a failing write each.
+            if !armed || writable {
+                self.flush()?;
+            }
+
+            let backlog = self.written < self.pending.len();
+            if backlog != armed {
+                let interest = if backlog {
+                    Ready::writable()
+                } else {
+                    Ready::empty()
+                };
+                self.poll.reregister(
+                    &self.half,
+                    Self::PTY,
+                    interest,
+                    PollOpt::level(),
+                )?;
+                armed = backlog;
+            }
+        }
+    }
+
+    /// Write what is pending, as much as the PTY takes; the rest waits
+    /// for the writable event.
+    fn flush(&mut self) -> io::Result<()> {
+        while self.written < self.pending.len() {
+            match self.half.write(&self.pending[self.written..]) {
+                Ok(0) => break,
+                Ok(n) => self.written += n,
+                Err(err) if err.kind() == ErrorKind::Interrupted => continue,
+                Err(err) if err.kind() == ErrorKind::WouldBlock => break,
+                Err(err) => return Err(err),
+            }
+        }
+        if self.written == self.pending.len() {
+            self.pending.clear();
+            self.written = 0;
+        } else if self.written >= READ_CHUNK {
+            self.pending.drain(..self.written);
+            self.written = 0;
+        }
+        Ok(())
     }
 }

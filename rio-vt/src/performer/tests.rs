@@ -3,6 +3,7 @@ use crate::ansi::CursorShape;
 use crate::crosswords::pos::{Column, Line};
 use crate::crosswords::CrosswordsSize;
 use crate::event::VoidListener;
+use std::io::Write;
 use std::sync::mpsc;
 use std::time::Duration;
 use teletypewriter::{ChildEvent, EventedPty, ProcessReadWrite, WinsizeBuilder};
@@ -61,15 +62,23 @@ impl Read for TestPty {
 }
 
 /// Keeps every byte written and announces each write, so a test can
-/// wait for a write instead of sleeping.
-#[derive(Default)]
+/// wait for a write instead of sleeping. The write half the writer
+/// thread takes is a clone sharing the record, so a test reads it from
+/// the machine it gets back.
+#[derive(Default, Clone)]
 struct RecordingWriter {
-    bytes: Vec<u8>,
+    bytes: Arc<std::sync::Mutex<Vec<u8>>>,
     written: Option<mpsc::Sender<Vec<u8>>>,
     /// A full PTY: every write is refused with `WouldBlock`.
     blocked: bool,
     /// Every write attempt, refused or not.
     attempts: Option<mpsc::Sender<()>>,
+}
+
+impl RecordingWriter {
+    fn recorded(&self) -> Vec<u8> {
+        self.bytes.lock().unwrap().clone()
+    }
 }
 
 impl Write for RecordingWriter {
@@ -80,7 +89,7 @@ impl Write for RecordingWriter {
         if self.blocked {
             return Err(io::Error::from(ErrorKind::WouldBlock));
         }
-        self.bytes.extend_from_slice(buf);
+        self.bytes.lock().unwrap().extend_from_slice(buf);
         if let Some(sender) = &self.written {
             let _ = sender.send(buf.to_vec());
         }
@@ -88,6 +97,48 @@ impl Write for RecordingWriter {
     }
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+/// The write half of the test PTY: the shared recorder, registered
+/// through a registration that never reports writable readiness, so a
+/// refused write stays refused.
+struct TestWriteHalf {
+    writer: RecordingWriter,
+    registration: corcovado::Registration,
+    _readiness: corcovado::SetReadiness,
+}
+
+impl Write for TestWriteHalf {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.writer.write(buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl corcovado::event::Evented for TestWriteHalf {
+    fn register(
+        &self,
+        poll: &corcovado::Poll,
+        token: corcovado::Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
+        poll.register(&self.registration, token, interest, opts)
+    }
+    fn reregister(
+        &self,
+        poll: &corcovado::Poll,
+        token: corcovado::Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
+        poll.reregister(&self.registration, token, interest, opts)
+    }
+    fn deregister(&self, poll: &corcovado::Poll) -> io::Result<()> {
+        poll.deregister(&self.registration)
     }
 }
 
@@ -152,6 +203,17 @@ impl ProcessReadWrite for TestPty {
 }
 
 impl EventedPty for TestPty {
+    type WriteHalf = TestWriteHalf;
+
+    fn write_half(&mut self) -> io::Result<TestWriteHalf> {
+        let (registration, readiness) = corcovado::Registration::new2();
+        Ok(TestWriteHalf {
+            writer: self.writer.clone(),
+            registration,
+            _readiness: readiness,
+        })
+    }
+
     fn shutdown(&mut self) -> io::Result<()> {
         self.shutdown_calls += 1;
         Ok(())
@@ -164,7 +226,28 @@ impl EventedPty for TestPty {
     }
 }
 
-fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidListener> {
+fn test_pty(bytes: Vec<u8>, ending: Option<ErrorKind>) -> TestPty {
+    TestPty {
+        bytes: io::Cursor::new(bytes),
+        ending,
+        feed: None,
+        idle: None,
+        exhausted: None,
+        before_read: None,
+        reads: 0,
+        writer: RecordingWriter::default(),
+        child: None,
+        registration_error: false,
+        read_event: false,
+        shutdown_calls: 0,
+        deregister_calls: 0,
+        raw_error: None,
+    }
+}
+
+/// A machine over `pty`; the writer thread takes its write half here,
+/// so a test that wants to hear of writes sets that up before.
+fn machine_with(pty: TestPty) -> Machine<TestPty, VoidListener> {
     let terminal = Crosswords::new(
         CrosswordsSize::new(80, 24),
         CursorShape::Block,
@@ -175,27 +258,16 @@ fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidLi
     );
     Machine::new(
         Arc::new(TerminalLock::new(terminal)),
-        TestPty {
-            bytes: io::Cursor::new(bytes),
-            ending,
-            feed: None,
-            idle: None,
-            exhausted: None,
-            before_read: None,
-            reads: 0,
-            writer: RecordingWriter::default(),
-            child: None,
-            registration_error: false,
-            read_event: false,
-            shutdown_calls: 0,
-            deregister_calls: 0,
-            raw_error: None,
-        },
+        pty,
         VoidListener,
         WindowId::from(0),
         0,
     )
     .unwrap()
+}
+
+fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidListener> {
+    machine_with(test_pty(bytes, ending))
 }
 
 fn first_line<L: EventListener>(machine: &Machine<TestPty, L>, len: usize) -> String {
@@ -389,12 +461,13 @@ fn hangup_without_readable_readiness_drains_residual_output() {
 }
 
 // The test pty never reports writable readiness, so a keystroke can
-// only reach it on the wakeup that delivered it.
+// only reach it on the writer's wakeup that delivered it.
 #[test]
 fn input_is_written_on_the_wakeup_that_delivers_it() {
-    let mut machine = machine(Vec::new(), None);
     let (sender, written) = mpsc::channel();
-    machine.pty.writer.written = Some(sender);
+    let mut pty = test_pty(Vec::new(), None);
+    pty.writer.written = Some(sender);
+    let machine = machine_with(pty);
     let channel = machine.channel();
     let handle = machine.spawn();
 
@@ -408,7 +481,7 @@ fn input_is_written_on_the_wakeup_that_delivers_it() {
 
     channel.send(Msg::Shutdown).unwrap();
     let (machine, _) = handle.join().unwrap();
-    assert_eq!(machine.pty.writer.bytes, b"ls\r".to_vec());
+    assert_eq!(machine.pty.writer.recorded(), b"ls\r".to_vec());
 }
 
 // Bytes refused by a full PTY wait for the writable event. Read
@@ -472,31 +545,23 @@ fn a_stuck_write_is_not_retried_on_read_wakeups() {
         "damaged"
     );
 
+    // The reply the read produced reached the writer; a retry of the
+    // refused bytes on its account would show here.
+    assert!(
+        attempts.recv_timeout(Duration::from_millis(100)).is_err(),
+        "the reply's arrival must not have retried the stuck bytes"
+    );
+
     channel.send(Msg::Shutdown).unwrap();
-    let (machine, state) = handle.join().unwrap();
-    assert!(
-        attempts.try_recv().is_err(),
-        "the read wakeup must not have retried the stuck bytes"
-    );
-    assert!(
-        state.needs_write(),
-        "the bytes are still queued for the writable event"
-    );
-    assert!(machine.pty.writer.bytes.is_empty());
-    // The keystroke is still first in line, the reply behind it.
-    assert_eq!(state.writing.as_ref().unwrap().source.as_ref(), b"a");
-    assert_eq!(
-        state.write_list.iter().collect::<Vec<_>>(),
-        vec![&std::borrow::Cow::Borrowed(&b"\x1b[?62;4;6;22;52c"[..])],
-        "the reply queued behind the stuck keystroke"
-    );
+    let (machine, _) = handle.join().unwrap();
+    assert!(machine.pty.writer.recorded().is_empty());
 }
 
-// A query from the program is answered by this thread, written to the
-// PTY right after the parse that produced it, and never sent to the
-// event loop.
+// A query from the program is answered by the reader thread and handed
+// to the writer thread, written to the PTY right after the parse that
+// produced it, and never sent to the event loop.
 #[test]
-fn a_parser_reply_is_written_by_the_reader_thread() {
+fn a_parser_reply_is_written_without_the_event_loop() {
     let (events, recorded) = mpsc::channel();
     let (registration, readiness) = corcovado::Registration::new2();
     let (written_tx, written) = mpsc::channel();
@@ -658,6 +723,11 @@ fn within_a_chunk(saw: char, asked_during: char) -> bool {
 /// then NULs (which the parser ignores) to exactly one read; the first
 /// chunk also carries a DA query.
 fn pile(chunks: u8) -> Vec<u8> {
+    pile_with(chunks, None)
+}
+
+/// [`pile`] with `extra` bytes in the chunk of that number.
+fn pile_with(chunks: u8, extra: Option<(u8, &[u8])>) -> Vec<u8> {
     let mut payload = Vec::new();
     for n in 1..=chunks {
         payload.extend_from_slice(b"\x1b[H");
@@ -667,6 +737,11 @@ fn pile(chunks: u8) -> Vec<u8> {
         payload.extend_from_slice(b"\x1b\\");
         if n == 1 {
             payload.extend_from_slice(b"\x1b[c");
+        }
+        if let Some((at, bytes)) = extra {
+            if at == n {
+                payload.extend_from_slice(bytes);
+            }
         }
         while payload.len() + 4 <= READ_CHUNK * n as usize {
             payload.extend_from_slice(b"\x1b[0m");
@@ -685,6 +760,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
     // for the lock before the read hook below releases the holder.
     assert!(chunks as usize <= READ_BUFFER_SIZE / READ_CHUNK);
     let payload = pile(chunks);
+    let (written_tx, written) = mpsc::channel();
     let (saw_tx, saw) = mpsc::channel();
     let listener = OnTitle::new('1', move |terminal| {
         let asked = std::time::Instant::now();
@@ -725,7 +801,10 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
             idle: None,
             before_read: Some(Box::new(before_read)),
             reads: 0,
-            writer: RecordingWriter::default(),
+            writer: RecordingWriter {
+                written: Some(written_tx),
+                ..RecordingWriter::default()
+            },
             child: None,
             registration_error: false,
             read_event: false,
@@ -741,6 +820,8 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
     let mut state = State::default();
     // Room for the pile and one more read.
     let mut buf = vec![0; READ_BUFFER_SIZE + READ_CHUNK];
+    // The reader runs here, on this thread; the writer runs as it would.
+    machine.spawn_writer();
 
     let (held_tx, held) = mpsc::channel::<()>();
     let holder_terminal = Arc::clone(&terminal);
@@ -755,6 +836,11 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
     let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
     assert_eq!(outcome, ReadOutcome::Closed, "the whole pile was read");
     holder.join().unwrap();
+    // The chunk's reply went to the writer thread; wait for it to land.
+    written
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the writer wrote the reply");
+    machine.stop_writer();
     let (saw, asked, waited, queued_replies) =
         saw.recv_timeout(Duration::from_secs(5)).unwrap();
     let asked_during = listener
@@ -766,7 +852,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
         waited,
         queued_replies,
         first_line: first_line(&machine, 1),
-        written: machine.pty.writer.bytes.clone(),
+        written: machine.pty.writer.recorded(),
     }
 }
 
@@ -804,6 +890,174 @@ fn a_waiting_thread_gets_the_terminal_within_a_chunk_of_asking() {
         return;
     }
     panic!("ten piles and the waiter never asked in time");
+}
+
+/// A spawned reader and writer over `payload`, with `listener` as the
+/// terminal's owner and every PTY write announced on `written`. With
+/// `piled`, a holder keeps the terminal until the read after that many
+/// chunks, so those reads pile up.
+struct SpawnedReader {
+    channel: channel::Sender<Msg>,
+    readiness: corcovado::SetReadiness,
+    written: mpsc::Receiver<Vec<u8>>,
+    handle: JoinHandle<(Machine<TestPty, OnTitle>, State)>,
+}
+
+fn spawn_reader(payload: Vec<u8>, piled: Option<u8>, listener: OnTitle) -> SpawnedReader {
+    let (registration, readiness) = corcovado::Registration::new2();
+    let (written_tx, written) = mpsc::channel();
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        listener.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    listener.watches(&terminal);
+    let (release_tx, release) = mpsc::channel::<()>();
+    let before_read: Option<Box<dyn FnMut(usize) + Send>> = piled.map(|piled| {
+        Box::new(move |read: usize| {
+            if read == piled as usize + 1 {
+                release_tx.send(()).unwrap();
+            }
+        }) as Box<dyn FnMut(usize) + Send>
+    });
+    let machine = Machine::new(
+        Arc::clone(&terminal),
+        TestPty {
+            bytes: io::Cursor::new(payload),
+            feed: None,
+            idle: None,
+            ending: Some(ErrorKind::WouldBlock),
+            exhausted: None,
+            before_read,
+            reads: 0,
+            writer: RecordingWriter {
+                written: Some(written_tx),
+                ..RecordingWriter::default()
+            },
+            child: Some(registration),
+            registration_error: false,
+            read_event: true,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        listener,
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let channel = machine.channel();
+    if piled.is_some() {
+        // The holder keeps the terminal busy, like a renderer that
+        // already has it, until the read after the pile; it starts
+        // after the machine, whose constructor takes the lock.
+        let (held_tx, held) = mpsc::channel::<()>();
+        let holder_terminal = Arc::clone(&terminal);
+        std::thread::spawn(move || {
+            let guard = holder_terminal.lock_reader();
+            held_tx.send(()).unwrap();
+            release.recv().unwrap();
+            drop(guard);
+        });
+        held.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+    let handle = machine.spawn();
+    SpawnedReader {
+        channel,
+        readiness,
+        written,
+        handle,
+    }
+}
+
+// Writing is the writer thread's, so a keystroke is written while
+// another thread holds the terminal and the reader waits for it, with
+// no bound to wait out: the title in the chunk summons a holder that
+// keeps the terminal until told to let go, and the keystroke lands on
+// the PTY before that.
+#[test]
+fn input_is_written_while_another_thread_holds_the_terminal() {
+    let payload = b"\x1b[H1\x1b]0;hold\x1b\\".to_vec();
+    let (held_tx, held) = mpsc::channel::<()>();
+    let (go_tx, go) = mpsc::channel::<()>();
+    let go = std::sync::Mutex::new(Some(go));
+    let listener = OnTitle::new('d', move |terminal| {
+        let guard = terminal.lock();
+        held_tx.send(()).unwrap();
+        if let Some(go) = go.lock().unwrap().take() {
+            go.recv().unwrap();
+        }
+        drop(guard);
+    });
+    let reader = spawn_reader(payload, None, listener);
+    let timeout = Duration::from_secs(5);
+
+    reader.readiness.set_readiness(Ready::readable()).unwrap();
+    held.recv_timeout(timeout).unwrap();
+    reader
+        .channel
+        .send(Msg::Input(std::borrow::Cow::Borrowed(b"k")))
+        .unwrap();
+    assert_eq!(
+        reader.written.recv_timeout(timeout).unwrap(),
+        b"k".to_vec(),
+        "written while the holder still held the terminal"
+    );
+    go_tx.send(()).unwrap();
+
+    reader.channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = reader.handle.join().unwrap();
+    assert_eq!(machine.pty.writer.recorded(), b"k".to_vec());
+}
+
+// Everything written to the PTY goes through the writer's one inbox in
+// arrival order, so a reply an embedder produces by parsing its own
+// bytes under the lock during a handoff, and sends the way librio does,
+// is written between the replies of the chunk before and the chunk
+// after.
+#[test]
+fn an_injected_reply_during_a_handoff_keeps_its_place() {
+    // DA in chunk 1 (always), DSR injected during the handoff after
+    // chunk 1, DA again in chunk 3.
+    let payload = pile_with(4, Some((3, b"\x1b[c")));
+    let channel_slot: Arc<std::sync::OnceLock<channel::Sender<Msg>>> =
+        Arc::new(std::sync::OnceLock::new());
+    let listener = {
+        let channel_slot = Arc::clone(&channel_slot);
+        OnTitle::new('1', move |terminal| {
+            let mut guard = terminal.lock();
+            let mut processor = handler::Processor::default();
+            processor.advance(&mut *guard, b"\x1b[6n");
+            let channel = channel_slot.get().expect("set after spawn");
+            guard.drain_pty_replies(|reply| {
+                channel
+                    .send(Msg::Input(std::borrow::Cow::Owned(reply.into_bytes())))
+                    .unwrap()
+            });
+        })
+    };
+    let reader = spawn_reader(payload, Some(4), listener);
+    assert!(channel_slot.set(reader.channel.clone()).is_ok());
+    let timeout = Duration::from_secs(5);
+
+    reader.readiness.set_readiness(Ready::readable()).unwrap();
+    // Three replies, in however many writes the writer coalesces them.
+    let expected = b"\x1b[?62;4;6;22;52c\x1b[1;2R\x1b[?62;4;6;22;52c".to_vec();
+    let mut got = Vec::new();
+    while got.len() < expected.len() {
+        got.extend(reader.written.recv_timeout(timeout).unwrap());
+    }
+    assert_eq!(
+        got, expected,
+        "chunk 1's DA, the injected DSR, chunk 3's DA"
+    );
+
+    reader.channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = reader.handle.join().unwrap();
+    assert_eq!(first_line(&machine, 1), "4", "the whole pile was parsed");
 }
 
 // How long a renderer waits when it asks for the terminal while a
@@ -1040,7 +1294,7 @@ fn a_fence_in_a_later_write_waits_for_the_owners_answer() {
     channel.send(Msg::Shutdown).unwrap();
     let (machine, _) = handle.join().unwrap();
     assert_eq!(
-        machine.pty.writer.bytes,
+        machine.pty.writer.recorded(),
         b"\x1b[4;480;640t\x1b[?62;4;6;22;52c".to_vec(),
         "the size report reached the PTY before any attributes"
     );
@@ -1115,7 +1369,10 @@ fn a_declined_query_lifts_the_fence_without_writing() {
 
     channel.send(Msg::Shutdown).unwrap();
     let (machine, _) = handle.join().unwrap();
-    assert_eq!(machine.pty.writer.bytes, b"\x1b[?62;4;6;22;52c".to_vec());
+    assert_eq!(
+        machine.pty.writer.recorded(),
+        b"\x1b[?62;4;6;22;52c".to_vec()
+    );
 }
 
 #[derive(Clone)]
