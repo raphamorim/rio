@@ -22,15 +22,18 @@ pub struct Renderer {
     #[serde(default = "RendererStategy::default")]
     pub strategy: RendererStategy,
     /// Use the CPU rasterizer (tiny-skia) instead of the GPU pipeline.
-    /// Experimental. v1 supports solid quads + glyphs only; image
-    /// overlays, GPU filters, advanced underline styles, and corner radii
-    /// are not yet implemented on the CPU path.
+    /// On by default on Linux, where `use-cpu = false` selects
+    /// `backend`; off by default elsewhere. Supports solid quads and
+    /// glyphs only; image overlays, GPU filters, advanced underline
+    /// styles, and corner radii are not yet implemented on the CPU
+    /// path.
     #[serde(default = "default_use_cpu", rename = "use-cpu")]
     pub use_cpu: bool,
 }
 
-fn default_use_cpu() -> bool {
-    false
+#[inline]
+pub fn default_use_cpu() -> bool {
+    cfg!(target_os = "linux")
 }
 
 fn default_disable_occluded_render() -> bool {

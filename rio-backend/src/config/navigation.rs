@@ -51,13 +51,12 @@ pub enum NavigationMode {
     NativeTab,
 }
 
-#[allow(clippy::derivable_impls)]
 impl Default for NavigationMode {
+    /// macOS uses the system tab bar; other platforms draw their own.
     fn default() -> NavigationMode {
         #[cfg(target_os = "macos")]
         {
-            // Use Tab for full GPU rendering
-            NavigationMode::Tab
+            NavigationMode::NativeTab
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -329,6 +328,24 @@ mod tests {
         .unwrap();
         assert!(!off.navigation.hide_if_single);
         assert!(off.navigation.island_visible(1));
+    }
+
+    /// With no `mode`, macOS takes the system tab bar and the other
+    /// platforms the strip Rio draws.
+    #[test]
+    fn mode_platform_default() {
+        let decoded = toml::from_str::<Root>("").unwrap();
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(decoded.navigation.mode, NavigationMode::NativeTab);
+            assert!(decoded.navigation.is_native());
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(decoded.navigation.mode, NavigationMode::Tab);
+            assert!(!decoded.navigation.is_native());
+        }
+        assert_eq!(Navigation::default().mode, decoded.navigation.mode);
     }
 
     #[test]

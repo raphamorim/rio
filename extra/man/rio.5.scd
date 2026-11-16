@@ -312,9 +312,10 @@ This section documents the *[navigation]* table of the configuration file.
 
 *mode* = _"NativeTab"_ | _"Tab"_ | _"Plain"_
 
-Navigation display mode.
+Navigation display mode. _"NativeTab"_ is the system tab bar and is
+available on macOS only.
 
-Default: _"Tab"_
+Default: _"NativeTab"_ on macOS, _"Tab"_ elsewhere
 
 *clickable* = _true_ | _false_
 
@@ -396,6 +397,12 @@ This section documents the *[renderer]* table of the configuration file.
 	Graphics backend to use.
 
 	Default: _"Automatic"_
+
+*use-cpu* = _true_ | _false_
+
+	Draw with the CPU rasterizer instead of the graphics backend.
+
+	Default: _true_ on Linux, _false_ elsewhere
 
 *disable-renderer-when-unfocused* = _true_ | _false_
 

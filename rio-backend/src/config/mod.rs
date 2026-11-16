@@ -946,6 +946,36 @@ mod tests {
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
+    /// With no `use-cpu`, Linux takes the CPU rasterizer and the
+    /// other platforms the GPU backend; an explicit value wins.
+    #[test]
+    fn test_renderer_use_cpu_platform_default() {
+        let result = create_temporary_config("use-cpu-default", "");
+        assert_eq!(result.renderer.use_cpu, cfg!(target_os = "linux"));
+        assert_eq!(
+            renderer::Renderer::default().use_cpu,
+            cfg!(target_os = "linux")
+        );
+
+        let off = create_temporary_config(
+            "use-cpu-off",
+            r#"
+            [renderer]
+            use-cpu = false
+        "#,
+        );
+        assert!(!off.renderer.use_cpu);
+
+        let on = create_temporary_config(
+            "use-cpu-on",
+            r#"
+            [renderer]
+            use-cpu = true
+        "#,
+        );
+        assert!(on.renderer.use_cpu);
+    }
+
     #[test]
     fn test_change_config_renderer_occlusion() {
         let result = create_temporary_config(
