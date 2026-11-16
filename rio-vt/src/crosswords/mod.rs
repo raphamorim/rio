@@ -454,21 +454,24 @@ pub(crate) fn vs_is_valid_base(base: char, vs: char) -> bool {
 
 /// Whether `cps`, printed at the cursor, would land in a single cell
 /// under the current clustering mode. This is the terminal's half of a
-/// Glyph Protocol grapheme query (spec §5.3): it replays the decisions
+/// Glyph Protocol grapheme query (spec §5.3): it replays the decision
 /// [`Crosswords::input`] makes for each codepoint, without touching
-/// the grid.
+/// the grid. After the base, each codepoint either joins the cell, is
+/// dropped (neither joins nor splits), or opens a new cell, which
+/// fails the check:
 ///
-/// - The first codepoint must open a cell: a zero-width or control
-///   codepoint has no cell of its own (mode 2027 drops an orphan mark,
-///   legacy attaches it to whatever came before).
-/// - Mode 2027 on: every later codepoint must continue the cluster.
-///   Latin-1 never does (the scalar and bulk writers agree on that),
-///   and a UAX #29 break opens a new cell.
-/// - Mode 2027 off: only zero-width codepoints attach, wcwidth-style;
-///   anything with a width opens a new cell.
+/// - No width at all (a control): `input` ignores it. Dropped.
+/// - Mode 2027 on, above Latin-1, no UAX #29 break: joins. An invalid
+///   variation selector is ignored instead, and leaves the break state
+///   untouched. Latin-1 never continues a cluster (the scalar and bulk
+///   writers agree on that).
+/// - Otherwise, zero width: mode 2027 drops it (the cluster rules just
+///   said it starts a new cluster, and a mark with no base has nothing
+///   to ride); legacy attaches it wcwidth-style. Either way, no split.
+/// - Otherwise, a width: a new cell.
 ///
-/// A codepoint `input` ignores (an invalid variation selector) neither
-/// splits nor joins, so it does not fail the check.
+/// The base itself must open a cell: a zero-width or control codepoint
+/// has none of its own.
 pub(crate) fn grapheme_fits_one_cell(cps: &[char], clustering: bool) -> bool {
     use crate::codepoint_width::codepoint_width;
     use crate::grapheme_lut::{class_of, is_break_lut, start_state};
@@ -479,33 +482,36 @@ pub(crate) fn grapheme_fits_one_cell(cps: &[char], clustering: bool) -> bool {
     if !matches!(codepoint_width(base as u32), Some(w) if w > 0) {
         return false;
     }
-    if clustering {
-        let mut prev = class_of(base);
-        let mut state = start_state(prev);
-        let mut last_cp = base;
-        for &c in rest {
-            if c <= '\u{FF}' || codepoint_width(c as u32).is_none() {
-                return false;
-            }
+    let mut prev = class_of(base);
+    let mut state = start_state(prev);
+    let mut last_cp = base;
+    for &c in rest {
+        let Some(width) = codepoint_width(c as u32) else {
+            continue;
+        };
+        if clustering && c > '\u{FF}' {
             let class = class_of(c);
             // `try_cluster_append` rebuilds the state from the cell's
-            // contents each time, so a codepoint it ignores leaves no
-            // trace: probe on a copy and keep it only when stored.
+            // contents each time, so a codepoint it doesn't store
+            // leaves no trace: probe on a copy, keep it only when
+            // stored.
             let mut probe = state;
-            if is_break_lut(prev, class, &mut probe) {
-                return false;
-            }
-            if matches!(c, '\u{FE0E}' | '\u{FE0F}') && !vs_is_valid_base(last_cp, c) {
+            if !is_break_lut(prev, class, &mut probe) {
+                if matches!(c, '\u{FE0E}' | '\u{FE0F}') && !vs_is_valid_base(last_cp, c) {
+                    continue;
+                }
+                state = probe;
+                prev = class;
+                last_cp = c;
                 continue;
             }
-            state = probe;
-            prev = class;
-            last_cp = c;
         }
-        true
-    } else {
-        rest.iter().all(|&c| codepoint_width(c as u32) == Some(0))
+        if width == 0 {
+            continue;
+        }
+        return false;
     }
+    true
 }
 
 // Max size of the window title stack.
@@ -6582,12 +6588,64 @@ mod tests {
         assert!(!grapheme_fits_one_cell(&[], true));
         // An invalid selector is ignored, not a split.
         assert!(grapheme_fits_one_cell(&['a', '\u{FE0F}', '\u{301}'], true));
+        // What `input` drops neither joins nor splits: a zero-width
+        // codepoint after a break, and a control.
+        assert!(grapheme_fits_one_cell(&['a', '\u{200B}'], true));
+        assert!(grapheme_fits_one_cell(&['a', '\u{7}'], true));
+        assert!(grapheme_fits_one_cell(&['a', '\u{7}'], false));
 
         // Legacy: only zero-width codepoints attach.
         assert!(!grapheme_fits_one_cell(&family, false));
         assert!(!grapheme_fits_one_cell(&brazil, false));
         assert!(grapheme_fits_one_cell(&e_acute, false));
         assert!(grapheme_fits_one_cell(&['\u{1F44D}', '\u{FE0F}'], false));
+    }
+
+    /// `grapheme_fits_one_cell` must agree with what `input` really
+    /// does: print each sequence at the start of a fresh line and
+    /// check whether the cursor moved past the first cell only.
+    #[test]
+    fn grapheme_one_cell_matches_input() {
+        use crate::performer::handler::Handler;
+        let cases: &[&[char]] = &[
+            &[
+                '\u{1F468}',
+                '\u{200D}',
+                '\u{1F469}',
+                '\u{200D}',
+                '\u{1F467}',
+            ],
+            &['\u{1F1E7}', '\u{1F1F7}'],
+            &['\u{1F1E7}', '\u{1F1F7}', '\u{1F1E6}', '\u{1F1F7}'],
+            &['\u{1F44D}', '\u{1F3FD}'],
+            &['\u{1F44D}', '\u{FE0F}'],
+            &['\u{231A}', '\u{FE0E}'],
+            &['e', '\u{301}'],
+            &['e', '\u{301}', 'x'],
+            &['a', 'b'],
+            &['a', '\u{FE0F}', '\u{301}'],
+            &['a', '\u{200B}'],
+            &['a', '\u{200D}', 'b'],
+            &['\u{915}', '\u{94D}', '\u{937}'],
+            &['\u{1100}', '\u{1161}', '\u{11A8}'],
+        ];
+        for clustering in [true, false] {
+            for &cps in cases {
+                let (mut cw, _) = make_crosswords_with_events(0);
+                cw.set_grapheme_clustering(clustering);
+                for &c in cps {
+                    cw.input(c);
+                }
+                let first = cw.grid[Line(0)][Column(0)];
+                let cell_cols = if first.wide() == Wide::Wide { 2 } else { 1 };
+                let printed_one_cell = cw.grid.cursor.pos.col.0 == cell_cols;
+                assert_eq!(
+                    grapheme_fits_one_cell(cps, clustering),
+                    printed_one_cell,
+                    "{cps:?} clustering={clustering}"
+                );
+            }
+        }
     }
 
     /// The `q`/`s` replies a session wrote back to its PTY.

@@ -815,11 +815,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         (false, false) => QueryStatus::Free,
                     };
                     let resp = format_query_response(cp, status);
+                    // Any tab, like PtyWrite: a query from a pane in a
+                    // background tab still needs its reply (§5.5).
                     if let Some(item) = route
                         .window
                         .screen
                         .context_manager
-                        .current_grid_mut()
                         .get_by_route_id(route_id)
                     {
                         item.context_mut().messenger.send_reply(resp.into_bytes());
@@ -847,14 +848,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         QueryStatus::Free
                     };
                     let resp = format_grapheme_query_response(&cps, status);
+                    // Any tab, like PtyWrite: a query from a pane in a
+                    // background tab still needs its reply (§5.5).
                     if let Some(item) = route
                         .window
                         .screen
                         .context_manager
-                        .current_grid_mut()
                         .get_by_route_id(route_id)
                     {
-                        item.context_mut().messenger.send_bytes(resp.into_bytes());
+                        item.val.messenger.send_bytes(resp.into_bytes());
                     }
                 }
             }

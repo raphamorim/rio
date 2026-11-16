@@ -261,8 +261,10 @@ difference: it is empty unless the terminal would render the whole
 cluster correctly, in the current mode, if it were printed at the
 cursor. In particular, `status` is empty when:
 
-- a codepoint that is not default-ignorable has no glyph from any
-  source, or
+- a codepoint that is not default-ignorable would draw as a missing
+  glyph: the source the terminal would draw it from (the registry,
+  or the font it picks for the cluster) does not have it, even if
+  some other installed font does, or
 - the terminal would not draw the cluster as one unit: it would split
   it across separate cells (for example because grapheme cluster
   mode 2027 is off), or
