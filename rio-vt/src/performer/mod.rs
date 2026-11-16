@@ -226,18 +226,6 @@ where
             PollOpt::edge(),
         )?;
 
-        // Replies the parser produces go to the writer thread the moment
-        // it produces them, like everything else bound for the PTY, so
-        // they keep their place among the owner's input and answers.
-        let reply_writes = writes.clone();
-        terminal
-            .lock()
-            .set_reply_sink(Some(crate::crosswords::ReplySink(Box::new(
-                move |reply: String| {
-                    let _ = reply_writes.send(Msg::Input(Cow::Owned(reply.into_bytes())));
-                },
-            ))));
-
         let writer = Writer {
             inbox: PeekableReceiver::new(inbox),
             control,
@@ -247,6 +235,20 @@ where
             written: 0,
             terminal: Arc::clone(&terminal),
         };
+
+        // Replies the parser produces go to the writer thread the moment
+        // it produces them, like everything else bound for the PTY, so
+        // they keep their place among the owner's input and answers.
+        // Installed last: a terminal whose machine could not be made
+        // keeps sending its replies to the owner as events.
+        let reply_writes = writes.clone();
+        terminal
+            .lock()
+            .set_reply_sink(Some(crate::crosswords::ReplySink(Box::new(
+                move |reply: String| {
+                    let _ = reply_writes.send(Msg::Input(Cow::Owned(reply.into_bytes())));
+                },
+            ))));
 
         Ok(Machine {
             receiver: PeekableReceiver::new(receiver),
@@ -407,10 +409,8 @@ where
         while let Some(msg) = self.receiver.recv() {
             match msg {
                 // Bytes for the PTY are the writer's; this channel only
-                // ever carries what the writer passed on.
-                Msg::Input(_) | Msg::Reply(_) => {
-                    let _ = self.writes.send(msg);
-                }
+                // ever carries what the writer passed on, so none come.
+                Msg::Input(_) | Msg::Reply(_) => (),
                 Msg::Resize(window_size) => {
                     let _ = self.pty.set_winsize(window_size.into());
                 }
@@ -433,12 +433,28 @@ where
             let failed = Arc::clone(&self.writer_failed);
             self.writer_thread = Some(spawn_named("PTY writer", move || {
                 raise_io_thread_priority();
-                if let Err(err) = writer.run() {
-                    // Without a writer the terminal cannot be typed to;
-                    // the reader closes it, as it would on a failure of
-                    // its own. The flag is what tells this shutdown from
-                    // the owner's, which closes nothing.
-                    error!("PTY writer failed: {err}");
+                // Without a writer the terminal cannot be typed to; the
+                // reader closes it, as it would on a failure of its own.
+                // The flag is what tells this shutdown from the owner's,
+                // which closes nothing. A panic is a failure like any
+                // other here, and the writer still comes back to be
+                // dropped with the machine.
+                let outcome =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        writer.run()
+                    }));
+                let failed_now = match outcome {
+                    Ok(Ok(())) => false,
+                    Ok(Err(err)) => {
+                        error!("PTY writer failed: {err}");
+                        true
+                    }
+                    Err(_) => {
+                        error!("PTY writer panicked");
+                        true
+                    }
+                };
+                if failed_now {
                     failed.store(true, Ordering::Release);
                     let _ = writer.control.send(Msg::Shutdown);
                 }
@@ -543,10 +559,7 @@ where
                         }
                     }
 
-                    token
-                        if token == self.pty.read_token()
-                            || token == self.pty.write_token() =>
-                    {
+                    token if token == self.pty.read_token() => {
                         #[cfg(unix)]
                         let hung_up = UnixReady::from(event.readiness()).is_hup();
                         #[cfg(not(unix))]
@@ -659,8 +672,9 @@ where
 /// arrives in one inbox and is written in that order. Nothing here
 /// waits on a read, so a keystroke is written while a burst is parsed
 /// and while the terminal is handed to the renderer; the one lock taken
-/// here tells the terminal an owner's answer was queued, and waits at
-/// most a chunk for it. Resizes and the shutdown, which the owner sends
+/// here tells the terminal an owner's answer was queued, and waits for
+/// whoever holds the terminal, the reader for at most a chunk. Resizes
+/// and the shutdown, which the owner sends
 /// to the same inbox, are passed on to the reader.
 #[cfg(feature = "pty")]
 struct Writer<W, U: EventListener> {
@@ -692,9 +706,11 @@ where
         self.poll
             .register(&self.half, Self::PTY, Ready::empty(), PollOpt::level())?;
         let mut armed = false;
-        // Set once the PTY hung up: it is left unwatched, since a
-        // hangup is reported whatever the interest and would wake this
-        // loop for nothing until the reader stops it.
+        // Set once the PTY hung up: it is left unwatched, since epoll
+        // reports a hangup whatever the interest and would wake this
+        // loop for nothing until the reader stops it. (kqueue reports
+        // none; there a hung up PTY shows as writable and the write
+        // fails.)
         let mut hung_up = false;
         let mut events = Events::with_capacity(16);
 
@@ -725,6 +741,10 @@ where
                 armed = false;
             }
 
+            // The shutdown ends this thread, but only after what was
+            // queued ahead of it, the last thing the owner typed, has
+            // had its one try at the PTY.
+            let mut stopping = false;
             while let Some(msg) = self.inbox.recv() {
                 match msg {
                     Msg::Input(bytes) => self.pending.extend_from_slice(&bytes),
@@ -739,8 +759,8 @@ where
                         let _ = self.control.send(Msg::Resize(size));
                     }
                     Msg::Shutdown => {
-                        let _ = self.control.send(Msg::Shutdown);
-                        return Ok(());
+                        stopping = true;
+                        break;
                     }
                 }
             }
@@ -748,7 +768,7 @@ where
             // Bytes refused by a full PTY wait for its writable event;
             // they are not retried on every message that arrives
             // meanwhile, which would cost a failing write each.
-            if !armed || writable {
+            if !armed || writable || stopping {
                 if let Err(err) = self.flush() {
                     // The PTY is gone, a child that exited and closed
                     // its side; what was pending has nowhere to go. The
@@ -757,6 +777,10 @@ where
                     self.pending.clear();
                     self.written = 0;
                 }
+            }
+            if stopping {
+                let _ = self.control.send(Msg::Shutdown);
+                return Ok(());
             }
 
             let backlog = self.written < self.pending.len();

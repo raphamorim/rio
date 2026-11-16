@@ -28,6 +28,7 @@ struct TestPty {
     read_event: bool,
     shutdown_calls: usize,
     deregister_calls: usize,
+    winsize_calls: usize,
     raw_error: Option<i32>,
 }
 
@@ -76,6 +77,10 @@ struct RecordingWriter {
     refuses_registration: bool,
     /// The write half's readiness, for a test that hangs it up.
     half_readiness: Arc<std::sync::Mutex<Option<corcovado::SetReadiness>>>,
+    /// Every write panics, as a bug in the writer thread would.
+    panics: bool,
+    /// The write half cannot be opened at all.
+    no_half: bool,
     /// Every write attempt, refused or not.
     attempts: Option<mpsc::Sender<()>>,
 }
@@ -93,6 +98,9 @@ impl Write for RecordingWriter {
         }
         if self.blocked {
             return Err(io::Error::from(ErrorKind::WouldBlock));
+        }
+        if self.panics {
+            panic!("the test write half panics on every write");
         }
         self.bytes.lock().unwrap().extend_from_slice(buf);
         if let Some(sender) = &self.written {
@@ -175,6 +183,7 @@ impl ProcessReadWrite for TestPty {
         1.into()
     }
     fn set_winsize(&mut self, _: WinsizeBuilder) -> io::Result<()> {
+        self.winsize_calls += 1;
         Ok(())
     }
     fn register(
@@ -223,6 +232,9 @@ impl EventedPty for TestPty {
     type WriteHalf = TestWriteHalf;
 
     fn write_half(&mut self) -> io::Result<TestWriteHalf> {
+        if self.writer.no_half {
+            return Err(io::Error::from(ErrorKind::Other));
+        }
         let (registration, readiness) = corcovado::Registration::new2();
         *self.writer.half_readiness.lock().unwrap() = Some(readiness.clone());
         Ok(TestWriteHalf {
@@ -259,6 +271,7 @@ fn test_pty(bytes: Vec<u8>, ending: Option<ErrorKind>) -> TestPty {
         read_event: false,
         shutdown_calls: 0,
         deregister_calls: 0,
+        winsize_calls: 0,
         raw_error: None,
     }
 }
@@ -371,6 +384,10 @@ fn child_exit_drains_multiple_budgets_and_finishes_pending_sync() {
     assert!(!machine.terminal.lock().synchronized_output());
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
+    assert!(
+        machine.writer.is_some(),
+        "the writer was stopped and joined"
+    );
 }
 
 #[cfg(unix)]
@@ -386,6 +403,10 @@ fn registration_failure_shuts_down_pty() {
     let (machine, _) = machine.spawn().join().unwrap();
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
+    assert!(
+        machine.writer.is_some(),
+        "the writer was stopped and joined"
+    );
 }
 
 /// A writer that cannot run leaves a terminal nothing can be typed
@@ -416,6 +437,104 @@ fn a_writer_failure_closes_the_terminal() {
     assert!(events.contains(&"closed"), "events: {events:?}");
 }
 
+/// A writer thread that panics is a failed writer: the terminal is
+/// closed the same way, and the writer still comes back to be dropped
+/// with the machine.
+#[test]
+fn a_writer_panic_closes_the_terminal() {
+    let (sender, receiver) = mpsc::channel();
+    let recorder = EventRecorder(sender);
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        recorder.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let mut pty = test_pty(Vec::new(), Some(ErrorKind::WouldBlock));
+    pty.writer.panics = true;
+    let machine =
+        Machine::new(terminal.clone(), pty, recorder, WindowId::from(0), 0).unwrap();
+    let channel = machine.channel();
+    let handle = machine.spawn();
+    channel
+        .send(Msg::Input(std::borrow::Cow::Borrowed(b"k")))
+        .unwrap();
+    // Joined with a bound, so a reader that never hears of the panic
+    // fails this test instead of hanging it.
+    let (completed, done) = mpsc::channel();
+    std::thread::spawn(move || completed.send(handle.join().unwrap()).unwrap());
+    let result = done.recv_timeout(Duration::from_secs(5));
+    if result.is_err() {
+        channel.send(Msg::Shutdown).unwrap();
+    }
+    let (machine, _) = result.expect("the reader must learn of the writer's panic");
+
+    assert_eq!(machine.pty.shutdown_calls, 1);
+    assert!(machine.writer.is_some(), "the writer came back");
+    let events: Vec<_> = receiver.try_iter().collect();
+    assert!(events.contains(&"exited"), "events: {events:?}");
+    assert!(events.contains(&"closed"), "events: {events:?}");
+}
+
+/// A terminal whose machine could not be made has no writer to send
+/// its replies to; they keep going to the owner as events.
+#[test]
+fn a_terminal_without_a_machine_keeps_answering_by_event() {
+    let (sender, receiver) = mpsc::channel();
+    let recorder = EventRecorder(sender);
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        recorder.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let mut pty = test_pty(Vec::new(), Some(ErrorKind::WouldBlock));
+    pty.writer.no_half = true;
+    assert!(Machine::new(terminal.clone(), pty, recorder, WindowId::from(0), 0).is_err());
+
+    let mut processor = handler::Processor::default();
+    processor.advance(&mut *terminal.lock(), b"\x1b[c");
+    let events: Vec<_> = receiver.try_iter().collect();
+    assert_eq!(events, vec!["ptywrite"]);
+}
+
+/// What the owner queued ahead of the shutdown, its last command, is
+/// written before the writer stops.
+#[test]
+fn input_queued_before_the_shutdown_is_written() {
+    let machine = machine(Vec::new(), None);
+    let channel = machine.channel();
+    channel
+        .send(Msg::Input(std::borrow::Cow::Borrowed(b"exit\r")))
+        .unwrap();
+    channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = machine.spawn().join().unwrap();
+    assert_eq!(machine.pty.writer.recorded(), b"exit\r".to_vec());
+}
+
+/// A resize goes to the owner's one channel and is passed on to the
+/// reader, which owns the PTY it applies to.
+#[test]
+fn a_resize_reaches_the_pty() {
+    let machine = machine(Vec::new(), None);
+    let channel = machine.channel();
+    channel
+        .send(Msg::Resize(crate::event::WindowSize {
+            rows: 30,
+            cols: 100,
+            width: 800,
+            height: 600,
+        }))
+        .unwrap();
+    channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = machine.spawn().join().unwrap();
+    assert_eq!(machine.pty.winsize_calls, 1);
+}
+
 #[test]
 fn read_failure_shuts_down_pty_and_finishes_pending_sync() {
     let mut machine =
@@ -429,6 +548,10 @@ fn read_failure_shuts_down_pty_and_finishes_pending_sync() {
     assert_eq!(machine.pty.deregister_calls, 1);
     assert_eq!(first_line(&machine, 12), "final output");
     assert!(!machine.terminal.lock().synchronized_output());
+    assert!(
+        machine.writer.is_some(),
+        "the writer was stopped and joined"
+    );
 }
 
 #[derive(Clone)]
@@ -567,6 +690,7 @@ fn a_stuck_write_is_not_retried_when_more_arrives() {
             read_event: true,
             shutdown_calls: 0,
             deregister_calls: 0,
+            winsize_calls: 0,
             raw_error: None,
         },
         EventRecorder(events),
@@ -682,6 +806,7 @@ fn a_parser_reply_is_written_without_the_event_loop() {
             read_event: true,
             shutdown_calls: 0,
             deregister_calls: 0,
+            winsize_calls: 0,
             raw_error: None,
         },
         EventRecorder(events),
@@ -895,6 +1020,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
             read_event: false,
             shutdown_calls: 0,
             deregister_calls: 0,
+            winsize_calls: 0,
             raw_error: None,
         },
         listener.clone(),
@@ -1021,6 +1147,7 @@ fn spawn_reader(payload: Vec<u8>, piled: Option<u8>, listener: OnTitle) -> Spawn
             read_event: true,
             shutdown_calls: 0,
             deregister_calls: 0,
+            winsize_calls: 0,
             raw_error: None,
         },
         listener,
@@ -1097,9 +1224,10 @@ fn input_is_written_while_another_thread_holds_the_terminal() {
 // the order it is produced, so a reply an embedder produces by parsing
 // its own bytes under the lock during a handoff, as librio does, is
 // written between the replies of the chunk before and the chunk after.
-// An embedder scheduled so late that it parsed only after chunk 3 was
-// let go of proves nothing, and neither does a handoff that hit the
-// bound, where the reader rightly moved on; such a run is repeated.
+// An embedder scheduled so late that it asked only during chunk 2 or
+// later proves nothing (asked in chunk 2's last microseconds it is
+// rightly let in after chunk 3), and neither does a handoff that hit
+// the bound, where the reader rightly moved on; such a run is repeated.
 #[test]
 fn an_injected_reply_during_a_handoff_keeps_its_place() {
     for _ in 0..10 {
@@ -1129,7 +1257,7 @@ fn an_injected_reply_during_a_handoff_keeps_its_place() {
         assert_eq!(first_line(&machine, 1), "4", "the whole pile was parsed");
 
         let asked = asked.recv_timeout(timeout).unwrap();
-        if bound_hits > 0 || listener.chunk_at(asked).is_none_or(|chunk| chunk >= '3') {
+        if bound_hits > 0 || listener.chunk_at(asked).is_none_or(|chunk| chunk >= '2') {
             continue;
         }
         let mut expected = da.clone();
@@ -1147,7 +1275,7 @@ fn an_injected_reply_during_a_handoff_keeps_its_place() {
 /// Stands in for the owner of the terminal, as a frontend would: a
 /// query only the owner can answer is answered into the writer's
 /// inbox, and a reply the terminal routes through the owner is passed
-/// on to the same inbox. It answers from inside the parser, on the
+/// back to the same inbox as an answer. It answers from inside the parser, on the
 /// reader's thread, where a frontend answers later from its own; that
 /// is the earliest an answer can arrive, the closest race with the
 /// replies parsed right behind the query.
@@ -1173,7 +1301,7 @@ impl EventListener for Owner {
             }
             RioEvent::PtyWrite(_, text) => {
                 let _ =
-                    channel.send(Msg::Input(std::borrow::Cow::Owned(text.into_bytes())));
+                    channel.send(Msg::Reply(std::borrow::Cow::Owned(text.into_bytes())));
             }
             _ => {}
         }
@@ -1221,6 +1349,7 @@ fn replies_keep_their_place_before_an_owner_answer_in_the_same_read() {
             read_event: true,
             shutdown_calls: 0,
             deregister_calls: 0,
+            winsize_calls: 0,
             raw_error: None,
         },
         owner,
@@ -1311,6 +1440,7 @@ fn a_waiting_thread_gets_the_terminal_after_the_current_chunk() {
                 read_event: false,
                 shutdown_calls: 0,
                 deregister_calls: 0,
+                winsize_calls: 0,
                 raw_error: None,
             },
             listener.clone(),
@@ -1423,6 +1553,7 @@ fn a_fence_in_a_later_write_waits_for_the_owners_answer() {
             read_event: true,
             shutdown_calls: 0,
             deregister_calls: 0,
+            winsize_calls: 0,
             raw_error: None,
         },
         EventRecorder(events),
@@ -1461,26 +1592,51 @@ fn a_fence_in_a_later_write_waits_for_the_owners_answer() {
         "the DA must not be written ahead of the size report"
     );
 
-    // The owner answers: its answer is written, and the fence lifts.
+    // The owner answers: its answer is written. The fence stays up,
+    // since the DA routed through the owner is still the owner's to
+    // pass back, so a third write's DA takes the owner's queue too
+    // instead of overtaking the second's.
     channel
         .send(Msg::Reply(std::borrow::Cow::Borrowed(b"\x1b[4;480;640t")))
         .unwrap();
     assert_eq!(written.recv_timeout(timeout).unwrap(), b"\x1b[4;480;640t");
-
-    // Third write: answered here again.
     feed_tx.send(b"\x1b[c".to_vec()).unwrap();
     wake();
-    assert_eq!(
-        written.recv_timeout(timeout).unwrap(),
-        b"\x1b[?62;4;6;22;52c".to_vec()
+    next_named("ptywrite");
+    burst_over();
+    assert!(
+        written.try_recv().is_err(),
+        "a DA must not overtake the one the owner still holds"
     );
+
+    // The owner passes both back, in order, and the fence lifts.
+    let da = b"\x1b[?62;4;6;22;52c".to_vec();
+    channel
+        .send(Msg::Reply(std::borrow::Cow::Owned(da.clone())))
+        .unwrap();
+    channel
+        .send(Msg::Reply(std::borrow::Cow::Owned(da.clone())))
+        .unwrap();
+    let mut passed_back = Vec::new();
+    while passed_back.len() < 2 * da.len() {
+        passed_back.extend(written.recv_timeout(timeout).unwrap());
+    }
+
+    // Fourth write: answered here again.
+    feed_tx.send(b"\x1b[c".to_vec()).unwrap();
+    wake();
+    assert_eq!(written.recv_timeout(timeout).unwrap(), da);
     burst_over();
 
     channel.send(Msg::Shutdown).unwrap();
     let (machine, _) = handle.join().unwrap();
+    let mut expected = b"\x1b[4;480;640t".to_vec();
+    expected.extend(&da);
+    expected.extend(&da);
+    expected.extend(&da);
     assert_eq!(
         machine.pty.writer.recorded(),
-        b"\x1b[4;480;640t\x1b[?62;4;6;22;52c".to_vec(),
+        expected,
         "the size report reached the PTY before any attributes"
     );
     assert_eq!(
@@ -1526,6 +1682,7 @@ fn a_declined_query_lifts_the_fence_without_writing() {
             read_event: true,
             shutdown_calls: 0,
             deregister_calls: 0,
+            winsize_calls: 0,
             raw_error: None,
         },
         EventRecorder(events),
