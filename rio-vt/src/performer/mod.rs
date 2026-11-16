@@ -395,9 +395,13 @@ where
                 tracing::debug!("PTY reply deferred to the writable event: {err}");
             }
         }
-        // Whoever waited for the terminal takes it before this thread
-        // can come back for the rest of the burst.
-        self.terminal.yield_to_demand();
+        // Whoever waited for the terminal while this thread held it
+        // takes it before this thread can come back for the rest of
+        // the burst. A wakeup that parsed nothing held nothing and
+        // owes nobody a turn.
+        if processed > 0 {
+            self.terminal.yield_to_demand();
+        }
 
         result
     }

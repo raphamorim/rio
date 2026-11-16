@@ -411,6 +411,78 @@ fn input_is_written_on_the_wakeup_that_delivers_it() {
     assert_eq!(machine.pty.writer.bytes, b"ls\r".to_vec());
 }
 
+// A read wakeup that finds nothing to parse never held the terminal,
+// so it does not yield to a thread waiting for it: that thread waits
+// on whoever does hold it, and sleeping here would only delay the
+// input this thread is about to handle.
+#[test]
+fn an_idle_wakeup_does_not_yield_to_demand() {
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        VoidListener,
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let mut machine = Machine::new(
+        Arc::clone(&terminal),
+        TestPty {
+            bytes: io::Cursor::new(Vec::new()),
+            feed: None,
+            idle: None,
+            ending: Some(ErrorKind::WouldBlock),
+            exhausted: None,
+            before_read: None,
+            reads: 0,
+            writer: RecordingWriter::default(),
+            child: None,
+            registration_error: false,
+            read_event: false,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        VoidListener,
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+
+    // Someone else holds the terminal and a third thread waits for it.
+    let (release_tx, release) = mpsc::channel::<()>();
+    let (held_tx, held) = mpsc::channel::<()>();
+    let holder_terminal = Arc::clone(&terminal);
+    let holder = std::thread::spawn(move || {
+        let guard = holder_terminal.lock_reader();
+        held_tx.send(()).unwrap();
+        release.recv().unwrap();
+        drop(guard);
+    });
+    held.recv_timeout(Duration::from_secs(5)).unwrap();
+    let demander_terminal = Arc::clone(&terminal);
+    let demander = std::thread::spawn(move || drop(demander_terminal.lock()));
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while !terminal.has_demand() {
+        assert!(std::time::Instant::now() < deadline, "no demand appeared");
+        std::thread::yield_now();
+    }
+
+    let mut state = State::default();
+    let mut buf = vec![0; READ_BUFFER_SIZE];
+    let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
+    assert_eq!(outcome, ReadOutcome::Idle);
+    assert_eq!(
+        terminal.handoff_timeouts(),
+        0,
+        "the idle wakeup did not sleep for the demander"
+    );
+
+    release_tx.send(()).unwrap();
+    holder.join().unwrap();
+    demander.join().unwrap();
+}
+
 // Bytes refused by a full PTY wait for the writable event. Read
 // wakeups in between do not retry them, and a reply the parse produces
 // meanwhile queues behind them.
