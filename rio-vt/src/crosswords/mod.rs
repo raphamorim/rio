@@ -2842,7 +2842,7 @@ impl<U: EventListener> Crosswords<U> {
             KeyboardModesApplyBehavior::Union => active_mode | mode,
             KeyboardModesApplyBehavior::Difference => active_mode & !mode,
         };
-        info!("Setting keyboard mode to {new_mode:?}");
+        trace!("Setting keyboard mode to {new_mode:?}");
         self.keyboard_mode_stack[self.keyboard_mode_idx] = new_mode;
 
         // Sync self.mode with keyboard_mode_stack
@@ -2908,7 +2908,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        trace!("Setting public mode: {:?}", mode);
         match mode {
             NamedMode::Insert => self.mode.insert(Mode::INSERT),
             NamedMode::LineFeedNewLine => self.mode.insert(Mode::LINE_FEED_NEW_LINE),
@@ -2925,7 +2924,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        trace!("Setting public mode: {:?}", mode);
         match mode {
             NamedMode::Insert => {
                 self.mode.remove(Mode::INSERT);
@@ -3131,7 +3129,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn report_private_mode(&mut self, mode: PrivateMode) {
-        info!("Reporting private mode {mode:?}");
+        trace!("Reporting private mode {mode:?}");
         let state = match mode {
             PrivateMode::Named(mode) => match mode {
                 NamedPrivateMode::CursorKeys => {
@@ -3722,7 +3720,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
     }
 
     fn set_current_directory(&mut self, path: Option<std::path::PathBuf>) {
-        trace!("Setting working directory {:?}", path);
         if self.current_directory == path {
             return;
         }
@@ -3796,7 +3793,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         index: pos::CharsetIndex,
         charset: pos::StandardCharset,
     ) {
-        trace!("Configuring charset {:?} as {:?}", index, charset);
         self.grid.cursor.charsets[index] = charset;
     }
 
@@ -4710,8 +4706,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn restore_cursor_position(&mut self) {
-        trace!("Restoring cursor position");
-
         self.damage_cursor();
         self.grid.cursor = self.grid.saved_cursor.clone();
         self.damage_cursor();
@@ -4764,8 +4758,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // higher.
         let start = Line(top as i32 - 1);
         let end = Line(bottom as i32);
-
-        debug!("Setting scrolling region: ({};{})", start, end);
 
         let screen_lines = Line(self.grid.screen_lines() as i32);
         self.scroll_region.start = std::cmp::min(start, screen_lines);

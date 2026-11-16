@@ -928,8 +928,6 @@ impl<U: Handler> Perform for Performer<'_, U> {
     }
 
     fn osc_dispatch(&mut self, params: &[&[u8]], bell_terminated: bool) {
-        debug!("[osc_dispatch] params={params:?} bell_terminated={bell_terminated}");
-
         let terminator = if bell_terminated { "\x07" } else { "\x1b\\" };
 
         fn unhandled(params: &[&[u8]]) {
