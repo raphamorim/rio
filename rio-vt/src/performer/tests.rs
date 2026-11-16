@@ -659,6 +659,9 @@ struct PileWaiter {
     first_line: String,
     /// Everything the reader wrote to the PTY.
     written: Vec<u8>,
+    /// Whether a synchronized update deadline was armed when the reader
+    /// first let go.
+    sync_deadline_armed: bool,
 }
 
 type SharedTerminal = Arc<TerminalLock<Crosswords<OnTitle>>>;
@@ -747,10 +750,15 @@ fn pile(chunks: u8, extra: Option<(u8, &[u8])>) -> Vec<u8> {
 /// query, whose reply must leave with the reader, and sets the title
 /// that summons the waiter.
 fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
+    waiter_against_a_pile_with(chunks, None)
+}
+
+/// [`waiter_against_a_pile`] with `extra` bytes in one chunk.
+fn waiter_against_a_pile_with(chunks: u8, extra: Option<(u8, &[u8])>) -> PileWaiter {
     // A pile that fills the reader's buffer would force the lock before
     // the read hook below releases the holder.
     assert!(chunks as usize <= READ_BUFFER_SIZE / READ_CHUNK);
-    let payload = pile(chunks, None);
+    let payload = pile(chunks, extra);
     let (saw_tx, saw) = mpsc::channel();
     let listener = OnTitle::new(move |terminal| {
         let asked = std::time::Instant::now();
@@ -828,8 +836,14 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
 
     // The event loop's part, in place: wait out each handoff, then take
     // up the rest of the pile.
+    let mut sync_deadline_armed = false;
+    let mut first = true;
     let outcome = loop {
         let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
+        if first {
+            sync_deadline_armed = state.sync_deadline.is_some();
+            first = false;
+        }
         if state.handoff.is_some() {
             terminal.yield_to_demand();
             machine.end_handoff(&mut state);
@@ -850,7 +864,33 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
         timed_out: terminal.handoff_timeouts() > 0,
         first_line: first_line(&machine, 1),
         written: machine.pty.writer.bytes.clone(),
+        sync_deadline_armed,
     }
+}
+
+// A synchronized update begun in the chunk before a mid-pile handoff
+// has its deadline armed when the reader lets go, not only when a call
+// runs to its end, so the hold expires on time even if the pile takes
+// a while to come back to.
+#[test]
+fn a_sync_update_before_a_handoff_keeps_its_deadline() {
+    for _ in 0..10 {
+        let waiter = waiter_against_a_pile_with(4, Some((1, b"\x1b[?2026h")));
+        if waiter.timed_out {
+            continue;
+        }
+        assert_eq!(waiter.saw, '1');
+        assert!(
+            waiter.sync_deadline_armed,
+            "the deadline was armed at the handoff"
+        );
+        assert!(
+            !waiter.damage_announced,
+            "nothing is announced while the hold is open"
+        );
+        return;
+    }
+    panic!("ten piles and every handoff hit its bound");
 }
 
 // Bytes that piled up while another thread held the terminal are
@@ -980,12 +1020,19 @@ fn spawn_reader(payload: Vec<u8>, piled: Option<u8>, listener: OnTitle) -> Spawn
 // While the reader waits for a thread it handed the terminal to, it
 // keeps serving its channel: a keystroke that arrives meanwhile is
 // written to the PTY before that thread lets go, and the wait does not
-// reach its bound on the keystroke's account.
+// reach its bound on the keystroke's account. An owner's answer that
+// arrives meanwhile is written too, without the reader taking the
+// lock from the demander for it; the terminal hears of it once the
+// handoff is over, before the next read, so the fence the query raised
+// is down for the reply that follows.
 #[test]
 fn input_is_written_while_a_demander_holds_the_terminal() {
-    // One chunk that sets the title; the demander it summons holds the
-    // terminal until told to let go.
-    let payload = b"\x1b[H1\x1b]0;hold\x1b\\".to_vec();
+    // One read that asks the owner for the text area (raising the
+    // fence) and sets the title; the demander it summons holds the
+    // terminal until told to let go. A second read carries a DA.
+    let mut payload = b"\x1b[H1\x1b[14t\x1b]0;hold\x1b\\".to_vec();
+    payload.resize(READ_CHUNK, 0);
+    payload.extend_from_slice(b"\x1b[c");
     let (held_tx, held) = mpsc::channel::<()>();
     let (go_tx, go) = mpsc::channel::<()>();
     let go = std::sync::Mutex::new(Some(go));
@@ -1002,22 +1049,39 @@ fn input_is_written_while_a_demander_holds_the_terminal() {
 
     reader.readiness.set_readiness(Ready::readable()).unwrap();
     held.recv_timeout(timeout).unwrap();
-    // The demander holds the terminal and the reader waits for it.
+    // The demander holds the terminal and the reader waits for it: the
+    // owner's answer and a keystroke both go out now.
+    reader
+        .channel
+        .send(Msg::Reply(std::borrow::Cow::Borrowed(b"\x1b[4;480;640t")))
+        .unwrap();
     reader
         .channel
         .send(Msg::Input(std::borrow::Cow::Borrowed(b"k")))
         .unwrap();
+    assert_eq!(
+        reader.written.recv_timeout(timeout).unwrap(),
+        b"\x1b[4;480;640t".to_vec()
+    );
     assert_eq!(reader.written.recv_timeout(timeout).unwrap(), b"k".to_vec());
     assert_eq!(
         reader.terminal.handoff_timeouts(),
         0,
-        "the keystroke went out during the handoff, not after its bound"
+        "the bytes went out during the handoff, not after its bound"
     );
     go_tx.send(()).unwrap();
 
+    // The handoff is over, the answer counted, and the second read's DA
+    // is answered by the reader itself.
+    assert_eq!(
+        reader.written.recv_timeout(timeout).unwrap(),
+        b"\x1b[?62;4;6;22;52c".to_vec(),
+        "the fence was down for the DA behind the answered query"
+    );
+
     reader.channel.send(Msg::Shutdown).unwrap();
     let (machine, _) = reader.handle.join().unwrap();
-    assert_eq!(machine.pty.writer.bytes, b"k".to_vec());
+    assert_eq!(first_line(&machine, 1), "1");
 }
 
 // A thread that takes the terminal during a mid-pile handoff and

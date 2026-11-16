@@ -180,6 +180,10 @@ pub struct State {
     /// channel, so input is written while the other thread holds the
     /// terminal.
     handoff: Option<Handoff>,
+    /// Owner answers that arrived during a handoff; the terminal hears
+    /// of them when the handoff is over, before anything is parsed,
+    /// rather than this thread taking the lock from the demander.
+    deferred_answers: usize,
 }
 
 #[cfg(feature = "pty")]
@@ -424,15 +428,13 @@ where
         }
 
         // Whoever waited for the terminal while this thread held it
-        // takes it before this thread reads the rest of the burst; the
-        // generation is read while the lock is still held, so a release
-        // right after letting go is seen. A wakeup that parsed nothing
-        // held nothing and owes nobody a turn.
-        let generation = self.terminal.handoff_generation();
-        drop(terminal);
-        if processed > 0 && self.terminal.has_demand() {
-            self.begin_handoff(state, generation);
+        // takes it before this thread reads the rest of the burst. A
+        // wakeup that parsed nothing held nothing and owes nobody a
+        // turn.
+        if terminal.is_some() && processed > 0 && self.terminal.has_demand() {
+            self.begin_handoff(state);
         }
+        drop(terminal);
 
         Self::write_replies(&mut self.pty, state, had_pending);
 
@@ -478,9 +480,9 @@ where
         if !guard.synchronized_output() && guard.peek_damage_event().is_some() {
             self.notify_damage(&mut guard);
         }
-        let generation = self.terminal.handoff_generation();
+        state.sync_deadline = guard.sync_update_deadline();
+        self.begin_handoff(state);
         drop(guard);
-        self.begin_handoff(state, generation);
     }
 
     /// The replies a parse produced go out as soon as the lock is
@@ -498,10 +500,16 @@ where
     /// Stop reading the PTY until the thread that waited for the
     /// terminal has had it, or the bound passes. The channel is served
     /// meanwhile; see `run`.
-    fn begin_handoff(&self, state: &mut State, generation: u32) {
+    ///
+    /// Called while the terminal is still held: the yield flag is then
+    /// set before the lock is released, so the demander, which takes
+    /// the lock after, sees it when it lets go and runs the wake hook.
+    /// Set after the release, the flag could be in a store buffer while
+    /// a quick demander already came and went, and the wake be missed.
+    fn begin_handoff(&self, state: &mut State) {
         self.terminal.begin_yield();
         state.handoff = Some(Handoff {
-            generation,
+            generation: self.terminal.handoff_generation(),
             deadline: Instant::now() + crate::event::sync::HANDOFF_TIMEOUT,
         });
     }
@@ -530,6 +538,13 @@ where
     fn end_handoff(&self, state: &mut State) {
         state.handoff = None;
         self.terminal.end_yield();
+        if state.deferred_answers > 0 {
+            let mut terminal = self.terminal.lock_reader();
+            for _ in 0..state.deferred_answers {
+                terminal.ui_query_answered();
+            }
+            state.deferred_answers = 0;
+        }
     }
 
     /// Drain the channel.
@@ -545,8 +560,14 @@ where
                     }
                     // Queued ahead of whatever this wakeup's read
                     // produces, so the terminal may hand the replies
-                    // behind the query back to this thread.
-                    self.terminal.lock_reader().ui_query_answered();
+                    // behind the query back to this thread. Not while a
+                    // handoff is on: the lock is the demander's then,
+                    // and nothing is parsed before the handoff is over.
+                    if state.handoff.is_some() {
+                        state.deferred_answers += 1;
+                    } else {
+                        self.terminal.lock_reader().ui_query_answered();
+                    }
                 }
                 // Only a wakeup; the poll's loop sees the generation.
                 Msg::TerminalReleased => (),
@@ -690,10 +711,13 @@ where
                 }
             }
 
-            // Handle synchronized update timeout.
-            if state
-                .sync_deadline
-                .is_some_and(|deadline| deadline <= Instant::now())
+            // Handle synchronized update timeout. Not during a handoff:
+            // the lock is the demander's; the deadline stays and fires
+            // once the handoff is over.
+            if state.handoff.is_none()
+                && state
+                    .sync_deadline
+                    .is_some_and(|deadline| deadline <= Instant::now())
             {
                 let mut terminal = self.terminal.lock_reader();
                 if terminal.sync_update_expired(Instant::now()) {
@@ -758,7 +782,13 @@ where
                         let hung_up = false;
                         // HUP can accompany unread final output. During
                         // a handoff the PTY waits; its data is still
-                        // there when reading resumes.
+                        // there when reading resumes. A hangup ends the
+                        // handoff instead: epoll reports it whatever
+                        // the interest, so skipping it would spin, and
+                        // the child is gone.
+                        if hung_up && state.handoff.is_some() {
+                            self.end_handoff(state);
+                        }
                         if (event.readiness().is_readable() || hung_up)
                             && state.handoff.is_none()
                         {
@@ -797,13 +827,13 @@ where
             let quiet = std::time::Duration::from_millis(25);
             let mut quiet_deadline = Instant::now() + quiet;
             loop {
-                let outcome = self.pty_read(state, buf);
-                // Nothing is typed to a dead child that matters: the
-                // handoff is waited for in place.
+                // Nothing is typed to a dead child that matters: a
+                // handoff is waited for in place, before reading.
                 if state.handoff.is_some() {
                     self.terminal.yield_to_demand();
                     self.end_handoff(state);
                 }
+                let outcome = self.pty_read(state, buf);
                 match outcome {
                     Ok(ReadOutcome::Budget) if Instant::now() < deadline => {
                         quiet_deadline = Instant::now() + quiet;
@@ -822,6 +852,12 @@ where
                 }
                 break;
             }
+        }
+
+        // A handoff left open by the way out: the lock must not keep
+        // running the wake hook for a loop that is gone.
+        if state.handoff.is_some() {
+            self.end_handoff(state);
         }
 
         // Flush exactly once before publishing any exit notification.
