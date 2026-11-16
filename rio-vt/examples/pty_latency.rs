@@ -34,7 +34,7 @@ mod unix {
     use rio_vt::ansi::CursorShape;
     use rio_vt::corcovado;
     use rio_vt::crosswords::{Crosswords, CrosswordsSize};
-    use rio_vt::event::sync::FairMutex;
+    use rio_vt::event::sync::TerminalLock;
     use rio_vt::event::{EventListener, Msg, RioEvent, WindowId};
     use rio_vt::performer::Machine;
     use rio_vt::teletypewriter::{
@@ -107,7 +107,55 @@ mod unix {
         }
     }
 
+    /// The write half, every write announced like the whole PTY's.
+    struct TimedWriteHalf {
+        inner: <teletypewriter::Pty as EventedPty>::WriteHalf,
+        writes: mpsc::Sender<(Instant, Vec<u8>)>,
+    }
+
+    impl Write for TimedWriteHalf {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            let n = self.inner.write(buf)?;
+            let _ = self.writes.send((Instant::now(), buf[..n].to_vec()));
+            Ok(n)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            self.inner.flush()
+        }
+    }
+
+    impl corcovado::event::Evented for TimedWriteHalf {
+        fn register(
+            &self,
+            poll: &corcovado::Poll,
+            token: corcovado::Token,
+            interest: corcovado::Ready,
+            opts: corcovado::PollOpt,
+        ) -> io::Result<()> {
+            self.inner.register(poll, token, interest, opts)
+        }
+        fn reregister(
+            &self,
+            poll: &corcovado::Poll,
+            token: corcovado::Token,
+            interest: corcovado::Ready,
+            opts: corcovado::PollOpt,
+        ) -> io::Result<()> {
+            self.inner.reregister(poll, token, interest, opts)
+        }
+        fn deregister(&self, poll: &corcovado::Poll) -> io::Result<()> {
+            self.inner.deregister(poll)
+        }
+    }
+
     impl EventedPty for Timed {
+        type WriteHalf = TimedWriteHalf;
+        fn write_half(&mut self) -> io::Result<TimedWriteHalf> {
+            Ok(TimedWriteHalf {
+                inner: self.inner.write_half()?,
+                writes: self.writes.clone(),
+            })
+        }
         fn shutdown(&mut self) -> io::Result<()> {
             self.inner.shutdown()
         }
@@ -191,7 +239,7 @@ mod unix {
             1200,
         )
         .expect("pty");
-        let terminal = Arc::new(FairMutex::new(Crosswords::new(
+        let terminal = Arc::new(TerminalLock::new(Crosswords::new(
             CrosswordsSize::new(200, 50),
             CursorShape::Block,
             listener.clone(),
@@ -280,7 +328,7 @@ mod unix {
             600,
         )
         .expect("pty");
-        let terminal = Arc::new(FairMutex::new(Crosswords::new(
+        let terminal = Arc::new(TerminalLock::new(Crosswords::new(
             CrosswordsSize::new(80, 24),
             CursorShape::Block,
             listener.clone(),
