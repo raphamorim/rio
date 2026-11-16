@@ -489,6 +489,7 @@ where
             }
 
             // Handle channel events, if there are any.
+            let queued_before = state.needs_write();
             if !self.drain_recv_channel(state) {
                 return Ok(ExitReason::Shutdown);
             }
@@ -498,8 +499,10 @@ where
             // event cost a re-registration, a second poll round and a
             // second wakeup per keystroke. Whatever does not fit stays
             // queued, the writable interest below picks it up, and an
-            // error surfaces through that path as before.
-            if state.needs_write() {
+            // error surfaces through that path as before. Bytes already
+            // waiting on that interest are not retried here: a full PTY
+            // would otherwise cost a failing write on every read wakeup.
+            if state.needs_write() && !queued_before {
                 if let Err(err) = self.pty_write(state) {
                     tracing::debug!("PTY write deferred to the writable event: {err}");
                 }

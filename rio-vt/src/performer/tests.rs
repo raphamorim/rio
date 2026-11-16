@@ -45,10 +45,20 @@ impl Read for TestPty {
 struct RecordingWriter {
     bytes: Vec<u8>,
     written: Option<mpsc::Sender<Vec<u8>>>,
+    /// A full PTY: every write is refused with `WouldBlock`.
+    blocked: bool,
+    /// Every write attempt, refused or not.
+    attempts: Option<mpsc::Sender<()>>,
 }
 
 impl Write for RecordingWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if let Some(sender) = &self.attempts {
+            let _ = sender.send(());
+        }
+        if self.blocked {
+            return Err(io::Error::from(ErrorKind::WouldBlock));
+        }
         self.bytes.extend_from_slice(buf);
         if let Some(sender) = &self.written {
             let _ = sender.send(buf.to_vec());
@@ -374,6 +384,74 @@ fn input_is_written_on_the_wakeup_that_delivers_it() {
     channel.send(Msg::Shutdown).unwrap();
     let (machine, _) = handle.join().unwrap();
     assert_eq!(machine.pty.writer.bytes, b"ls\r".to_vec());
+}
+
+// Bytes refused by a full PTY wait for the writable event. Read
+// wakeups in between do not retry them.
+#[test]
+fn a_stuck_write_is_not_retried_on_read_wakeups() {
+    let (events, damaged) = mpsc::channel();
+    let (registration, readiness) = corcovado::Registration::new2();
+    let (attempts_tx, attempts) = mpsc::channel();
+    let terminal = Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        EventRecorder(events.clone()),
+        WindowId::from(0),
+        0,
+        0,
+    );
+    let machine = Machine::new(
+        Arc::new(FairMutex::new(terminal)),
+        TestPty {
+            bytes: io::Cursor::new(b"output".to_vec()),
+            ending: None,
+            exhausted: None,
+            writer: RecordingWriter {
+                blocked: true,
+                attempts: Some(attempts_tx),
+                ..RecordingWriter::default()
+            },
+            child: Some(registration),
+            registration_error: false,
+            read_event: true,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        EventRecorder(events),
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let channel = machine.channel();
+    let handle = machine.spawn();
+    let wait = |rx: &mpsc::Receiver<()>| rx.recv_timeout(Duration::from_secs(5)).unwrap();
+
+    // The keystroke is attempted on its wakeup and refused.
+    channel
+        .send(Msg::Input(std::borrow::Cow::Borrowed(b"a")))
+        .unwrap();
+    wait(&attempts);
+
+    // A read wakeup: output arrives and is parsed, nothing is written.
+    readiness.set_readiness(Ready::readable()).unwrap();
+    assert_eq!(
+        damaged.recv_timeout(Duration::from_secs(5)).unwrap(),
+        "damaged"
+    );
+
+    channel.send(Msg::Shutdown).unwrap();
+    let (machine, state) = handle.join().unwrap();
+    assert!(
+        attempts.try_recv().is_err(),
+        "the read wakeup must not have retried the stuck bytes"
+    );
+    assert!(
+        state.needs_write(),
+        "the bytes are still queued for the writable event"
+    );
+    assert!(machine.pty.writer.bytes.is_empty());
 }
 
 #[cfg(target_os = "macos")]
