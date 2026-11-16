@@ -1233,13 +1233,9 @@ impl Surface {
         processor.advance(&mut *term, bytes);
         // With a PTY thread the terminal queues its replies for that
         // thread; injected bytes are parsed here instead, so their
-        // replies are handed on from here.
-        let mut replies = Vec::new();
-        term.drain_pty_replies(|reply| replies.push(reply));
-        drop(term);
-        for reply in replies {
-            self.send(Cow::Owned(reply.into_bytes()));
-        }
+        // replies are handed on from here. `send` only enqueues, so
+        // the lock is held a moment longer and nothing is copied twice.
+        term.drain_pty_replies(|reply| self.send(Cow::Owned(reply.into_bytes())));
     }
 
     /// Plain-text URL under a viewport cell, with the run to underline on
