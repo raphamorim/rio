@@ -1032,7 +1032,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // that never received a focus event yet (created in
                     // the background) must not have OSC 52 silently
                     // dropped by an is_focused that never initialized.
-                    // A declined query is still settled, with no bytes.
+                    // A declined query is still settled, with no bytes:
+                    // the terminal raised its fence when it parsed the
+                    // query, and only the reply lowers it. Sending
+                    // nothing would route every later reply through
+                    // this thread for good.
                     let text = if route.window.is_focused || !route.window.focus_seen {
                         format(clipboard.get(clipboard_type).as_str()).into_bytes()
                     } else {
