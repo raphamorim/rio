@@ -1176,7 +1176,6 @@ impl<U: Handler> Perform for Performer<'_, U> {
         should_ignore: bool,
         action: char,
     ) {
-        debug!("[csi_dispatch] {params:?} {action:?}");
         macro_rules! csi_unhandled {
             () => {{
                 warn!(

@@ -1297,11 +1297,6 @@ impl<U: EventListener> Crosswords<U> {
 
     #[inline]
     fn scroll_down_relative(&mut self, origin: Line, mut lines: usize) {
-        debug!(
-            "Scrolling down relative: origin={}, lines={}",
-            origin, lines
-        );
-
         lines = std::cmp::min(
             lines,
             (self.scroll_region.end - self.scroll_region.start).0 as usize,
@@ -2991,7 +2986,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        trace!("Setting private mode: {:?}", mode);
         match mode {
             NamedPrivateMode::UrgencyHints => self.mode.insert(Mode::URGENCY_HINTS),
             NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
@@ -3097,7 +3091,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        trace!("Unsetting private mode: {:?}", mode);
         match mode {
             NamedPrivateMode::UrgencyHints => self.mode.remove(Mode::URGENCY_HINTS),
             NamedPrivateMode::SwapScreenAndSetRestoreCursor => {
@@ -3230,7 +3223,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn goto(&mut self, line: Line, col: Column) {
-        trace!("Going to: line={}, col={}", line, col);
         let (y_offset, max_y) = if self.mode.contains(Mode::ORIGIN) {
             (self.scroll_region.start, self.scroll_region.end - 1)
         } else {
@@ -3275,8 +3267,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn move_backward_tabs(&mut self, count: u16) {
-        trace!("Moving backward {} tabs", count);
-
         for _ in 0..count {
             let mut col = self.grid.cursor.pos.col;
 
@@ -3573,7 +3563,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn terminal_attribute(&mut self, attr: Attr) {
-        trace!("Setting attribute: {:?}", attr);
         use crate::crosswords::style::{StyleFlags, UnderlineKind};
         match attr {
             Attr::Foreground(color) => self.grid.update_template_style(|s| s.fg = color),
@@ -4692,7 +4681,6 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn move_forward_tabs(&mut self, count: u16) {
-        trace!("Moving forward {} tabs", count);
         let num_cols = self.columns();
         for _ in 0..count {
             let mut col = self.grid.cursor.pos.col;
