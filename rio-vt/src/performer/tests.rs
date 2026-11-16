@@ -337,7 +337,7 @@ fn read_error_preserves_buffered_output_under_lock_contention() {
 #[test]
 fn final_output_can_be_drained_across_multiple_parse_budgets() {
     // NUL padding consumes parse budgets without scrolling the final marker.
-    let mut bytes = vec![0; MAX_LOCKED_READ * 2 + 1];
+    let mut bytes = vec![0; READ_BUDGET * 2 + 1];
     bytes.extend_from_slice(b"final output");
     let mut machine = machine(bytes, None);
     let mut state = State::default();
@@ -359,7 +359,7 @@ fn final_output_can_be_drained_across_multiple_parse_budgets() {
 
 #[test]
 fn child_exit_drains_multiple_budgets_and_finishes_pending_sync() {
-    let mut bytes = vec![0; MAX_LOCKED_READ * 2 + 1];
+    let mut bytes = vec![0; READ_BUDGET * 2 + 1];
     bytes.extend_from_slice(b"\x1b[?2026hfinal output");
     // WouldBlock models a descendant retaining the slave after the child exits.
     let mut machine = machine(bytes, Some(ErrorKind::WouldBlock));
@@ -530,11 +530,11 @@ fn input_is_written_on_the_wakeup_that_delivers_it() {
     assert_eq!(machine.pty.writer.recorded(), b"ls\r".to_vec());
 }
 
-// Bytes refused by a full PTY wait for the writable event. Read
-// wakeups in between do not retry them, and a reply the parse produces
-// meanwhile queues behind them.
+// Bytes refused by a full PTY wait for the writable event. Messages
+// arriving in between do not retry them, and a reply the parse
+// produces meanwhile queues behind them.
 #[test]
-fn a_stuck_write_is_not_retried_on_read_wakeups() {
+fn a_stuck_write_is_not_retried_when_more_arrives() {
     let (events, damaged) = mpsc::channel();
     let (registration, readiness) = corcovado::Registration::new2();
     let (attempts_tx, attempts) = mpsc::channel();
@@ -911,7 +911,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
     let (held_tx, held) = mpsc::channel::<()>();
     let holder_terminal = Arc::clone(&terminal);
     let holder = std::thread::spawn(move || {
-        let guard = holder_terminal.lock_reader();
+        let guard = holder_terminal.lock();
         held_tx.send(()).unwrap();
         release.recv().unwrap();
         drop(guard);
@@ -978,6 +978,7 @@ struct SpawnedReader {
     channel: channel::Sender<Msg>,
     readiness: corcovado::SetReadiness,
     written: mpsc::Receiver<Vec<u8>>,
+    terminal: Arc<TerminalLock<Crosswords<OnTitle>>>,
     handle: JoinHandle<(Machine<TestPty, OnTitle>, State)>,
 }
 
@@ -1035,7 +1036,7 @@ fn spawn_reader(payload: Vec<u8>, piled: Option<u8>, listener: OnTitle) -> Spawn
         let (held_tx, held) = mpsc::channel::<()>();
         let holder_terminal = Arc::clone(&terminal);
         std::thread::spawn(move || {
-            let guard = holder_terminal.lock_reader();
+            let guard = holder_terminal.lock();
             held_tx.send(()).unwrap();
             release.recv().unwrap();
             drop(guard);
@@ -1047,6 +1048,7 @@ fn spawn_reader(payload: Vec<u8>, piled: Option<u8>, listener: OnTitle) -> Spawn
         channel,
         readiness,
         written,
+        terminal,
         handle,
     }
 }
@@ -1096,7 +1098,8 @@ fn input_is_written_while_another_thread_holds_the_terminal() {
 // its own bytes under the lock during a handoff, as librio does, is
 // written between the replies of the chunk before and the chunk after.
 // An embedder scheduled so late that it parsed only after chunk 3 was
-// let go of proves nothing; such a run is repeated.
+// let go of proves nothing, and neither does a handoff that hit the
+// bound, where the reader rightly moved on; such a run is repeated.
 #[test]
 fn an_injected_reply_during_a_handoff_keeps_its_place() {
     for _ in 0..10 {
@@ -1121,11 +1124,12 @@ fn an_injected_reply_during_a_handoff_keeps_its_place() {
             got.extend(reader.written.recv_timeout(timeout).unwrap());
         }
         reader.channel.send(Msg::Shutdown).unwrap();
+        let bound_hits = reader.terminal.bound_hits();
         let (machine, _) = reader.handle.join().unwrap();
         assert_eq!(first_line(&machine, 1), "4", "the whole pile was parsed");
 
         let asked = asked.recv_timeout(timeout).unwrap();
-        if listener.chunk_at(asked).is_none_or(|chunk| chunk >= '3') {
+        if bound_hits > 0 || listener.chunk_at(asked).is_none_or(|chunk| chunk >= '3') {
             continue;
         }
         let mut expected = da.clone();
@@ -1143,7 +1147,10 @@ fn an_injected_reply_during_a_handoff_keeps_its_place() {
 /// Stands in for the owner of the terminal, as a frontend would: a
 /// query only the owner can answer is answered into the writer's
 /// inbox, and a reply the terminal routes through the owner is passed
-/// on to the same inbox.
+/// on to the same inbox. It answers from inside the parser, on the
+/// reader's thread, where a frontend answers later from its own; that
+/// is the earliest an answer can arrive, the closest race with the
+/// replies parsed right behind the query.
 #[derive(Clone)]
 struct Owner {
     channel: Arc<std::sync::OnceLock<channel::Sender<Msg>>>,

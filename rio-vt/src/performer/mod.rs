@@ -90,11 +90,11 @@ const READ_BUFFER_SIZE: usize = 0x10_0000;
 #[cfg(feature = "pty")]
 pub const READ_CHUNK: usize = 65536;
 /// Max bytes to parse per `pty_read` call before the loop serves its
-/// channel again: ~1ms of parsing at full SGR density, well inside a
-/// 120Hz frame budget. The terminal itself is let go of after every
-/// chunk, so a thread waiting for it never waits this long.
+/// control channel again: ~1ms of parsing at full SGR density, well
+/// inside a 120Hz frame budget. The terminal itself is let go of after
+/// every chunk, so a thread waiting for it never waits this long.
 #[cfg(feature = "pty")]
-const MAX_LOCKED_READ: usize = READ_CHUNK * 4;
+const READ_BUDGET: usize = READ_CHUNK * 4;
 
 #[cfg(feature = "pty")]
 #[derive(Debug, PartialEq, Eq)]
@@ -110,13 +110,13 @@ enum ExitReason {
     ChildExited(Option<i32>),
 }
 
-// Guards the pairing that once regressed: a MAX_LOCKED_READ below
+// Guards the pairing that once regressed: a READ_BUDGET below
 // READ_CHUNK ends the burst loop after a single partial chunk.
 #[cfg(feature = "pty")]
 const _: () = {
-    assert!(MAX_LOCKED_READ >= READ_CHUNK);
-    assert!(MAX_LOCKED_READ.is_multiple_of(READ_CHUNK));
-    assert!(READ_BUFFER_SIZE >= MAX_LOCKED_READ);
+    assert!(READ_BUDGET >= READ_CHUNK);
+    assert!(READ_BUDGET.is_multiple_of(READ_CHUNK));
+    assert!(READ_BUFFER_SIZE >= READ_BUDGET);
 };
 
 #[cfg(feature = "pty")]
@@ -253,7 +253,7 @@ where
 
     /// Read from the PTY and parse into the terminal.
     ///
-    /// Reads until the PTY returns `WouldBlock` or `MAX_LOCKED_READ`
+    /// Reads until the PTY returns `WouldBlock` or `READ_BUDGET`
     /// bytes were parsed. A PTY hands back a few KiB per `read`, so
     /// stopping on a short read would pay a full poll round trip per
     /// chunk instead of per burst and cap drain throughput; the
@@ -326,7 +326,7 @@ where
             processed += unprocessed;
             unprocessed = 0;
 
-            if stopped || processed >= MAX_LOCKED_READ {
+            if stopped || processed >= READ_BUDGET {
                 self.end_burst(state, &mut terminal, held_before);
                 self.let_go(terminal);
                 ended = true;
@@ -467,7 +467,7 @@ where
         )?;
 
         // The PTY is level-triggered: pty_read may stop before draining
-        // the fd (MAX_LOCKED_READ), which would lose an edge, and level
+        // the fd (READ_BUDGET), which would lose an edge, and level
         // registrations stay armed so no re-registration is needed after
         // each event. Only reading is of interest here; the writer
         // thread watches the write side.
@@ -644,10 +644,11 @@ where
 /// The writer thread of a terminal: everything that goes to the PTY,
 /// the owner's input and answers and the reader's parser replies,
 /// arrives in one inbox and is written in that order. Nothing here
-/// waits on the reader, so a keystroke is written while a burst is
-/// parsed and while the terminal is handed to the renderer. Resizes and
-/// the shutdown, which the owner sends to the same inbox, are passed on
-/// to the reader.
+/// waits on a read, so a keystroke is written while a burst is parsed
+/// and while the terminal is handed to the renderer; the one lock taken
+/// here tells the terminal an owner's answer was queued, and waits at
+/// most a chunk for it. Resizes and the shutdown, which the owner sends
+/// to the same inbox, are passed on to the reader.
 #[cfg(feature = "pty")]
 struct Writer<W, U: EventListener> {
     inbox: PeekableReceiver<Msg>,

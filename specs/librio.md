@@ -48,7 +48,7 @@ button/pos/scroll, set_size, set_content_scale, set_focus, set_occlusion.
 
 ```rust
 pub struct Engine { /* shared config, action fan-out */ }
-pub struct Surface { /* one PTY + grid; owns the IO thread */ }
+pub struct Surface { /* one PTY + grid; owns the IO threads */ }
 pub struct RenderState { /* snapshot + dirty rows */ }
 
 pub trait SurfaceDelegate: Send + Sync {

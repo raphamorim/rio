@@ -63,19 +63,19 @@ impl<T> TerminalLock<T> {
 
     /// Lock the terminal without signalling demand. For the reader
     /// thread, whose hot loop is what demand is measured against.
-    pub fn lock_reader(&self) -> MutexGuard<'_, T> {
+    pub(crate) fn lock_reader(&self) -> MutexGuard<'_, T> {
         self.data.lock()
     }
 
     /// Try to lock the terminal without signalling demand, for the
     /// reader thread; `None` if another thread holds it.
-    pub fn try_lock_reader(&self) -> Option<MutexGuard<'_, T>> {
+    pub(crate) fn try_lock_reader(&self) -> Option<MutexGuard<'_, T>> {
         self.data.try_lock()
     }
 
     /// Whether a thread is waiting in [`Self::lock`].
     #[inline]
-    pub fn has_demand(&self) -> bool {
+    pub(crate) fn has_demand(&self) -> bool {
         self.demand.load(Ordering::Relaxed) > 0
     }
 
@@ -84,7 +84,7 @@ impl<T> TerminalLock<T> {
     /// [`HANDOFF_TIMEOUT`] passes, before asking for it again. Spins
     /// briefly, then yields the processor, which is what a waiter that
     /// has not run yet needs most.
-    pub fn yield_to_demand(&self) {
+    pub(crate) fn yield_to_demand(&self) {
         if !self.has_demand() {
             return;
         }
@@ -156,9 +156,8 @@ mod tests {
     #[test]
     fn yielding_to_no_demand_returns_at_once() {
         let lock = TerminalLock::new(());
-        let started = Instant::now();
         lock.yield_to_demand();
-        assert!(started.elapsed() < HANDOFF_TIMEOUT);
+        assert_eq!(lock.bound_hits(), 0, "the yield did not wait at all");
     }
 
     // A reader that lets go fairly and yields does not get the lock

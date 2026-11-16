@@ -12120,8 +12120,8 @@ mod tests {
     }
 
     // Parser replies reach the owner of the terminal as events unless
-    // the PTY thread takes them; then they queue for it and no event
-    // is sent.
+    // a sink to the PTY is installed; then they go down the sink and
+    // no event is sent.
     #[test]
     fn replies_are_events_unless_routed_through_the_pty() {
         let (mut cw, events) = make_crosswords_with_events(3);
@@ -12150,7 +12150,7 @@ mod tests {
         assert!(queued[1].starts_with("\x1bP>|Rio "));
         let mut again = Vec::new();
         again.extend(sunk.lock().unwrap().drain(..));
-        assert!(again.is_empty(), "a drain empties the queue");
+        assert!(again.is_empty(), "the sink holds nothing more");
 
         cw.set_reply_sink(None);
         cw.identify_terminal(None);
