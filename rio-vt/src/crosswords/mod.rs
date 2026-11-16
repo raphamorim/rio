@@ -472,9 +472,15 @@ where
     scroll_region: Range<Line>,
     /// Parser replies (DA, DSR, DECRQM and the like) waiting for the
     /// PTY thread, when replies are routed through it; see
-    /// [`Self::route_replies_through_pty`].
+    /// [`Self::set_enable_pty_reply`].
     pty_replies: Vec<String>,
-    replies_through_pty: bool,
+    enable_pty_reply: bool,
+    /// A query the UI thread must answer (a color, the clipboard, the
+    /// text area in pixels) went out as an event during this burst.
+    /// Until the burst is drained every later reply goes the same way,
+    /// so a program using one reply as a fence for another sees them
+    /// in the order it asked.
+    ui_reply_pending: bool,
     tabs: TabStops,
     event_proxy: U,
     pub selection: Option<Selection>,
@@ -580,7 +586,8 @@ impl<U: EventListener> Crosswords<U> {
             active_charset: CharsetIndex::default(),
             scroll_region,
             pty_replies: Vec::new(),
-            replies_through_pty: false,
+            enable_pty_reply: false,
+            ui_reply_pending: false,
             event_proxy,
             colors: term_colors,
             title: String::from(""),
@@ -1247,27 +1254,40 @@ impl<U: EventListener> Crosswords<U> {
     /// a query is answered without crossing to the UI thread and back.
     /// Off by default: an embedder that feeds bytes itself and has no
     /// PTY thread receives each reply as a `PtyWrite` event.
-    pub fn route_replies_through_pty(&mut self, enabled: bool) {
-        self.replies_through_pty = enabled;
+    pub fn set_enable_pty_reply(&mut self, enabled: bool) {
+        self.enable_pty_reply = enabled;
     }
 
     /// Hand every reply accumulated since the last drain to `sink`,
-    /// oldest first.
+    /// oldest first. Ends the burst for the fence a UI-answered query
+    /// raised, see [`Self::ui_query_sent`].
     pub fn drain_pty_replies(&mut self, mut sink: impl FnMut(String)) {
         for reply in self.pty_replies.drain(..) {
             sink(reply);
         }
+        self.ui_reply_pending = false;
     }
 
     /// Answer the program: queued for the PTY thread, or sent as an
-    /// event for the owner of the terminal to write.
+    /// event for the owner of the terminal to write. While a query the
+    /// UI thread answers is in flight for this burst, the event path
+    /// keeps the order between the two.
     fn reply(&mut self, text: String) {
-        if self.replies_through_pty {
+        if self.enable_pty_reply && !self.ui_reply_pending {
             self.pty_replies.push(text);
         } else {
             self.event_proxy
                 .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
         }
+    }
+
+    /// A query only the UI thread can answer went out as an event. Its
+    /// answer comes back through the UI thread's queue, so until this
+    /// burst is drained every reply takes that queue too; a DA sent
+    /// right behind an OSC 11 query, the fence termenv and others use,
+    /// is then answered after it as the program expects.
+    fn ui_query_sent(&mut self) {
+        self.ui_reply_pending = true;
     }
 
     /// Damage the entire line at the cursor position
@@ -3237,6 +3257,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         );
 
         let terminator = terminator.to_owned();
+        self.ui_query_sent();
         self.event_proxy.send_event(
             RioEvent::ColorRequest(
                 self.route_id,
@@ -4654,6 +4675,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let terminator = terminator.to_owned();
 
+        self.ui_query_sent();
+
         self.event_proxy.send_event(
             RioEvent::ClipboardLoad(
                 self.route_id,
@@ -4805,6 +4828,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn text_area_size_pixels(&mut self) {
         debug!("text_area_size_pixels");
+        self.ui_query_sent();
         self.event_proxy.send_event(
             RioEvent::TextAreaSizeRequest(
                 self.route_id,
@@ -4896,6 +4920,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             2 => {
                 match pa {
                     1 => {
+                        self.ui_query_sent();
                         self.event_proxy.send_event(
                             RioEvent::TextAreaSizeRequest(
                                 self.route_id,
@@ -11893,6 +11918,39 @@ mod tests {
         assert_eq!(replies(&events), vec!["\x1b[?9;1$y".to_string()]);
     }
 
+    // A query only the UI thread answers fences the burst: the replies
+    // behind it go through the UI thread too, so a DA sent right after
+    // an OSC 11 query is answered after it. The next burst is direct.
+    #[test]
+    fn a_ui_answered_query_fences_the_burst_for_the_replies_behind_it() {
+        let (mut cw, events) = make_crosswords_with_events(4);
+        cw.set_enable_pty_reply(true);
+        let kinds = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
+            events
+                .borrow()
+                .iter()
+                .filter_map(|e| match e {
+                    RioEvent::ColorRequest(..) => Some("color"),
+                    RioEvent::PtyWrite(..) => Some("reply"),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut parser = crate::performer::handler::Processor::default();
+        // Background color query, then primary DA as the fence.
+        parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b[c");
+        assert_eq!(kinds(&events), vec!["color", "reply"], "in the order asked");
+        let mut queued = Vec::new();
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert!(queued.is_empty(), "nothing overtook the color answer");
+
+        // The burst is over: a later query is answered directly again.
+        parser.advance(&mut cw, b"\x1b[c");
+        assert_eq!(kinds(&events).len(), 2);
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued.len(), 1);
+    }
+
     // Parser replies reach the owner of the terminal as events unless
     // the PTY thread takes them; then they queue for it and no event
     // is sent.
@@ -11909,7 +11967,7 @@ mod tests {
         };
         assert_eq!(replies(&events), 1);
 
-        cw.route_replies_through_pty(true);
+        cw.set_enable_pty_reply(true);
         cw.identify_terminal(None);
         cw.report_version();
         assert_eq!(replies(&events), 1, "no event once routed");
@@ -11922,7 +11980,7 @@ mod tests {
         cw.drain_pty_replies(|r| again.push(r));
         assert!(again.is_empty(), "a drain empties the queue");
 
-        cw.route_replies_through_pty(false);
+        cw.set_enable_pty_reply(false);
         cw.identify_terminal(None);
         assert_eq!(replies(&events), 2, "events again once unrouted");
     }

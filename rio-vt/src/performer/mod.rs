@@ -252,7 +252,7 @@ where
 
         // Replies the parser produces are written by this thread, right
         // after the parse that produced them.
-        terminal.lock().route_replies_through_pty(true);
+        terminal.lock().set_enable_pty_reply(true);
 
         Ok(Machine {
             sender,
@@ -341,9 +341,6 @@ where
 
             // Parse the incoming bytes.
             state.parser.advance(&mut **terminal, &buf[..unprocessed]);
-            terminal.drain_pty_replies(|reply| {
-                state.write_list.push_back(Cow::Owned(reply.into_bytes()))
-            });
 
             processed += unprocessed;
             unprocessed = 0;
@@ -352,6 +349,15 @@ where
             if stopped || processed >= MAX_LOCKED_READ {
                 break;
             }
+        }
+
+        // The replies the burst produced, in order, behind any bytes
+        // already waiting. Drained once per burst so a query the UI
+        // thread answers fences the whole burst, not one chunk of it.
+        if let Some(ref mut term) = terminal {
+            term.drain_pty_replies(|reply| {
+                state.write_list.push_back(Cow::Owned(reply.into_bytes()))
+            });
         }
 
         // Notify renderer that new damage is available.
