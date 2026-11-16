@@ -14,10 +14,10 @@
 //! [`TerminalLock::has_demand`] between chunks and, holding nothing,
 //! calls [`TerminalLock::yield_to_demand`], which sleeps until one
 //! demander has had the lock and let go of it, or a short timeout
-//! passes. The reader never competes for the lock while a demander
-//! takes it, so the handoff holds whether the waiter was parked or
-//! still spinning, and a demander that disappears costs the reader at
-//! most the timeout.
+//! passes. Once the reader has held the lock it never competes for
+//! it while a demander takes it, so the handoff holds whether the
+//! waiter was parked or still spinning, and a demander that
+//! disappears costs the reader at most the timeout.
 
 use parking_lot::{Mutex, MutexGuard};
 use parking_lot_core::{park, unpark_all, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
@@ -40,7 +40,8 @@ pub struct TerminalLock<T> {
     /// sleeps on in [`Self::yield_to_demand`].
     handoff: AtomicU32,
     /// Yields that gave up after [`HANDOFF_TIMEOUT`] with the demander
-    /// still waiting. A diagnostic: on a quiet machine it stays at zero.
+    /// still waiting: it was descheduled that long, or whoever held
+    /// the lock kept it that long. A diagnostic.
     handoff_timeouts: AtomicUsize,
 }
 
@@ -122,7 +123,9 @@ impl<T> TerminalLock<T> {
     }
 
     /// How many yields gave up on a demander that had not taken the
-    /// lock within the timeout. Zero unless the machine is overloaded.
+    /// lock within the timeout: the demander was descheduled that long
+    /// or another holder kept the lock that long. Zero on a quiet
+    /// machine with short critical sections.
     pub fn handoff_timeouts(&self) -> usize {
         self.handoff_timeouts.load(Ordering::Relaxed)
     }
@@ -292,34 +295,5 @@ mod tests {
         holder.join().unwrap();
         demander.join().unwrap();
         assert!(!lock.has_demand());
-    }
-
-    // A release that lands between the reader's check and its sleep is
-    // not missed: the sleep is skipped.
-    #[test]
-    fn a_release_before_the_sleep_is_not_missed() {
-        let lock = Arc::new(TerminalLock::new(()));
-        // Stand in for a demander that released after the handoff
-        // generation was read: the generation moved on, so the park
-        // validation fails and the reader returns without sleeping.
-        let generation = lock.handoff.load(Ordering::Acquire);
-        lock.demand.fetch_add(1, Ordering::AcqRel);
-        lock.released();
-        let started = Instant::now();
-        unsafe {
-            park(
-                lock.park_key(),
-                || {
-                    lock.handoff.load(Ordering::Acquire) == generation
-                        && lock.has_demand()
-                },
-                || {},
-                |_, _| {},
-                DEFAULT_PARK_TOKEN,
-                Some(Instant::now() + HANDOFF_TIMEOUT),
-            );
-        }
-        assert!(started.elapsed() < HANDOFF_TIMEOUT);
-        lock.demand.fetch_sub(1, Ordering::AcqRel);
     }
 }

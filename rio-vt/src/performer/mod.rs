@@ -88,7 +88,7 @@ const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// concurrently. (The queue itself is sized by the pty's baud rate;
 /// see `create_termp`.)
 #[cfg(feature = "pty")]
-const READ_CHUNK: usize = 65536;
+pub const READ_CHUNK: usize = 65536;
 /// Max bytes to parse per `pty_read` call while nobody waits for the
 /// terminal: ~1ms of parsing at full SGR density, well inside a 120Hz
 /// frame budget; measured ~3% more drain throughput than yielding per
@@ -278,12 +278,12 @@ where
 
     /// Read from the PTY and parse into the terminal.
     ///
-    /// Reads until the PTY returns `WouldBlock` (or `MAX_LOCKED_READ`
-    /// bytes were parsed under one lock hold). A PTY hands back a few
-    /// KiB per `read`, so stopping on a short read would pay a full
-    /// poll round trip per chunk instead of per burst and cap drain
-    /// throughput; the confirming read that ends a burst costs a
-    /// single `EAGAIN`.
+    /// Reads until the PTY returns `WouldBlock`, `MAX_LOCKED_READ`
+    /// bytes were parsed, or another thread asks for the terminal. A
+    /// PTY hands back a few KiB per `read`, so stopping on a short read
+    /// would pay a full poll round trip per chunk instead of per burst
+    /// and cap drain throughput; the confirming read that ends a burst
+    /// costs a single `EAGAIN`.
     #[inline]
     fn pty_read(&mut self, state: &mut State, buf: &mut [u8]) -> io::Result<ReadOutcome> {
         let mut unprocessed = 0;
@@ -441,7 +441,7 @@ where
                     // Queued ahead of whatever this wakeup's read
                     // produces, so the terminal may hand the replies
                     // behind the query back to this thread.
-                    self.terminal.lock().ui_query_answered();
+                    self.terminal.lock_reader().ui_query_answered();
                 }
                 Msg::Resize(window_size) => {
                     let _ = self.pty.set_winsize(window_size.into());
@@ -551,7 +551,7 @@ where
                 .sync_deadline
                 .is_some_and(|deadline| deadline <= Instant::now())
             {
-                let mut terminal = self.terminal.lock();
+                let mut terminal = self.terminal.lock_reader();
                 if terminal.sync_update_expired(Instant::now()) {
                     terminal.end_sync_update();
                     self.notify_damage(&mut terminal);
@@ -672,7 +672,7 @@ where
 
         // Flush exactly once before publishing any exit notification.
         let pending_sync = {
-            let mut terminal = self.terminal.lock();
+            let mut terminal = self.terminal.lock_reader();
             let pending = terminal.synchronized_output();
             terminal.end_sync_update();
             if pending {
@@ -686,7 +686,7 @@ where
                     RioEvent::ChildExited(self.route_id, *status),
                     self.window_id,
                 );
-                self.terminal.lock().exit();
+                self.terminal.lock_reader().exit();
             }
             // A reader failure also closes the terminal, since shutdown()
             // below kills the child. The close is driven by exit() (it
@@ -699,7 +699,7 @@ where
                     RioEvent::ChildExited(self.route_id, None),
                     self.window_id,
                 );
-                self.terminal.lock().exit();
+                self.terminal.lock_reader().exit();
             }
             Ok(ExitReason::Shutdown) => (),
         }
