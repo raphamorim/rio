@@ -42,10 +42,12 @@ fi
 # Workspace version plus every path dependency pinned to it. Only
 # lines that declare the workspace version or a path dep are touched,
 # so a third-party crate that happens to share the version string can
-# never be rewritten.
+# never be rewritten. librio names rio-vt by path in its own manifest
+# (it turns the default features off, which a workspace dependency
+# cannot), so its pin moves with the rest.
 CUR="$current" NEW="$version" perl -pi -e \
     's/version = "\Q$ENV{CUR}\E"/version = "$ENV{NEW}"/ if /^version = / || /path = /' \
-    Cargo.toml
+    Cargo.toml librio/Cargo.toml
 cargo update --workspace --quiet
 
 # AppStream metainfo: newest release first, right under <releases>.

@@ -14,7 +14,7 @@ publish = false
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-rio-vt = { path = "../rio-vt", version = "0.5.0", default-features = false }
+rio-vt = { path = "../rio-vt", version = "0.6.0", default-features = false }
 rio-fonts = { workspace = true, features = ["symbols-nerd-font"] }
 rio-graphics = { workspace = true }
 rustc-hash = { workspace = true }
