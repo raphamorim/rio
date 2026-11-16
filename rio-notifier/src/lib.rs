@@ -28,16 +28,62 @@ pub fn send_notification(title: &str, body: &str) {
 
 #[cfg(target_os = "macos")]
 mod platform {
-    use block2::RcBlock;
+    use block2::{Block, RcBlock};
     use objc::runtime::Object;
     use objc::{class, msg_send, sel, sel_impl};
-    use objc2::runtime::Bool;
+    use objc2::rc::{Allocated, Retained};
+    use objc2::runtime::{Bool, NSObject, NSObjectProtocol, ProtocolObject};
+    use objc2::{declare_class, msg_send_id, mutability, ClassType, DeclaredClass};
     use objc2_foundation::{NSError, NSString};
     use objc2_user_notifications::{
-        UNAuthorizationOptions, UNMutableNotificationContent, UNNotificationRequest,
-        UNUserNotificationCenter,
+        UNAuthorizationOptions, UNMutableNotificationContent, UNNotification,
+        UNNotificationPresentationOptions, UNNotificationRequest,
+        UNUserNotificationCenter, UNUserNotificationCenterDelegate,
     };
     use std::sync::Once;
+
+    declare_class!(
+        struct NotificationDelegate;
+
+        // SAFETY:
+        // - The superclass NSObject does not have any subclassing requirements.
+        // - Interior mutability is a safe default.
+        // - `NotificationDelegate` does not implement `Drop`.
+        unsafe impl ClassType for NotificationDelegate {
+            type Super = NSObject;
+            type Mutability = mutability::InteriorMutable;
+            const NAME: &'static str = "RioNotificationDelegate";
+        }
+
+        impl DeclaredClass for NotificationDelegate {
+            type Ivars = ();
+        }
+
+        unsafe impl NotificationDelegate {
+            #[method_id(init)]
+            fn init(this: Allocated<Self>) -> Option<Retained<Self>> {
+                unsafe { msg_send_id![super(this.set_ivars(())), init] }
+            }
+        }
+
+        unsafe impl NSObjectProtocol for NotificationDelegate {}
+
+        unsafe impl UNUserNotificationCenterDelegate for NotificationDelegate {
+            #[method(userNotificationCenter:willPresentNotification:withCompletionHandler:)]
+            fn will_present(
+                &self,
+                _center: &UNUserNotificationCenter,
+                _notification: &UNNotification,
+                completion_handler: &Block<dyn Fn(UNNotificationPresentationOptions)>,
+            ) {
+                completion_handler.call((
+                    UNNotificationPresentationOptions::UNNotificationPresentationOptionBanner
+                        | UNNotificationPresentationOptions::UNNotificationPresentationOptionList
+                        | UNNotificationPresentationOptions::UNNotificationPresentationOptionSound,
+                ));
+            }
+        }
+    );
 
     pub(crate) fn request_authorization() {
         static INIT: Once = Once::new();
@@ -52,6 +98,20 @@ mod platform {
             }
 
             let center = UNUserNotificationCenter::currentNotificationCenter();
+
+            // macOS does not present a notification posted by the app that is
+            // currently frontmost unless the center's delegate asks it to.
+            // Terminal notifications are emitted by programs running inside
+            // Rio, so Rio is nearly always frontmost when one arrives, and
+            // without this every notification is delivered silently to
+            // Notification Center with no banner.
+            let delegate: Retained<NotificationDelegate> =
+                msg_send_id![NotificationDelegate::alloc(), init];
+            center.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+            // The center holds its delegate weakly, so keep ours alive for the
+            // lifetime of the process.
+            std::mem::forget(delegate);
+
             center.requestAuthorizationWithOptions_completionHandler(
                 UNAuthorizationOptions::UNAuthorizationOptionAlert
                     | UNAuthorizationOptions::UNAuthorizationOptionSound,
