@@ -661,16 +661,22 @@ impl<U: EventListener> Crosswords<U> {
         self.mode.set(Mode::GRAPHEME_CLUSTER, enabled);
     }
 
+    /// Everything on screen changed. No event goes out from here: the
+    /// thread draining the PTY announces whatever damage a burst left
+    /// once, at its end, so a scroll or a clear in the middle of output
+    /// does not wake the UI thread a second time. A viewport change
+    /// made from the UI thread asks for its own render, see
+    /// [`Self::scroll_display`].
     pub fn mark_fully_damaged(&mut self) {
-        // Only emit event if we weren't already fully damaged
-        let was_damaged = self.damage.full;
         self.damage.full = true;
+    }
 
-        // Request a render to display the damage
-        if !was_damaged {
-            self.event_proxy
-                .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
-        }
+    /// Ask the owner of the terminal to render. For a change made
+    /// outside the PTY thread's parse path, a viewport scroll or a
+    /// selection from the UI, since no burst follows to announce it.
+    pub fn request_render(&self) {
+        self.event_proxy
+            .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
     }
 
     #[inline]
@@ -841,9 +847,12 @@ impl<U: EventListener> Crosswords<U> {
             std::cmp::min(viewport_end, std::cmp::max(viewport_start, *vi_cursor_line));
         self.vi_mode_recompute_selection();
 
-        // Damage everything if display offset changed.
+        // Damage everything if display offset changed. This is a
+        // viewport operation from the UI thread, so no PTY drain will
+        // announce the damage; ask for the render here.
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
+            self.request_render();
             // Scrolling changes image positions on screen
             if !self.graphics.kitty_placements.is_empty() {
                 self.graphics.kitty_graphics_dirty = true;
@@ -11976,6 +11985,41 @@ mod tests {
         events.borrow_mut().clear();
         parser.advance(&mut term, b"\x1b[?9h\x1b[?9$p");
         assert_eq!(replies(&events), vec!["\x1b[?9;1$y".to_string()]);
+    }
+
+    // Full damage from the parser rides the one wakeup the PTY thread
+    // sends per burst; it does not send a render event of its own. A
+    // viewport scroll from the UI thread does, since no burst follows.
+    #[test]
+    fn parser_damage_sends_no_render_event_but_a_viewport_scroll_does() {
+        let (mut cw, events) = make_crosswords_with_events(5);
+        let renders = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
+            events
+                .borrow()
+                .iter()
+                .filter(|e| matches!(e, RioEvent::RenderRoute(_)))
+                .count()
+        };
+        let mut parser = crate::performer::handler::Processor::default();
+        // Scroll the screen, clear it, swap to the alt screen and back.
+        let mut burst = Vec::new();
+        for i in 0..10 {
+            burst.extend_from_slice(format!("line {i}\r\n").as_bytes());
+        }
+        burst.extend_from_slice(b"\x1b[2J\x1b[?1049h\x1b[?1049l");
+        // As after the renderer's first frame: nothing is damaged yet.
+        cw.reset_damage();
+        parser.advance(&mut cw, &burst);
+        assert!(cw.is_fully_damaged());
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Full));
+        assert_eq!(renders(&events), 0, "the burst's wakeup carries it");
+
+        cw.reset_damage();
+        cw.scroll_display(Scroll::Delta(1));
+        assert!(cw.is_fully_damaged());
+        assert_eq!(renders(&events), 1, "a UI scroll asks for its render");
+        cw.scroll_display(Scroll::Delta(0));
+        assert_eq!(renders(&events), 1, "an unmoved viewport asks nothing");
     }
 
     // A query only the owner answers fences the replies behind it until
