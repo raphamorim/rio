@@ -560,6 +560,8 @@ struct PileWaiter {
     waited: Duration,
     /// Replies still queued in the terminal when it held it.
     queued_replies: usize,
+    /// Whether the renderer had been told of the damage so far by then.
+    damage_announced: bool,
     /// The first line once the whole pile is parsed.
     first_line: String,
     /// Everything the reader wrote to the PTY.
@@ -620,7 +622,12 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
             let mut queued = 0;
             guard.drain_pty_replies(|_| queued += 1);
             saw_tx
-                .send((guard.grid[Line(0)][Column(0)].c(), waited, queued))
+                .send((
+                    guard.grid[Line(0)][Column(0)].c(),
+                    waited,
+                    queued,
+                    guard.damage_event_in_flight,
+                ))
                 .unwrap();
         });
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -671,11 +678,13 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
     let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
     assert_eq!(outcome, ReadOutcome::Closed, "the whole pile was read");
     holder.join().unwrap();
-    let (saw, waited, queued_replies) = saw.recv_timeout(Duration::from_secs(5)).unwrap();
+    let (saw, waited, queued_replies, damage_announced) =
+        saw.recv_timeout(Duration::from_secs(5)).unwrap();
     PileWaiter {
         saw,
         waited,
         queued_replies,
+        damage_announced,
         first_line: first_line(&machine, 1),
         written: machine.pty.writer.bytes.clone(),
     }
@@ -697,6 +706,10 @@ fn a_waiting_thread_gets_the_terminal_between_chunks_of_a_pile() {
     assert_eq!(
         waiter.queued_replies, 0,
         "no reply was left for the waiter to drain"
+    );
+    assert!(
+        waiter.damage_announced,
+        "the renderer was told of the first chunk"
     );
     assert_eq!(
         waiter.written,

@@ -344,15 +344,22 @@ where
             while parsed < unprocessed {
                 let end = (parsed + READ_CHUNK).min(unprocessed);
                 if parsed > 0 && self.terminal.has_waiters() {
-                    // The replies so far leave with this thread, as at
-                    // the end of a burst, so another drainer of the
-                    // terminal cannot take them out of order.
+                    // As at the end of a burst: the replies so far leave
+                    // with this thread, so another drainer of the
+                    // terminal cannot take them out of order, and the
+                    // renderer hears of the damage so far in case the
+                    // waiter is someone else.
                     let mut guard = terminal.take().expect("locked above");
                     guard.drain_pty_replies(|reply| {
                         state.write_list.push_back(Cow::Owned(reply.into_bytes()))
                     });
+                    if !guard.synchronized_output() && guard.peek_damage_event().is_some()
+                    {
+                        self.notify_damage(&mut guard);
+                    }
                     drop(guard);
                     parking_lot::MutexGuard::unlock_fair(terminal_lease);
+                    self.terminal.let_waiters_in();
                     terminal_lease = self.terminal.lease();
                     terminal = Some(self.terminal.lock_unfair());
                 }
@@ -377,8 +384,7 @@ where
         }
 
         // The replies the burst produced, in order, behind any bytes
-        // already waiting. Drained once per burst so a query the UI
-        // thread answers fences the whole burst, not one chunk of it.
+        // already waiting.
         if let Some(ref mut term) = terminal {
             term.drain_pty_replies(|reply| {
                 state.write_list.push_back(Cow::Owned(reply.into_bytes()))

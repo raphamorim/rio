@@ -37,6 +37,25 @@ impl<T> FairMutex<T> {
         self.waiters.load(Ordering::Acquire) > 0
     }
 
+    /// Wait until every thread now waiting in [`Self::lock`] holds the
+    /// lock, or has held it. For a thread that just let go of the data
+    /// lock and its lease and means to take them back: without this it
+    /// races the waiters for the lease and, against one still spinning
+    /// rather than parked, can win it back ahead of them. Returns at
+    /// once when nobody waits. Must not be called while holding the
+    /// lease, since the waiters need it.
+    pub fn let_waiters_in(&self) {
+        let mut spins = 0u32;
+        while self.has_waiters() {
+            if spins < 64 {
+                std::hint::spin_loop();
+            } else {
+                std::thread::yield_now();
+            }
+            spins += 1;
+        }
+    }
+
     /// Acquire a lease to reserve the mutex lock.
     ///
     /// This will prevent others from acquiring a terminal lock, but block if anyone else is
@@ -108,6 +127,38 @@ mod tests {
     }
 
     // The unfair entry points the PTY thread uses never count as
+    // A holder that lets go and waits for the waiters sees them hold
+    // the lock before it returns, so it cannot win it back ahead of
+    // them.
+    #[test]
+    fn letting_waiters_in_returns_once_they_hold_the_lock() {
+        let mutex = Arc::new(FairMutex::new(false));
+        let lease = mutex.lease();
+        let held = mutex.lock_unfair();
+
+        let other = Arc::clone(&mutex);
+        let waiter = std::thread::spawn(move || {
+            let mut guard = other.lock();
+            *guard = true;
+            std::thread::sleep(Duration::from_millis(20));
+            drop(guard);
+        });
+        spin_until(|| mutex.has_waiters());
+
+        drop(held);
+        MutexGuard::unlock_fair(lease);
+        mutex.let_waiters_in();
+        // The waiter has the lock now, and may still hold it.
+        assert!(!mutex.has_waiters());
+        let _lease = mutex.lease();
+        let guard = mutex.lock_unfair();
+        assert!(*guard, "the waiter held the lock before us");
+        waiter.join().unwrap();
+
+        // Nobody waiting: returns at once.
+        mutex.let_waiters_in();
+    }
+
     // waiting; only `lock` does.
     #[test]
     fn unfair_locks_and_leases_are_not_waiters() {
