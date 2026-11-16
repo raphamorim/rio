@@ -24,6 +24,7 @@
 
 use parking_lot::{Mutex, MutexGuard};
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(any(feature = "pty", test))]
 use std::time::{Duration, Instant};
 
 /// How long [`TerminalLock::yield_to_demand`] waits for a demander to
@@ -31,7 +32,7 @@ use std::time::{Duration, Instant};
 /// section, the renderer's snapshot or an input event, is
 /// microseconds; this bounds the reader's stall if the demander was
 /// descheduled or gave up.
-#[cfg_attr(not(feature = "pty"), allow(dead_code))]
+#[cfg(any(feature = "pty", test))]
 pub(crate) const HANDOFF_TIMEOUT: Duration = Duration::from_millis(1);
 
 pub struct TerminalLock<T> {
@@ -41,6 +42,7 @@ pub struct TerminalLock<T> {
     /// Yields that gave up at the bound with a demander still waiting:
     /// it was descheduled that long. A diagnostic, zero on a quiet
     /// machine.
+    #[cfg(any(feature = "pty", test))]
     bound_hits: AtomicUsize,
 }
 
@@ -49,6 +51,7 @@ impl<T> TerminalLock<T> {
         TerminalLock {
             data: Mutex::new(data),
             demand: AtomicUsize::new(0),
+            #[cfg(any(feature = "pty", test))]
             bound_hits: AtomicUsize::new(0),
         }
     }
@@ -64,21 +67,21 @@ impl<T> TerminalLock<T> {
 
     /// Lock the terminal without signalling demand. For the reader
     /// thread, whose hot loop is what demand is measured against.
-    #[cfg_attr(not(feature = "pty"), allow(dead_code))]
+    #[cfg(any(feature = "pty", test))]
     pub(crate) fn lock_reader(&self) -> MutexGuard<'_, T> {
         self.data.lock()
     }
 
     /// Try to lock the terminal without signalling demand, for the
     /// reader thread; `None` if another thread holds it.
-    #[cfg_attr(not(feature = "pty"), allow(dead_code))]
+    #[cfg(any(feature = "pty", test))]
     pub(crate) fn try_lock_reader(&self) -> Option<MutexGuard<'_, T>> {
         self.data.try_lock()
     }
 
     /// Whether a thread is waiting in [`Self::lock`].
     #[inline]
-    #[cfg_attr(not(feature = "pty"), allow(dead_code))]
+    #[cfg(any(feature = "pty", test))]
     pub(crate) fn has_demand(&self) -> bool {
         self.demand.load(Ordering::Relaxed) > 0
     }
@@ -88,7 +91,7 @@ impl<T> TerminalLock<T> {
     /// [`HANDOFF_TIMEOUT`] passes, before asking for it again. Spins
     /// briefly, then yields the processor, which is what a waiter that
     /// has not run yet needs most.
-    #[cfg_attr(not(feature = "pty"), allow(dead_code))]
+    #[cfg(any(feature = "pty", test))]
     pub(crate) fn yield_to_demand(&self) {
         if !self.has_demand() {
             return;
