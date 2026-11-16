@@ -382,8 +382,8 @@ where
         // The replies go out as soon as the lock is released. A PTY that
         // cannot take them now leaves them for the writable event.
         drop(terminal);
-        // Handed on directly, so a waiter gets the lock now rather than
-        // racing this thread's next lease for it.
+        // Handed on to a parked waiter rather than racing it; a waiter
+        // still spinning may win the lease back one more chunk later.
         parking_lot::MutexGuard::unlock_fair(terminal_lease);
         if !had_pending && state.needs_write() {
             if let Err(err) = self.pty_write(state) {
