@@ -2,7 +2,7 @@
 
 ## 0.6.0 (unreleased)
 
-- **Breaking: new defaults on Linux and macOS.** On Linux, Rio now draws with the CPU rasterizer by default, so it starts without a working Vulkan driver; set `renderer.use-cpu = false` to draw with `renderer.backend` (Vulkan) as before. The CPU path does not yet draw image overlays, filters, the advanced underline styles or rounded corners. On macOS, `navigation.mode` now defaults to `NativeTab`, the system tab bar; set `navigation.mode = "Tab"` to keep the tab strip Rio draws.
+- **Breaking: new defaults on Linux and macOS.** On Linux, Rio now draws with the CPU rasterizer by default, so it starts without a working Vulkan driver; set `renderer.use-cpu = false` to draw with `renderer.backend` (Vulkan) as before. The CPU path does not yet draw image overlays, filters, the advanced underline styles or rounded corners. On macOS, `navigation.mode` now defaults to `NativeTab`, the system tab bar; set `navigation.mode = "Tab"` to keep the tab strip Rio draws ([#2088](https://github.com/raphamorim/rio/pull/2088)).
 
 - **Focus reports follow the active pane.** A program that enables focus reporting (`CSI ? 1004 h`) was told about focus only when the OS window gained or lost it, so switching tabs or splits left vim, tmux and others with a stale focus state. The terminal now keeps the focus state per pane and sends `CSI I` / `CSI O` when the active pane changes, and a program that enables the mode is told the current state at once. librio hosts can send focus reports too ([#2051](https://github.com/raphamorim/rio/pull/2051), closes [#2013](https://github.com/raphamorim/rio/issues/2013), [#2050](https://github.com/raphamorim/rio/issues/2050)).
 
