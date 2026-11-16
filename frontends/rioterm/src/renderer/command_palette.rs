@@ -100,6 +100,17 @@ pub enum PaletteAction {
     Quit,
 }
 
+impl PaletteAction {
+    /// The command's name in the palette.
+    #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+    pub fn title(self) -> &'static str {
+        COMMANDS
+            .iter()
+            .find(|command| command.action == self)
+            .map_or("", |command| command.title)
+    }
+}
+
 struct Command {
     title: &'static str,
     shortcut: &'static str,

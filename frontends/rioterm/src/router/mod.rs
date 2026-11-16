@@ -888,7 +888,11 @@ impl<'a> RouteWindow<'a> {
             raw_window_handle: winit_window.window_handle().unwrap().into(),
             raw_display_handle: winit_window.display_handle().unwrap().into(),
             window_id: winit_window.id(),
+            unified_titlebar: window::unified_titlebar(&winit_window),
         };
+
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        crate::app_menu::sync(&winit_window, config, &event_proxy);
 
         let mut screen =
             Screen::new(properties, config, event_proxy, font_library, open_url)

@@ -126,6 +126,8 @@ pub struct ScreenWindowProperties {
     pub raw_window_handle: RawWindowHandle,
     pub raw_display_handle: RawDisplayHandle,
     pub window_id: rio_window::window::WindowId,
+    /// Whether the compositor applied `window.wayland-use-unified-titlebar`.
+    pub unified_titlebar: bool,
 }
 
 #[inline]
@@ -146,12 +148,14 @@ impl Screen<'_> {
         let raw_window_handle = window_properties.raw_window_handle;
         let raw_display_handle = window_properties.raw_display_handle;
         let window_id = window_properties.window_id;
+        let unified_titlebar = window_properties.unified_titlebar;
 
         let padding_y_top = padding_top_from_config(
             &config.navigation,
             config.margin.top,
             1,
             config.window.macos_use_unified_titlebar,
+            unified_titlebar,
         );
 
         let padding_y_bottom = config.margin.bottom;
@@ -231,7 +235,7 @@ impl Screen<'_> {
         #[cfg(wgpu_backend)]
         sugarloaf.update_filters(config.renderer.filters.as_slice());
 
-        let mut renderer = Renderer::new(config);
+        let mut renderer = Renderer::new(config, unified_titlebar);
 
         let bindings = crate::bindings::default_key_bindings(config);
 
@@ -520,6 +524,7 @@ impl Screen<'_> {
             config.margin.top,
             num_tabs,
             config.window.macos_use_unified_titlebar,
+            self.renderer.unified_titlebar,
         );
         let padding_y_bottom = config.margin.bottom;
 
@@ -549,7 +554,7 @@ impl Screen<'_> {
         // Preserve existing Island (tab state) and update its colors
         let old_island = self.renderer.island.take();
         let was_focused = self.renderer.is_window_focused;
-        self.renderer = Renderer::new(config);
+        self.renderer = Renderer::new(config, self.renderer.unified_titlebar);
         self.renderer.is_window_focused = was_focused;
         // Every terminal answers color queries from the palette; give
         // them the new one.
@@ -563,6 +568,9 @@ impl Screen<'_> {
         if let Some(mut island) = old_island {
             island.update_colors(config.colors.tabs, config.colors.tabs_active);
             island.max_tab_width = config.navigation.max_tab_width;
+            if island.titlebar {
+                island.tabs = config.navigation.is_enabled();
+            }
             self.renderer.island = Some(island);
         }
 
@@ -1750,6 +1758,7 @@ impl Screen<'_> {
             self.renderer.margin.top,
             num_tabs,
             self.renderer.macos_use_unified_titlebar,
+            self.renderer.unified_titlebar,
         );
         let padding_y_bottom = self.renderer.margin.bottom;
 
@@ -2799,10 +2808,25 @@ impl Screen<'_> {
             self.sugarloaf.scale_factor(),
             num_tabs,
             max_tab_width,
+            island::strip_left_margin(self.renderer.unified_titlebar),
         )
     }
 
-    #[cfg(target_os = "macos")]
+    /// Whether a press on the window chrome moves the window. Where the
+    /// strip lies over the title bar (macOS's full-size content view, a
+    /// Wayland unified title bar) nothing else does.
+    #[inline]
+    pub fn chrome_moves_window(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            self.allow_manual_dragging
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            self.renderer.unified_titlebar
+        }
+    }
+
     pub fn start_window_drag(&mut self, window: &rio_window::window::Window) {
         self.mouse.left_button_state = ElementState::Released;
         let _ = window.drag_window();
@@ -2826,8 +2850,7 @@ impl Screen<'_> {
             window_origin,
             at: std::time::Instant::now(),
         });
-        #[cfg(target_os = "macos")]
-        if self.allow_manual_dragging {
+        if self.chrome_moves_window() {
             self.start_window_drag(window);
         }
     }
@@ -2885,8 +2908,9 @@ impl Screen<'_> {
         is_right_click: bool,
         chrome_press: Option<ChromePress>,
     ) -> bool {
-        // Only handle if navigation is enabled
-        if !self.renderer.navigation.is_enabled() {
+        // Only handle if navigation is enabled, or the strip is kept as
+        // the window's title bar without it.
+        if !self.renderer.navigation.is_enabled() && !self.renderer.unified_titlebar {
             return false;
         }
 
@@ -2934,8 +2958,9 @@ impl Screen<'_> {
         // Island isn't painted (hide_if_single + single tab). On macOS the
         // terminal still starts below this band, so it remains custom window
         // chrome and must keep the same drag/double-click behavior as a
-        // visible island. Other platforms render the terminal from the top
-        // when the island is hidden, so their clicks keep falling through.
+        // visible island, and so does a Wayland unified title bar. Other
+        // platforms render the terminal from the top when the island is
+        // hidden, so their clicks keep falling through.
         if !island_visible {
             // …unless a ×-close just hid the strip (2 tabs → 1 with
             // hide-if-single): the tail press of a double-click on the
@@ -2945,7 +2970,7 @@ impl Screen<'_> {
                 return true;
             }
 
-            if self.renderer.navigation.chrome_band_reserved(num_tabs) {
+            if self.renderer.chrome_band_reserved(num_tabs) {
                 // Same contract as the visible island's chrome regions:
                 // left starts a drag / validates a double-click, right
                 // is consumed without an action. Letting a right-click
