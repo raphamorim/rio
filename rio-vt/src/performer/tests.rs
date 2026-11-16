@@ -575,9 +575,13 @@ struct PileWaiter {
 /// chunk; the first chunk also carries a DA query, whose reply must
 /// leave with the reader.
 fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
+    // A pile that fills the reader's buffer would force the lock before
+    // the read hook below releases the holder.
+    assert!(chunks as usize <= READ_BUFFER_SIZE / READ_CHUNK);
     let mut payload = Vec::new();
     for n in 1..=chunks {
         payload.extend_from_slice(b"\x1b[H");
+        // '1'..'9', then the ASCII characters after '9' for more.
         payload.push(b'0' + n);
         if n == 1 {
             payload.extend_from_slice(b"\x1b[c");
