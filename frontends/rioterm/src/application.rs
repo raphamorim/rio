@@ -1114,9 +1114,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             }
             RioEventType::Rio(RioEvent::ColorRequest(route_id, index, format)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    // Read the originating panel's terminal colors and
-                    // route the reply back to that same panel — color
-                    // theme overrides via OSC 4 / OSC 10-19 are
+                    // A terminal given the palette answers color queries
+                    // itself with this same precedence; this is reached
+                    // for one without it. Read the originating panel's
+                    // terminal colors and route the reply back to that
+                    // same panel: overrides via OSC 4 / OSC 10-19 are
                     // per-context, so reading from `current()` would
                     // mis-report when the user has focused a different
                     // split mid-flight.

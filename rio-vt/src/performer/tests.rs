@@ -387,7 +387,8 @@ fn input_is_written_on_the_wakeup_that_delivers_it() {
 }
 
 // Bytes refused by a full PTY wait for the writable event. Read
-// wakeups in between do not retry them.
+// wakeups in between do not retry them, and a reply the parse produces
+// meanwhile queues behind them.
 #[test]
 fn a_stuck_write_is_not_retried_on_read_wakeups() {
     let (events, damaged) = mpsc::channel();
@@ -404,7 +405,8 @@ fn a_stuck_write_is_not_retried_on_read_wakeups() {
     let machine = Machine::new(
         Arc::new(FairMutex::new(terminal)),
         TestPty {
-            bytes: io::Cursor::new(b"output".to_vec()),
+            // A query among the output: its reply must wait too.
+            bytes: io::Cursor::new(b"out\x1b[cput".to_vec()),
             ending: None,
             exhausted: None,
             writer: RecordingWriter {
@@ -452,6 +454,13 @@ fn a_stuck_write_is_not_retried_on_read_wakeups() {
         "the bytes are still queued for the writable event"
     );
     assert!(machine.pty.writer.bytes.is_empty());
+    // The keystroke is still first in line, the reply behind it.
+    assert_eq!(state.writing.as_ref().unwrap().source.as_ref(), b"a");
+    assert_eq!(
+        state.write_list.iter().collect::<Vec<_>>(),
+        vec![&std::borrow::Cow::Borrowed(&b"\x1b[?62;4;6;22;52c"[..])],
+        "the reply queued behind the stuck keystroke"
+    );
 }
 
 // A query from the program is answered by this thread, written to the

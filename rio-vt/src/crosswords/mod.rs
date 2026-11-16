@@ -2975,6 +2975,16 @@ impl<U: EventListener> Crosswords<U> {
     }
 }
 
+/// The answer to an OSC 4, 10, 11 or 12 color query: `prefix` is the
+/// query's own leading parameters, each channel is repeated to the
+/// 16 bit form programs expect.
+fn color_reply(prefix: &str, color: ColorRgb, terminator: &str) -> String {
+    format!(
+        "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
+        prefix, color.r, color.g, color.b, terminator
+    )
+}
+
 impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn set_mode(&mut self, mode: AnsiMode) {
@@ -3283,10 +3293,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 .map(|colors| ColorRgb::from_color_arr(colors[index])),
         };
         if let Some(color) = color {
-            self.reply(format!(
-                "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
-                prefix, color.r, color.g, color.b, terminator
-            ));
+            self.reply(color_reply(&prefix, color, terminator));
             return;
         }
 
@@ -3297,12 +3304,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             RioEvent::ColorRequest(
                 self.route_id,
                 index,
-                Arc::new(move |color| {
-                    format!(
-                        "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
-                        prefix, color.r, color.g, color.b, terminator
-                    )
-                }),
+                Arc::new(move |color| color_reply(&prefix, color, &terminator)),
             ),
             self.window_id,
         );
