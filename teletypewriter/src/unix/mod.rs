@@ -889,7 +889,58 @@ pub fn command_per_pid(pid: libc::pid_t) -> String {
         .to_string()
 }
 
+/// The write side of a PTY: another handle to the same master, so one
+/// thread writes while another reads. The open file description, and
+/// so its non-blocking mode, is shared.
+pub struct WriteHalf {
+    file: File,
+}
+
+impl io::Write for WriteHalf {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.file.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
+}
+
+impl corcovado::event::Evented for WriteHalf {
+    fn register(
+        &self,
+        poll: &corcovado::Poll,
+        token: corcovado::Token,
+        interest: corcovado::Ready,
+        opts: corcovado::PollOpt,
+    ) -> io::Result<()> {
+        EventedFd(&self.file.as_raw_fd()).register(poll, token, interest, opts)
+    }
+
+    fn reregister(
+        &self,
+        poll: &corcovado::Poll,
+        token: corcovado::Token,
+        interest: corcovado::Ready,
+        opts: corcovado::PollOpt,
+    ) -> io::Result<()> {
+        EventedFd(&self.file.as_raw_fd()).reregister(poll, token, interest, opts)
+    }
+
+    fn deregister(&self, poll: &corcovado::Poll) -> io::Result<()> {
+        EventedFd(&self.file.as_raw_fd()).deregister(poll)
+    }
+}
+
 impl EventedPty for Pty {
+    type WriteHalf = WriteHalf;
+
+    fn write_half(&mut self) -> io::Result<WriteHalf> {
+        Ok(WriteHalf {
+            file: self.file.try_clone()?,
+        })
+    }
+
     fn shutdown(&mut self) -> io::Result<()> {
         self.child.terminate()
     }

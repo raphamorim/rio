@@ -262,6 +262,7 @@ impl Screen<'_> {
             keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
+            colors: rio_backend::config::colors::term::List::from(&config.colors),
         };
 
         let rich_text_id = next_rich_text_id();
@@ -404,7 +405,7 @@ impl Screen<'_> {
     /// restore visibility after a mid-composition scroll.
     ///
     /// Selection follows what the equivalent plain typing does: plain
-    /// input drops it (`send_bytes`), search typing drops it only
+    /// input drops it (`send_write`), search typing drops it only
     /// outside vi mode (`search_input` keeps a vi visual selection).
     pub fn set_ime_preedit(&mut self, preedit: Option<crate::ime::Preedit>) -> bool {
         let composing = preedit.is_some();
@@ -550,6 +551,15 @@ impl Screen<'_> {
         let was_focused = self.renderer.is_window_focused;
         self.renderer = Renderer::new(config);
         self.renderer.is_window_focused = was_focused;
+        // Every terminal answers color queries from the palette; give
+        // them the new one.
+        let colors = rio_backend::config::colors::term::List::from(&config.colors);
+        self.context_manager.config.colors = colors;
+        for grid in self.context_manager.contexts_mut() {
+            for item in grid.contexts_mut().values_mut() {
+                item.val.terminal.lock().set_default_colors(colors);
+            }
+        }
         if let Some(mut island) = old_island {
             island.update_colors(config.colors.tabs, config.colors.tabs_active);
             island.max_tab_width = config.navigation.max_tab_width;

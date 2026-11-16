@@ -25,7 +25,7 @@ pub use rio_vt::ansi::CursorShape;
 pub use rio_vt::crosswords::pos::Side;
 use rio_vt::crosswords::pos::{Column as PosColumn, Line, Pos};
 use rio_vt::crosswords::{Crosswords, Mode};
-use rio_vt::event::sync::FairMutex;
+use rio_vt::event::sync::TerminalLock;
 #[cfg(feature = "pty")]
 use rio_vt::event::Msg;
 #[cfg(feature = "pty")]
@@ -165,8 +165,8 @@ pub trait SurfaceDelegate: MaybeSendSync + 'static {
     /// update and the clear would otherwise be lost, and with it the output
     /// that follows.
     ///
-    /// Called with the surface's terminal locked, on librio's IO thread or
-    /// from inside any surface call that changes what is shown, such as
+    /// Called with the surface's terminal locked, on librio's reader thread
+    /// or from inside any surface call that changes what is shown, such as
     /// [`Surface::inject_output`], [`Surface::resize`] or [`Surface::scroll`].
     /// Only flag or schedule work here; calling back into the surface
     /// deadlocks.
@@ -216,7 +216,7 @@ impl Default for InlineImageStore {
 impl InlineImageStore {
     /// Every write is one insert or remove, so a thread that panicked
     /// while holding the lock left the map whole: a poisoned lock is
-    /// taken all the same rather than taking the PTY thread down.
+    /// taken all the same rather than taking a PTY thread down.
     pub(crate) fn lock(
         &self,
     ) -> std::sync::MutexGuard<
@@ -280,8 +280,19 @@ impl Listener {
             RioEvent::ClipboardStore(kind, text) => {
                 self.delegate.clipboard_write(self.surface_id, kind, text);
             }
+            // A reply the terminal routed through here, behind a query
+            // only the owner answers; passed back as an answer so the
+            // terminal knows when it has every one of them.
             RioEvent::PtyWrite(_, text) => {
-                self.write_to_child(Cow::Owned(text.into_bytes()));
+                self.pass_back(Cow::Owned(text.into_bytes()));
+            }
+            // Not answered here. The terminal is told the query is
+            // settled, so the replies behind it take the direct path.
+            RioEvent::ColorRequest(..)
+            | RioEvent::TextAreaSizeRequest(..)
+            | RioEvent::ClipboardLoad(..)
+            | RioEvent::GlyphProtocolQuery { .. } => {
+                self.pass_back(Cow::Borrowed(&[]));
             }
             // Delivered under the terminal lock, from the parser, so the
             // state is current and this orders with `Surface::set_focus`,
@@ -347,6 +358,21 @@ impl Listener {
         }
         #[cfg(not(feature = "pty"))]
         self.delegate.output(self.surface_id, &bytes);
+    }
+
+    /// A query from the program that this embedding does not answer.
+    /// An answer, a decline (no bytes) or a routed reply going back to
+    /// the terminal: the PTY's writer settles one fenced item with it
+    /// on `pty` builds, the delegate gets the bytes otherwise.
+    fn pass_back(&self, bytes: Cow<'static, [u8]>) {
+        #[cfg(feature = "pty")]
+        if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
+            let _ = channel.send(Msg::Reply(bytes));
+        }
+        #[cfg(not(feature = "pty"))]
+        if !bytes.is_empty() {
+            self.delegate.output(self.surface_id, &bytes);
+        }
     }
 }
 
@@ -456,7 +482,7 @@ fn trailing_url_punctuation(text: &str) -> usize {
 pub struct Surface {
     id: SurfaceId,
     alt_is_meta: std::sync::atomic::AtomicBool,
-    terminal: Arc<FairMutex<Crosswords<Listener>>>,
+    terminal: Arc<TerminalLock<Crosswords<Listener>>>,
     /// Compiled URL detector, built on first hover. Hit-testing runs per
     /// pointer event, so the four lazy DFAs must not be rebuilt each time.
     url_regex: std::sync::Mutex<Option<rio_vt::crosswords::search::RegexSearch>>,
@@ -565,7 +591,7 @@ impl Surface {
         // by design; Arc stays because the pty build shares it with the IO
         // thread and the API is one type on every target.
         #[allow(clippy::arc_with_non_send_sync)]
-        let terminal = Arc::new(FairMutex::new(terminal));
+        let terminal = Arc::new(TerminalLock::new(terminal));
 
         #[cfg(not(feature = "pty"))]
         {
@@ -1234,6 +1260,9 @@ impl Surface {
         let processor = guard.get_or_insert_with(Default::default);
         let mut term = self.terminal.lock();
         processor.advance(&mut *term, bytes);
+        // With a PTY, the replies these bytes produce go to its writer
+        // thread as the parser produces them, in their place among
+        // everything else bound for it; without one they are events.
         // No PTY thread announces injected bytes; the host that
         // injected them is told what the reader thread would tell it.
         if term.peek_damage_event().is_some() {
@@ -1353,7 +1382,7 @@ impl Surface {
         term.bounds_to_string(start, end)
     }
 
-    pub(crate) fn terminal(&self) -> Arc<FairMutex<Crosswords<Listener>>> {
+    pub(crate) fn terminal(&self) -> Arc<TerminalLock<Crosswords<Listener>>> {
         self.terminal.clone()
     }
 

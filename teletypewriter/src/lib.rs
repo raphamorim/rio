@@ -69,6 +69,12 @@ pub trait EventedPty: ProcessReadWrite {
     ///
     /// Returns `Some(event)` on success, or `None` if there are no events to retrieve.
     fn next_child_event(&mut self) -> Option<ChildEvent>;
+
+    /// The write side of the PTY on its own, for a thread that writes
+    /// while this one reads. Taken once; [`ProcessReadWrite::writer`]
+    /// is not used after that.
+    type WriteHalf: io::Write + corcovado::event::Evented + Send + 'static;
+    fn write_half(&mut self) -> io::Result<Self::WriteHalf>;
 }
 
 #[derive(Debug, Clone)]
