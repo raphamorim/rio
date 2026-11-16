@@ -480,12 +480,13 @@ where
     /// to the owner of the terminal. Unset for an embedder that keeps
     /// its palette to itself; the query then goes out as an event.
     default_colors: Option<crate::config::colors::term::List>,
-    /// A query the UI thread must answer (a color, the clipboard, the
-    /// text area in pixels) went out as an event during this burst.
-    /// Until the burst is drained every later reply goes the same way,
-    /// so a program using one reply as a fence for another sees them
-    /// in the order it asked.
-    ui_reply_pending: bool,
+    /// Queries only the owner of the terminal can answer (the
+    /// clipboard, the text area in pixels, a color when no palette was
+    /// given) that went out as events and are not answered yet. While
+    /// one is outstanding every reply goes the same way, so a program
+    /// using one reply as a fence for another sees them in the order
+    /// it asked.
+    ui_queries_pending: u32,
     tabs: TabStops,
     event_proxy: U,
     pub selection: Option<Selection>,
@@ -593,7 +594,7 @@ impl<U: EventListener> Crosswords<U> {
             pty_replies: Vec::new(),
             enable_pty_reply: false,
             default_colors: None,
-            ui_reply_pending: false,
+            ui_queries_pending: 0,
             event_proxy,
             colors: term_colors,
             title: String::from(""),
@@ -1272,21 +1273,19 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     /// Hand every reply accumulated since the last drain to `sink`,
-    /// oldest first. Ends the burst for the fence a UI-answered query
-    /// raised, see [`Self::ui_query_sent`].
+    /// oldest first.
     pub fn drain_pty_replies(&mut self, mut sink: impl FnMut(String)) {
         for reply in self.pty_replies.drain(..) {
             sink(reply);
         }
-        self.ui_reply_pending = false;
     }
 
     /// Answer the program: queued for the PTY thread, or sent as an
     /// event for the owner of the terminal to write. While a query the
-    /// UI thread answers is in flight for this burst, the event path
-    /// keeps the order between the two.
+    /// owner answers is outstanding, the event path keeps the order
+    /// between the two.
     fn reply(&mut self, text: String) {
-        if self.enable_pty_reply && !self.ui_reply_pending {
+        if self.enable_pty_reply && self.ui_queries_pending == 0 {
             self.pty_replies.push(text);
         } else {
             self.event_proxy
@@ -1294,17 +1293,24 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
-    /// A query only the UI thread can answer went out as an event: the
-    /// clipboard, the text area in pixels, or a color when no palette
-    /// was given. Its answer comes back through the UI thread's queue,
-    /// so until this burst is drained every reply takes that queue
-    /// too, and a reply the program sends right behind the query as a
-    /// fence is answered after it. The fence covers the burst the
-    /// query arrived in; a fence that arrives in a later burst is not
-    /// covered, which is why the color queries, the ones every fence
-    /// idiom uses, are answered here whenever the palette is known.
+    /// A query only the owner of the terminal can answer went out as
+    /// an event: the clipboard, the text area in pixels, or a color
+    /// when no palette was given. Its answer comes back through the
+    /// owner's queue, so until [`Self::ui_query_answered`] says it has
+    /// every reply takes that queue too, and a reply the program sends
+    /// behind the query as a fence, in the same write or a later one,
+    /// is answered after it. The color queries are answered here
+    /// whenever the palette is known so the common fence idiom never
+    /// leaves the PTY thread.
     fn ui_query_sent(&mut self) {
-        self.ui_reply_pending = true;
+        self.ui_queries_pending = self.ui_queries_pending.saturating_add(1);
+    }
+
+    /// The owner answered, or declined, one outstanding query; its
+    /// answer is queued for the PTY ahead of any reply made from here
+    /// on. Called by the PTY thread when the answer reaches it.
+    pub fn ui_query_answered(&mut self) {
+        self.ui_queries_pending = self.ui_queries_pending.saturating_sub(1);
     }
 
     /// Damage the entire line at the cursor position
@@ -2975,6 +2981,16 @@ impl<U: EventListener> Crosswords<U> {
     }
 }
 
+/// The answer to an OSC 4, 10, 11 or 12 color query: `prefix` is the
+/// query's own leading parameters, each channel is repeated to the
+/// 16 bit form programs expect.
+fn color_reply(prefix: &str, color: ColorRgb, terminator: &str) -> String {
+    format!(
+        "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
+        prefix, color.r, color.g, color.b, terminator
+    )
+}
+
 impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn set_mode(&mut self, mode: AnsiMode) {
@@ -3283,10 +3299,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 .map(|colors| ColorRgb::from_color_arr(colors[index])),
         };
         if let Some(color) = color {
-            self.reply(format!(
-                "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
-                prefix, color.r, color.g, color.b, terminator
-            ));
+            self.reply(color_reply(&prefix, color, terminator));
             return;
         }
 
@@ -3297,12 +3310,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             RioEvent::ColorRequest(
                 self.route_id,
                 index,
-                Arc::new(move |color| {
-                    format!(
-                        "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
-                        prefix, color.r, color.g, color.b, terminator
-                    )
-                }),
+                Arc::new(move |color| color_reply(&prefix, color, &terminator)),
             ),
             self.window_id,
         );
@@ -11953,11 +11961,11 @@ mod tests {
         assert_eq!(replies(&events), vec!["\x1b[?9;1$y".to_string()]);
     }
 
-    // A query only the UI thread answers fences the burst: the replies
-    // behind it go through the UI thread too, so a DA sent right after
-    // an OSC 11 query is answered after it. The next burst is direct.
+    // A query only the owner answers fences the replies behind it until
+    // the owner's answer has passed: a DA sent right after the query,
+    // in the same write or in a later one, is answered after it.
     #[test]
-    fn a_ui_answered_query_fences_the_burst_for_the_replies_behind_it() {
+    fn a_ui_answered_query_fences_replies_until_the_owner_answers() {
         let (mut cw, events) = make_crosswords_with_events(4);
         cw.set_enable_pty_reply(true);
         let kinds = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
@@ -11966,34 +11974,75 @@ mod tests {
                 .iter()
                 .filter_map(|e| match e {
                     RioEvent::ColorRequest(..) => Some("color"),
+                    RioEvent::TextAreaSizeRequest(..) => Some("size"),
+                    RioEvent::ClipboardLoad(..) => Some("clipboard"),
                     RioEvent::PtyWrite(..) => Some("reply"),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
         };
         let mut parser = crate::performer::handler::Processor::default();
+        let mut queued = Vec::new();
+
         // Background color query, then primary DA as the fence.
         parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b[c");
         assert_eq!(kinds(&events), vec!["color", "reply"], "in the order asked");
-        let mut queued = Vec::new();
         cw.drain_pty_replies(|r| queued.push(r));
         assert!(queued.is_empty(), "nothing overtook the color answer");
 
-        // The burst is over: a later query is answered directly again.
+        // The fence arriving in a later write is covered too: the drain
+        // does not lift the fence, the owner's answer does.
         parser.advance(&mut cw, b"\x1b[c");
-        assert_eq!(kinds(&events).len(), 2);
+        assert_eq!(kinds(&events).len(), 3, "still through the owner");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert!(queued.is_empty());
+        cw.ui_query_answered();
+        parser.advance(&mut cw, b"\x1b[c");
+        assert_eq!(kinds(&events).len(), 3, "direct again");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued.len(), 1);
+
+        // Every query the owner answers raises the fence: the text
+        // area in pixels, the graphics geometry, the clipboard.
+        for (query, kind) in [
+            (&b"\x1b[14t"[..], "size"),
+            (&b"\x1b[?2;1;0S"[..], "size"),
+            (&b"\x1b]52;c;?\x1b\\"[..], "clipboard"),
+        ] {
+            queued.clear();
+            let before = kinds(&events).len();
+            parser.advance(&mut cw, query);
+            parser.advance(&mut cw, b"\x1b[c");
+            assert_eq!(kinds(&events)[before..], [kind, "reply"], "{kind}");
+            cw.drain_pty_replies(|r| queued.push(r));
+            assert!(queued.is_empty(), "{kind} fences the DA behind it");
+            cw.ui_query_answered();
+        }
+
+        // Two outstanding queries need two answers.
+        queued.clear();
+        parser.advance(&mut cw, b"\x1b[14t");
+        parser.advance(&mut cw, b"\x1b[14t");
+        cw.ui_query_answered();
+        parser.advance(&mut cw, b"\x1b[c");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert!(queued.is_empty(), "one answer of two does not lift it");
+        cw.ui_query_answered();
+        parser.advance(&mut cw, b"\x1b[c");
         cw.drain_pty_replies(|r| queued.push(r));
         assert_eq!(queued.len(), 1);
 
         // A direct reply before the query stays direct, and the fence
-        // spans every parse of the burst until the drain.
+        // spans every parse behind it until the answer.
         queued.clear();
+        let before = kinds(&events).len();
         parser.advance(&mut cw, b"\x1b[c\x1b]11;?\x1b\\");
         parser.advance(&mut cw, b"\x1b[6n");
-        assert_eq!(kinds(&events)[2..], ["color", "reply"]);
+        assert_eq!(kinds(&events)[before..], ["color", "reply"]);
         cw.drain_pty_replies(|r| queued.push(r));
         assert_eq!(queued.len(), 1, "the DA before the query is direct");
         assert!(queued[0].ends_with("c"));
+        cw.ui_query_answered();
     }
 
     // With the palette known, a color query is answered here: the
@@ -12020,6 +12069,7 @@ mod tests {
         let mut queued = Vec::new();
         cw.drain_pty_replies(|r| queued.push(r));
         assert!(queued.is_empty());
+        cw.ui_query_answered();
 
         let mut colors = Colors::default();
         colors.background.0 = crate::config::colors::ColorRgb {

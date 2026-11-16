@@ -1537,9 +1537,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
-            colors: rio_backend::config::colors::term::List::from(
-                &rio_backend::config::colors::Colors::default(),
-            ),
+            colors: rio_backend::config::colors::term::List::from(&config.colors),
         };
 
         let current = self.current();

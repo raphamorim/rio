@@ -283,6 +283,13 @@ impl Listener {
             RioEvent::PtyWrite(_, text) => {
                 self.write_to_child(Cow::Owned(text.into_bytes()));
             }
+            // Not answered here. The reader thread is told the query is
+            // settled, so the replies behind it take the direct path.
+            RioEvent::ColorRequest(..)
+            | RioEvent::TextAreaSizeRequest(..)
+            | RioEvent::ClipboardLoad(..) => {
+                self.decline_query();
+            }
             // Delivered under the terminal lock, from the parser, so the
             // state is current and this orders with `Surface::set_focus`,
             // which also writes under the lock.
@@ -347,6 +354,14 @@ impl Listener {
         }
         #[cfg(not(feature = "pty"))]
         self.delegate.output(self.surface_id, &bytes);
+    }
+
+    /// A query from the program that this embedding does not answer.
+    fn decline_query(&self) {
+        #[cfg(feature = "pty")]
+        if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
+            let _ = channel.send(Msg::Reply(Cow::Borrowed(&[])));
+        }
     }
 }
 
