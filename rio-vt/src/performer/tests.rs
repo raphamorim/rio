@@ -479,6 +479,57 @@ fn the_reader_thread_serves_the_user() {
     );
 }
 
+// A burst that scrolls the whole screen wakes the UI thread once, with
+// the damage event at its end, not a second time for the scroll.
+#[test]
+fn a_scrolling_burst_wakes_the_ui_thread_once() {
+    let (events, recorded) = mpsc::channel();
+    let mut burst = Vec::new();
+    for i in 0..40 {
+        burst.extend_from_slice(format!("line {i}\r\n").as_bytes());
+    }
+    let mut terminal = Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        EventRecorder(events.clone()),
+        WindowId::from(0),
+        0,
+        100,
+    );
+    // As after the renderer's first frame: nothing is damaged yet.
+    terminal.reset_damage();
+    let (registration, readiness) = corcovado::Registration::new2();
+    let (exhausted_tx, exhausted) = mpsc::channel();
+    let machine = Machine::new(
+        Arc::new(FairMutex::new(terminal)),
+        TestPty {
+            bytes: io::Cursor::new(burst),
+            ending: None,
+            exhausted: Some(exhausted_tx),
+            writer: RecordingWriter::default(),
+            child: Some(registration),
+            registration_error: false,
+            read_event: true,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        EventRecorder(events),
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let channel = machine.channel();
+    let handle = machine.spawn();
+    readiness.set_readiness(Ready::readable()).unwrap();
+    exhausted.recv_timeout(Duration::from_secs(5)).unwrap();
+    channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = handle.join().unwrap();
+    assert_eq!(machine.terminal.lock().history_size(), 17);
+    let names: Vec<&str> = recorded.try_iter().collect();
+    assert_eq!(names, vec!["damaged"]);
+}
+
 #[test]
 fn explicit_shutdown_finalizes_once() {
     let machine = machine(Vec::new(), None);
@@ -496,6 +547,7 @@ impl EventListener for EventRecorder {
         let name = match event {
             RioEvent::TerminalDamaged(_) => "damaged",
             RioEvent::ChildExited(..) => "exited",
+            RioEvent::RenderRoute(_) => "render",
             _ => return,
         };
         let _ = self.0.send(name);
