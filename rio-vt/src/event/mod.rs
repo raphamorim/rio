@@ -88,6 +88,15 @@ pub enum Msg {
     /// Data that should be written to the PTY.
     Input(Cow<'static, [u8]>),
 
+    /// The owner's answer to a query the parser could not answer itself
+    /// (see `Crosswords::ui_query_sent`), or a reply the terminal routed
+    /// through the owner behind such a query (a `PtyWrite` event),
+    /// written like `Input`. Once it is queued the writer thread tells
+    /// the terminal one more of those is settled, so once the owner has
+    /// passed back everything the replies take the direct path again.
+    /// Empty when the owner declined to answer.
+    Reply(Cow<'static, [u8]>),
+
     #[allow(dead_code)]
     Shutdown,
 
@@ -132,7 +141,9 @@ pub enum RioEvent {
     PrepareUpdateConfig,
     /// New terminal content available.
     Render,
-    /// New terminal content available per route.
+    /// A render asked for by a change made outside the parser on one
+    /// route, a viewport scroll or a selection; what the parser changes
+    /// is announced by the PTY thread's `TerminalDamaged` instead.
     RenderRoute(usize),
     /// Terminal content changed — lightweight notification (no damage payload).
     /// Damage stays in the terminal; renderer extracts it when it locks.

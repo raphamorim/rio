@@ -85,6 +85,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "vt_input"
 harness = false
+required-features = ["pty"]
 
 [[bench]]
 name = "vt_sync"

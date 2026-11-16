@@ -48,7 +48,7 @@ button/pos/scroll, set_size, set_content_scale, set_focus, set_occlusion.
 
 ```rust
 pub struct Engine { /* shared config, action fan-out */ }
-pub struct Surface { /* one PTY + grid; owns the IO thread */ }
+pub struct Surface { /* one PTY + grid; owns the IO threads */ }
 pub struct RenderState { /* snapshot + dirty rows */ }
 
 pub trait SurfaceDelegate: Send + Sync {
@@ -148,7 +148,9 @@ rio_cursor_s rio_render_state_cursor(const rio_render_state_t*);
 Every `extern "C"` entry point wraps its body in `catch_unwind`, a Rust panic
 must never unwind into Swift/C (UB).
 
-Threading contract (identical to today's rioterm split): the surface owns one
-PTY IO thread; `wakeup_cb`/`action_cb` may fire on it and must only
+Threading contract (identical to today's rioterm split): the surface owns the
+PTY IO threads, a reader and a writer; `wakeup_cb`/`action_cb` may fire on the
+reader and must only
 flag/schedule. All `render_state_*` calls and input calls are host-thread safe
-(input posts to the IO channel; render-state update takes the FairMutex).
+(input posts to the IO channel; render-state update takes the terminal lock,
+which the reader yields to between chunks).

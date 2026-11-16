@@ -189,6 +189,25 @@ fn bench(c: &mut Criterion) {
                 criterion::BatchSize::LargeInput,
             );
         });
+        // The same bytes in the slices of one read (the reader
+        // thread's READ_CHUNK) it parses when input piled up while the
+        // terminal was busy: the gap to the whole-buffer case is the
+        // per-slice cost. Three inputs stand for the rest: plain text, sequences
+        // that get cut at slice boundaries, and escape-dense text.
+        if matches!(*name, "plain" | "emoji" | "ansi_mixed") {
+            group.bench_function(format!("{name}_sliced"), |b| {
+                b.iter_batched(
+                    || (term(), Processor::default()),
+                    |(mut crosswords, mut processor)| {
+                        for slice in bytes.chunks(rio_vt::performer::READ_CHUNK) {
+                            processor.advance(&mut crosswords, slice);
+                        }
+                        crosswords
+                    },
+                    criterion::BatchSize::LargeInput,
+                );
+            });
+        }
         // Parser in isolation: the gap to the full path above is the
         // handler + grid cost.
         group.bench_function(format!("{name}_parser_only"), |b| {
