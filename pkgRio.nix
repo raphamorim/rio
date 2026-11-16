@@ -9,6 +9,7 @@
   autoPatchelfHook,
   cmake,
   ncurses,
+  oniguruma,
   pkg-config,
   gcc-unwrapped,
   fontconfig,
@@ -70,7 +71,7 @@ in
 
     cargoBuildFlags = "-p rioterm";
 
-    buildInputs = rlinkLibs ++ (lib.optionals stdenv.hostPlatform.isDarwin [darwin.libutil]);
+    buildInputs = rlinkLibs ++ [oniguruma] ++ (lib.optionals stdenv.hostPlatform.isDarwin [darwin.libutil]);
     runtimeDependencies = rlinkLibs;
 
     nativeBuildInputs =
