@@ -26,7 +26,7 @@ rio-graphics = { workspace = true }
 rio-grapheme-width = { workspace = true }
 # Width tables plus the UAX #29 grapheme segmentation used by mode 2027.
 rio-unicode = { workspace = true }
-regex-automata = "0.4.16"
+regex-automata = "0.4.18"
 cursor-icon = { version = "1.1.0", default-features = false }
 smallvec = { workspace = true }
 flate2 = { workspace = true }
