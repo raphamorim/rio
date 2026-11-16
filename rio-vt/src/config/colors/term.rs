@@ -82,6 +82,13 @@ impl IndexMut<NamedColor> for TermColors {
 #[derive(Copy, Debug, Clone)]
 pub struct List([ColorArray; COUNT]);
 
+/// The default configuration's palette.
+impl Default for List {
+    fn default() -> Self {
+        List::from(&Colors::default())
+    }
+}
+
 impl From<&Colors> for List {
     fn from(colors: &Colors) -> List {
         // Type inference fails without this annotation.

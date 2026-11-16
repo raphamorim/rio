@@ -475,6 +475,11 @@ where
     /// [`Self::set_enable_pty_reply`].
     pty_replies: Vec<String>,
     enable_pty_reply: bool,
+    /// The configured palette, so a color query is answered here with
+    /// the program's override or the configured color, without a trip
+    /// to the owner of the terminal. Unset for an embedder that keeps
+    /// its palette to itself; the query then goes out as an event.
+    default_colors: Option<crate::config::colors::term::List>,
     /// A query the UI thread must answer (a color, the clipboard, the
     /// text area in pixels) went out as an event during this burst.
     /// Until the burst is drained every later reply goes the same way,
@@ -587,6 +592,7 @@ impl<U: EventListener> Crosswords<U> {
             scroll_region,
             pty_replies: Vec::new(),
             enable_pty_reply: false,
+            default_colors: None,
             ui_reply_pending: false,
             event_proxy,
             colors: term_colors,
@@ -1258,6 +1264,13 @@ impl<U: EventListener> Crosswords<U> {
         self.enable_pty_reply = enabled;
     }
 
+    /// The configured palette, for answering color queries here; see
+    /// `dynamic_color_sequence`. Set at creation and whenever the
+    /// configuration changes it.
+    pub fn set_default_colors(&mut self, colors: crate::config::colors::term::List) {
+        self.default_colors = Some(colors);
+    }
+
     /// Hand every reply accumulated since the last drain to `sink`,
     /// oldest first. Ends the burst for the fence a UI-answered query
     /// raised, see [`Self::ui_query_sent`].
@@ -1281,11 +1294,15 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
-    /// A query only the UI thread can answer went out as an event. Its
-    /// answer comes back through the UI thread's queue, so until this
-    /// burst is drained every reply takes that queue too; a DA sent
-    /// right behind an OSC 11 query, the fence termenv and others use,
-    /// is then answered after it as the program expects.
+    /// A query only the UI thread can answer went out as an event: the
+    /// clipboard, the text area in pixels, or a color when no palette
+    /// was given. Its answer comes back through the UI thread's queue,
+    /// so until this burst is drained every reply takes that queue
+    /// too, and a reply the program sends right behind the query as a
+    /// fence is answered after it. The fence covers the burst the
+    /// query arrived in; a fence that arrives in a later burst is not
+    /// covered, which is why the color queries, the ones every fence
+    /// idiom uses, are answered here whenever the palette is known.
     fn ui_query_sent(&mut self) {
         self.ui_reply_pending = true;
     }
@@ -3256,6 +3273,24 @@ impl<U: EventListener> Handler for Crosswords<U> {
             prefix, index
         );
 
+        // The program's own override first, then the configured color.
+        // The cursor color is reported only when the program set it.
+        let color = match self.colors()[index] {
+            Some(color) => Some(ColorRgb::from_color_arr(color)),
+            None if index == NamedColor::Cursor as usize => return,
+            None => self
+                .default_colors
+                .map(|colors| ColorRgb::from_color_arr(colors[index])),
+        };
+        if let Some(color) = color {
+            self.reply(format!(
+                "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
+                prefix, color.r, color.g, color.b, terminator
+            ));
+            return;
+        }
+
+        // No palette here: the owner of the terminal answers.
         let terminator = terminator.to_owned();
         self.ui_query_sent();
         self.event_proxy.send_event(
@@ -11949,6 +11984,74 @@ mod tests {
         assert_eq!(kinds(&events).len(), 2);
         cw.drain_pty_replies(|r| queued.push(r));
         assert_eq!(queued.len(), 1);
+
+        // A direct reply before the query stays direct, and the fence
+        // spans every parse of the burst until the drain.
+        queued.clear();
+        parser.advance(&mut cw, b"\x1b[c\x1b]11;?\x1b\\");
+        parser.advance(&mut cw, b"\x1b[6n");
+        assert_eq!(kinds(&events)[2..], ["color", "reply"]);
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued.len(), 1, "the DA before the query is direct");
+        assert!(queued[0].ends_with("c"));
+    }
+
+    // With the palette known, a color query is answered here: the
+    // program's override, else the configured color; the cursor color
+    // only when set. Without a palette it is the owner's to answer.
+    #[test]
+    fn color_queries_are_answered_here_when_the_palette_is_known() {
+        use crate::config::colors::term::List;
+        use crate::config::colors::Colors;
+        let (mut cw, events) = make_crosswords_with_events(6);
+        cw.set_enable_pty_reply(true);
+        let color_requests = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
+            events
+                .borrow()
+                .iter()
+                .filter(|e| matches!(e, RioEvent::ColorRequest(..)))
+                .count()
+        };
+        let mut parser = crate::performer::handler::Processor::default();
+
+        // No palette: the owner answers, and the burst is fenced.
+        parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b[c");
+        assert_eq!(color_requests(&events), 1);
+        let mut queued = Vec::new();
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert!(queued.is_empty());
+
+        let mut colors = Colors::default();
+        colors.background.0 = crate::config::colors::ColorRgb {
+            r: 0x11,
+            g: 0x22,
+            b: 0x33,
+        }
+        .to_arr();
+        cw.set_default_colors(List::from(&colors));
+        parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b]4;1;?\x1b\\\x1b[c");
+        assert_eq!(color_requests(&events), 1, "no more events");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued.len(), 3, "background, palette entry 1, DA, in order");
+        assert_eq!(queued[0], "\x1b]11;rgb:1111/2222/3333\x1b\\");
+        assert!(queued[1].starts_with("\x1b]4;1;rgb:"));
+        assert!(queued[2].ends_with("c"));
+
+        // The program's own override wins over the palette.
+        queued.clear();
+        parser.advance(&mut cw, b"\x1b]11;#445566\x1b\\\x1b]11;?\x1b\\");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued, vec!["\x1b]11;rgb:4444/5555/6666\x1b\\"]);
+
+        // The cursor color is reported only once the program set it.
+        queued.clear();
+        parser.advance(&mut cw, b"\x1b]12;?\x1b\\");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert!(queued.is_empty(), "unset cursor color: no answer");
+        assert_eq!(color_requests(&events), 1, "and no event either");
+        parser.advance(&mut cw, b"\x1b]12;#ff0000\x1b\\\x1b]12;?\x1b\\");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued, vec!["\x1b]12;rgb:ffff/0000/0000\x1b\\"]);
     }
 
     // Parser replies reach the owner of the terminal as events unless
