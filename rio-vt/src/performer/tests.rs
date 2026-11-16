@@ -1504,8 +1504,9 @@ fn the_reader_thread_serves_the_user() {
     );
 }
 
-// A burst that scrolls the whole screen wakes the UI thread once, with
-// the damage event at its end, not a second time for the scroll.
+// A burst that scrolls the whole screen sends no render event of its
+// own for the scroll: the damage event at the burst's end is the one
+// wakeup the UI thread gets.
 #[test]
 fn a_scrolling_burst_wakes_the_ui_thread_once() {
     let (events, recorded) = mpsc::channel();

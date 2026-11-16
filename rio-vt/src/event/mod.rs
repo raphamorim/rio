@@ -141,7 +141,9 @@ pub enum RioEvent {
     PrepareUpdateConfig,
     /// New terminal content available.
     Render,
-    /// New terminal content available per route.
+    /// A render asked for by a change made outside the parser on one
+    /// route, a viewport scroll or a selection; what the parser changes
+    /// is announced by the PTY thread's `TerminalDamaged` instead.
     RenderRoute(usize),
     /// Terminal content changed — lightweight notification (no damage payload).
     /// Damage stays in the terminal; renderer extracts it when it locks.

@@ -1442,9 +1442,15 @@ mod tests {
             wakeups: AtomicUsize::new(0),
         });
         let engine = Engine::new(delegate.clone());
+        // A child that prints nothing, so every wakeup counted here is
+        // the surface's own and none comes from a shell prompt.
         let surface = engine
-            .create_surface(&SurfaceDesc::default())
-            .expect("spawn shell");
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".to_string()),
+                args: vec!["-c".to_string(), "sleep 300".to_string()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
 
         let before = delegate.wakeups.load(Ordering::SeqCst);
         surface.selection_begin(0, 0, SelectionKind::Simple, Side::Left);
