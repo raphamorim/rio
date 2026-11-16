@@ -118,7 +118,7 @@ and a `reason=` when it cannot answer (§5.4).
 
 | Verb | Meaning |
 |------|---------|
-| `s`  | Advertise supported payload formats and optional capabilities. Doubles as a protocol-detection ping — any reply confirms Glyph Protocol; a timeout means unsupported. |
+| `s`  | Advertise supported payload formats and optional capabilities. Doubles as a protocol-detection ping: any reply confirms Glyph Protocol; a timeout means unsupported. |
 | `q`  | Query the state of a codepoint or of a grapheme cluster. |
 | `r`  | Register a glyph for a codepoint in the registration block. |
 | `c`  | Clear one slot or every slot in this session's glossary. |
@@ -215,7 +215,7 @@ Parameters, exactly one of:
   surrogate). May be inside or outside the registration block, so a
   client can ask whether the user's font already has an icon (for
   example a Nerd Fonts codepoint) before registering its own.
-- `grapheme` — one grapheme cluster, as 1 to 32 comma-separated hex
+- `grapheme`: one grapheme cluster, as 1 to 32 comma-separated hex
   scalar values in logical order. OPTIONAL for terminals; a client
   MUST NOT send it unless the `s` reply lists `grapheme` in `cap` (§3.3).
   See §5.3.
