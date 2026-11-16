@@ -193,6 +193,9 @@ where
     T: teletypewriter::EventedPty + Send + 'static,
     U: EventListener + Send + 'static,
 {
+    /// The reader's control channel; the PTY takes the tokens after it.
+    const CONTROL: corcovado::Token = corcovado::Token(0);
+
     pub fn new(
         terminal: Arc<TerminalLock<Crosswords<U>>>,
         mut pty: T,
@@ -203,6 +206,25 @@ where
         let (control, receiver) = channel::channel();
         let (writes, inbox) = channel::channel();
         let poll = corcovado::Poll::new()?;
+        let writer_poll = corcovado::Poll::new()?;
+
+        // Both channels are registered here, before a sender is handed
+        // out or either thread runs. A channel registered after it was
+        // sent to can miss the wakeup for what was sent, and the
+        // writer's inbox has no other wakeup to be drained on.
+        //
+        // The channels are drained to empty on every wakeup, which
+        // clears their readiness and re-arms the next edge transition,
+        // so plain edge (no oneshot, no re-registration) is enough.
+        // Level would go through the readiness queue's re-enqueue path,
+        // which is much more expensive per wakeup.
+        poll.register(&receiver, Self::CONTROL, Ready::readable(), PollOpt::edge())?;
+        writer_poll.register(
+            &inbox,
+            Writer::<T::WriteHalf, U>::INBOX,
+            Ready::readable(),
+            PollOpt::edge(),
+        )?;
 
         // Replies the parser produces go to the writer thread the moment
         // it produces them, like everything else bound for the PTY, so
@@ -219,7 +241,7 @@ where
         let writer = Writer {
             inbox: PeekableReceiver::new(inbox),
             control,
-            poll: corcovado::Poll::new()?,
+            poll: writer_poll,
             half: pty.write_half()?,
             pending: Vec::new(),
             written: 0,
@@ -451,20 +473,11 @@ where
     }
 
     fn run(&mut self, state: &mut State, buf: &mut [u8]) -> io::Result<ExitReason> {
+        // The control channel was registered by the constructor with
+        // the first token; the PTY takes the ones after it.
         let mut tokens = (0..).map(Into::into);
-
-        // The channel is drained to empty on every wakeup, which clears
-        // its readiness and re-arms the next edge transition, so plain
-        // edge (no oneshot, no re-registration) is enough. Level would go
-        // through the readiness queue's re-enqueue path, which is much
-        // more expensive per wakeup.
         let channel_token = tokens.next().unwrap();
-        self.poll.register(
-            &self.receiver.rx,
-            channel_token,
-            Ready::readable(),
-            PollOpt::edge(),
-        )?;
+        debug_assert_eq!(channel_token, Self::CONTROL);
 
         // The PTY is level-triggered: pty_read may stop before draining
         // the fd (READ_BUDGET), which would lose an edge, and level
@@ -672,12 +685,8 @@ where
     const PTY: corcovado::Token = corcovado::Token(1);
 
     fn run(&mut self) -> io::Result<()> {
-        self.poll.register(
-            &self.inbox.rx,
-            Self::INBOX,
-            Ready::readable(),
-            PollOpt::edge(),
-        )?;
+        // The inbox was registered by the constructor, before the
+        // owner could send to it.
         // Writable interest only while bytes wait, or a writable PTY
         // would wake this loop for nothing.
         self.poll
