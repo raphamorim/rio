@@ -2260,7 +2260,7 @@ impl Renderer {
                         return false;
                     }
                 }
-                if !Self::draw_background_image_metal(
+                Self::draw_background_image_metal(
                     &self.background_image_texture,
                     brush,
                     render_encoder,
@@ -2268,10 +2268,7 @@ impl Renderer {
                     &instance_buffer,
                     &mut instance_offset,
                     &globals,
-                ) {
-                    return false;
-                }
-                true
+                )
             })();
             // Three-bucket image z-ordering:
             //
