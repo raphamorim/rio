@@ -14,8 +14,16 @@
 //! reader thread at once, with none of the frame work a UI thread does
 //! in between, so an old build measures as its best case.
 //!
-//! Run with `cargo run -p rio-vt --release --example pty_latency`.
-//! Unix only: it spawns `cat` on a pseudo terminal.
+//! Run with `cargo run -p rio-vt --release --example pty_latency [rounds]`.
+//!
+//! `pty_latency flood [MiB] [plain|sgr|emoji]` measures the other
+//! side: a child floods the PTY with text (`cat` of a prepared file,
+//! as fast as the PTY delivers) while a thread stands in for the
+//! renderer, taking the terminal lock every 8 ms and holding it for
+//! 200 µs as a frame snapshot would, and the time each acquisition
+//! waited is recorded, along with the drain throughput.
+//!
+//! Unix only: it spawns the child on a pseudo terminal.
 
 #[cfg(unix)]
 mod unix {
@@ -139,19 +147,118 @@ mod unix {
         samples.sort();
         let at = |q: f64| samples[((samples.len() - 1) as f64 * q) as usize];
         println!(
-            "{name:<28} median {:>9.1?}  p90 {:>9.1?}  min {:>9.1?}  n={}",
+            "{name:<28} median {:>9.1?}  p90 {:>9.1?}  max {:>9.1?}  min {:>9.1?}  n={}",
             at(0.5),
             at(0.9),
+            samples[samples.len() - 1],
             samples[0],
             samples.len()
         );
     }
 
+    /// A child floods the PTY; a renderer stand-in asks for the
+    /// terminal every 8 ms and holds it 200 µs; how long it waits.
+    fn flood(mib: usize, kind: &str) {
+        let line = match kind {
+            "sgr" => "\x1b[31mword\x1b[0m \x1b[1;32mbold\x1b[0m \x1b[4munder\x1b[0m \x1b[38;5;208mcolor\x1b[0m \x1b[38;2;10;200;90mtrue\x1b[0m \x1b[3mital\x1b[0m end\r\n",
+            "emoji" => "status: \u{2705} ok \u{1F680} deploy \u{1F44D}\u{1F3FD} \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} \u{1F1E7}\u{1F1F7} done \u{2764}\u{FE0F} \u{1F600}\u{1F601}\u{1F602}\r\n",
+            _ => "the quick brown fox jumps over the lazy dog 0123456789 lorem ipsum dolor sit amet\r\n",
+        };
+        let bytes = mib * 1024 * 1024;
+        let mut payload = line.repeat(bytes / line.len() + 1).into_bytes();
+        payload.truncate(bytes);
+        // `cat` of a file is as fast as the PTY delivers; a generator
+        // in the child would be the bottleneck instead.
+        let path = std::env::temp_dir()
+            .join(format!("rio-pty-flood-{}.txt", std::process::id()));
+        std::fs::write(&path, &payload).expect("flood file");
+        let command = format!("stty raw -echo; exec cat {}", path.display());
+
+        let (writes_tx, _writes) = mpsc::channel();
+        let (damaged_tx, _damaged) = mpsc::channel();
+        let listener = Listener {
+            damaged: damaged_tx,
+            to_reader: Arc::new(Mutex::new(None)),
+        };
+        let pty = teletypewriter::create_pty_with_spawn(
+            Some("/bin/sh"),
+            vec!["-c".into(), command],
+            &None,
+            None,
+            200,
+            50,
+            2000,
+            1200,
+        )
+        .expect("pty");
+        let terminal = Arc::new(FairMutex::new(Crosswords::new(
+            CrosswordsSize::new(200, 50),
+            CursorShape::Block,
+            listener.clone(),
+            WindowId::from(0),
+            0,
+            10_000,
+        )));
+        let machine = Machine::new(
+            Arc::clone(&terminal),
+            Timed {
+                inner: pty,
+                writes: writes_tx,
+            },
+            listener,
+            WindowId::from(0),
+            0,
+        )
+        .expect("machine");
+
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let renderer = {
+            let terminal = Arc::clone(&terminal);
+            let done = Arc::clone(&done);
+            std::thread::spawn(move || {
+                let mut waits = Vec::new();
+                while !done.load(std::sync::atomic::Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(8));
+                    let asked = Instant::now();
+                    let guard = terminal.lock();
+                    waits.push(asked.elapsed());
+                    // The snapshot: a frame's worth of reading the grid.
+                    let hold = Instant::now();
+                    while hold.elapsed() < Duration::from_micros(200) {
+                        std::hint::spin_loop();
+                    }
+                    drop(guard);
+                }
+                waits
+            })
+        };
+
+        let started = Instant::now();
+        let reader = machine.spawn();
+        let (_machine, _state) = reader.join().expect("reader thread");
+        let elapsed = started.elapsed();
+        done.store(true, std::sync::atomic::Ordering::Relaxed);
+        let waits = renderer.join().expect("renderer thread");
+        let _ = std::fs::remove_file(&path);
+
+        println!(
+            "flood {mib} MiB {kind}: drained in {:.0?}, {:.0} MiB/s",
+            elapsed,
+            mib as f64 / elapsed.as_secs_f64()
+        );
+        stats("renderer lock wait", waits);
+    }
+
     pub fn run() {
-        let rounds: usize = std::env::args()
-            .nth(1)
-            .and_then(|n| n.parse().ok())
-            .unwrap_or(300);
+        let mut args = std::env::args().skip(1);
+        let first = args.next();
+        if first.as_deref() == Some("flood") {
+            let mib: usize = args.next().and_then(|n| n.parse().ok()).unwrap_or(32);
+            let kind = args.next().unwrap_or_else(|| "plain".into());
+            flood(mib, &kind);
+            return;
+        }
+        let rounds: usize = first.and_then(|n| n.parse().ok()).unwrap_or(300);
 
         let (writes_tx, writes) = mpsc::channel();
         let (damaged_tx, damaged) = mpsc::channel();
