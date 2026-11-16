@@ -709,6 +709,10 @@ where
             if hup_now && !hung_up {
                 hung_up = true;
                 self.poll.deregister(&self.half)?;
+                // No writable event is coming any more, so the bytes
+                // that were waiting for one are tried on arrival, like
+                // bytes with no backlog, and fail or go through.
+                armed = false;
             }
 
             while let Some(msg) = self.inbox.recv() {

@@ -74,6 +74,8 @@ struct RecordingWriter {
     /// The write half cannot be watched: its registration fails, so
     /// the writer thread stops before it writes anything.
     refuses_registration: bool,
+    /// The write half's readiness, for a test that hangs it up.
+    half_readiness: Arc<std::sync::Mutex<Option<corcovado::SetReadiness>>>,
     /// Every write attempt, refused or not.
     attempts: Option<mpsc::Sender<()>>,
 }
@@ -105,11 +107,20 @@ impl Write for RecordingWriter {
 
 /// The write half of the test PTY: the shared recorder, registered
 /// through a registration that never reports writable readiness, so a
-/// refused write stays refused.
+/// refused write stays refused. A hangup is reported whatever the
+/// interest, as the kernel reports one.
 struct TestWriteHalf {
     writer: RecordingWriter,
     registration: corcovado::Registration,
     _readiness: corcovado::SetReadiness,
+}
+
+impl TestWriteHalf {
+    fn interest(interest: Ready) -> Ready {
+        #[cfg(unix)]
+        let interest = interest | Ready::from(UnixReady::hup());
+        interest
+    }
 }
 
 impl Write for TestWriteHalf {
@@ -132,7 +143,7 @@ impl corcovado::event::Evented for TestWriteHalf {
         if self.writer.refuses_registration {
             return Err(io::Error::from(ErrorKind::Other));
         }
-        poll.register(&self.registration, token, interest, opts)
+        poll.register(&self.registration, token, Self::interest(interest), opts)
     }
     fn reregister(
         &self,
@@ -141,7 +152,7 @@ impl corcovado::event::Evented for TestWriteHalf {
         interest: Ready,
         opts: PollOpt,
     ) -> io::Result<()> {
-        poll.reregister(&self.registration, token, interest, opts)
+        poll.reregister(&self.registration, token, Self::interest(interest), opts)
     }
     fn deregister(&self, poll: &corcovado::Poll) -> io::Result<()> {
         poll.deregister(&self.registration)
@@ -213,6 +224,7 @@ impl EventedPty for TestPty {
 
     fn write_half(&mut self) -> io::Result<TestWriteHalf> {
         let (registration, readiness) = corcovado::Registration::new2();
+        *self.writer.half_readiness.lock().unwrap() = Some(readiness.clone());
         Ok(TestWriteHalf {
             writer: self.writer.clone(),
             registration,
@@ -589,6 +601,49 @@ fn a_stuck_write_is_not_retried_on_read_wakeups() {
     channel.send(Msg::Shutdown).unwrap();
     let (machine, _) = handle.join().unwrap();
     assert!(machine.pty.writer.recorded().is_empty());
+}
+
+/// Once the PTY hangs up no writable event is coming, so bytes that
+/// were waiting for one, and bytes arriving after, are each tried on
+/// arrival instead of waiting forever.
+#[cfg(unix)]
+#[test]
+fn a_hangup_stops_the_wait_for_a_writable_pty() {
+    let (attempts, attempted) = mpsc::channel();
+    let mut pty = test_pty(Vec::new(), Some(ErrorKind::WouldBlock));
+    pty.writer.blocked = true;
+    pty.writer.attempts = Some(attempts);
+    let mut machine = machine_with(pty);
+    let channel = machine.channel();
+    machine.spawn_writer();
+    let timeout = Duration::from_secs(5);
+
+    // The first write is refused, which arms the wait for writable.
+    channel.send(Msg::Input(Cow::Borrowed(b"a"))).unwrap();
+    attempted.recv_timeout(timeout).unwrap();
+    channel.send(Msg::Input(Cow::Borrowed(b"b"))).unwrap();
+    assert!(
+        attempted.recv_timeout(Duration::from_millis(100)).is_err(),
+        "a write was retried while waiting for writable"
+    );
+
+    let readiness = machine
+        .pty
+        .writer
+        .half_readiness
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap();
+    readiness
+        .set_readiness(Ready::from(UnixReady::hup()))
+        .unwrap();
+    // The hangup itself prompts one attempt, and so does what follows.
+    attempted.recv_timeout(timeout).unwrap();
+    channel.send(Msg::Input(Cow::Borrowed(b"c"))).unwrap();
+    attempted.recv_timeout(timeout).unwrap();
+
+    machine.stop_writer();
 }
 
 // A query from the program is answered by the reader thread and handed
