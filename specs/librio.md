@@ -151,4 +151,5 @@ must never unwind into Swift/C (UB).
 Threading contract (identical to today's rioterm split): the surface owns one
 PTY IO thread; `wakeup_cb`/`action_cb` may fire on it and must only
 flag/schedule. All `render_state_*` calls and input calls are host-thread safe
-(input posts to the IO channel; render-state update takes the FairMutex).
+(input posts to the IO channel; render-state update takes the terminal lock,
+which the IO thread yields to between chunks).
