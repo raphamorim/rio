@@ -1358,6 +1358,12 @@ fn a_declined_query_lifts_the_fence_without_writing() {
     channel
         .send(Msg::Reply(std::borrow::Cow::Borrowed(b"")))
         .unwrap();
+    // The writer thread lowers the fence as it takes the decline; a
+    // marker written behind it shows it has, before the next read.
+    channel
+        .send(Msg::Input(std::borrow::Cow::Borrowed(b"m")))
+        .unwrap();
+    assert_eq!(written.recv_timeout(timeout).unwrap(), b"m".to_vec());
 
     feed_tx.send(b"\x1b[c".to_vec()).unwrap();
     readiness.set_readiness(Ready::empty()).unwrap();
@@ -1371,7 +1377,7 @@ fn a_declined_query_lifts_the_fence_without_writing() {
     let (machine, _) = handle.join().unwrap();
     assert_eq!(
         machine.pty.writer.recorded(),
-        b"\x1b[?62;4;6;22;52c".to_vec()
+        b"m\x1b[?62;4;6;22;52c".to_vec()
     );
 }
 
