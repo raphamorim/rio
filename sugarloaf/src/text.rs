@@ -219,6 +219,47 @@ impl Text {
         });
     }
 
+    /// Switch to a reloaded font library. Every cache here is keyed by
+    /// font id or holds the old library's handles and glyphs, so all of
+    /// them go: resolutions, synthesis flags, ascents, shaped runs, the
+    /// handles, and the rasterized glyphs in the atlases. Without this
+    /// a label seen before the reload kept shaping with the old font.
+    pub fn set_fonts(&mut self, font_library: &FontLibrary) {
+        self.font_library = font_library.clone();
+        // Instances recorded against the old atlases go too, so this
+        // does not rely on every caller presenting first.
+        self.instances.clear();
+        self.font_resolve.clear();
+        self.synthesis_cache.clear();
+        #[cfg(not(target_os = "macos"))]
+        self.wght_variation_cache.clear();
+        self.ascent_cache.clear();
+        self.shape_cache.clear();
+        #[cfg(target_os = "macos")]
+        self.handle_cache.clear();
+        #[cfg(not(target_os = "macos"))]
+        self.font_data_cache.clear();
+        #[cfg(target_os = "macos")]
+        if let Some(state) = self.metal.as_mut() {
+            state.atlas_grayscale.clear();
+            state.atlas_color.clear();
+        }
+        #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
+        if let Some(state) = self.wgpu.as_mut() {
+            state.atlas_grayscale.clear();
+            state.atlas_color.clear();
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(state) = self.vulkan.as_mut() {
+            state.atlas_grayscale.clear();
+            state.atlas_color.clear();
+        }
+        if let Some(state) = self.cpu.as_mut() {
+            state.atlas_grayscale.clear();
+            state.atlas_color.clear();
+        }
+    }
+
     /// Update the scale factor used to convert caller-supplied
     /// logical coords / font sizes to device pixels.
     #[inline]
@@ -2008,5 +2049,55 @@ fn blit_text_color(
             let idx = buf_row + (dst_x as usize);
             buf[idx] = blend_premul_over(src, buf[idx]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A font reload hands the UI text renderer a new library. Every
+    // cache keyed by the old library's font ids or holding its handles
+    // and glyphs must go with it, or labels seen before the reload keep
+    // shaping and rasterizing with the old font.
+    #[test]
+    fn set_fonts_drops_every_cache_and_adopts_the_new_library() {
+        let old = FontLibrary::default();
+        let mut text = Text::new(&old);
+        text.init_cpu();
+        let width = text.draw(0.0, 0.0, "Tab title", &DrawOpts::default());
+        assert!(width > 0.0);
+        assert!(!text.shape_cache.is_empty());
+        assert!(!text.ascent_cache.is_empty());
+        assert!(!text.font_resolve.is_empty());
+        #[cfg(target_os = "macos")]
+        assert!(!text.handle_cache.is_empty());
+
+        let new = FontLibrary::default();
+        text.set_fonts(&new);
+
+        assert!(
+            text.instances.is_empty(),
+            "recorded instances went with the atlases"
+        );
+        assert!(std::sync::Arc::ptr_eq(&text.font_library.inner, &new.inner));
+        assert!(!std::sync::Arc::ptr_eq(
+            &text.font_library.inner,
+            &old.inner
+        ));
+        assert!(text.shape_cache.is_empty());
+        assert!(text.ascent_cache.is_empty());
+        assert!(text.font_resolve.is_empty());
+        assert!(text.synthesis_cache.is_empty());
+        #[cfg(target_os = "macos")]
+        assert!(text.handle_cache.is_empty());
+        #[cfg(not(target_os = "macos"))]
+        assert!(text.font_data_cache.is_empty());
+
+        // The renderer works again from scratch with the new library.
+        text.clear();
+        let again = text.draw(0.0, 0.0, "Tab title", &DrawOpts::default());
+        assert_eq!(again, width);
+        assert!(!text.shape_cache.is_empty());
     }
 }
