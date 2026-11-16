@@ -291,7 +291,7 @@ where
         let mut result = Ok(ReadOutcome::Budget);
 
         // Reserve the next terminal lock for PTY reading.
-        let terminal_lease = Some(self.terminal.lease());
+        let terminal_lease = self.terminal.lease();
         let mut terminal = None;
         let mut held_before = None;
         // Replies are written below unless bytes were already waiting
@@ -346,7 +346,12 @@ where
             unprocessed = 0;
 
             // Assure we're not blocking the terminal too long unnecessarily.
-            if stopped || processed >= MAX_LOCKED_READ {
+            // A thread waiting for the terminal, the renderer for its
+            // frame or the UI thread for input, gets it after this chunk
+            // rather than after the whole burst; the PTY is level
+            // triggered, so the rest of the burst wakes this loop again
+            // at once.
+            if stopped || processed >= MAX_LOCKED_READ || self.terminal.has_waiters() {
                 break;
             }
         }
@@ -377,7 +382,9 @@ where
         // The replies go out as soon as the lock is released. A PTY that
         // cannot take them now leaves them for the writable event.
         drop(terminal);
-        drop(terminal_lease);
+        // Handed on directly, so a waiter gets the lock now rather than
+        // racing this thread's next lease for it.
+        parking_lot::MutexGuard::unlock_fair(terminal_lease);
         if !had_pending && state.needs_write() {
             if let Err(err) = self.pty_write(state) {
                 tracing::debug!("PTY reply deferred to the writable event: {err}");

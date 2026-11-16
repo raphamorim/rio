@@ -11,6 +11,10 @@ struct TestPty {
     bytes: io::Cursor<Vec<u8>>,
     ending: Option<ErrorKind>,
     exhausted: Option<mpsc::Sender<()>>,
+    /// Runs on the reader thread at the start of each read, with the
+    /// read's ordinal, so a test can act exactly between two chunks.
+    before_read: Option<Box<dyn FnMut(usize) + Send>>,
+    reads: usize,
     writer: RecordingWriter,
     child: Option<corcovado::Registration>,
     registration_error: bool,
@@ -22,6 +26,10 @@ struct TestPty {
 
 impl Read for TestPty {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.reads += 1;
+        if let Some(hook) = self.before_read.as_mut() {
+            hook(self.reads);
+        }
         let got = self.bytes.read(buf)?;
         if got != 0 {
             return Ok(got);
@@ -158,6 +166,8 @@ fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidLi
             bytes: io::Cursor::new(bytes),
             ending,
             exhausted: None,
+            before_read: None,
+            reads: 0,
             writer: RecordingWriter::default(),
             child: None,
             registration_error: false,
@@ -407,6 +417,8 @@ fn a_stuck_write_is_not_retried_on_read_wakeups() {
             bytes: io::Cursor::new(b"output".to_vec()),
             ending: None,
             exhausted: None,
+            before_read: None,
+            reads: 0,
             writer: RecordingWriter {
                 blocked: true,
                 attempts: Some(attempts_tx),
@@ -477,6 +489,8 @@ fn a_parser_reply_is_written_by_the_reader_thread() {
             bytes: io::Cursor::new(b"\x1b[cok".to_vec()),
             ending: None,
             exhausted: None,
+            before_read: None,
+            reads: 0,
             writer: RecordingWriter {
                 written: Some(written_tx),
                 ..RecordingWriter::default()
@@ -508,6 +522,88 @@ fn a_parser_reply_is_written_by_the_reader_thread() {
         !names.contains(&"ptywrite"),
         "the reply never went to the event loop: {names:?}"
     );
+}
+
+// A thread that asks for the terminal mid burst gets it after the
+// chunk being parsed, not after the whole burst, and the remaining
+// chunks are parsed on the next wakeup.
+#[test]
+fn a_waiting_thread_gets_the_terminal_after_the_current_chunk() {
+    // Four chunks of one read each; every chunk homes the cursor,
+    // writes its number and pads with attribute resets that change
+    // nothing, so the first cell names the last parsed chunk.
+    let mut payload = Vec::new();
+    for n in 1..=4u8 {
+        payload.extend_from_slice(b"\x1b[H");
+        payload.push(b'0' + n);
+        while payload.len() < READ_CHUNK * n as usize {
+            payload.extend_from_slice(b"\x1b[0m");
+        }
+        assert_eq!(payload.len(), READ_CHUNK * n as usize);
+    }
+    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        VoidListener,
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let waiter_terminal = Arc::clone(&terminal);
+    let (saw_tx, saw) = mpsc::channel();
+    let before_read = move |read: usize| {
+        if read != 3 {
+            return;
+        }
+        // The reader thread holds the lock since chunk 1; this thread
+        // now waits for it, as a renderer would for its frame.
+        let terminal = Arc::clone(&waiter_terminal);
+        let saw_tx = saw_tx.clone();
+        std::thread::spawn(move || {
+            let guard = terminal.lock();
+            saw_tx.send(guard.grid[Line(0)][Column(0)].c()).unwrap();
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !waiter_terminal.has_waiters() {
+            assert!(std::time::Instant::now() < deadline, "no waiter appeared");
+            std::thread::yield_now();
+        }
+    };
+    let mut machine = Machine::new(
+        Arc::clone(&terminal),
+        TestPty {
+            bytes: io::Cursor::new(payload),
+            ending: None,
+            exhausted: None,
+            before_read: Some(Box::new(before_read)),
+            reads: 0,
+            writer: RecordingWriter::default(),
+            child: None,
+            registration_error: false,
+            read_event: false,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        VoidListener,
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let mut state = State::default();
+    let mut buf = vec![0; READ_BUFFER_SIZE];
+
+    let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
+    assert_eq!(outcome, ReadOutcome::Budget, "the burst stopped early");
+    assert_eq!(
+        saw.recv_timeout(Duration::from_secs(5)).unwrap(),
+        '3',
+        "the waiter got the terminal right after the chunk being parsed"
+    );
+
+    let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
+    assert_eq!(outcome, ReadOutcome::Closed);
+    assert_eq!(first_line(&machine, 1), "4", "the rest followed");
 }
 
 #[cfg(target_os = "macos")]
