@@ -226,6 +226,9 @@ impl Text {
     /// a label seen before the reload kept shaping with the old font.
     pub fn set_fonts(&mut self, font_library: &FontLibrary) {
         self.font_library = font_library.clone();
+        // Instances recorded against the old atlases go too, so this
+        // does not rely on every caller presenting first.
+        self.instances.clear();
         self.font_resolve.clear();
         self.synthesis_cache.clear();
         #[cfg(not(target_os = "macos"))]
@@ -2073,6 +2076,10 @@ mod tests {
         let new = FontLibrary::default();
         text.set_fonts(&new);
 
+        assert!(
+            text.instances.is_empty(),
+            "recorded instances went with the atlases"
+        );
         assert!(std::sync::Arc::ptr_eq(&text.font_library.inner, &new.inner));
         assert!(!std::sync::Arc::ptr_eq(
             &text.font_library.inner,

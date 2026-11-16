@@ -55,9 +55,8 @@ pub struct Sugarloaf<'a> {
     font_cache: FontCache,
     /// Immediate-mode UI-text recorder. Overlays (tab titles, search
     /// overlay, command palette, etc.) drive this instead of the
-    /// `Content`/`BuilderState` pipeline. See `sugarloaf::text` and
-    /// `memory/project_sugarloaf_content_drop.md`. Phase 1a: scaffold
-    /// only — holds no atlases or GPU state yet.
+    /// `Content`/`BuilderState` pipeline. It owns its glyph atlases
+    /// and font caches; `update_font` hands it a reloaded library.
     text: crate::text::Text,
     /// Per-panel (rich_text_id) image overlays. Driven by the kitty
     /// graphics frontend path; read by the renderer's image pass.
