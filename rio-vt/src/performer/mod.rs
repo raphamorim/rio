@@ -250,8 +250,8 @@ where
         let (sender, receiver) = channel::channel();
         let poll = corcovado::Poll::new()?;
 
-        // Replies the parser produces are written by this thread, right
-        // after the parse that produced them.
+        // Replies the parser produces are written by this thread at the
+        // end of the burst that produced them.
         terminal.lock().set_enable_pty_reply(true);
 
         Ok(Machine {

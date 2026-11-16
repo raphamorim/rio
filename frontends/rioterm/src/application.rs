@@ -1082,8 +1082,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // Route reply bytes (CSI / OSC responses) back to the
                     // PTY of the panel that emitted them, not whichever
                     // panel happens to be focused. A panel with a PTY
-                    // thread writes its replies there and never sends
-                    // this; it remains for terminals driven without one.
+                    // thread writes its replies there; this is reached
+                    // for terminals driven without one, and for the
+                    // replies behind a query only this thread answers,
+                    // which keep their order by taking the same path.
                     if let Some(item) = route
                         .window
                         .screen
