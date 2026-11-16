@@ -23,14 +23,19 @@ use parking_lot::{Mutex, MutexGuard};
 use parking_lot_core::{park, unpark_all, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-/// How long [`TerminalLock::yield_to_demand`] waits for a demander to
-/// take its turn before carrying on. A demanding critical section, the
-/// renderer's snapshot or an input event, is microseconds; this bounds
-/// the reader's stall if the demander was descheduled or gave up.
-const HANDOFF_TIMEOUT: Duration = Duration::from_millis(1);
+/// What a release of the lock runs while a reader yields through its
+/// own event loop rather than [`TerminalLock::yield_to_demand`]; see
+/// [`TerminalLock::set_release_hook`].
+type ReleaseHook = Box<dyn Fn() + Send + Sync>;
+
+/// How long a yield waits for a demander to take its turn before
+/// carrying on. A demanding critical section, the renderer's snapshot
+/// or an input event, is microseconds; this bounds the reader's stall
+/// if the demander was descheduled or gave up.
+pub const HANDOFF_TIMEOUT: Duration = Duration::from_millis(1);
 
 pub struct TerminalLock<T> {
     data: Mutex<T>,
@@ -43,6 +48,10 @@ pub struct TerminalLock<T> {
     /// still waiting: it was descheduled that long, or whoever held
     /// the lock kept it that long. A diagnostic.
     handoff_timeouts: AtomicUsize,
+    /// Whether a reader is yielding through its event loop and wants
+    /// the release hook run; see [`Self::set_release_hook`].
+    yielding: AtomicBool,
+    release_hook: Mutex<Option<ReleaseHook>>,
 }
 
 impl<T> TerminalLock<T> {
@@ -52,7 +61,43 @@ impl<T> TerminalLock<T> {
             demand: AtomicUsize::new(0),
             handoff: AtomicU32::new(0),
             handoff_timeouts: AtomicUsize::new(0),
+            yielding: AtomicBool::new(false),
+            release_hook: Mutex::new(None),
         }
+    }
+
+    /// The handoff generation: bumped each time a demanding holder lets
+    /// go. A reader that yields through its own event loop reads it
+    /// while it still holds the lock, lets go, and knows the demander
+    /// had its turn when it has changed.
+    #[inline]
+    pub fn handoff_generation(&self) -> u32 {
+        self.handoff.load(Ordering::Acquire)
+    }
+
+    /// Run `hook` when a demanding holder lets go while a reader is
+    /// between [`Self::begin_yield`] and [`Self::end_yield`]. For a
+    /// reader that waits for the handoff in its own event loop, so
+    /// that it keeps serving that loop meanwhile: the hook wakes the
+    /// loop, which then sees the generation moved on.
+    pub fn set_release_hook(&self, hook: ReleaseHook) {
+        *self.release_hook.lock() = Some(hook);
+    }
+
+    /// A reader starts waiting for a handoff in its event loop.
+    pub fn begin_yield(&self) {
+        self.yielding.store(true, Ordering::Release);
+    }
+
+    /// The reader's wait is over, by handoff or by the bound.
+    pub fn end_yield(&self) {
+        self.yielding.store(false, Ordering::Release);
+    }
+
+    /// A yield in the reader's event loop reached [`HANDOFF_TIMEOUT`]
+    /// with the demander still waiting.
+    pub fn note_handoff_timeout(&self) {
+        self.handoff_timeouts.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Lock the terminal, counting as demand while waiting. For every
@@ -93,7 +138,9 @@ impl<T> TerminalLock<T> {
     /// once when nobody waits. The handoff counter is read before the
     /// demand is checked again and validated under the parking lot's
     /// own lock, so a release between the check and the sleep is seen
-    /// and the sleep skipped, never missed.
+    /// and the sleep skipped, never missed. Letting go is the mark,
+    /// not taking: what the other thread did with the terminal may
+    /// have left work for this one.
     pub fn yield_to_demand(&self) {
         if !self.has_demand() {
             return;
@@ -108,10 +155,7 @@ impl<T> TerminalLock<T> {
         unsafe {
             park(
                 self.park_key(),
-                || {
-                    self.handoff.load(Ordering::Acquire) == generation
-                        && self.has_demand()
-                },
+                || self.handoff.load(Ordering::Acquire) == generation,
                 || {},
                 |_, _| {
                     self.handoff_timeouts.fetch_add(1, Ordering::Relaxed);
@@ -134,12 +178,18 @@ impl<T> TerminalLock<T> {
         &self.handoff as *const AtomicU32 as usize
     }
 
-    /// A demanding holder let go: wake a reader sleeping for its turn.
+    /// A demanding holder let go: wake a reader sleeping for its turn,
+    /// or waiting for it in its event loop.
     fn released(&self) {
         self.handoff.fetch_add(1, Ordering::AcqRel);
         // SAFETY: same key as `yield_to_demand`; no callback.
         unsafe {
             unpark_all(self.park_key(), DEFAULT_UNPARK_TOKEN);
+        }
+        if self.yielding.load(Ordering::Acquire) {
+            if let Some(hook) = self.release_hook.lock().as_ref() {
+                hook();
+            }
         }
     }
 }

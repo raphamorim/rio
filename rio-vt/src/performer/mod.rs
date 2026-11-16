@@ -170,6 +170,24 @@ pub struct State {
     /// Deadline of the terminal's active synchronized update, refreshed
     /// whenever the terminal lock is held.
     sync_deadline: Option<Instant>,
+    /// Bytes read into the buffer and not yet parsed, left there when
+    /// the reader let go of the terminal for a thread that waited;
+    /// parsed before anything else is read.
+    carry: Option<std::ops::Range<usize>>,
+    /// A handoff in progress: the reader let go of the terminal for a
+    /// thread that waited and does not read the PTY again until that
+    /// thread has had it, or the bound passes. Meanwhile it serves its
+    /// channel, so input is written while the other thread holds the
+    /// terminal.
+    handoff: Option<Handoff>,
+}
+
+#[cfg(feature = "pty")]
+struct Handoff {
+    /// The lock's handoff generation as the reader let go; a change
+    /// means the demander had its turn.
+    generation: u32,
+    deadline: Instant,
 }
 
 #[cfg(feature = "pty")]
@@ -254,6 +272,13 @@ where
         // end of the burst that produced them.
         terminal.lock().set_enable_pty_reply(true);
 
+        // A thread this loop yielded the terminal to wakes the poll when
+        // it lets go, so the loop resumes reading at once.
+        let wake = parking_lot::Mutex::new(sender.clone());
+        terminal.set_release_hook(Box::new(move || {
+            let _ = wake.lock().send(Msg::TerminalReleased);
+        }));
+
         Ok(Machine {
             sender,
             receiver: PeekableReceiver::new(receiver),
@@ -296,6 +321,20 @@ where
         // on the writable event; then they wait with them.
         let had_pending = state.needs_write();
 
+        // First what was read before a handoff and not yet parsed.
+        if let Some(carry) = state.carry.take() {
+            let mut guard = self.terminal.lock_reader();
+            held_before = Some(guard.synchronized_output());
+            processed += carry.len();
+            if let Some(rest) = self.parse_slices(state, &mut guard, buf, carry) {
+                state.carry = Some(rest);
+                self.leave_for_demand(state, guard);
+                Self::write_replies(&mut self.pty, state, had_pending);
+                return Ok(ReadOutcome::Budget);
+            }
+            terminal = Some(guard);
+        }
+
         loop {
             // Read from the PTY.
             let cap = (unprocessed + READ_CHUNK).min(buf.len());
@@ -337,22 +376,19 @@ where
             // Parse the incoming bytes. Bytes that piled up while the
             // terminal was busy are parsed a chunk at a time, and a
             // thread that waits meanwhile gets the terminal between two
-            // chunks, as it would between two reads.
-            let mut parsed = 0;
-            while parsed < unprocessed {
-                let end = (parsed + READ_CHUNK).min(unprocessed);
-                if parsed > 0 && self.terminal.has_demand() {
-                    let guard = terminal.take().expect("locked above");
-                    self.hand_over(state, guard);
-                    terminal = Some(self.terminal.lock_reader());
-                }
-                let guard = terminal.as_mut().expect("locked above");
-                held_before.get_or_insert(guard.synchronized_output());
-                state.parser.advance(&mut **guard, &buf[parsed..end]);
-                parsed = end;
-            }
-
+            // chunks, as it would between two reads: the rest of the
+            // pile stays in the buffer for the next call.
+            let mut guard = terminal.take().expect("locked above");
+            held_before.get_or_insert(guard.synchronized_output());
             processed += unprocessed;
+            if let Some(rest) = self.parse_slices(state, &mut guard, buf, 0..unprocessed)
+            {
+                state.carry = Some(rest);
+                self.leave_for_demand(state, guard);
+                Self::write_replies(&mut self.pty, state, had_pending);
+                return Ok(ReadOutcome::Budget);
+            }
+            terminal = Some(guard);
             unprocessed = 0;
 
             // A thread waiting for the terminal, the renderer for its
@@ -387,32 +423,51 @@ where
             }
         }
 
-        // The replies go out as soon as the lock is released. A PTY that
-        // cannot take them now leaves them for the writable event.
-        drop(terminal);
-        if !had_pending && state.needs_write() {
-            if let Err(err) = self.pty_write(state) {
-                tracing::debug!("PTY reply deferred to the writable event: {err}");
-            }
-        }
         // Whoever waited for the terminal while this thread held it
-        // takes it before this thread can come back for the rest of
-        // the burst. A wakeup that parsed nothing held nothing and
-        // owes nobody a turn.
-        if processed > 0 {
-            self.terminal.yield_to_demand();
+        // takes it before this thread reads the rest of the burst; the
+        // generation is read while the lock is still held, so a release
+        // right after letting go is seen. A wakeup that parsed nothing
+        // held nothing and owes nobody a turn.
+        let generation = self.terminal.handoff_generation();
+        drop(terminal);
+        if processed > 0 && self.terminal.has_demand() {
+            self.begin_handoff(state, generation);
         }
+
+        Self::write_replies(&mut self.pty, state, had_pending);
 
         result
     }
 
+    /// Parse `range` of `buf` a chunk at a time. Between chunks, if a
+    /// thread waits for the terminal, stop and return what is left.
+    fn parse_slices(
+        &self,
+        state: &mut State,
+        guard: &mut Crosswords<U>,
+        buf: &[u8],
+        range: std::ops::Range<usize>,
+    ) -> Option<std::ops::Range<usize>> {
+        let mut parsed = range.start;
+        while parsed < range.end {
+            // Only between chunks: a single read is parsed whole.
+            if parsed > range.start && self.terminal.has_demand() {
+                return Some(parsed..range.end);
+            }
+            let end = (parsed + READ_CHUNK).min(range.end);
+            state.parser.advance(guard, &buf[parsed..end]);
+            parsed = end;
+        }
+        None
+    }
+
     /// Let go of the terminal in the middle of a burst for a thread
-    /// that waits for it, and do not take it back until that thread
-    /// has had it. As at the end of a burst, the replies so far leave
-    /// with this thread, so another drainer of the terminal cannot take
-    /// them out of order, and the renderer hears of the damage so far
-    /// in case the waiter is someone else.
-    fn hand_over(
+    /// that waits for it. As at the end of a burst, the replies so far
+    /// leave with this thread, so another drainer of the terminal
+    /// cannot take them out of order, and the renderer hears of the
+    /// damage so far in case the waiter is someone else. The rest of
+    /// the burst waits in the buffer until the handoff is over.
+    fn leave_for_demand(
         &self,
         state: &mut State,
         mut guard: parking_lot::MutexGuard<'_, Crosswords<U>>,
@@ -423,8 +478,58 @@ where
         if !guard.synchronized_output() && guard.peek_damage_event().is_some() {
             self.notify_damage(&mut guard);
         }
+        let generation = self.terminal.handoff_generation();
         drop(guard);
-        self.terminal.yield_to_demand();
+        self.begin_handoff(state, generation);
+    }
+
+    /// The replies a parse produced go out as soon as the lock is
+    /// released, unless bytes were already waiting on the writable
+    /// event; then they wait with them. A PTY that cannot take them
+    /// now leaves them for that event too.
+    fn write_replies(pty: &mut T, state: &mut State, had_pending: bool) {
+        if !had_pending && state.needs_write() {
+            if let Err(err) = Self::pty_write(pty, state) {
+                tracing::debug!("PTY reply deferred to the writable event: {err}");
+            }
+        }
+    }
+
+    /// Stop reading the PTY until the thread that waited for the
+    /// terminal has had it, or the bound passes. The channel is served
+    /// meanwhile; see `run`.
+    fn begin_handoff(&self, state: &mut State, generation: u32) {
+        self.terminal.begin_yield();
+        state.handoff = Some(Handoff {
+            generation,
+            deadline: Instant::now() + crate::event::sync::HANDOFF_TIMEOUT,
+        });
+    }
+
+    /// Whether the handoff in progress is over: the demander had the
+    /// terminal and let go of it, or the bound passed. Ends it if so.
+    /// Letting go is the mark, not taking: a thread that parses into
+    /// the terminal sends the replies through this thread's channel as
+    /// it holds the lock, and they must be written before the rest of
+    /// the burst is parsed.
+    fn handoff_over(&self, state: &mut State) -> bool {
+        let Some(handoff) = &state.handoff else {
+            return false;
+        };
+        let had_turn = self.terminal.handoff_generation() != handoff.generation;
+        if !had_turn {
+            if Instant::now() < handoff.deadline {
+                return false;
+            }
+            self.terminal.note_handoff_timeout();
+        }
+        self.end_handoff(state);
+        true
+    }
+
+    fn end_handoff(&self, state: &mut State) {
+        state.handoff = None;
+        self.terminal.end_yield();
     }
 
     /// Drain the channel.
@@ -443,6 +548,8 @@ where
                     // behind the query back to this thread.
                     self.terminal.lock_reader().ui_query_answered();
                 }
+                // Only a wakeup; the poll's loop sees the generation.
+                Msg::TerminalReleased => (),
                 Msg::Resize(window_size) => {
                     let _ = self.pty.set_winsize(window_size.into());
                 }
@@ -454,12 +561,14 @@ where
     }
 
     #[inline]
-    fn pty_write(&mut self, state: &mut State) -> io::Result<()> {
+    /// Takes the PTY alone, not the whole machine, so a write can happen
+    /// while a terminal guard is held or right after it is let go.
+    fn pty_write(pty: &mut T, state: &mut State) -> io::Result<()> {
         state.ensure_next();
 
         'write_many: while let Some(mut current) = state.take_current() {
             'write_one: loop {
-                match self.pty.writer().write(current.remaining_bytes()) {
+                match pty.writer().write(current.remaining_bytes()) {
                     Ok(0) => {
                         state.set_current(Some(current));
                         break 'write_many;
@@ -533,10 +642,45 @@ where
         let mut last_interest = Ready::readable();
 
         loop {
-            // Wakeup the event loop when a synchronized update timeout was reached.
-            let timeout = state
-                .sync_deadline
-                .map(|deadline| deadline.saturating_duration_since(Instant::now()));
+            // A handoff that is over, by the demander's turn or by the
+            // bound, lets the reader take up the rest of the burst.
+            let resumed = self.handoff_over(state);
+
+            // Update the PTY registration when the interest changed,
+            // before the poll so a handoff that just ended has its
+            // reading back: readable unless a handoff is in progress,
+            // since the PTY is level triggered and would wake the poll
+            // at once with data this thread must not take yet; writable
+            // while bytes wait.
+            let mut interest = Ready::empty();
+            if state.handoff.is_none() {
+                interest.insert(Ready::readable());
+            }
+            if state.needs_write() {
+                interest.insert(Ready::writable());
+            }
+            if interest != last_interest {
+                self.pty.reregister(&self.poll, interest, poll_opts)?;
+                last_interest = interest;
+            }
+
+            // Wakeup the event loop when a synchronized update timeout
+            // was reached, or when a handoff reaches its bound.
+            let now = Instant::now();
+            let timeout = [
+                state.sync_deadline,
+                state.handoff.as_ref().map(|handoff| handoff.deadline),
+            ]
+            .into_iter()
+            .flatten()
+            .min()
+            .map(|deadline| deadline.saturating_duration_since(now));
+            // Not when there is a pile to get back to.
+            let timeout = if resumed && state.carry.is_some() {
+                Some(std::time::Duration::ZERO)
+            } else {
+                timeout
+            };
 
             events.clear();
             if let Err(err) = self.poll.poll(&mut events, timeout) {
@@ -559,7 +703,10 @@ where
                 state.sync_deadline = terminal.sync_update_deadline();
             }
 
-            if events.is_empty() && self.receiver.peek().is_none() {
+            if events.is_empty()
+                && self.receiver.peek().is_none()
+                && !(resumed && state.carry.is_some())
+            {
                 continue;
             }
 
@@ -578,9 +725,15 @@ where
             // waiting on that interest are not retried here: a full PTY
             // would otherwise cost a failing write on every read wakeup.
             if state.needs_write() && !queued_before {
-                if let Err(err) = self.pty_write(state) {
+                if let Err(err) = Self::pty_write(&mut self.pty, state) {
                     tracing::debug!("PTY write deferred to the writable event: {err}");
                 }
+            }
+
+            // The rest of a pile left behind by a handoff, before any new
+            // reads: it is older than whatever the PTY holds now.
+            if resumed && state.carry.is_some() {
+                self.pty_read(state, buf)?;
             }
 
             for event in events.iter() {
@@ -603,27 +756,21 @@ where
                         let hung_up = UnixReady::from(event.readiness()).is_hup();
                         #[cfg(not(unix))]
                         let hung_up = false;
-                        // HUP can accompany unread final output.
-                        if event.readiness().is_readable() || hung_up {
+                        // HUP can accompany unread final output. During
+                        // a handoff the PTY waits; its data is still
+                        // there when reading resumes.
+                        if (event.readiness().is_readable() || hung_up)
+                            && state.handoff.is_none()
+                        {
                             self.pty_read(state, buf)?;
                         }
 
                         if !hung_up && event.readiness().is_writable() {
-                            self.pty_write(state)?;
+                            Self::pty_write(&mut self.pty, state)?;
                         }
                     }
                     _ => (),
                 }
-            }
-
-            // Update the PTY registration when write interest changed.
-            let mut interest = Ready::readable();
-            if state.needs_write() {
-                interest.insert(Ready::writable());
-            }
-            if interest != last_interest {
-                self.pty.reregister(&self.poll, interest, poll_opts)?;
-                last_interest = interest;
             }
         }
     }
@@ -650,7 +797,14 @@ where
             let quiet = std::time::Duration::from_millis(25);
             let mut quiet_deadline = Instant::now() + quiet;
             loop {
-                match self.pty_read(state, buf) {
+                let outcome = self.pty_read(state, buf);
+                // Nothing is typed to a dead child that matters: the
+                // handoff is waited for in place.
+                if state.handoff.is_some() {
+                    self.terminal.yield_to_demand();
+                    self.end_handoff(state);
+                }
+                match outcome {
                     Ok(ReadOutcome::Budget) if Instant::now() < deadline => {
                         quiet_deadline = Instant::now() + quiet;
                         continue;

@@ -95,6 +95,11 @@ pub enum Msg {
     /// owner declined to answer.
     Reply(Cow<'static, [u8]>),
 
+    /// A thread that waited for the terminal has had it and let go,
+    /// while the reader thread was waiting for exactly that in its
+    /// poll. Sent by the terminal lock's release hook; carries nothing.
+    TerminalReleased,
+
     #[allow(dead_code)]
     Shutdown,
 

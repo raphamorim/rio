@@ -23,6 +23,9 @@ struct TestPty {
     reads: usize,
     writer: RecordingWriter,
     child: Option<corcovado::Registration>,
+    /// The other half of `child`, for `reregister` to re-fire readiness
+    /// like a level triggered PTY would.
+    readiness: Option<corcovado::SetReadiness>,
     registration_error: bool,
     read_event: bool,
     shutdown_calls: usize,
@@ -140,9 +143,20 @@ impl ProcessReadWrite for TestPty {
     fn reregister(
         &mut self,
         _: &corcovado::Poll,
-        _: Ready,
+        interest: Ready,
         _: PollOpt,
     ) -> io::Result<()> {
+        // A real PTY is level triggered: data still there when reading
+        // is re-armed fires at once. The registration here is an edge,
+        // so re-arm it by hand when bytes remain.
+        if interest.is_readable()
+            && self.bytes.position() < self.bytes.get_ref().len() as u64
+        {
+            if let Some(readiness) = &self.readiness {
+                readiness.set_readiness(Ready::empty()).unwrap();
+                readiness.set_readiness(Ready::readable()).unwrap();
+            }
+        }
         Ok(())
     }
     fn deregister(&mut self, _: &corcovado::Poll) -> io::Result<()> {
@@ -185,6 +199,7 @@ fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidLi
             reads: 0,
             writer: RecordingWriter::default(),
             child: None,
+            readiness: None,
             registration_error: false,
             read_event: false,
             shutdown_calls: 0,
@@ -437,6 +452,7 @@ fn an_idle_wakeup_does_not_yield_to_demand() {
             reads: 0,
             writer: RecordingWriter::default(),
             child: None,
+            readiness: None,
             registration_error: false,
             read_event: false,
             shutdown_calls: 0,
@@ -516,6 +532,7 @@ fn a_stuck_write_is_not_retried_on_read_wakeups() {
                 ..RecordingWriter::default()
             },
             child: Some(registration),
+            readiness: None,
             registration_error: false,
             read_event: true,
             shutdown_calls: 0,
@@ -596,6 +613,7 @@ fn a_parser_reply_is_written_by_the_reader_thread() {
                 ..RecordingWriter::default()
             },
             child: Some(registration),
+            readiness: None,
             registration_error: false,
             read_event: true,
             shutdown_calls: 0,
@@ -643,19 +661,38 @@ struct PileWaiter {
     written: Vec<u8>,
 }
 
-/// Spawns the waiter the moment the parser reports the title the first
-/// chunk of the pile sets, that is while the reader holds the terminal
-/// for the pile, and returns once the waiter counts as demand. The
-/// waiter then cannot win the lock outright; it gets it when the
-/// reader hands it over.
+type SharedTerminal = Arc<TerminalLock<Crosswords<OnTitle>>>;
+
+/// Runs an action on its own thread the moment the parser reports a
+/// title, that is while the reader holds the terminal, and returns once
+/// that thread counts as demand. A waiter started this way cannot win
+/// the lock outright; it gets it when the reader hands it over.
 #[derive(Clone)]
-struct WaiterOnTitle {
-    terminal: Arc<std::sync::OnceLock<Arc<TerminalLock<Crosswords<WaiterOnTitle>>>>>,
-    saw: mpsc::Sender<(char, Duration, usize, bool)>,
+struct OnTitle {
+    terminal: Arc<std::sync::OnceLock<SharedTerminal>>,
+    action: Arc<dyn Fn(SharedTerminal) + Send + Sync>,
     spawned: Arc<std::sync::atomic::AtomicBool>,
 }
 
-impl EventListener for WaiterOnTitle {
+impl OnTitle {
+    fn new(action: impl Fn(SharedTerminal) + Send + Sync + 'static) -> OnTitle {
+        OnTitle {
+            terminal: Arc::new(std::sync::OnceLock::new()),
+            action: Arc::new(action),
+            spawned: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
+    /// The terminal built with this listener, for the action to lock.
+    fn watches(&self, terminal: &SharedTerminal) {
+        self.terminal
+            .set(Arc::clone(terminal))
+            .ok()
+            .expect("set once");
+    }
+}
+
+impl EventListener for OnTitle {
     fn send_event(&self, event: RioEvent, _: WindowId) {
         if !matches!(event, RioEvent::Title(..))
             || self.spawned.swap(true, std::sync::atomic::Ordering::SeqCst)
@@ -663,28 +700,42 @@ impl EventListener for WaiterOnTitle {
             return;
         }
         let terminal = Arc::clone(self.terminal.get().expect("set after construction"));
-        let saw = self.saw.clone();
+        let action = Arc::clone(&self.action);
         let probe = Arc::clone(&terminal);
-        std::thread::spawn(move || {
-            let asked = std::time::Instant::now();
-            let mut guard = terminal.lock();
-            let waited = asked.elapsed();
-            let mut queued = 0;
-            guard.drain_pty_replies(|_| queued += 1);
-            saw.send((
-                guard.grid[Line(0)][Column(0)].c(),
-                waited,
-                queued,
-                guard.damage_event_in_flight,
-            ))
-            .unwrap();
-        });
+        std::thread::spawn(move || action(terminal));
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !probe.has_demand() {
             assert!(std::time::Instant::now() < deadline, "no waiter appeared");
             std::thread::yield_now();
         }
     }
+}
+
+/// A pile of `chunks` reads: every chunk homes the cursor and writes
+/// its ordinal, padded with attribute resets and then NULs (which the
+/// parser ignores) to exactly one read; the first chunk also carries a
+/// DA query and sets the title that summons the waiter, and `extra`
+/// goes into the chunk of that number.
+fn pile(chunks: u8, extra: Option<(u8, &[u8])>) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for n in 1..=chunks {
+        payload.extend_from_slice(b"\x1b[H");
+        // '1'..'9', then the ASCII characters after '9' for more.
+        payload.push(b'0' + n);
+        if n == 1 {
+            payload.extend_from_slice(b"\x1b[c\x1b]0;pile\x1b\\");
+        }
+        if let Some((at, bytes)) = extra {
+            if at == n {
+                payload.extend_from_slice(bytes);
+            }
+        }
+        while payload.len() + 4 <= READ_CHUNK * n as usize {
+            payload.extend_from_slice(b"\x1b[0m");
+        }
+        payload.resize(READ_CHUNK * n as usize, 0);
+    }
+    payload
 }
 
 /// A burst of `chunks` reads piles up while another thread holds the
@@ -699,27 +750,23 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
     // A pile that fills the reader's buffer would force the lock before
     // the read hook below releases the holder.
     assert!(chunks as usize <= READ_BUFFER_SIZE / READ_CHUNK);
-    let mut payload = Vec::new();
-    for n in 1..=chunks {
-        payload.extend_from_slice(b"\x1b[H");
-        // '1'..'9', then the ASCII characters after '9' for more.
-        payload.push(b'0' + n);
-        if n == 1 {
-            payload.extend_from_slice(b"\x1b[c\x1b]0;pile\x1b\\");
-        }
-        // Exactly one read per chunk: resets, then NULs, which the
-        // parser ignores, for the last few bytes.
-        while payload.len() + 4 <= READ_CHUNK * n as usize {
-            payload.extend_from_slice(b"\x1b[0m");
-        }
-        payload.resize(READ_CHUNK * n as usize, 0);
-    }
+    let payload = pile(chunks, None);
     let (saw_tx, saw) = mpsc::channel();
-    let listener = WaiterOnTitle {
-        terminal: Arc::new(std::sync::OnceLock::new()),
-        saw: saw_tx,
-        spawned: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-    };
+    let listener = OnTitle::new(move |terminal| {
+        let asked = std::time::Instant::now();
+        let mut guard = terminal.lock();
+        let waited = asked.elapsed();
+        let mut queued = 0;
+        guard.drain_pty_replies(|_| queued += 1);
+        saw_tx
+            .send((
+                guard.grid[Line(0)][Column(0)].c(),
+                waited,
+                queued,
+                guard.damage_event_in_flight,
+            ))
+            .unwrap();
+    });
     let terminal = Arc::new(TerminalLock::new(Crosswords::new(
         CrosswordsSize::new(80, 24),
         CursorShape::Block,
@@ -728,11 +775,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
         0,
         0,
     )));
-    listener
-        .terminal
-        .set(Arc::clone(&terminal))
-        .ok()
-        .expect("set once");
+    listener.watches(&terminal);
 
     // The holder keeps the terminal busy, unfairly like a renderer that
     // already has it, until the read after the pile. It must not start
@@ -756,6 +799,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
             reads: 0,
             writer: RecordingWriter::default(),
             child: None,
+            readiness: None,
             registration_error: false,
             read_event: false,
             shutdown_calls: 0,
@@ -782,7 +826,18 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
     });
     held.recv_timeout(Duration::from_secs(5)).unwrap();
 
-    let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
+    // The event loop's part, in place: wait out each handoff, then take
+    // up the rest of the pile.
+    let outcome = loop {
+        let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
+        if state.handoff.is_some() {
+            terminal.yield_to_demand();
+            machine.end_handoff(&mut state);
+        }
+        if state.carry.is_none() {
+            break outcome;
+        }
+    };
     assert_eq!(outcome, ReadOutcome::Closed, "the whole pile was read");
     holder.join().unwrap();
     let (saw, waited, queued_replies, damage_announced) =
@@ -836,6 +891,216 @@ fn a_waiting_thread_gets_the_terminal_after_the_first_chunk_of_a_pile() {
         return;
     }
     panic!("ten piles and every handoff hit its bound");
+}
+
+/// A spawned reader over `payload`, with `listener` as the terminal's
+/// owner, every PTY write announced on the returned channel, and, when
+/// `piled` is given, a holder that keeps the terminal until the read
+/// after that many chunks so those reads pile up.
+struct SpawnedReader {
+    terminal: SharedTerminal,
+    channel: channel::Sender<Msg>,
+    readiness: corcovado::SetReadiness,
+    written: mpsc::Receiver<Vec<u8>>,
+    handle: JoinHandle<(Machine<TestPty, OnTitle>, State)>,
+}
+
+fn spawn_reader(payload: Vec<u8>, piled: Option<u8>, listener: OnTitle) -> SpawnedReader {
+    let (registration, readiness) = corcovado::Registration::new2();
+    let (written_tx, written) = mpsc::channel();
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        listener.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    listener.watches(&terminal);
+    let (release_tx, release) = mpsc::channel::<()>();
+    let before_read: Option<Box<dyn FnMut(usize) + Send>> = piled.map(|piled| {
+        Box::new(move |read: usize| {
+            if read == piled as usize + 1 {
+                release_tx.send(()).unwrap();
+            }
+        }) as Box<dyn FnMut(usize) + Send>
+    });
+    let machine = Machine::new(
+        Arc::clone(&terminal),
+        TestPty {
+            bytes: io::Cursor::new(payload),
+            feed: None,
+            idle: None,
+            ending: Some(ErrorKind::WouldBlock),
+            exhausted: None,
+            before_read,
+            reads: 0,
+            writer: RecordingWriter {
+                written: Some(written_tx),
+                ..RecordingWriter::default()
+            },
+            child: Some(registration),
+            readiness: Some(readiness.clone()),
+            registration_error: false,
+            read_event: true,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        listener,
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let channel = machine.channel();
+    if piled.is_some() {
+        // The holder keeps the terminal busy, unfairly like a renderer
+        // that already has it, until the read after the pile; it starts
+        // after the machine, whose constructor takes the lock.
+        let (held_tx, held) = mpsc::channel::<()>();
+        let holder_terminal = Arc::clone(&terminal);
+        std::thread::spawn(move || {
+            let guard = holder_terminal.lock_reader();
+            held_tx.send(()).unwrap();
+            release.recv().unwrap();
+            drop(guard);
+        });
+        held.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+    let handle = machine.spawn();
+    SpawnedReader {
+        terminal,
+        channel,
+        readiness,
+        written,
+        handle,
+    }
+}
+
+// While the reader waits for a thread it handed the terminal to, it
+// keeps serving its channel: a keystroke that arrives meanwhile is
+// written to the PTY before that thread lets go, and the wait does not
+// reach its bound on the keystroke's account.
+#[test]
+fn input_is_written_while_a_demander_holds_the_terminal() {
+    // One chunk that sets the title; the demander it summons holds the
+    // terminal until told to let go.
+    let payload = b"\x1b[H1\x1b]0;hold\x1b\\".to_vec();
+    let (held_tx, held) = mpsc::channel::<()>();
+    let (go_tx, go) = mpsc::channel::<()>();
+    let go = std::sync::Mutex::new(Some(go));
+    let listener = OnTitle::new(move |terminal| {
+        let guard = terminal.lock();
+        held_tx.send(()).unwrap();
+        if let Some(go) = go.lock().unwrap().take() {
+            go.recv().unwrap();
+        }
+        drop(guard);
+    });
+    let reader = spawn_reader(payload, None, listener);
+    let timeout = Duration::from_secs(5);
+
+    reader.readiness.set_readiness(Ready::readable()).unwrap();
+    held.recv_timeout(timeout).unwrap();
+    // The demander holds the terminal and the reader waits for it.
+    reader
+        .channel
+        .send(Msg::Input(std::borrow::Cow::Borrowed(b"k")))
+        .unwrap();
+    assert_eq!(reader.written.recv_timeout(timeout).unwrap(), b"k".to_vec());
+    assert_eq!(
+        reader.terminal.handoff_timeouts(),
+        0,
+        "the keystroke went out during the handoff, not after its bound"
+    );
+    go_tx.send(()).unwrap();
+
+    reader.channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = reader.handle.join().unwrap();
+    assert_eq!(machine.pty.writer.bytes, b"k".to_vec());
+}
+
+// A thread that takes the terminal during a mid-pile handoff and
+// parses bytes of its own, as an embedder injecting output does, sends
+// their replies through the reader's channel; they are written before
+// the reader goes on with the pile, so the PTY sees every reply in the
+// order the bytes were parsed.
+#[test]
+fn an_injected_reply_during_a_handoff_keeps_its_place() {
+    // DA in chunk 1 (always), DSR injected during the handoff after
+    // chunk 1, DA again in chunk 3.
+    let payload = pile(4, Some((3, b"\x1b[c")));
+    let channel_slot: Arc<std::sync::OnceLock<channel::Sender<Msg>>> =
+        Arc::new(std::sync::OnceLock::new());
+    let listener = {
+        let channel_slot = Arc::clone(&channel_slot);
+        OnTitle::new(move |terminal| {
+            let mut guard = terminal.lock();
+            let mut processor = handler::Processor::default();
+            processor.advance(&mut *guard, b"\x1b[6n");
+            let channel = channel_slot.get().expect("set after spawn");
+            guard.drain_pty_replies(|reply| {
+                channel
+                    .send(Msg::Input(std::borrow::Cow::Owned(reply.into_bytes())))
+                    .unwrap()
+            });
+        })
+    };
+    let reader = spawn_reader(payload, Some(4), listener);
+    assert!(channel_slot.set(reader.channel.clone()).is_ok(), "set once");
+    let timeout = Duration::from_secs(5);
+
+    reader.readiness.set_readiness(Ready::readable()).unwrap();
+    let mut writes = Vec::new();
+    while writes.len() < 3 {
+        writes.push(reader.written.recv_timeout(timeout).unwrap());
+    }
+    assert_eq!(
+        writes,
+        vec![
+            b"\x1b[?62;4;6;22;52c".to_vec(),
+            b"\x1b[1;2R".to_vec(),
+            b"\x1b[?62;4;6;22;52c".to_vec(),
+        ],
+        "chunk 1's DA, the injected DSR, chunk 3's DA"
+    );
+
+    reader.channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = reader.handle.join().unwrap();
+    assert_eq!(first_line(&machine, 1), "4", "the whole pile was parsed");
+}
+
+// A handoff that ends with nothing carried over, the common case of a
+// burst cut between two reads, hands the PTY's data back to the reader:
+// reading is re-armed before the poll, so the bytes still waiting in
+// the PTY wake it. Without that the reader would poll for nothing,
+// forever, with the child blocked on a full PTY.
+#[test]
+fn reading_resumes_after_a_handoff_that_carried_nothing() {
+    // Two reads: the first sets the title and summons a demander that
+    // holds the terminal briefly; the second carries a DA whose reply
+    // shows it was read.
+    let mut payload = b"\x1b[H1\x1b]0;cut\x1b\\".to_vec();
+    payload.resize(READ_CHUNK, 0);
+    payload.extend_from_slice(b"\x1b[H2\x1b[c");
+    let listener = OnTitle::new(|terminal| {
+        let guard = terminal.lock();
+        std::thread::sleep(Duration::from_micros(200));
+        drop(guard);
+    });
+    let reader = spawn_reader(payload, None, listener);
+    let timeout = Duration::from_secs(5);
+
+    reader.readiness.set_readiness(Ready::readable()).unwrap();
+    assert_eq!(
+        reader.written.recv_timeout(timeout).unwrap(),
+        b"\x1b[?62;4;6;22;52c".to_vec(),
+        "the second read was taken after the handoff"
+    );
+
+    reader.channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = reader.handle.join().unwrap();
+    assert_eq!(first_line(&machine, 1), "2");
 }
 
 // How long a renderer waits when it asks for the terminal while a
@@ -921,6 +1186,7 @@ fn a_waiting_thread_gets_the_terminal_after_the_current_chunk() {
             reads: 0,
             writer: RecordingWriter::default(),
             child: None,
+            readiness: None,
             registration_error: false,
             read_event: false,
             shutdown_calls: 0,
@@ -937,11 +1203,17 @@ fn a_waiting_thread_gets_the_terminal_after_the_current_chunk() {
 
     let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
     assert_eq!(outcome, ReadOutcome::Budget, "the burst stopped early");
+    assert!(
+        state.handoff.is_some(),
+        "and the reader waits for the handoff"
+    );
     assert_eq!(
         saw.recv_timeout(Duration::from_secs(5)).unwrap(),
         '3',
         "the waiter got the terminal right after the chunk being parsed"
     );
+    terminal.yield_to_demand();
+    machine.end_handoff(&mut state);
 
     let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
     assert_eq!(outcome, ReadOutcome::Closed);
@@ -1018,6 +1290,7 @@ fn a_fence_in_a_later_write_waits_for_the_owners_answer() {
                 ..RecordingWriter::default()
             },
             child: Some(registration),
+            readiness: None,
             registration_error: false,
             read_event: true,
             shutdown_calls: 0,
@@ -1121,6 +1394,7 @@ fn a_declined_query_lifts_the_fence_without_writing() {
                 ..RecordingWriter::default()
             },
             child: Some(registration),
+            readiness: None,
             registration_error: false,
             read_event: true,
             shutdown_calls: 0,
