@@ -131,6 +131,26 @@ impl Window {
         // Set the decorations hint.
         window_state.set_decorate(attributes.decorations);
 
+        // The title bar style is fixed once the window is mapped, and only
+        // applies to a window the compositor decorates.
+        if attributes.platform_specific.unified_titlebar && attributes.decorations {
+            match state.cupertino_app_effects.as_ref() {
+                Some(app_effects) => {
+                    app_effects.set_unified_titlebar(&surface);
+                    window_state.set_unified_titlebar(true);
+                }
+                None => {
+                    static WARNED: AtomicBool = AtomicBool::new(false);
+                    if !WARNED.swap(true, Ordering::Relaxed) {
+                        warn!(
+                            "the compositor has no unified title bar, using regular \
+                             decorations"
+                        );
+                    }
+                }
+            }
+        }
+
         // Set the app_id.
         if let Some(name) = attributes.platform_specific.name.map(|name| name.general) {
             window.set_app_id(name);
@@ -426,6 +446,28 @@ impl Window {
     #[inline]
     pub fn scale_factor(&self) -> f64 {
         self.window_state.lock().unwrap().scale_factor()
+    }
+
+    #[inline]
+    pub fn unified_titlebar(&self) -> bool {
+        self.window_state.lock().unwrap().unified_titlebar()
+    }
+
+    #[inline]
+    pub fn set_app_menu(
+        &self,
+        items: Vec<crate::platform::wayland::AppMenuItem>,
+        handler: crate::platform_impl::common::app_menu::AppMenuHandler,
+    ) -> bool {
+        self.window_state
+            .lock()
+            .unwrap()
+            .set_app_menu(items, handler)
+    }
+
+    #[inline]
+    pub fn remove_app_menu(&self) {
+        self.window_state.lock().unwrap().remove_app_menu();
     }
 
     #[inline]

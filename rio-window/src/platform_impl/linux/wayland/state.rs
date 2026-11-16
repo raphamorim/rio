@@ -29,7 +29,9 @@ use crate::platform_impl::wayland::seat::{
     PointerConstraintsState, RelativePointerState, TextInputState, WinitPointerData,
     WinitPointerDataExt, WinitSeatState,
 };
+use crate::platform_impl::wayland::types::cupertino_app_effects::CupertinoAppEffects;
 use crate::platform_impl::wayland::types::ext_background_effect::ExtBackgroundEffectManager;
+use crate::platform_impl::wayland::types::kde_appmenu::KdeAppMenuManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
 use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
@@ -113,6 +115,12 @@ pub struct WinitState {
 
     /// ext-background-effect-v1 manager.
     pub ext_background_effect_manager: Option<ExtBackgroundEffectManager>,
+
+    /// KDE application menu manager.
+    pub kde_appmenu_manager: Option<KdeAppMenuManager>,
+
+    /// cupertino-app-effects-v1 global, for the unified title bar.
+    pub cupertino_app_effects: Option<CupertinoAppEffects>,
 
     /// Loop handle to re-register event sources, such as keyboard repeat.
     pub loop_handle: LoopHandle<'static, Self>,
@@ -231,6 +239,8 @@ impl WinitState {
                 queue_handle,
             )
             .ok(),
+            kde_appmenu_manager: KdeAppMenuManager::new(globals, queue_handle).ok(),
+            cupertino_app_effects: CupertinoAppEffects::new(globals, queue_handle).ok(),
 
             seats,
             text_input_state: TextInputState::new(globals, queue_handle).ok(),

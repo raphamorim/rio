@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="cupertino_app_effects_v1">
+  <copyright>
+    SPDX-License-Identifier: MIT OR Apache-2.0
+  </copyright>
+
+  <description summary="effects any client may ask the server to draw for its own windows">
+    Public protocol: the material backdrops and the title bar style of a client's own surfaces,
+    the appearance of the session and the address of the menus its windows export. A request
+    names surfaces of the client that sends it; the server never lets a client change the look of
+    another client's surface. Nothing here gives control over other clients, the windows'
+    arrangement or the session; those roles are in the private cupertino_shell_v1.
+  </description>
+
+  <interface name="cupertino_app_effects_v1" version="21">
+    <description summary="effects for the client's own surfaces">
+      Global singleton, offered to every client. Version 2 adds get_menu, version 3 the menu_reader
+      event of cupertino_app_menu_v1, version 4 set_disabled_controls, version 5 the session_lock
+      event of cupertino_appearance_v1, version 6 the unified_compact and sidebar title bar styles and
+      set_glass of cupertino_backdrop_v1, version 7 the tone event of cupertino_backdrop_v1, version 8 the always_show_scroll_bars display
+      option of cupertino_appearance_v1, version 9 its steady_caret display option, version 10 the large_panel glass
+      style of cupertino_backdrop_v1, version 11 the backdrops of a subsurface (get_backdrop), version 12 the bar glass
+      style of cupertino_backdrop_v1, version 13 its dense and module glass styles, version 14 its set_shape_fixed
+      request, version 15 its card and track glass styles, version 16 its popover glass style, version 17 its switcher glass style, version 18 its sidebar, subdued_module, snippet and veiled glass styles, version 19 its toolbar glass style, version 20 its menu glass style, version 21 the buffers_lost event of cupertino_appearance_v1; the other interfaces of the protocol are unchanged in each.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_surface" value="0" summary="the surface belongs to another client or is gone"/>
+      <entry name="window" value="1" summary="the surface is not an application window, or the window is already mapped"/>
+      <entry name="too_many_backdrops" value="2" summary="the surface or the client holds as many backdrops as the server allows"/>
+      <entry name="menu_exists" value="3" summary="the surface already has a menu announcement" since="2"/>
+      <entry name="invalid_controls" value="4" summary="a bit not defined at the object's version" since="4"/>
+    </enum>
+
+    <enum name="titlebar_style">
+      <description summary="how the server decorates an application window">
+        Applies to windows the server decorates (xdg-decoration server-side mode).
+      </description>
+      <entry name="standard" value="0" summary="a title bar above the surface, drawn by the server with the window's title"/>
+      <entry name="unified" value="1" summary="the surface fills the whole window and the title bar lies over its top; the server draws only the window control buttons"/>
+      <entry name="unified_compact" value="2" summary="unified, with the shorter compact toolbar row" since="6"/>
+      <entry name="sidebar" value="3" summary="the surface fills the whole window and its sidebar runs from the top edge to the bottom edge; the server draws only the window control buttons, in the top of the sidebar" since="6"/>
+    </enum>
+
+    <enum name="window_control" bitfield="true" since="4">
+      <description summary="the window controls a client may disable">
+        The close button is not among them: a window can always be closed.
+      </description>
+      <entry name="minimize" value="1" summary="the minimize button, the minimize shortcut and the Window menu's Minimize"/>
+      <entry name="zoom" value="2" summary="the zoom button, the zoom shortcut, the Window menu's Zoom, the title bar's double click and the fill tile"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="unbind the global">
+        Objects created through this global stay valid.
+      </description>
+    </request>
+
+    <request name="get_backdrop">
+      <description summary="create a material backdrop under a surface">
+        Creates a backdrop drawn by the server directly below the surface's content: the pixels
+        behind the region are blurred and coloured by a material recipe and composited through a
+        rounded mask. The client draws only its own content, usually with a transparent background.
+        A surface may have several backdrops; they are drawn in creation order, all below the
+        surface. A new backdrop has no material and draws nothing until the material and shape
+        are set and the surface is committed.
+        From version 11 the surface may be a subsurface: its backdrops are drawn directly below the
+        subsurface and the subsurfaces placed below it, above the rest of the surface tree, and
+        they read what of the tree lies below them, so content the parent draws under a bar in a
+        subsurface shows through the bar's glass. Their state applies with the subsurface's
+        commit, which a synchronized subsurface caches until its parent commits. The shape is in
+        the subsurface's coordinates. Backdrops created through an object below version 11 draw
+        nothing on a subsurface.
+        Posts invalid_surface when the surface belongs to another client, and too_many_backdrops
+        when the surface already has 64 backdrops or the client has 128 (the limits count the
+        backdrops that are not destroyed yet).
+      </description>
+      <arg name="id" type="new_id" interface="cupertino_backdrop_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <request name="set_titlebar_style">
+      <description summary="choose the title bar style of an application window">
+        Chooses how the server decorates the xdg toplevel of the surface. The default is standard.
+        With the unified styles the surface starts at the top edge of the window: the client draws
+        its toolbar, the fill behind it and the window's title in the top strip, and keeps the area
+        of the window control buttons at the strip's leading edge free of controls, because the
+        buttons take the pointer there. With the sidebar style the surface starts at the top edge
+        too, and the buttons lie at the top of the client's sidebar, which keeps that area free in
+        the same way; its toolbar lies beside the sidebar. The server does not move the window from
+        the strip or the top of the sidebar: the client does, with xdg_toplevel.move, and a double
+        click may call xdg_toplevel.set_maximized.
+        Resize zones and the window shape are the server's in both styles.
+        Posts invalid_surface when the surface belongs to another client, and window when it is
+        not an xdg toplevel or has committed a buffer.
+      </description>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="style" type="uint" enum="titlebar_style"/>
+    </request>
+
+    <request name="get_appearance">
+      <description summary="follow the appearance of the session">
+        Creates an observer of the appearance and the accessibility display options. It has no
+        surface, so a client may create any number of them. The server sends the current state
+        right after the object is created and again on every change.
+      </description>
+      <arg name="id" type="new_id" interface="cupertino_appearance_v1"/>
+    </request>
+
+    <request name="get_menu" since="2">
+      <description summary="announce the menus of an application window">
+        Creates the object through which the client announces where the menus of the window of
+        the surface are exported on the session bus, and learns whether the desktop's menu bar
+        shows them. Posts invalid_surface when the surface belongs to another client, and
+        menu_exists when the surface already has a cupertino_app_menu_v1 that is not destroyed.
+      </description>
+      <arg name="id" type="new_id" interface="cupertino_app_menu_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <request name="set_disabled_controls" since="4">
+      <description summary="disable window controls of an application window">
+        Disables the controls of the xdg toplevel of the surface. A disabled button is drawn dimmed
+        and takes no click, and the matching shortcut and Window menu items do nothing on this
+        window, nor, for zoom, does a double click on the title bar or filling the screen by
+        tiling (half and quarter tiles stay possible). The client's own
+        xdg_toplevel.set_minimized and xdg_toplevel.set_maximized are refused too. Unzooming a
+        window that is already zoomed and restoring a minimized one stay possible, so a window is
+        never kept zoomed or minimized by this request.
+        The state is double-buffered: it applies at the surface's next wl_surface.commit. It may
+        change at any time, also after the window is mapped. The default is none.
+        The close button can't be disabled. Hide, the application switcher, the overview, the
+        moves between workspaces and Force Quit act on the window as on any other. Where zoom is
+        disabled, the full-screen shortcut and the menu bar's full-screen item do not put the window
+        in full screen either; the client's own full-screen request still applies, and leaving full
+        screen always works, through the same shortcut and item too. A window that
+        isn't resizable (its minimum size equals its maximum size) has zoom disabled whatever this
+        says.
+        Posts invalid_surface when the surface belongs to another client, window when it is not an
+        xdg toplevel, and invalid_controls when disabled has a bit the object's version does not
+        define.
+      </description>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="disabled" type="uint" enum="window_control"/>
+    </request>
+  </interface>
+
+  <interface name="cupertino_backdrop_v1" version="20">
+    <description summary="a material region below a surface">
+      All state is double-buffered: it applies on the next wl_surface.commit of the surface the
+      backdrop was created for, together with that commit's buffer, so the backdrop and the content
+      always move together. When the surface is destroyed the backdrop becomes inert.
+    </description>
+
+    <enum name="error">
+      <entry name="unknown_material" value="0" summary="the material name is not a recipe of the server's design tokens"/>
+      <entry name="invalid_shape" value="1" summary="negative width or height, or a negative corner radius"/>
+      <entry name="invalid_alpha" value="2" summary="alpha outside 0 to 1"/>
+      <entry name="invalid_glass" value="3" summary="unknown glass style or a negative spacing" since="6"/>
+    </enum>
+
+    <enum name="glass_style" since="6">
+      <entry name="regular" value="0" summary="the frosted glass of bars, menus, panels and controls"/>
+      <entry name="clear" value="1" summary="the clearer glass of controls over rich content, such as media"/>
+      <entry name="large_panel" value="2" summary="the regular glass of a large floating panel: its face toned further towards the middle (a lower white, a lifted black, a little less colour), with a soft drop shadow below it" since="10"/>
+      <entry name="bar" value="3" summary="the glass of a floating bar of icons: a narrow blur, a thin bending edge and a thin line of light along its top and bottom edges, over a face with a little more colour, black lifted and white dimmed a little" since="12"/>
+      <entry name="dense" value="4" summary="the glass of a dense floating surface with text on it, a menu, a popover or a card: regular glass over a face pressed to a mid grey veil" since="13"/>
+      <entry name="module" value="5" summary="the glass of the tiles of a panel of modules: the clear glass face, which keeps the scene's colour, under a wide blur and a strong bending edge, light in the light appearance and dark in the dark one" since="13"/>
+      <entry name="card" value="6" summary="the glass of a notification card: the clear glass face over a wide blur and a blur fill, a bending edge and a faint ring shadow inside the outline" since="15"/>
+      <entry name="track" value="7" summary="the glass of a level's track: no blur, the backdrop read at the output's scale, a bending edge that follows the track's height and a ring shadow inside the outline" since="15"/>
+      <entry name="popover" value="8" summary="the glass of a small popover over a floating bar, a name or a menu: the backdrop under a wide soft blur fill only, a strong bending edge and a thin line of light along its top and bottom edges, the same at every size" since="16"/>
+      <entry name="switcher" value="9" summary="the glass of a wide floating panel of large icons, the application switcher: a blur of about a point, a strong bending edge of a fixed depth, a face that lifts black and brightens in the light appearance and dims to a smoky pane in the dark one, and no shadow" since="17"/>
+      <entry name="sidebar" value="10" summary="the glass of a window's sidebar: a wide soft blur fill, a light pane in the light appearance and a dark, nearly grey one in the dark, with a faint ring shadow" since="18"/>
+      <entry name="subdued_module" value="11" summary="the module glass of a tile that steps back: twice the blur, a dimmer white in the light appearance and no lifted black in the dark one" since="18"/>
+      <entry name="snippet" value="12" summary="the glass of a small card of content over the desktop: a faint blur under a wide soft blur fill, over a face veiled white in the light appearance and black in the dark" since="18"/>
+      <entry name="veiled" value="13" summary="clear glass under a soft blur fill, veiled black from a fifth at its top to fully at its bottom" since="18"/>
+      <entry name="toolbar" value="14" summary="the glass of a window's toolbar controls: regular glass with a face lifted a little further, a thin line of light along its top edge and a fainter one along its bottom over a soft glow, and no rim or edge line of its own" since="19"/>
+      <entry name="menu" value="15" summary="the glass of a menu: a wide blur under a face that tones the backdrop into a narrow band, a pale wash in the light appearance and a mid-dark pane in the dark one, with a thin line of light along its top and bottom edges" since="20"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="remove the backdrop">
+        The backdrop disappears with the next commit of its surface.
+      </description>
+    </request>
+
+    <request name="set_material">
+      <description summary="choose the material recipe">
+        Name of a material recipe of the design tokens, for example "Menu" or "Sidebar". The
+        server picks the light or dark variant from the current appearance.
+      </description>
+      <arg name="name" type="string"/>
+    </request>
+
+    <request name="set_shape">
+      <description summary="set the region and its corner radius">
+        Rectangle in surface-local logical coordinates and the radius of its continuous corners in
+        logical points. A zero width or height hides the backdrop.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="radius" type="fixed"/>
+    </request>
+
+    <request name="set_shape_fixed" since="14">
+      <description summary="set the region in fractional points and its corner radius">
+        As set_shape, with the rectangle in fractional surface-local logical points, so the shape keeps the
+        device pixels of a scaled output. A zero width or height hides the backdrop.
+      </description>
+      <arg name="x" type="fixed"/>
+      <arg name="y" type="fixed"/>
+      <arg name="width" type="fixed"/>
+      <arg name="height" type="fixed"/>
+      <arg name="radius" type="fixed"/>
+    </request>
+
+    <request name="set_alpha">
+      <description summary="set the opacity of the whole backdrop">
+        Opacity from 0 to 1 applied to the composited backdrop, for fades. The initial value is 1.
+      </description>
+      <arg name="alpha" type="fixed"/>
+    </request>
+
+    <request name="set_glass" since="6">
+      <description summary="draw the backdrop as glass">
+        Draw the backdrop as glass of the given style instead of a material recipe; set_material is
+        then not needed and its name is not used. The server blurs and colours what lies behind
+        the shape, bends it along the edge and lights the rim, following the appearance and the
+        display options; the recipe depends on the shape's size.
+        Glass backdrops of the same surface with the same nonzero container join into one shape:
+        their outlines blend into each other over spacing logical points, and 0 joins them with a
+        hard edge; the server blends over at most 64 points. Container 0 keeps the backdrop on its
+        own. The last of set_glass and set_material decides how the backdrop draws. Posts
+        invalid_glass for an unknown style or a negative spacing.
+      </description>
+      <arg name="style" type="uint" enum="glass_style"/>
+      <arg name="container" type="uint"/>
+      <arg name="spacing" type="fixed"/>
+    </request>
+
+    <enum name="tone" since="7">
+      <description summary="what the text and symbols over a glass backdrop are drawn with">
+        The face of the glass is what the server draws for the backdrop: what lies behind it, blurred and coloured.
+      </description>
+      <entry name="appearance" value="0" summary="the appearance's: light text and symbols in the dark appearance, dark ones in the light appearance"/>
+      <entry name="dark" value="1" summary="the face is dark: light text and symbols, as in the dark appearance"/>
+      <entry name="light" value="2" summary="the face is light: dark text and symbols, as in the light appearance"/>
+    </enum>
+
+    <event name="tone" since="7">
+      <description summary="the face behind the backdrop's text and symbols changed tone">
+        Sent for glass backdrops only. A small glass shape follows what lies behind it: the server
+        measures its face, without stalling the drawing, whenever what lies behind the shape
+        changes, and sends dark or light when the face's luminance crosses a threshold, past a
+        margin on the other side, so a backdrop moving about the threshold does not make the text
+        flicker. A shape whose shorter side is 64 logical points or more, or that joins a container
+        whose bounds are that large, keeps the appearance; the server sends appearance when a shape
+        that had a tone grows past that size or stops being glass. Nothing is sent while the tone
+        stays the same, and before the first measurement the client draws as for appearance. The
+        client draws the text and symbols that lie directly on the backdrop with the tone; colours
+        of their own (an accent, a fill of the client's) are unchanged.
+      </description>
+      <arg name="tone" type="uint" enum="tone"/>
+    </event>
+  </interface>
+
+  <interface name="cupertino_appearance_v1" version="21">
+    <description summary="appearance and display options of the session">
+      Right after the object is created the server sends appearance, then display_options, then
+      from version 5 session_lock. The object has the version of the cupertino_app_effects_v1
+      that created it. Later events say what changed; an event is complete by itself and is not part of a group.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop observing the appearance"/>
+    </request>
+
+    <event name="appearance">
+      <description summary="the session's appearance">
+        1 for the dark appearance, 0 for the light one. The client draws again with it, for
+        example from the colours of its materials and palettes. The materials of the client's
+        backdrops follow the appearance in the server and need no request.
+      </description>
+      <arg name="dark" type="uint"/>
+    </event>
+
+    <enum name="display_option" bitfield="true">
+      <entry name="reduce_motion" value="1" summary="replace spatial transitions with fades"/>
+      <entry name="reduce_transparency" value="2" summary="draw materials opaque"/>
+      <entry name="increase_contrast" value="4" summary="draw with the high-contrast colours"/>
+      <entry name="differentiate_without_color" value="8" summary="do not carry state by colour alone"/>
+      <entry name="always_show_scroll_bars" value="16" summary="show scroll bars beside the content at all times" since="8"/>
+      <entry name="steady_caret" value="32" summary="keep the text caret from blinking" since="9"/>
+    </enum>
+
+    <event name="display_options">
+      <description summary="the accessibility display options of the session">
+        The options that are on. The client draws again with them: with reduce_motion it fades
+        what it would slide, scale or magnify; with reduce_transparency and increase_contrast it
+        picks its opaque and high-contrast palettes; from version 8, with always_show_scroll_bars it gives its
+        scroll views tracks beside their content that stay shown, and without it thin scroll
+        bars over the content that show only while it scrolls. The server sets
+        always_show_scroll_bars from the session's scroll bar setting, deciding an automatic one by
+        whether a mouse is connected. From version 9, with steady_caret its text fields and
+        editors show the caret without blinking. The materials of the client's backdrops
+        follow the options in the server and need no request. Bits the client does not know
+        are reserved and stay 0: an object below version 8 is never sent always_show_scroll_bars,
+        and one below version 9 never steady_caret.
+      </description>
+      <arg name="options" type="uint" enum="display_option"/>
+    </event>
+
+    <event name="session_lock" since="5">
+      <description summary="the session was locked or unlocked">
+        1 from the moment the session starts to lock, 0 once it is unlocked again. While the
+        session is locked no application surface is shown, so the client keeps what it offers
+        assistive technology quiet: it announces nothing until the session is unlocked. This is
+        advice to a cooperating client; it hides nothing by itself.
+      </description>
+      <arg name="locked" type="uint"/>
+    </event>
+
+    <event name="buffers_lost" since="21">
+      <description summary="what the server showed of the client's buffers is gone">
+        The server's GPU was reset, or the driver purged its video memory (across a suspend, a
+        switch of virtual terminals or a mode set), and the server made its renderer again. A
+        buffer the client draws on a GPU of its own may have lost its pixels with it, and what the
+        server imported of every buffer was made again from what the buffers hold now. The client
+        draws every surface whole again and commits it, even one that changed nothing, so what is
+        shown is what it drew rather than what the driver left behind; a client whose own GPU
+        context was lost makes it again first. Sent to every observer of version 21 or later after
+        each reset or purge; never sent at creation.
+      </description>
+    </event>
+  </interface>
+
+  <interface name="cupertino_app_menu_v1" version="3">
+    <description summary="the menus of an application window">
+      The window's menus are exported on the session bus as org.gtk.Menus objects and their actions
+      as org.gtk.Actions objects. The server hands the address to the desktop's menu bar while the
+      window is active; it reads nothing on the bus itself. Right after the object is created the
+      server sends menu_bar, and from version 3 menu_reader, and each again whenever its value
+      changes.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_address" value="0" summary="a bus name or object path is malformed or too long"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="withdraw the announcement">
+        The menu bar stops showing the window's exported menus.
+      </description>
+    </request>
+
+    <request name="set_address">
+      <description summary="where the window's menus are exported">
+        bus_name is the unique name (":1.42") of the client's connection that serves the objects.
+        application_object_path serves the app actions, window_object_path the win actions,
+        menubar_object_path the window's menus, and app_menu_object_path the application menu, or
+        is empty when the client exports none. A later request replaces the address. Posts
+        invalid_address when bus_name is not a unique bus name, a path is not an object path, or a
+        path is longer than 512 bytes.
+      </description>
+      <arg name="bus_name" type="string"/>
+      <arg name="application_object_path" type="string"/>
+      <arg name="window_object_path" type="string"/>
+      <arg name="menubar_object_path" type="string"/>
+      <arg name="app_menu_object_path" type="string"/>
+    </request>
+
+    <event name="menu_bar">
+      <description summary="whether the desktop's menu bar shows the window's menus">
+        1 while a menu bar runs and shows the menus the client announces; the client then draws
+        no menu bar inside the window. 0 while none runs; the client shows its menus itself.
+        From version 3 it is 1 only while menu_reader names a connection too: a menu bar that
+        cannot read the menus does not stand in for them. menu_reader comes before menu_bar 1,
+        and menu_bar 0 before menu_reader is emptied.
+      </description>
+      <arg name="shown" type="uint"/>
+    </event>
+
+    <event name="menu_reader" since="3">
+      <description summary="the only bus connection that may use the window's menus">
+        The unique name (":1.42") of the menu bar's bus connection, after the server checked that
+        the connection belongs to the menu bar process; empty while there is none. The client
+        answers no other peer: not its org.gtk.Menus reads, not its org.gtk.Actions calls, and
+        sends its Changed signals to this connection alone.
+      </description>
+      <arg name="bus_name" type="string"/>
+    </event>
+  </interface>
+</protocol>

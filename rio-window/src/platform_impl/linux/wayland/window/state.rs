@@ -29,14 +29,19 @@ use sctk::shm::slot::SlotPool;
 use sctk::shm::Shm;
 use sctk::subcompositor::SubcompositorState;
 use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1;
+use wayland_protocols_plasma::appmenu::client::org_kde_kwin_appmenu::OrgKdeKwinAppmenu;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
+use crate::platform_impl::common::app_menu::{
+    AppMenuHandler, AppMenuItem, ExportedAppMenu,
+};
 use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
 use crate::platform_impl::wayland::types::ext_background_effect::ExtBackgroundEffectManager;
+use crate::platform_impl::wayland::types::kde_appmenu::KdeAppMenuManager;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
@@ -148,6 +153,12 @@ pub struct WindowState {
     blur_manager: Option<KWinBlurManager>,
     ext_background_effect: Option<ExtBackgroundEffectSurfaceV1>,
     ext_background_effect_manager: Option<ExtBackgroundEffectManager>,
+    app_menu: Option<(OrgKdeKwinAppmenu, ExportedAppMenu)>,
+    app_menu_manager: Option<KdeAppMenuManager>,
+
+    /// Whether the compositor draws only the window control buttons, over
+    /// the top of the surface.
+    unified_titlebar: bool,
 
     /// Whether the client side decorations have pending move operations.
     ///
@@ -193,6 +204,9 @@ impl WindowState {
             ext_background_effect_manager: winit_state
                 .ext_background_effect_manager
                 .clone(),
+            app_menu: None,
+            app_menu_manager: winit_state.kde_appmenu_manager.clone(),
+            unified_titlebar: false,
             compositor,
             connection,
             csd_fails: false,
@@ -1001,6 +1015,64 @@ impl WindowState {
         }
     }
 
+    /// Whether the compositor draws only the window control buttons.
+    #[inline]
+    pub fn unified_titlebar(&self) -> bool {
+        self.unified_titlebar
+    }
+
+    /// Record that the unified title bar was requested for this window.
+    #[inline]
+    pub fn set_unified_titlebar(&mut self, unified_titlebar: bool) {
+        self.unified_titlebar = unified_titlebar;
+    }
+
+    /// Export `items` as the window's application menu, or replace the
+    /// exported one. Returns `false` when the compositor has no menu bar
+    /// protocol or there is no session bus thread to serve the menu.
+    pub fn set_app_menu(
+        &mut self,
+        items: Vec<AppMenuItem>,
+        handler: AppMenuHandler,
+    ) -> bool {
+        let Some(manager) = self.app_menu_manager.as_ref() else {
+            return false;
+        };
+
+        if let Some((_, exported)) = self.app_menu.as_ref() {
+            exported.update(items, handler);
+            return true;
+        }
+
+        let app_menu = manager.app_menu(self.window.wl_surface(), &self.queue_handle);
+        // The address is known once the menu is on the bus, which happens
+        // on the menu thread: a request may be sent from any thread.
+        let announce = app_menu.clone();
+        let connection = self.connection.clone();
+        let exported = ExportedAppMenu::new(items, handler, move |name, path| {
+            announce.set_address(name.to_owned(), path.to_owned());
+            let _ = connection.flush();
+        });
+
+        match exported {
+            Some(exported) => {
+                self.app_menu = Some((app_menu, exported));
+                true
+            }
+            None => {
+                app_menu.release();
+                false
+            }
+        }
+    }
+
+    /// Stop exporting the window's application menu.
+    pub fn remove_app_menu(&mut self) {
+        if let Some((app_menu, _)) = self.app_menu.take() {
+            app_menu.release();
+        }
+    }
+
     /// Add seat focus for the window.
     #[inline]
     pub fn add_seat_focus(&mut self, seat: ObjectId) {
@@ -1184,6 +1256,8 @@ impl Drop for WindowState {
         if let Some(blur) = self.blur.take() {
             blur.release();
         }
+
+        self.remove_app_menu();
 
         if let Some(fs) = self.fractional_scale.take() {
             fs.destroy();
