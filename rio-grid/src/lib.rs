@@ -1273,9 +1273,24 @@ pub fn build_row_bg<P: GridPalette>(
 /// affect shaping so they don't break runs.
 const SHAPING_FLAG_MASK: u16 = StyleFlags::BOLD.bits() | StyleFlags::ITALIC.bits();
 
-/// 256 × 8 bucketed LRU cache — CellCacheTable.
-const RUN_BUCKET_COUNT: usize = 256;
+/// Buckets in the run shaping cache, a bucketed LRU. A full screen of
+/// styled text at 300 by 100 cells breaks into around nine hundred
+/// runs, since a run ends at every font or weight change, and with 256
+/// buckets of 8 several buckets overflowed every frame and their runs
+/// were reshaped each time. 1024 buckets hold that screen with room; a
+/// denser screen still overflows some buckets but far fewer. The
+/// buckets fill lazily, so an idle terminal pays nothing for the
+/// headroom and the storage in use follows what is on screen, up to
+/// 8192 entries where it was 2048.
+const RUN_BUCKET_COUNT: usize = 1024;
 const RUN_BUCKET_SIZE: usize = 8;
+// The bucket of a hash is its low bits, so the count is a power of two.
+const _: () = assert!(RUN_BUCKET_COUNT.is_power_of_two());
+
+/// The run cache, empty: every bucket allocates on its first entry.
+fn new_run_cache() -> Vec<Vec<RunCacheEntry>> {
+    (0..RUN_BUCKET_COUNT).map(|_| Vec::new()).collect()
+}
 
 /// One shaped glyph. Same shape from both CoreText (macOS) and swash
 /// (non-macOS). `cluster` is the shaping-buffer offset of the source
@@ -1401,9 +1416,7 @@ impl GridGlyphRasterizer {
             ascent_cache: FxHashMap::default(),
             custom_glyph_ids: CustomGlyphIds::default(),
             synthesis_cache: FxHashMap::default(),
-            run_cache: (0..RUN_BUCKET_COUNT)
-                .map(|_| Vec::with_capacity(RUN_BUCKET_SIZE))
-                .collect(),
+            run_cache: new_run_cache(),
             run_hasher: rapidhash::fast::RapidHasher::default(),
             #[cfg(target_os = "macos")]
             run_utf16_scratch: Vec::new(),
@@ -3378,6 +3391,107 @@ fn rasterize_glyph_native(
         is_color,
         bytes: image.data,
     })
+}
+
+#[cfg(test)]
+mod run_cache_tests {
+    use super::*;
+
+    fn entry(hash: u64) -> RunCacheEntry {
+        RunCacheEntry {
+            advance: 0.0,
+            hash,
+            glyphs: Vec::new(),
+        }
+    }
+
+    fn buckets() -> Vec<Vec<RunCacheEntry>> {
+        new_run_cache()
+    }
+
+    /// The hash of a run of `text` in `font_id`, fed to the rasterizer's
+    /// hasher the way the row builder feeds it: each cell as its
+    /// codepoint and cluster offset, then the cell count, the font and
+    /// the size bucket. The hasher's seed is fixed, so this is the hash
+    /// the renderer computes for that run.
+    fn real_hash(text: &str, font_id: u32) -> u64 {
+        let mut hasher = rapidhash::fast::RapidHasher::default();
+        let mut cells = 0u32;
+        for (offset, ch) in text.chars().enumerate() {
+            hasher.write_u32(ch as u32);
+            hasher.write_u32(offset as u32);
+            cells += 1;
+        }
+        hasher.write_u32(cells);
+        hasher.write_u32(font_id);
+        hasher.write_u16(56);
+        hasher.finish()
+    }
+
+    /// A screen of 100 rows with nine runs each, as a row of 300 cells
+    /// reads when the weight changes every 33 cells or so: the text of
+    /// each run is distinct, and the font alternates between regular
+    /// and bold.
+    fn styled_screen() -> Vec<u64> {
+        (0..100)
+            .flat_map(|row| {
+                (0..9).map(move |run| {
+                    let text = format!("line {row:03} run {run} of a styled screen ");
+                    real_hash(&text, run % 2)
+                })
+            })
+            .collect()
+    }
+
+    // A full screen of styled text at 300 by 100 cells breaks into
+    // around nine hundred runs. Every one of them must still be in the
+    // cache when the next frame asks, or the frame reshapes it; with
+    // 256 buckets some of them were gone.
+    #[test]
+    fn a_screen_of_nine_hundred_runs_survives_a_frame() {
+        let mut cache = buckets();
+        let screen = styled_screen();
+        assert_eq!(screen.len(), 900);
+        for &hash in &screen {
+            run_cache_put(&mut cache, entry(hash));
+        }
+        let hits = screen
+            .iter()
+            .filter(|&&hash| run_cache_get(&mut cache, hash).is_some())
+            .count();
+        assert_eq!(hits, 900, "every run of the screen is still cached");
+    }
+
+    #[test]
+    fn a_hit_becomes_the_newest_and_a_full_bucket_drops_its_oldest() {
+        let mut cache = buckets();
+        // Hashes that share one bucket: same low bits.
+        let same_bucket = |i: u64| (i << 20) | 7;
+        for i in 0..RUN_BUCKET_SIZE as u64 {
+            run_cache_put(&mut cache, entry(same_bucket(i)));
+        }
+        // Touch the oldest so it is the newest.
+        assert!(run_cache_get(&mut cache, same_bucket(0)).is_some());
+        run_cache_put(&mut cache, entry(same_bucket(99)));
+        assert!(
+            run_cache_get(&mut cache, same_bucket(0)).is_some(),
+            "refreshed, kept"
+        );
+        assert!(
+            run_cache_get(&mut cache, same_bucket(1)).is_none(),
+            "the oldest went"
+        );
+        assert!(run_cache_get(&mut cache, same_bucket(99)).is_some());
+    }
+
+    // The rasterizer's own cache, not a copy of the expression: a
+    // constructor that reserved entries again would show here.
+    #[test]
+    fn an_idle_cache_owns_no_entry_storage() {
+        let cache = GridGlyphRasterizer::new().run_cache;
+        assert_eq!(cache.len(), RUN_BUCKET_COUNT);
+        assert!(cache.iter().all(|b| b.capacity() == 0));
+    }
 }
 
 #[cfg(test)]
