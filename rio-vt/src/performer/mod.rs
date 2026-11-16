@@ -344,7 +344,14 @@ where
             while parsed < unprocessed {
                 let end = (parsed + READ_CHUNK).min(unprocessed);
                 if parsed > 0 && self.terminal.has_waiters() {
-                    drop(terminal.take());
+                    // The replies so far leave with this thread, as at
+                    // the end of a burst, so another drainer of the
+                    // terminal cannot take them out of order.
+                    let mut guard = terminal.take().expect("locked above");
+                    guard.drain_pty_replies(|reply| {
+                        state.write_list.push_back(Cow::Owned(reply.into_bytes()))
+                    });
+                    drop(guard);
                     parking_lot::MutexGuard::unlock_fair(terminal_lease);
                     terminal_lease = self.terminal.lease();
                     terminal = Some(self.terminal.lock_unfair());

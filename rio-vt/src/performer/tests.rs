@@ -552,20 +552,40 @@ fn a_parser_reply_is_written_by_the_reader_thread() {
     );
 }
 
+/// What the waiter against a pile observed.
+struct PileWaiter {
+    /// The first cell when it held the terminal: the last parsed chunk.
+    saw: char,
+    /// From asking for the terminal to holding it.
+    waited: Duration,
+    /// Replies still queued in the terminal when it held it.
+    queued_replies: usize,
+    /// The first line once the whole pile is parsed.
+    first_line: String,
+    /// Everything the reader wrote to the PTY.
+    written: Vec<u8>,
+}
+
 /// A burst of `chunks` reads piles up while another thread holds the
 /// terminal; a waiter appears once the pile is complete and the holder
-/// lets go. Returns what the waiter saw in the first cell, how long it
-/// waited, and the machine after the read for the final state. Every
-/// chunk homes the cursor and writes its ordinal, padded with
-/// attribute resets, so the first cell names the last parsed chunk.
-fn waiter_against_a_pile(chunks: u8) -> (char, Duration, String) {
+/// lets go. Every chunk homes the cursor and writes its ordinal, padded
+/// with attribute resets, so the first cell names the last parsed
+/// chunk; the first chunk also carries a DA query, whose reply must
+/// leave with the reader.
+fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
     let mut payload = Vec::new();
     for n in 1..=chunks {
         payload.extend_from_slice(b"\x1b[H");
         payload.push(b'0' + n);
-        while payload.len() < READ_CHUNK * n as usize {
+        if n == 1 {
+            payload.extend_from_slice(b"\x1b[c");
+        }
+        // Exactly one read per chunk: resets, then NULs, which the
+        // parser ignores, for the last few bytes.
+        while payload.len() + 4 <= READ_CHUNK * n as usize {
             payload.extend_from_slice(b"\x1b[0m");
         }
+        payload.resize(READ_CHUNK * n as usize, 0);
     }
     let terminal = Arc::new(FairMutex::new(Crosswords::new(
         CrosswordsSize::new(80, 24),
@@ -595,9 +615,12 @@ fn waiter_against_a_pile(chunks: u8) -> (char, Duration, String) {
         let saw_tx = saw_tx.clone();
         std::thread::spawn(move || {
             let asked = std::time::Instant::now();
-            let guard = terminal.lock();
+            let mut guard = terminal.lock();
+            let waited = asked.elapsed();
+            let mut queued = 0;
+            guard.drain_pty_replies(|_| queued += 1);
             saw_tx
-                .send((guard.grid[Line(0)][Column(0)].c(), asked.elapsed()))
+                .send((guard.grid[Line(0)][Column(0)].c(), waited, queued))
                 .unwrap();
         });
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -648,19 +671,38 @@ fn waiter_against_a_pile(chunks: u8) -> (char, Duration, String) {
     let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
     assert_eq!(outcome, ReadOutcome::Closed, "the whole pile was read");
     holder.join().unwrap();
-    let (seen, waited) = saw.recv_timeout(Duration::from_secs(5)).unwrap();
-    (seen, waited, first_line(&machine, 1))
+    let (saw, waited, queued_replies) = saw.recv_timeout(Duration::from_secs(5)).unwrap();
+    PileWaiter {
+        saw,
+        waited,
+        queued_replies,
+        first_line: first_line(&machine, 1),
+        written: machine.pty.writer.bytes.clone(),
+    }
 }
 
 // Bytes that piled up while another thread held the terminal are
 // parsed a chunk at a time once it is free: a thread waiting for the
 // terminal meanwhile gets it between two chunks, not after the whole
-// pile, and the rest of the pile is parsed afterwards.
+// pile, and the rest of the pile is parsed afterwards. The replies of
+// the chunks already parsed left with the reader before it let go.
 #[test]
 fn a_waiting_thread_gets_the_terminal_between_chunks_of_a_pile() {
-    let (seen, _, first_line) = waiter_against_a_pile(4);
-    assert_eq!(seen, '1', "the waiter got the terminal after one chunk");
-    assert_eq!(first_line, "4", "the rest of the pile followed");
+    let waiter = waiter_against_a_pile(4);
+    assert_eq!(
+        waiter.saw, '1',
+        "the waiter got the terminal after one chunk"
+    );
+    assert_eq!(waiter.first_line, "4", "the rest of the pile followed");
+    assert_eq!(
+        waiter.queued_replies, 0,
+        "no reply was left for the waiter to drain"
+    );
+    assert_eq!(
+        waiter.written,
+        b"\x1b[?62;4;6;22;52c".to_vec(),
+        "the reader wrote the reply itself"
+    );
 }
 
 // How long a renderer waits for a 1 MiB pile. Run with
@@ -670,8 +712,7 @@ fn a_waiting_thread_gets_the_terminal_between_chunks_of_a_pile() {
 fn pile_wait_latency() {
     let mut waits = Vec::new();
     for _ in 0..20 {
-        let (_, waited, _) = waiter_against_a_pile(16);
-        waits.push(waited);
+        waits.push(waiter_against_a_pile(16).waited);
     }
     waits.sort();
     println!(
