@@ -1081,7 +1081,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     // Route reply bytes (CSI / OSC responses) back to the
                     // PTY of the panel that emitted them, not whichever
-                    // panel happens to be focused.
+                    // panel happens to be focused. A panel with a PTY
+                    // thread writes its replies there and never sends
+                    // this; it remains for terminals driven without one.
                     if let Some(item) = route
                         .window
                         .screen

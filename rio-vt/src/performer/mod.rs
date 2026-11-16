@@ -250,6 +250,10 @@ where
         let (sender, receiver) = channel::channel();
         let poll = corcovado::Poll::new()?;
 
+        // Replies the parser produces are written by this thread, right
+        // after the parse that produced them.
+        terminal.lock().route_replies_through_pty(true);
+
         Ok(Machine {
             sender,
             receiver: PeekableReceiver::new(receiver),
@@ -287,9 +291,12 @@ where
         let mut result = Ok(ReadOutcome::Budget);
 
         // Reserve the next terminal lock for PTY reading.
-        let _terminal_lease = Some(self.terminal.lease());
+        let terminal_lease = Some(self.terminal.lease());
         let mut terminal = None;
         let mut held_before = None;
+        // Replies are written below unless bytes were already waiting
+        // on the writable event; then they wait with them.
+        let had_pending = state.needs_write();
 
         loop {
             // Read from the PTY.
@@ -334,6 +341,9 @@ where
 
             // Parse the incoming bytes.
             state.parser.advance(&mut **terminal, &buf[..unprocessed]);
+            terminal.drain_pty_replies(|reply| {
+                state.write_list.push_back(Cow::Owned(reply.into_bytes()))
+            });
 
             processed += unprocessed;
             unprocessed = 0;
@@ -355,6 +365,16 @@ where
                 if hold_ended || (!held && term.peek_damage_event().is_some()) {
                     self.notify_damage(term);
                 }
+            }
+        }
+
+        // The replies go out as soon as the lock is released. A PTY that
+        // cannot take them now leaves them for the writable event.
+        drop(terminal);
+        drop(terminal_lease);
+        if !had_pending && state.needs_write() {
+            if let Err(err) = self.pty_write(state) {
+                tracing::debug!("PTY reply deferred to the writable event: {err}");
             }
         }
 

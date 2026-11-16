@@ -173,7 +173,7 @@ fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidLi
     .unwrap()
 }
 
-fn first_line(machine: &Machine<TestPty, VoidListener>, len: usize) -> String {
+fn first_line<L: EventListener>(machine: &Machine<TestPty, L>, len: usize) -> String {
     let terminal = machine.terminal.lock();
     (0..len)
         .map(|col| terminal.grid[Line(0)][Column(col)].c())
@@ -454,6 +454,62 @@ fn a_stuck_write_is_not_retried_on_read_wakeups() {
     assert!(machine.pty.writer.bytes.is_empty());
 }
 
+// A query from the program is answered by this thread, written to the
+// PTY right after the parse that produced it, and never sent to the
+// event loop.
+#[test]
+fn a_parser_reply_is_written_by_the_reader_thread() {
+    let (events, recorded) = mpsc::channel();
+    let (registration, readiness) = corcovado::Registration::new2();
+    let (written_tx, written) = mpsc::channel();
+    let terminal = Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        EventRecorder(events.clone()),
+        WindowId::from(0),
+        0,
+        0,
+    );
+    let machine = Machine::new(
+        Arc::new(FairMutex::new(terminal)),
+        TestPty {
+            // Primary device attributes, then text.
+            bytes: io::Cursor::new(b"\x1b[cok".to_vec()),
+            ending: None,
+            exhausted: None,
+            writer: RecordingWriter {
+                written: Some(written_tx),
+                ..RecordingWriter::default()
+            },
+            child: Some(registration),
+            registration_error: false,
+            read_event: true,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        EventRecorder(events),
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let channel = machine.channel();
+    let handle = machine.spawn();
+
+    readiness.set_readiness(Ready::readable()).unwrap();
+    let reply = written.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(reply, b"\x1b[?62;4;6;22;52c".to_vec());
+
+    channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = handle.join().unwrap();
+    assert_eq!(first_line(&machine, 2), "ok");
+    let names: Vec<&str> = recorded.try_iter().collect();
+    assert!(
+        !names.contains(&"ptywrite"),
+        "the reply never went to the event loop: {names:?}"
+    );
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn the_reader_thread_serves_the_user() {
@@ -496,6 +552,7 @@ impl EventListener for EventRecorder {
         let name = match event {
             RioEvent::TerminalDamaged(_) => "damaged",
             RioEvent::ChildExited(..) => "exited",
+            RioEvent::PtyWrite(..) => "ptywrite",
             _ => return,
         };
         let _ = self.0.send(name);

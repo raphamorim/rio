@@ -470,6 +470,11 @@ where
     pub grid: Grid<Square>,
     inactive_grid: Grid<Square>,
     scroll_region: Range<Line>,
+    /// Parser replies (DA, DSR, DECRQM and the like) waiting for the
+    /// PTY thread, when replies are routed through it; see
+    /// [`Self::route_replies_through_pty`].
+    pty_replies: Vec<String>,
+    replies_through_pty: bool,
     tabs: TabStops,
     event_proxy: U,
     pub selection: Option<Selection>,
@@ -574,6 +579,8 @@ impl<U: EventListener> Crosswords<U> {
             inactive_grid: alt,
             active_charset: CharsetIndex::default(),
             scroll_region,
+            pty_replies: Vec::new(),
+            replies_through_pty: false,
             event_proxy,
             colors: term_colors,
             title: String::from(""),
@@ -1232,6 +1239,35 @@ impl<U: EventListener> Crosswords<U> {
         self.grid
             .total_lines()
             .saturating_sub(self.grid.screen_lines())
+    }
+
+    /// Route parser replies to the thread that owns the PTY instead of
+    /// the event loop. The replies accumulate here while that thread
+    /// holds the lock to parse and it writes them when it lets go, so
+    /// a query is answered without crossing to the UI thread and back.
+    /// Off by default: an embedder that feeds bytes itself and has no
+    /// PTY thread receives each reply as a `PtyWrite` event.
+    pub fn route_replies_through_pty(&mut self, enabled: bool) {
+        self.replies_through_pty = enabled;
+    }
+
+    /// Hand every reply accumulated since the last drain to `sink`,
+    /// oldest first.
+    pub fn drain_pty_replies(&mut self, mut sink: impl FnMut(String)) {
+        for reply in self.pty_replies.drain(..) {
+            sink(reply);
+        }
+    }
+
+    /// Answer the program: queued for the PTY thread, or sent as an
+    /// event for the owner of the terminal to write.
+    fn reply(&mut self, text: String) {
+        if self.replies_through_pty {
+            self.pty_replies.push(text);
+        } else {
+            self.event_proxy
+                .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        }
     }
 
     /// Damage the entire line at the cursor position
@@ -2953,13 +2989,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::Unknown(_) => ModeState::NotSupported,
         };
 
-        self.event_proxy.send_event(
-            RioEvent::PtyWrite(
-                self.route_id,
-                format!("\x1b[{};{}$y", mode.raw(), state as u8,),
-            ),
-            self.window_id,
-        );
+        self.reply(format!("\x1b[{};{}$y", mode.raw(), state as u8,));
     }
 
     #[inline]
@@ -3196,13 +3226,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             PrivateMode::Unknown(_) => ModeState::NotSupported,
         };
 
-        self.event_proxy.send_event(
-            RioEvent::PtyWrite(
-                self.route_id,
-                format!("\x1b[?{};{}$y", mode.raw(), state as u8,),
-            ),
-            self.window_id,
-        );
+        self.reply(format!("\x1b[?{};{}$y", mode.raw(), state as u8,));
     }
 
     #[inline]
@@ -3692,8 +3716,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             "\x1b]7501;{}{terminator}",
             crate::event::PROGRAM_STATUS_QUERY_REPLY
         );
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        self.reply(text);
     }
 
     fn prompt_start(&mut self) {
@@ -4262,15 +4285,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 // color, 52: clipboard access via OSC 52 (probed by
                 // tcell and others before enabling clipboard writes).
                 let text = String::from("\x1b[?62;4;6;22;52c");
-                self.event_proxy
-                    .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+                self.reply(text);
             }
             Some('>') => {
                 trace!("Reporting secondary device attributes");
                 let version = version_number(env!("CARGO_PKG_VERSION"));
                 let text = format!("\x1b[>0;{version};1c");
-                self.event_proxy
-                    .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+                self.reply(text);
             }
             _ => debug!("Unsupported device attributes intermediate"),
         }
@@ -4281,8 +4302,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         trace!("Reporting terminal version (XTVERSION)");
         let version = env!("CARGO_PKG_VERSION");
         let text = format!("\x1bP>|Rio {version}\x1b\\");
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        self.reply(text);
     }
 
     #[inline]
@@ -4294,8 +4314,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn report_keyboard_mode(&mut self) {
         let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
         let text = format!("\x1b[?{current_mode}u");
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        self.reply(text);
     }
 
     #[inline]
@@ -4350,14 +4369,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         match arg {
             5 => {
                 let text = String::from("\x1b[0n");
-                self.event_proxy
-                    .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+                self.reply(text);
             }
             6 => {
                 let pos = self.grid.cursor.pos;
                 let text = format!("\x1b[{};{}R", pos.row + 1, pos.col + 1);
-                self.event_proxy
-                    .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+                self.reply(text);
             }
             _ => debug!("unknown device status query: {}", arg),
         };
@@ -4809,8 +4826,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.graphics.cell_height, self.graphics.cell_width
         );
         debug!("cells_size_pixels {:?}", text);
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        self.reply(text);
     }
 
     #[inline]
@@ -4821,8 +4837,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.grid.columns()
         );
         debug!("text_area_size_chars {:?}", text);
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        self.reply(text);
     }
 
     #[inline]
@@ -4922,10 +4937,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        self.event_proxy.send_event(
-            RioEvent::PtyWrite(self.route_id, generate_response(pi, ps, pv)),
-            self.window_id,
-        );
+        self.reply(generate_response(pi, ps, pv));
     }
 
     #[inline]
@@ -5605,20 +5617,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn kitty_graphics_response(&mut self, response: String) {
         // Send response back to the terminal
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, response), self.window_id);
+        self.reply(response);
     }
 
     #[inline]
     fn xtgettcap_response(&mut self, response: String) {
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, response), self.window_id);
+        self.reply(response);
     }
 
     #[inline]
     fn glyph_protocol_response(&mut self, response: String) {
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, response), self.window_id);
+        self.reply(response);
     }
 
     #[cfg(feature = "graphics")]
@@ -11882,6 +11891,40 @@ mod tests {
         events.borrow_mut().clear();
         parser.advance(&mut term, b"\x1b[?9h\x1b[?9$p");
         assert_eq!(replies(&events), vec!["\x1b[?9;1$y".to_string()]);
+    }
+
+    // Parser replies reach the owner of the terminal as events unless
+    // the PTY thread takes them; then they queue for it and no event
+    // is sent.
+    #[test]
+    fn replies_are_events_unless_routed_through_the_pty() {
+        let (mut cw, events) = make_crosswords_with_events(3);
+        cw.identify_terminal(None);
+        let replies = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
+            events
+                .borrow()
+                .iter()
+                .filter(|e| matches!(e, RioEvent::PtyWrite(..)))
+                .count()
+        };
+        assert_eq!(replies(&events), 1);
+
+        cw.route_replies_through_pty(true);
+        cw.identify_terminal(None);
+        cw.report_version();
+        assert_eq!(replies(&events), 1, "no event once routed");
+        let mut queued = Vec::new();
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued.len(), 2);
+        assert_eq!(queued[0], "\x1b[?62;4;6;22;52c");
+        assert!(queued[1].starts_with("\x1bP>|Rio "));
+        let mut again = Vec::new();
+        cw.drain_pty_replies(|r| again.push(r));
+        assert!(again.is_empty(), "a drain empties the queue");
+
+        cw.route_replies_through_pty(false);
+        cw.identify_terminal(None);
+        assert_eq!(replies(&events), 2, "events again once unrouted");
     }
 
     // The bulk codepoint path under mode 2027. Every sample is written
