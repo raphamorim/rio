@@ -1032,19 +1032,22 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // that never received a focus event yet (created in
                     // the background) must not have OSC 52 silently
                     // dropped by an is_focused that never initialized.
-                    if route.window.is_focused || !route.window.focus_seen {
-                        let text = format(clipboard.get(clipboard_type).as_str());
-                        // Route the paste back to the panel that asked for it
-                        // (OSC 52 reply), not whichever panel happens to be
-                        // focused now.
-                        if let Some(item) = route
-                            .window
-                            .screen
-                            .context_manager
-                            .get_by_route_id(route_id)
-                        {
-                            item.val.messenger.send_bytes(text.into_bytes());
-                        }
+                    // A declined query is still settled, with no bytes.
+                    let text = if route.window.is_focused || !route.window.focus_seen {
+                        format(clipboard.get(clipboard_type).as_str()).into_bytes()
+                    } else {
+                        Vec::new()
+                    };
+                    // Route the paste back to the panel that asked for it
+                    // (OSC 52 reply), not whichever panel happens to be
+                    // focused now.
+                    if let Some(item) = route
+                        .window
+                        .screen
+                        .context_manager
+                        .get_by_route_id(route_id)
+                    {
+                        item.val.messenger.send_reply(text);
                     }
                 }
             }
@@ -1108,7 +1111,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         let text = format(crate::renderer::utils::terminal_dimensions(
                             &dimension,
                         ));
-                        item.val.messenger.send_bytes(text.into_bytes());
+                        item.val.messenger.send_reply(text.into_bytes());
                     }
                 }
             }
@@ -1132,19 +1135,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         return;
                     };
                     let terminal = item.val.terminal.lock();
-                    let color: ColorRgb = match terminal.colors()[index] {
-                        Some(color) => ColorRgb::from_color_arr(color),
+                    let color: Option<ColorRgb> = match terminal.colors()[index] {
+                        Some(color) => Some(ColorRgb::from_color_arr(color)),
                         // Ignore cursor color requests unless it was changed.
                         None if index
                             == crate::crosswords::NamedColor::Cursor as usize =>
                         {
-                            return
+                            None
                         }
-                        None => ColorRgb::from_color_arr(renderer_color),
+                        None => Some(ColorRgb::from_color_arr(renderer_color)),
                     };
                     drop(terminal);
 
-                    item.val.messenger.send_bytes(format(color).into_bytes());
+                    // An ignored query is still settled, with no bytes.
+                    let text = color.map(|c| format(c).into_bytes()).unwrap_or_default();
+                    item.val.messenger.send_reply(text);
                 }
             }
             RioEventType::Rio(RioEvent::CreateWindow) => {
