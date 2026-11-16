@@ -23,7 +23,8 @@ pub struct Pty {
     // `conout` before `backend` will cause a deadlock (with Conpty).
     backend: Backend,
     conout: ReadPipe,
-    conin: WritePipe,
+    /// The input pipe, until a writer thread takes it.
+    conin: Option<WritePipe>,
     read_token: corcovado::Token,
     write_token: corcovado::Token,
     child_event_token: corcovado::Token,
@@ -66,7 +67,7 @@ impl Pty {
         Self {
             backend: backend.into(),
             conout: conout.into(),
-            conin: conin.into(),
+            conin: Some(conin.into()),
             read_token: 0.into(),
             write_token: 0.into(),
             child_event_token: 0.into(),
@@ -109,20 +110,13 @@ impl ProcessReadWrite for Pty {
                 poll_opts,
             )?
         }
-        if interest.is_writable() {
-            poll.register(
-                &self.conin,
-                self.write_token,
-                corcovado::Ready::writable(),
-                poll_opts,
-            )?
-        } else {
-            poll.register(
-                &self.conin,
-                self.write_token,
-                corcovado::Ready::empty(),
-                poll_opts,
-            )?
+        if let Some(conin) = &self.conin {
+            let interest = if interest.is_writable() {
+                corcovado::Ready::writable()
+            } else {
+                corcovado::Ready::empty()
+            };
+            poll.register(conin, self.write_token, interest, poll_opts)?
         }
 
         self.child_event_token = token.next().unwrap();
@@ -158,20 +152,13 @@ impl ProcessReadWrite for Pty {
                 poll_opts,
             )?;
         }
-        if interest.is_writable() {
-            poll.reregister(
-                &self.conin,
-                self.write_token,
-                corcovado::Ready::writable(),
-                poll_opts,
-            )?;
-        } else {
-            poll.reregister(
-                &self.conin,
-                self.write_token,
-                corcovado::Ready::empty(),
-                poll_opts,
-            )?;
+        if let Some(conin) = &self.conin {
+            let interest = if interest.is_writable() {
+                corcovado::Ready::writable()
+            } else {
+                corcovado::Ready::empty()
+            };
+            poll.reregister(conin, self.write_token, interest, poll_opts)?;
         }
 
         poll.reregister(
@@ -187,7 +174,9 @@ impl ProcessReadWrite for Pty {
     #[inline]
     fn deregister(&mut self, poll: &corcovado::Poll) -> io::Result<()> {
         poll.deregister(&self.conout)?;
-        poll.deregister(&self.conin)?;
+        if let Some(conin) = &self.conin {
+            poll.deregister(conin)?;
+        }
         poll.deregister(self.child_watcher.event_rx())?;
         Ok(())
     }
@@ -204,7 +193,9 @@ impl ProcessReadWrite for Pty {
 
     #[inline]
     fn writer(&mut self) -> &mut Self::Writer {
-        &mut self.conin
+        self.conin
+            .as_mut()
+            .expect("the write half was taken by the writer thread")
     }
 
     #[inline]
@@ -224,6 +215,14 @@ impl ProcessReadWrite for Pty {
 }
 
 impl EventedPty for Pty {
+    type WriteHalf = WritePipe;
+
+    fn write_half(&mut self) -> io::Result<WritePipe> {
+        self.conin.take().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::Other, "the write half was already taken")
+        })
+    }
+
     fn child_event_token(&self) -> corcovado::Token {
         self.child_event_token
     }

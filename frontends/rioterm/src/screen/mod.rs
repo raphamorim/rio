@@ -405,7 +405,7 @@ impl Screen<'_> {
     /// restore visibility after a mid-composition scroll.
     ///
     /// Selection follows what the equivalent plain typing does: plain
-    /// input drops it (`send_bytes`), search typing drops it only
+    /// input drops it (`send_write`), search typing drops it only
     /// outside vi mode (`search_input` keeps a vi visual selection).
     pub fn set_ime_preedit(&mut self, preedit: Option<crate::ime::Preedit>) -> bool {
         let composing = preedit.is_some();

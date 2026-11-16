@@ -816,7 +816,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .current_grid_mut()
                         .get_by_route_id(route_id)
                     {
-                        item.context_mut().messenger.send_bytes(resp.into_bytes());
+                        item.context_mut().messenger.send_reply(resp.into_bytes());
                     }
                 }
             }
@@ -1092,14 +1092,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // thread writes its replies there; this is reached
                     // for terminals driven without one, and for the
                     // replies behind a query only this thread answers,
-                    // which keep their order by taking the same path.
+                    // which keep their order by taking the same path
+                    // and are passed back as answers, so the terminal
+                    // knows when it has every one of them.
                     if let Some(item) = route
                         .window
                         .screen
                         .context_manager
                         .get_by_route_id(route_id)
                     {
-                        item.val.messenger.send_bytes(text.into_bytes());
+                        item.val.messenger.send_reply(text.into_bytes());
                     }
                 }
             }

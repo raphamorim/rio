@@ -458,6 +458,23 @@ const TITLE_STACK_MAX_DEPTH: usize = 4096;
 // Max size of the keyboard modes.
 const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 8;
 
+/// Where parser replies go when the PTY has a writer thread; see
+/// [`Crosswords::set_reply_sink`].
+pub struct ReplySink(pub Box<dyn Fn(String) + Send>);
+
+impl std::ops::Deref for ReplySink {
+    type Target = dyn Fn(String) + Send;
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+impl std::fmt::Debug for ReplySink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ReplySink")
+    }
+}
+
 #[derive(Debug)]
 pub struct Crosswords<U>
 where
@@ -470,11 +487,10 @@ where
     pub grid: Grid<Square>,
     inactive_grid: Grid<Square>,
     scroll_region: Range<Line>,
-    /// Parser replies (DA, DSR, DECRQM and the like) waiting for the
-    /// PTY thread, when replies are routed through it; see
-    /// [`Self::set_enable_pty_reply`].
-    pty_replies: Vec<String>,
-    enable_pty_reply: bool,
+    /// Where a parser reply (DA, DSR, DECRQM and the like) goes the
+    /// moment it is produced, when the PTY has a writer thread; see
+    /// [`Self::set_reply_sink`]. Without one, replies are events.
+    reply_sink: Option<ReplySink>,
     /// The configured palette, so a color query is answered here with
     /// the program's override or the configured color, without a trip
     /// to the owner of the terminal. Unset for an embedder that keeps
@@ -591,8 +607,7 @@ impl<U: EventListener> Crosswords<U> {
             inactive_grid: alt,
             active_charset: CharsetIndex::default(),
             scroll_region,
-            pty_replies: Vec::new(),
-            enable_pty_reply: false,
+            reply_sink: None,
             default_colors: None,
             ui_queries_pending: 0,
             event_proxy,
@@ -1255,14 +1270,14 @@ impl<U: EventListener> Crosswords<U> {
             .saturating_sub(self.grid.screen_lines())
     }
 
-    /// Route parser replies to the thread that owns the PTY instead of
-    /// the event loop. The replies accumulate here while that thread
-    /// holds the lock to parse and it writes them when it lets go, so
-    /// a query is answered without crossing to the UI thread and back.
-    /// Off by default: an embedder that feeds bytes itself and has no
-    /// PTY thread receives each reply as a `PtyWrite` event.
-    pub fn set_enable_pty_reply(&mut self, enabled: bool) {
-        self.enable_pty_reply = enabled;
+    /// Route parser replies to the PTY's writer thread instead of the
+    /// event loop: each reply is handed to `sink` the moment the parser
+    /// produces it, so it keeps its place among everything else bound
+    /// for the PTY and is answered without crossing to the UI thread
+    /// and back. None by default: an embedder that feeds bytes itself
+    /// and has no PTY thread receives each reply as a `PtyWrite` event.
+    pub fn set_reply_sink(&mut self, sink: Option<ReplySink>) {
+        self.reply_sink = sink;
     }
 
     /// The configured palette, for answering color queries here; see
@@ -1272,24 +1287,24 @@ impl<U: EventListener> Crosswords<U> {
         self.default_colors = Some(colors);
     }
 
-    /// Hand every reply accumulated since the last drain to `sink`,
-    /// oldest first.
-    pub fn drain_pty_replies(&mut self, mut sink: impl FnMut(String)) {
-        for reply in self.pty_replies.drain(..) {
-            sink(reply);
-        }
-    }
-
-    /// Answer the program: queued for the PTY thread, or sent as an
+    /// Answer the program: handed to the PTY's writer, or sent as an
     /// event for the owner of the terminal to write. While a query the
     /// owner answers is outstanding, the event path keeps the order
-    /// between the two.
+    /// between the two: the reply takes the owner's queue behind the
+    /// query, and counts as one more thing the owner has to pass back,
+    /// so the fence stays up until it has and no reply made here in
+    /// the meantime overtakes it.
     fn reply(&mut self, text: String) {
-        if self.enable_pty_reply && self.ui_queries_pending == 0 {
-            self.pty_replies.push(text);
-        } else {
-            self.event_proxy
-                .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        match &self.reply_sink {
+            Some(sink) if self.ui_queries_pending == 0 => sink(text),
+            Some(_) => {
+                self.ui_query_sent();
+                self.event_proxy
+                    .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id)
+            }
+            None => self
+                .event_proxy
+                .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id),
         }
     }
 
@@ -1301,14 +1316,15 @@ impl<U: EventListener> Crosswords<U> {
     /// behind the query as a fence, in the same write or a later one,
     /// is answered after it. The color queries are answered here
     /// whenever the palette is known so the common fence idiom never
-    /// leaves the PTY thread.
+    /// leaves the PTY's threads.
     fn ui_query_sent(&mut self) {
         self.ui_queries_pending = self.ui_queries_pending.saturating_add(1);
     }
 
-    /// The owner answered, or declined, one outstanding query; its
-    /// answer is queued for the PTY ahead of any reply made from here
-    /// on. Called by the PTY thread when the answer reaches it.
+    /// The owner answered, or declined, one outstanding query, or
+    /// passed back one reply that was routed through it; what it sent
+    /// is queued for the PTY ahead of any reply made from here on.
+    /// Called by the PTY's writer thread when that reaches it.
     pub fn ui_query_answered(&mut self) {
         self.ui_queries_pending = self.ui_queries_pending.saturating_sub(1);
     }
@@ -5845,8 +5861,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Defer to the frontend: only it has access to both the per-
         // route registry and the FontLibrary, so only it can compute
         // the System / Glossary / Both bits accurately. The frontend
-        // formats the reply and writes it back to this pane's PTY
-        // asynchronously.
+        // formats the reply and answers it like the other queries only
+        // it can answer, so the replies behind it keep their place.
+        self.ui_query_sent();
         self.event_proxy.send_event(
             RioEvent::GlyphProtocolQuery {
                 route_id: self.route_id,
@@ -11967,7 +11984,11 @@ mod tests {
     #[test]
     fn a_ui_answered_query_fences_replies_until_the_owner_answers() {
         let (mut cw, events) = make_crosswords_with_events(4);
-        cw.set_enable_pty_reply(true);
+        let sunk = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        cw.set_reply_sink(Some(ReplySink(Box::new({
+            let sunk = std::sync::Arc::clone(&sunk);
+            move |reply| sunk.lock().unwrap().push(reply)
+        }))));
         let kinds = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
             events
                 .borrow()
@@ -11976,6 +11997,7 @@ mod tests {
                     RioEvent::ColorRequest(..) => Some("color"),
                     RioEvent::TextAreaSizeRequest(..) => Some("size"),
                     RioEvent::ClipboardLoad(..) => Some("clipboard"),
+                    RioEvent::GlyphProtocolQuery { .. } => Some("glyph"),
                     RioEvent::PtyWrite(..) => Some("reply"),
                     _ => None,
                 })
@@ -11987,23 +12009,33 @@ mod tests {
         // Background color query, then primary DA as the fence.
         parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b[c");
         assert_eq!(kinds(&events), vec!["color", "reply"], "in the order asked");
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert!(queued.is_empty(), "nothing overtook the color answer");
 
-        // The fence arriving in a later write is covered too: the drain
-        // does not lift the fence, the owner's answer does.
+        // The fence arriving in a later write is covered too, and the
+        // owner's answer alone does not lift the fence: the replies
+        // routed through the owner are still its to pass back, and
+        // until it has, a reply made here would overtake them.
         parser.advance(&mut cw, b"\x1b[c");
         assert_eq!(kinds(&events).len(), 3, "still through the owner");
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert!(queued.is_empty());
         cw.ui_query_answered();
         parser.advance(&mut cw, b"\x1b[c");
-        assert_eq!(kinds(&events).len(), 3, "direct again");
-        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(kinds(&events).len(), 4, "the owner still holds two");
+        queued.extend(sunk.lock().unwrap().drain(..));
+        assert!(queued.is_empty(), "nothing overtook the routed replies");
+        cw.ui_query_answered();
+        cw.ui_query_answered();
+        cw.ui_query_answered();
+        parser.advance(&mut cw, b"\x1b[c");
+        assert_eq!(kinds(&events).len(), 4, "direct again");
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert_eq!(queued.len(), 1);
 
         // Every query the owner answers raises the fence: the text
-        // area in pixels, the graphics geometry, the clipboard.
+        // area in pixels, the graphics geometry, the clipboard. The
+        // answer and the routed DA are two things to pass back.
         for (query, kind) in [
             (&b"\x1b[14t"[..], "size"),
             (&b"\x1b[?2;1;0S"[..], "size"),
@@ -12014,10 +12046,22 @@ mod tests {
             parser.advance(&mut cw, query);
             parser.advance(&mut cw, b"\x1b[c");
             assert_eq!(kinds(&events)[before..], [kind, "reply"], "{kind}");
-            cw.drain_pty_replies(|r| queued.push(r));
+            queued.extend(sunk.lock().unwrap().drain(..));
             assert!(queued.is_empty(), "{kind} fences the DA behind it");
             cw.ui_query_answered();
+            cw.ui_query_answered();
         }
+
+        // So does the glyph query, which only the owner can answer.
+        queued.clear();
+        let before = kinds(&events).len();
+        crate::performer::handler::Handler::glyph_query(&mut cw, 0x1F600);
+        parser.advance(&mut cw, b"\x1b[c");
+        assert_eq!(kinds(&events)[before..], ["glyph", "reply"]);
+        queued.extend(sunk.lock().unwrap().drain(..));
+        assert!(queued.is_empty(), "the glyph query fences the DA behind it");
+        cw.ui_query_answered();
+        cw.ui_query_answered();
 
         // Two outstanding queries need two answers.
         queued.clear();
@@ -12025,11 +12069,12 @@ mod tests {
         parser.advance(&mut cw, b"\x1b[14t");
         cw.ui_query_answered();
         parser.advance(&mut cw, b"\x1b[c");
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert!(queued.is_empty(), "one answer of two does not lift it");
         cw.ui_query_answered();
+        cw.ui_query_answered();
         parser.advance(&mut cw, b"\x1b[c");
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert_eq!(queued.len(), 1);
 
         // A direct reply before the query stays direct, and the fence
@@ -12039,9 +12084,10 @@ mod tests {
         parser.advance(&mut cw, b"\x1b[c\x1b]11;?\x1b\\");
         parser.advance(&mut cw, b"\x1b[6n");
         assert_eq!(kinds(&events)[before..], ["color", "reply"]);
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert_eq!(queued.len(), 1, "the DA before the query is direct");
         assert!(queued[0].ends_with("c"));
+        cw.ui_query_answered();
         cw.ui_query_answered();
     }
 
@@ -12053,7 +12099,11 @@ mod tests {
         use crate::config::colors::term::List;
         use crate::config::colors::Colors;
         let (mut cw, events) = make_crosswords_with_events(6);
-        cw.set_enable_pty_reply(true);
+        let sunk = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        cw.set_reply_sink(Some(ReplySink(Box::new({
+            let sunk = std::sync::Arc::clone(&sunk);
+            move |reply| sunk.lock().unwrap().push(reply)
+        }))));
         let color_requests = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
             events
                 .borrow()
@@ -12063,12 +12113,14 @@ mod tests {
         };
         let mut parser = crate::performer::handler::Processor::default();
 
-        // No palette: the owner answers, and the burst is fenced.
+        // No palette: the owner answers, and the burst is fenced. The
+        // owner passes back the answer and the DA routed through it.
         parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b[c");
         assert_eq!(color_requests(&events), 1);
         let mut queued = Vec::new();
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert!(queued.is_empty());
+        cw.ui_query_answered();
         cw.ui_query_answered();
 
         let mut colors = Colors::default();
@@ -12081,7 +12133,7 @@ mod tests {
         cw.set_default_colors(List::from(&colors));
         parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b]4;1;?\x1b\\\x1b[c");
         assert_eq!(color_requests(&events), 1, "no more events");
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert_eq!(queued.len(), 3, "background, palette entry 1, DA, in order");
         assert_eq!(queued[0], "\x1b]11;rgb:1111/2222/3333\x1b\\");
         assert!(queued[1].starts_with("\x1b]4;1;rgb:"));
@@ -12090,23 +12142,23 @@ mod tests {
         // The program's own override wins over the palette.
         queued.clear();
         parser.advance(&mut cw, b"\x1b]11;#445566\x1b\\\x1b]11;?\x1b\\");
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert_eq!(queued, vec!["\x1b]11;rgb:4444/5555/6666\x1b\\"]);
 
         // The cursor color is reported only once the program set it.
         queued.clear();
         parser.advance(&mut cw, b"\x1b]12;?\x1b\\");
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert!(queued.is_empty(), "unset cursor color: no answer");
         assert_eq!(color_requests(&events), 1, "and no event either");
         parser.advance(&mut cw, b"\x1b]12;#ff0000\x1b\\\x1b]12;?\x1b\\");
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert_eq!(queued, vec!["\x1b]12;rgb:ffff/0000/0000\x1b\\"]);
     }
 
     // Parser replies reach the owner of the terminal as events unless
-    // the PTY thread takes them; then they queue for it and no event
-    // is sent.
+    // a sink to the PTY is installed; then they go down the sink and
+    // no event is sent.
     #[test]
     fn replies_are_events_unless_routed_through_the_pty() {
         let (mut cw, events) = make_crosswords_with_events(3);
@@ -12120,20 +12172,24 @@ mod tests {
         };
         assert_eq!(replies(&events), 1);
 
-        cw.set_enable_pty_reply(true);
+        let sunk = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        cw.set_reply_sink(Some(ReplySink(Box::new({
+            let sunk = std::sync::Arc::clone(&sunk);
+            move |reply| sunk.lock().unwrap().push(reply)
+        }))));
         cw.identify_terminal(None);
         cw.report_version();
         assert_eq!(replies(&events), 1, "no event once routed");
         let mut queued = Vec::new();
-        cw.drain_pty_replies(|r| queued.push(r));
+        queued.extend(sunk.lock().unwrap().drain(..));
         assert_eq!(queued.len(), 2);
         assert_eq!(queued[0], "\x1b[?62;4;6;22;52c");
         assert!(queued[1].starts_with("\x1bP>|Rio "));
         let mut again = Vec::new();
-        cw.drain_pty_replies(|r| again.push(r));
-        assert!(again.is_empty(), "a drain empties the queue");
+        again.extend(sunk.lock().unwrap().drain(..));
+        assert!(again.is_empty(), "the sink holds nothing more");
 
-        cw.set_enable_pty_reply(false);
+        cw.set_reply_sink(None);
         cw.identify_terminal(None);
         assert_eq!(replies(&events), 2, "events again once unrouted");
     }

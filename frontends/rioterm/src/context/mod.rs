@@ -5,7 +5,7 @@ use crate::ansi::mode::{NamedPrivateMode, PrivateMode};
 use crate::ansi::CursorShape;
 use crate::ansi::{KeyboardModes, KeyboardModesApplyBehavior};
 use crate::context::title::{update_title, ContextTitle};
-use crate::event::sync::FairMutex;
+use crate::event::sync::TerminalLock;
 use crate::event::{Msg, RioEvent};
 pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
@@ -55,7 +55,7 @@ use teletypewriter::{create_pty_with_fork, create_pty_with_spawn};
 
 pub struct Context<T: EventListener> {
     pub route_id: usize,
-    pub terminal: Arc<FairMutex<Crosswords<T>>>,
+    pub terminal: Arc<TerminalLock<Crosswords<T>>>,
     pub renderable_content: RenderableContent,
     pub messenger: Messenger,
     #[cfg(not(target_os = "windows"))]
@@ -224,7 +224,8 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         // Dead context never sees new input — no scrollback needed.
         0,
     );
-    let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
+    let terminal: Arc<TerminalLock<Crosswords<T>>> =
+        Arc::new(TerminalLock::new(terminal));
     let (sender, _receiver) = corcovado::channel::channel();
 
     Context {
@@ -325,7 +326,8 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         terminal.set_grapheme_clustering(config.grapheme_clustering);
         terminal.set_default_colors(config.colors);
         terminal.blinking_cursor = cursor_state.1;
-        let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
+        let terminal: Arc<TerminalLock<Crosswords<T>>> =
+            Arc::new(TerminalLock::new(terminal));
 
         let integration = if config.shell_integration {
             crate::shell_integration::prepare(
