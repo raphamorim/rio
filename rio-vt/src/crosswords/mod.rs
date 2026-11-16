@@ -5732,16 +5732,18 @@ impl<U: EventListener> Handler for Crosswords<U> {
         width: u8,
         layout: rio_graphics::glyph_layout::GlyphLayout,
     ) -> Result<(), crate::ansi::glyph_protocol::RegisterError> {
-        use crate::ansi::glyph_protocol::{is_pua, GlyphPayload, RegisterError};
+        use crate::ansi::glyph_protocol::{
+            in_registration_block, GlyphPayload, RegisterError,
+        };
         use rio_graphics::glyph::glyf_decode;
         use rio_graphics::glyph::glyph_registry::{
             GlyphRegistry, RegisterRejection, StoredPayload,
         };
 
-        // PUA check first — callers that bypass the wire parser (direct
+        // Block check first: callers that bypass the wire parser (direct
         // API, tests) still get the rejection without accidentally
         // allocating the registry on a doomed request.
-        if !is_pua(cp) {
+        if !in_registration_block(cp) {
             return Err(RegisterError::OutOfNamespace);
         }
 
@@ -5821,9 +5823,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         let registry = self.glyph_registry.get_or_insert_with(GlyphRegistry::new);
 
         let result = match registry.register(cp, stored, upm, width, layout) {
-            Ok(_evicted) => Ok(()),
+            Ok(()) => Ok(()),
             Err(RegisterRejection::OutOfNamespace) => {
-                // Unreachable given the is_pua check above, but the
+                // Unreachable given the block check above, but the
                 // registry double-checks so the defence exists.
                 Err(RegisterError::OutOfNamespace)
             }
@@ -7118,35 +7120,38 @@ mod tests {
         let mut cw = make_crosswords();
 
         let glyf = minimal_glyf_bytes();
-        // E0A0 is the Powerline branch codepoint — in basic PUA.
+        // U+100000 is the first codepoint of the registration block.
         let res = Handler::glyph_register(
             &mut cw,
-            0xE0A0,
+            0x10_0000,
             glyf_payload(glyf, 1000),
             1,
             Default::default(),
         );
         assert!(res.is_ok());
         assert!(cw.glyph_registry.is_some());
-        assert!(registry_contains(&cw, 0xE0A0));
+        assert!(registry_contains(&cw, 0x10_0000));
     }
 
     #[cfg(feature = "graphics")]
     #[cfg(feature = "graphics")]
     #[test]
-    fn glyph_protocol_register_rejects_non_pua() {
+    fn glyph_protocol_register_rejects_outside_the_block() {
         use crate::ansi::glyph_protocol::RegisterError;
         let mut cw = make_crosswords();
 
-        // 0x61 is 'a' — not in PUA. Registry must refuse.
-        let res = Handler::glyph_register(
-            &mut cw,
-            0x61,
-            glyf_payload(minimal_glyf_bytes(), 1000),
-            1,
-            Default::default(),
-        );
-        assert_eq!(res, Err(RegisterError::OutOfNamespace));
+        // 'a', a Nerd Fonts icon in the basic PUA, PUA-A, and PUA-B past
+        // the block: all refused, and the registry is never allocated.
+        for cp in [0x61, 0xE0A0, 0xF_0000, 0x10_0400] {
+            let res = Handler::glyph_register(
+                &mut cw,
+                cp,
+                glyf_payload(minimal_glyf_bytes(), 1000),
+                1,
+                Default::default(),
+            );
+            assert_eq!(res, Err(RegisterError::OutOfNamespace));
+        }
         assert!(cw.glyph_registry.is_none());
     }
 
@@ -7169,7 +7174,7 @@ mod tests {
 
         let res = Handler::glyph_register(
             &mut cw,
-            0xE0A0,
+            0x10_0000,
             glyf_payload(v, 1000),
             1,
             Default::default(),
@@ -7210,7 +7215,7 @@ mod tests {
         let v = dense_glyf_bytes(MAX_DECODED_POINTS + 1);
         let res = Handler::glyph_register(
             &mut cw,
-            0xE0A0,
+            0x10_0000,
             glyf_payload(v, 1000),
             1,
             Default::default(),
@@ -7237,7 +7242,7 @@ mod tests {
         };
         let res = Handler::glyph_register(
             &mut cw,
-            0xE0A0,
+            0x10_0000,
             GlyphPayload::ColrV0 {
                 container,
                 upm: 1000,
@@ -7260,7 +7265,7 @@ mod tests {
         };
         let res = Handler::glyph_register(
             &mut cw,
-            0xE0A0,
+            0x10_0000,
             GlyphPayload::ColrV0 {
                 container,
                 upm: 1000,
@@ -7269,7 +7274,7 @@ mod tests {
             Default::default(),
         );
         assert!(res.is_ok());
-        assert!(registry_contains(&cw, 0xE0A0));
+        assert!(registry_contains(&cw, 0x10_0000));
     }
 
     #[cfg(feature = "graphics")]
@@ -7289,7 +7294,7 @@ mod tests {
         let mut cw = make_crosswords();
         Handler::glyph_register(
             &mut cw,
-            0xE0A0,
+            0x10_0000,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
             Default::default(),
@@ -7297,7 +7302,7 @@ mod tests {
         .unwrap();
         Handler::glyph_register(
             &mut cw,
-            0xE0A1,
+            0x10_0001,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
             Default::default(),
@@ -7321,19 +7326,19 @@ mod tests {
 
         // A width=2 registration must NOT reserve two cells: the
         // declared width is a render-time hint only, so the logical
-        // layout stays consistent with system wcwidth (PUA = 1). This
+        // layout stays consistent with system wcwidth (1 for the block). This
         // keeps the cursor / selection / copy in sync with width-unaware
         // consumers; the glyph overflows into the next cell in pixels at
         // render time.
         Handler::glyph_register(
             &mut cw,
-            0xE0A0,
+            0x10_0000,
             glyf_payload(minimal_glyf_bytes(), 1000),
             2,
             Default::default(),
         )
         .unwrap();
-        Handler::input(&mut cw, '\u{E0A0}');
+        Handler::input(&mut cw, '\u{100000}');
 
         let row = cw.grid.cursor.pos.row;
         assert!(matches!(cw.grid[row][Column(0)].wide(), Wide::Narrow));
@@ -7353,7 +7358,7 @@ mod tests {
 
         Handler::glyph_register(
             &mut cw,
-            0xE0A0,
+            0x10_0000,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
             Default::default(),
@@ -7362,7 +7367,7 @@ mod tests {
         assert!(cw.is_fully_damaged(), "register must repaint (§7.3)");
 
         cw.reset_damage();
-        Handler::glyph_clear(&mut cw, Some(0xE0A0));
+        Handler::glyph_clear(&mut cw, Some(0x10_0000));
         assert!(cw.is_fully_damaged(), "clear must repaint (§7.3)");
     }
 
@@ -7372,7 +7377,7 @@ mod tests {
         let mut cw = make_crosswords();
         Handler::glyph_register(
             &mut cw,
-            0xE0A0,
+            0x10_0000,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
             Default::default(),
@@ -7380,16 +7385,16 @@ mod tests {
         .unwrap();
         Handler::glyph_register(
             &mut cw,
-            0xE0A1,
+            0x10_0001,
             glyf_payload(minimal_glyf_bytes(), 1000),
             1,
             Default::default(),
         )
         .unwrap();
 
-        Handler::glyph_clear(&mut cw, Some(0xE0A0));
-        assert!(!registry_contains(&cw, 0xE0A0));
-        assert!(registry_contains(&cw, 0xE0A1));
+        Handler::glyph_clear(&mut cw, Some(0x10_0000));
+        assert!(!registry_contains(&cw, 0x10_0000));
+        assert!(registry_contains(&cw, 0x10_0001));
     }
 
     #[test]

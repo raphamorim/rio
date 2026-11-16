@@ -8,8 +8,8 @@
 //       detection (any reply = protocol implemented)
 //   q — query the state of a codepoint (status is a comma-separated
 //       list of coverage names: `system`, `glossary`, both, or empty)
-//   r — register a PUA codepoint with a glyph
-//   c — clear one PUA codepoint or every registration in this session
+//   r — register a glyph at a codepoint in the registration block
+//   c — clear one block codepoint or every registration in this session
 //
 // Payload formats (selected via `fmt=<name>` on the `r` verb):
 //   glyf   — single monochrome OpenType simple-glyph outline.
@@ -21,10 +21,11 @@
 //            affine transforms and no sweep gradients in v1.
 //
 // `cp` is always a single codepoint. For `r` and `c`, `cp` MUST be in
-// one of the three Unicode Private Use Area ranges; otherwise the
+// the registration block `U+100000`–`U+1003FF` (spec §4); otherwise the
 // request is rejected with `reason=out_of_namespace`. `q` accepts any
-// valid Unicode scalar value so applications can probe system-font
-// coverage for codepoints they intend to register.
+// valid Unicode scalar value, so an application can check whether the
+// user's font already has an icon (a Nerd Fonts codepoint, say) before
+// registering its own.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rio_graphics::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphLayout, GlyphSize};
@@ -46,14 +47,7 @@ pub const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 /// never produced by this build.
 pub const SUPPORTED_FORMATS: &[&str] = &["glyf", "colrv0", "colrv1"];
 
-/// Check whether a codepoint is in any of the three Unicode Private
-/// Use Areas.
-#[inline]
-pub fn is_pua(cp: u32) -> bool {
-    (0xE000..=0xF8FF).contains(&cp)          // basic
-        || (0xF_0000..=0xF_FFFD).contains(&cp)  // supplementary A
-        || (0x10_0000..=0x10_FFFD).contains(&cp) // supplementary B
-}
+pub use rio_graphics::glyph_namespace::in_registration_block;
 
 /// Parsed Glyph Protocol command, ready for dispatch.
 #[derive(Debug, Clone, PartialEq)]
@@ -63,7 +57,7 @@ pub enum GlyphCommand {
     Support,
     /// Query state of a single codepoint.
     Query { cp: u32 },
-    /// Register a glyph at a PUA codepoint chosen by the client. The
+    /// Register a glyph at a block codepoint chosen by the client. The
     /// `payload` carries format-specific data (monochrome `glyf`, or a
     /// `colrv0`/`colrv1` colour container wrapping OpenType tables).
     /// The `reply` level controls which replies (if any) the
@@ -81,7 +75,7 @@ pub enum GlyphCommand {
         width: u8,
         layout: GlyphLayout,
     },
-    /// Clear a single PUA codepoint (`Some`) or every slot (`None`).
+    /// Clear a single block codepoint (`Some`) or every slot (`None`).
     Clear { cp: Option<u32> },
 }
 
@@ -251,7 +245,7 @@ pub enum ParseError {
         reason: RegisterError,
         reply: ReplyMode,
     },
-    /// `c;cp=<hex>` where the codepoint is not in any PUA range.
+    /// `c;cp=<hex>` where the codepoint is outside the registration block.
     ClearOutOfNamespace,
 }
 
@@ -323,9 +317,9 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         .map(|v| ReplyMode::from_wire(v))
         .unwrap_or_default();
 
-    // PUA check is the protocol's security contract — reject early so
-    // we don't bother decoding the payload.
-    if !is_pua(cp) {
+    // The block check is the protocol's security contract: reject early
+    // so we don't bother decoding the payload.
+    if !in_registration_block(cp) {
         return Err(ParseError::RegisterFailed {
             cp,
             reason: RegisterError::OutOfNamespace,
@@ -581,7 +575,7 @@ fn parse_clear(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
             }
             let cp = parse_hex_cp(cp_raw)
                 .ok_or(ParseError::Malformed("clear cp invalid hex"))?;
-            if !is_pua(cp) {
+            if !in_registration_block(cp) {
                 return Err(ParseError::ClearOutOfNamespace);
             }
             Ok(GlyphCommand::Clear { cp: Some(cp) })
@@ -777,35 +771,14 @@ mod tests {
     }
 
     #[test]
-    fn is_pua_covers_all_three_ranges() {
-        assert!(is_pua(0xE000));
-        assert!(is_pua(0xE0A0)); // Powerline branch
-        assert!(is_pua(0xF8FF)); // end of basic PUA
-        assert!(is_pua(0xF_0000)); // start of supp-A
-        assert!(is_pua(0xF_FFFD));
-        assert!(is_pua(0x10_0000));
-        assert!(is_pua(0x10_FFFD));
-    }
-
-    #[test]
-    fn is_pua_excludes_real_text_and_emoji() {
-        assert!(!is_pua(0x0061)); // 'a'
-        assert!(!is_pua(0x002D)); // '-'
-        assert!(!is_pua(0x1F600)); // grinning face — supplementary but NOT PUA
-        assert!(!is_pua(0xFFFE)); // noncharacter just before PUA-A
-        assert!(!is_pua(0xF_FFFE)); // noncharacter just after PUA-A
-        assert!(!is_pua(0x10_FFFF)); // noncharacter just after PUA-B
-    }
-
-    #[test]
     fn parses_query_single_codepoint() {
         let got = parse(b"25a1;q;cp=E0A0").unwrap();
         assert_eq!(got, GlyphCommand::Query { cp: 0xE0A0 });
     }
 
     #[test]
-    fn query_accepts_non_pua_codepoints() {
-        // Query probes the world; it does not care about PUA.
+    fn query_accepts_codepoints_outside_the_block() {
+        // Query probes the world; it is not limited to the block.
         let got = parse(b"25a1;q;cp=61").unwrap();
         assert_eq!(got, GlyphCommand::Query { cp: 0x61 });
     }
@@ -827,14 +800,14 @@ mod tests {
     }
 
     #[test]
-    fn parses_register_at_pua_codepoint() {
+    fn parses_register_at_block_codepoint() {
         let payload = b64(&[0x01, 0x02, 0x03]);
-        let body = format!("25a1;r;cp=E0A0;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=100000;upm=1000;{}", payload);
         let got = parse(body.as_bytes()).unwrap();
         assert_eq!(
             got,
             GlyphCommand::Register {
-                cp: 0xE0A0,
+                cp: 0x10_0000,
                 payload: GlyphPayload::Glyf {
                     glyf: vec![0x01, 0x02, 0x03],
                     upm: 1000,
@@ -847,7 +820,7 @@ mod tests {
     }
 
     fn parse_layout_of(params: &str) -> Result<GlyphLayout, ParseError> {
-        let body = format!("25a1;r;cp=E0A0;{params};{}", b64(&[1, 2, 3]));
+        let body = format!("25a1;r;cp=100000;{params};{}", b64(&[1, 2, 3]));
         parse(body.as_bytes()).map(|command| match command {
             GlyphCommand::Register { layout, .. } => layout,
             other => panic!("expected a registration, got {other:?}"),
@@ -902,7 +875,7 @@ mod tests {
 
     #[test]
     fn register_invalid_sizing_value_honours_the_reply_level() {
-        let body = format!("25a1;r;cp=E0A0;reply=2;aw=0;{}", b64(&[1, 2, 3]));
+        let body = format!("25a1;r;cp=100000;reply=2;aw=0;{}", b64(&[1, 2, 3]));
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
@@ -952,7 +925,7 @@ mod tests {
                 matches!(
                     parse_layout_of(params),
                     Err(ParseError::RegisterFailed {
-                        cp: 0xE0A0,
+                        cp: 0x10_0000,
                         reason: RegisterError::MalformedPayload,
                         ..
                     })
@@ -966,14 +939,14 @@ mod tests {
     fn register_width_defaults_to_narrow_and_accepts_wide() {
         let payload = b64(&[0x01]);
 
-        // Absent → 1 (checked in parses_register_at_pua_codepoint too).
-        let body = format!("25a1;r;cp=E0A0;upm=1000;width=2;{}", payload);
+        // Absent → 1 (checked in parses_register_at_block_codepoint too).
+        let body = format!("25a1;r;cp=100000;upm=1000;width=2;{}", payload);
         match parse(body.as_bytes()).unwrap() {
             GlyphCommand::Register { width, .. } => assert_eq!(width, 2),
             other => panic!("expected register, got {:?}", other),
         }
 
-        let body = format!("25a1;r;cp=E0A0;upm=1000;width=1;{}", payload);
+        let body = format!("25a1;r;cp=100000;upm=1000;width=1;{}", payload);
         match parse(body.as_bytes()).unwrap() {
             GlyphCommand::Register { width, .. } => assert_eq!(width, 1),
             other => panic!("expected register, got {:?}", other),
@@ -984,7 +957,7 @@ mod tests {
     fn register_rejects_invalid_width() {
         let payload = b64(&[0x01]);
         for bad in ["0", "3", "two", ""].iter() {
-            let body = format!("25a1;r;cp=E0A0;upm=1000;width={};{}", bad, payload);
+            let body = format!("25a1;r;cp=100000;upm=1000;width={};{}", bad, payload);
             assert!(
                 matches!(
                     parse(body.as_bytes()),
@@ -1002,7 +975,7 @@ mod tests {
     #[test]
     fn parses_register_with_explicit_fmt() {
         let payload = b64(&[0xAA]);
-        let body = format!("25a1;r;cp=E0A0;fmt=glyf;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=100000;fmt=glyf;upm=1000;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()).unwrap(),
             GlyphCommand::Register {
@@ -1015,7 +988,7 @@ mod tests {
     #[test]
     fn register_defaults_upm_to_1000() {
         let payload = b64(&[0x01]);
-        let body = format!("25a1;r;cp=E0A0;{}", payload);
+        let body = format!("25a1;r;cp=100000;{}", payload);
         let got = parse(body.as_bytes()).unwrap();
         if let GlyphCommand::Register {
             payload: GlyphPayload::Glyf { upm, .. },
@@ -1029,7 +1002,7 @@ mod tests {
     }
 
     #[test]
-    fn register_rejects_non_pua_codepoint() {
+    fn register_rejects_codepoint_outside_the_block() {
         let payload = b64(&[0x01]);
         let body = format!("25a1;r;cp=61;upm=1000;{}", payload);
         assert_eq!(
@@ -1053,21 +1026,37 @@ mod tests {
     }
 
     #[test]
-    fn register_accepts_each_pua_range() {
-        for &cp_hex in &[0xE0A0u32, 0xF_0000, 0x10_0000] {
-            let payload = b64(b"x");
-            let body = format!("25a1;r;cp={:x};upm=1000;{}", cp_hex, payload);
+    fn register_accepts_only_the_block() {
+        for cp in [0x10_0000u32, 0x10_03FF] {
+            let body = format!("25a1;r;cp={:x};upm=1000;{}", cp, b64(b"x"));
             assert!(matches!(
                 parse(body.as_bytes()).unwrap(),
                 GlyphCommand::Register { .. }
             ));
+        }
+        // The rest of PUA holds the user's font icons (Nerd Fonts in the
+        // basic PUA and PUA-A) and is out of reach, as is PUA-B past the
+        // block.
+        for cp in [
+            0xE000u32, 0xE0A0, 0xF8FF, 0xF_0000, 0xF_FFFD, 0x10_0400, 0x10_FFFD,
+        ] {
+            let body = format!("25a1;r;cp={:x};upm=1000;{}", cp, b64(b"x"));
+            assert_eq!(
+                parse(body.as_bytes()),
+                Err(ParseError::RegisterFailed {
+                    cp,
+                    reason: RegisterError::OutOfNamespace,
+                    reply: ReplyMode::All,
+                }),
+                "U+{cp:X}"
+            );
         }
     }
 
     #[test]
     fn register_rejects_unknown_fmt() {
         let payload = b64(b"x");
-        let body = format!("25a1;r;cp=E0A0;fmt=svg;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=100000;fmt=svg;upm=1000;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::Malformed(_))
@@ -1076,7 +1065,7 @@ mod tests {
 
     #[test]
     fn register_rejects_bad_base64() {
-        let body = b"25a1;r;cp=E0A0;upm=1000;$$$$not_base64";
+        let body = b"25a1;r;cp=100000;upm=1000;$$$$not_base64";
         assert!(matches!(
             parse(body),
             Err(ParseError::RegisterFailed {
@@ -1089,7 +1078,7 @@ mod tests {
     #[test]
     fn register_rejects_oversized_payload() {
         let payload = b64(&vec![0u8; MAX_PAYLOAD_BYTES + 1]);
-        let body = format!("25a1;r;cp=E0A0;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=100000;upm=1000;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
@@ -1102,11 +1091,11 @@ mod tests {
     #[test]
     fn register_rejects_zero_upm() {
         let payload = b64(b"x");
-        let body = format!("25a1;r;cp=E0A0;upm=0;{}", payload);
+        let body = format!("25a1;r;cp=100000;upm=0;{}", payload);
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
-                cp: 0xE0A0,
+                cp: 0x10_0000,
                 reason: RegisterError::MalformedPayload,
                 ..
             })
@@ -1115,7 +1104,7 @@ mod tests {
 
     #[test]
     fn register_invalid_upm_honours_the_reply_level() {
-        let body = format!("25a1;r;cp=E0A0;reply=2;upm=abc;{}", b64(&[1, 2, 3]));
+        let body = format!("25a1;r;cp=100000;reply=2;upm=abc;{}", b64(&[1, 2, 3]));
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
@@ -1131,11 +1120,11 @@ mod tests {
         // post-decode empty check this would silently produce a
         // `Glyf{glyf: vec![]}` registration that the renderer would
         // later interpret as zero-byte garbage.
-        let body = b"25a1;r;cp=E0A0;upm=1000;";
+        let body = b"25a1;r;cp=100000;upm=1000;";
         assert!(matches!(
             parse(body),
             Err(ParseError::RegisterFailed {
-                cp: 0xE0A0,
+                cp: 0x10_0000,
                 reason: RegisterError::MalformedPayload,
                 ..
             })
@@ -1148,11 +1137,11 @@ mod tests {
         // last-`;` split treats the whole tail as control, leaving the
         // payload section empty. Same MalformedPayload as the trailing-
         // semicolon case above.
-        let body = b"25a1;r;cp=E0A0";
+        let body = b"25a1;r;cp=100000";
         assert!(matches!(
             parse(body),
             Err(ParseError::RegisterFailed {
-                cp: 0xE0A0,
+                cp: 0x10_0000,
                 reason: RegisterError::MalformedPayload,
                 ..
             })
@@ -1198,14 +1187,27 @@ mod tests {
     }
 
     #[test]
-    fn clear_single_pua_slot() {
-        let got = parse(b"25a1;c;cp=E0A0").unwrap();
-        assert_eq!(got, GlyphCommand::Clear { cp: Some(0xE0A0) });
+    fn clear_single_block_slot() {
+        let got = parse(b"25a1;c;cp=100000").unwrap();
+        assert_eq!(
+            got,
+            GlyphCommand::Clear {
+                cp: Some(0x10_0000)
+            }
+        );
     }
 
     #[test]
-    fn clear_rejects_non_pua_cp() {
+    fn clear_rejects_cp_outside_the_block() {
         assert_eq!(parse(b"25a1;c;cp=61"), Err(ParseError::ClearOutOfNamespace));
+        assert_eq!(
+            parse(b"25a1;c;cp=E0A0"),
+            Err(ParseError::ClearOutOfNamespace)
+        );
+        assert_eq!(
+            parse(b"25a1;c;cp=100400"),
+            Err(ParseError::ClearOutOfNamespace)
+        );
         assert_eq!(
             parse(b"25a1;c;cp=1F600"),
             Err(ParseError::ClearOutOfNamespace)
@@ -1215,7 +1217,7 @@ mod tests {
     #[test]
     fn clear_rejects_sequence_cp() {
         assert!(matches!(
-            parse(b"25a1;c;cp=E0A0,E0A1"),
+            parse(b"25a1;c;cp=100000,100001"),
             Err(ParseError::Malformed(_))
         ));
     }
@@ -1286,11 +1288,11 @@ mod tests {
     #[test]
     fn parses_colrv0_single_glyph() {
         let container = build_container(&[&[0xAA, 0xBB]], &[0x01; 14], &[0x02; 12]);
-        let body = format!("25a1;r;cp=E0A0;fmt=colrv0;upm=1000;{}", b64(&container));
+        let body = format!("25a1;r;cp=100000;fmt=colrv0;upm=1000;{}", b64(&container));
         let got = parse(body.as_bytes()).unwrap();
         match got {
             GlyphCommand::Register {
-                cp: 0xE0A0,
+                cp: 0x10_0000,
                 payload:
                     GlyphPayload::ColrV0 {
                         container: c,
@@ -1347,7 +1349,7 @@ mod tests {
         // Every colour glyph needs at least one outline; `0 glyphs` is
         // meaningless and likely indicates a corrupt payload.
         let container = build_container(&[], &[0x00; 4], &[]);
-        let body = format!("25a1;r;cp=E0A0;fmt=colrv0;upm=1000;{}", b64(&container));
+        let body = format!("25a1;r;cp=100000;fmt=colrv0;upm=1000;{}", b64(&container));
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
@@ -1360,7 +1362,7 @@ mod tests {
     #[test]
     fn colr_rejects_empty_colr_table() {
         let container = build_container(&[&[0x01]], &[], &[]);
-        let body = format!("25a1;r;cp=E0A0;fmt=colrv0;upm=1000;{}", b64(&container));
+        let body = format!("25a1;r;cp=100000;fmt=colrv0;upm=1000;{}", b64(&container));
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
@@ -1379,7 +1381,7 @@ mod tests {
         bad.extend_from_slice(&1u16.to_be_bytes());
         bad.push(0xAA);
         // …no second glyph, no COLR, no CPAL.
-        let body = format!("25a1;r;cp=E0A0;fmt=colrv1;upm=1000;{}", b64(&bad));
+        let body = format!("25a1;r;cp=100000;fmt=colrv1;upm=1000;{}", b64(&bad));
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
@@ -1395,7 +1397,7 @@ mod tests {
         // doesn't match ours; reject rather than silently ignoring.
         let mut container = build_container(&[&[0x01]], &[0x00; 4], &[]);
         container.push(0xFF);
-        let body = format!("25a1;r;cp=E0A0;fmt=colrv0;upm=1000;{}", b64(&container));
+        let body = format!("25a1;r;cp=100000;fmt=colrv0;upm=1000;{}", b64(&container));
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
@@ -1411,7 +1413,7 @@ mod tests {
         let mut bad = Vec::new();
         bad.extend_from_slice(&(MAX_COLR_GLYPHS + 1).to_be_bytes());
         // … no actual glyph bytes; parse should reject at the count.
-        let body = format!("25a1;r;cp=E0A0;fmt=colrv0;upm=1000;{}", b64(&bad));
+        let body = format!("25a1;r;cp=100000;fmt=colrv0;upm=1000;{}", b64(&bad));
         assert!(matches!(
             parse(body.as_bytes()),
             Err(ParseError::RegisterFailed {
@@ -1424,7 +1426,7 @@ mod tests {
     #[test]
     fn register_defaults_reply_to_all() {
         let payload = b64(&[0x01]);
-        let body = format!("25a1;r;cp=E0A0;upm=1000;{}", payload);
+        let body = format!("25a1;r;cp=100000;upm=1000;{}", payload);
         match parse(body.as_bytes()).unwrap() {
             GlyphCommand::Register { reply, .. } => {
                 assert_eq!(reply, ReplyMode::All);
@@ -1442,7 +1444,7 @@ mod tests {
             ("1", ReplyMode::All),
             ("2", ReplyMode::ErrorsOnly),
         ] {
-            let body = format!("25a1;r;cp=E0A0;reply={};upm=1000;{}", raw, payload);
+            let body = format!("25a1;r;cp=100000;reply={};upm=1000;{}", raw, payload);
             match parse(body.as_bytes()).unwrap() {
                 GlyphCommand::Register { reply, .. } => {
                     assert_eq!(
@@ -1458,7 +1460,7 @@ mod tests {
 
     #[test]
     fn register_reply_propagates_on_parse_failure() {
-        // Non-PUA cp fails validation; the reply level must propagate
+        // A cp outside the block fails validation; the reply level must propagate
         // into the error so the dispatcher can honour it consistently.
         let payload = b64(&[0x01]);
         let body = format!("25a1;r;cp=61;reply=0;upm=1000;{}", payload);
@@ -1478,7 +1480,7 @@ mod tests {
         // register — they just revert to the default reply behaviour.
         let payload = b64(&[0x01]);
         for bad in ["3", "true", "yes", "01", ""].iter() {
-            let body = format!("25a1;r;cp=E0A0;reply={};upm=1000;{}", bad, payload);
+            let body = format!("25a1;r;cp=100000;reply={};upm=1000;{}", bad, payload);
             match parse(body.as_bytes()).unwrap() {
                 GlyphCommand::Register { reply, .. } => {
                     assert_eq!(
@@ -1505,8 +1507,8 @@ mod tests {
     }
 
     #[test]
-    fn colr_register_respects_pua_check_before_fmt_parse() {
-        // Non-PUA should still be rejected for colour formats, and the
+    fn colr_register_respects_block_check_before_fmt_parse() {
+        // A cp outside the block is rejected for colour formats too, and the
         // error should be `out_of_namespace` (not a payload error) so
         // the client sees the same contract as fmt=glyf.
         let container = build_container(&[&[0x01]], &[0x00; 4], &[]);
@@ -1524,44 +1526,44 @@ mod tests {
     #[test]
     fn query_response_encodes_coverage_names() {
         assert_eq!(
-            format_query_response(0xE0A0, QueryStatus::Free),
-            "\x1b_25a1;q;cp=e0a0;status=\x1b\\"
+            format_query_response(0x10_0000, QueryStatus::Free),
+            "\x1b_25a1;q;cp=100000;status=\x1b\\"
         );
         assert_eq!(
-            format_query_response(0xE0A0, QueryStatus::System),
-            "\x1b_25a1;q;cp=e0a0;status=system\x1b\\"
+            format_query_response(0x10_0000, QueryStatus::System),
+            "\x1b_25a1;q;cp=100000;status=system\x1b\\"
         );
         assert_eq!(
-            format_query_response(0xE0A0, QueryStatus::Glossary),
-            "\x1b_25a1;q;cp=e0a0;status=glossary\x1b\\"
+            format_query_response(0x10_0000, QueryStatus::Glossary),
+            "\x1b_25a1;q;cp=100000;status=glossary\x1b\\"
         );
         assert_eq!(
-            format_query_response(0xE0A0, QueryStatus::Both),
-            "\x1b_25a1;q;cp=e0a0;status=system,glossary\x1b\\"
+            format_query_response(0x10_0000, QueryStatus::Both),
+            "\x1b_25a1;q;cp=100000;status=system,glossary\x1b\\"
         );
     }
 
     #[test]
     fn register_responses() {
         assert_eq!(
-            format_register_ok(0xE0A0),
-            "\x1b_25a1;r;cp=e0a0;status=0\x1b\\"
+            format_register_ok(0x10_0000),
+            "\x1b_25a1;r;cp=100000;status=0\x1b\\"
         );
         assert_eq!(
             format_register_error(0x61, RegisterError::OutOfNamespace),
             "\x1b_25a1;r;cp=61;status=1;reason=out_of_namespace\x1b\\"
         );
         assert_eq!(
-            format_register_error(0xE0A0, RegisterError::CompositeUnsupported),
-            "\x1b_25a1;r;cp=e0a0;status=1;reason=composite_unsupported\x1b\\"
+            format_register_error(0x10_0000, RegisterError::CompositeUnsupported),
+            "\x1b_25a1;r;cp=100000;status=1;reason=composite_unsupported\x1b\\"
         );
     }
 
     #[test]
     fn clear_responses() {
         assert_eq!(
-            format_clear_ok(Some(0xE0A0)),
-            "\x1b_25a1;c;cp=e0a0;status=0\x1b\\"
+            format_clear_ok(Some(0x10_0000)),
+            "\x1b_25a1;c;cp=100000;status=0\x1b\\"
         );
         assert_eq!(format_clear_ok(None), "\x1b_25a1;c;status=0\x1b\\");
         assert_eq!(

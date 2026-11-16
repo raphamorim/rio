@@ -16,8 +16,9 @@ pub mod text;
 /// downstream crates have one stable place to import from.
 pub mod glyph_protocol {
     pub use crate::font::glyph_registry::{
-        is_pua, GlyphRegistry, RegisterRejection, RegisteredGlyph, StoredPayload,
-        CUSTOM_GLYPH_FONT_ID, CUSTOM_GLYPH_FONT_ID_U32, GLOSSARY_CAPACITY,
+        in_registration_block, GlyphRegistry, RegisterRejection, RegisteredGlyph,
+        StoredPayload, CUSTOM_GLYPH_FONT_ID, CUSTOM_GLYPH_FONT_ID_U32, GLOSSARY_CAPACITY,
+        REGISTRATION_BLOCK_END, REGISTRATION_BLOCK_START,
     };
     pub use crate::renderer::image_cache::colr_raster::{
         payload_uses_foreground, rasterize_payload, RasterizedPayload,

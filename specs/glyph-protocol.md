@@ -214,8 +214,8 @@ significant; clients MUST treat the value as a set.
 | `system,glossary`   | `cp` is in the registration block, has a live registration, AND a system font also covers it. The registration takes precedence at render time. |
 
 For codepoints outside the registration block only the empty value
-and `status=system` are possible. Clients MUST ignore unknown coverage names so
-future sources are forward-compatible.
+and `status=system` are possible. Clients MUST ignore unknown
+coverage names so future sources are forward-compatible.
 
 ## 6. Register (`r`)
 
@@ -320,7 +320,8 @@ applications update a glyph or react to theme changes.
 
 There is no eviction: the glossary has a slot for every codepoint in
 the registration block (§4), so a registration stays until it is
-overwritten, cleared, or the session ends.
+overwritten or cleared, the terminal is reset (§6.4), or the session
+ends.
 
 ### 6.4 Lifetime
 
@@ -900,12 +901,12 @@ applications pull outlines from a Nerd Font's codepoints (`U+E0A0`,
 the only place a registration is accepted.
 
 **Atlas cache invalidation.** The cache-invalidation rule in §7.3
-applies to overwrite and reset too, not only explicit clear.
-Implementations that key their glyph atlas on some stable slot id
-(rather than `cp`) must ensure the slot id is either released on
-clear/evict or paired with a per-registration invalidation tag, so
-that a subsequent register reusing the id rasterizes fresh bytes
-rather than serving a stale bitmap.
+applies to overwrite and reset too, not only explicit clear. Every
+block codepoint keeps the same slot for the whole session, so an atlas
+keyed on the codepoint or its slot alone would serve the previous
+outline after a re-registration. Pair the key with a per-registration
+tag (a counter bumped on every `r`) so a new registration rasterizes
+fresh bytes rather than serving a stale bitmap.
 
 ## Appendix D. Change log
 
