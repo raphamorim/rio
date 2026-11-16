@@ -37,6 +37,7 @@ use rio_backend::crosswords::style::{Style, StyleFlags, UnderlineKind};
 use rio_backend::selection::SelectionRange;
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
+use std::collections::HashMap;
 
 /// Snapshot's per-frame extras map. Keyed by the cell's `extras_id`,
 /// populated by `Crosswords::snapshot_visible` from a walk of visible
@@ -1273,23 +1274,147 @@ pub fn build_row_bg<P: GridPalette>(
 /// affect shaping so they don't break runs.
 const SHAPING_FLAG_MASK: u16 = StyleFlags::BOLD.bits() | StyleFlags::ITALIC.bits();
 
-/// Buckets in the run shaping cache, a bucketed LRU. A full screen of
-/// styled text at 300 by 100 cells breaks into around nine hundred
-/// runs, since a run ends at every font or weight change, and with 256
-/// buckets of 8 several buckets overflowed every frame and their runs
-/// were reshaped each time. 1024 buckets hold that screen with room; a
-/// denser screen still overflows some buckets but far fewer. The
-/// buckets fill lazily, so an idle terminal pays nothing for the
-/// headroom and the storage in use follows what is on screen, up to
-/// 8192 entries where it was 2048.
-const RUN_BUCKET_COUNT: usize = 1024;
-const RUN_BUCKET_SIZE: usize = 8;
-// The bucket of a hash is its low bits, so the count is a power of two.
-const _: () = assert!(RUN_BUCKET_COUNT.is_power_of_two());
+/// The smallest number of runs the cache holds before it trims; a
+/// screen never has fewer than this many cells, so no screen is ever
+/// trimmed to make room for itself.
+const RUN_CACHE_FLOOR: usize = 4096;
 
-/// The run cache, empty: every bucket allocates on its first entry.
-fn new_run_cache() -> Vec<Vec<RunCacheEntry>> {
-    (0..RUN_BUCKET_COUNT).map(|_| Vec::new()).collect()
+/// The run key is already a 64-bit rapidhash, so the map takes it as
+/// its hash as it is.
+#[derive(Default)]
+struct RunKeyHasher(u64);
+
+impl Hasher for RunKeyHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, _: &[u8]) {
+        unreachable!("run keys are hashed as u64")
+    }
+    fn write_u64(&mut self, key: u64) {
+        self.0 = key;
+    }
+}
+
+/// The run shaping cache: one map from a run's hash to its shaped
+/// glyphs, each stamped with the frame that last asked for it.
+///
+/// Every frame asks for every run it draws, in order, so the cache
+/// has to hold a whole screen or it misses on every run of that
+/// screen every frame; a cache split into buckets of a fixed size
+/// did exactly that for the buckets a busy screen overfilled. Here
+/// nothing is evicted to make room: a run asked for this frame is
+/// there next frame whatever its hash, and the storage follows what
+/// is drawn. Only when the cache outgrows twice the largest frame it
+/// has seen (the screen plus as much again of runs that stopped
+/// appearing) does it trim, dropping the frames used longest ago while
+/// a screen's worth remains and never a run of the current frame.
+/// Rows that did not change are not redrawn, so their runs keep an
+/// old stamp while still on screen; the trim is rare enough, and the
+/// stamps on a full redraw fresh enough, that they are kept whenever
+/// room allows.
+struct RunCache {
+    entries: HashMap<u64, RunCacheEntry, core::hash::BuildHasherDefault<RunKeyHasher>>,
+    /// The frame being drawn; [`Self::end_frame`] moves it on.
+    frame: u32,
+    /// Runs this frame asked for: hits stamped and misses inserted.
+    touched: usize,
+    /// The most runs one frame asked for since the cache was last
+    /// cleared: the size of the largest screen it has drawn.
+    peak: usize,
+}
+
+impl RunCache {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::default(),
+            frame: 0,
+            touched: 0,
+            peak: 0,
+        }
+    }
+
+    /// The shaped run under `hash`, stamped as used this frame. A run
+    /// of a different cell count under the same hash is a collision,
+    /// not a hit, and is shaped again.
+    fn get(&mut self, hash: u64, cells: u32) -> Option<&RunCacheEntry> {
+        let entry = self.entries.get_mut(&hash)?;
+        if entry.cells != cells {
+            return None;
+        }
+        if entry.last_used != self.frame {
+            entry.last_used = self.frame;
+            self.touched += 1;
+        }
+        Some(entry)
+    }
+
+    /// Insert `entry` for this frame, replacing a colliding one.
+    fn put(&mut self, mut entry: RunCacheEntry) {
+        entry.last_used = self.frame;
+        self.touched += 1;
+        self.entries.insert(entry.hash, entry);
+    }
+
+    /// The frame is drawn: remember how much it asked for, trim if the
+    /// cache has outgrown twice the largest frame, and start the next.
+    fn end_frame(&mut self) {
+        self.peak = self.peak.max(self.touched);
+        if self.entries.len() > (2 * self.peak).max(RUN_CACHE_FLOOR) {
+            self.trim();
+        }
+        self.touched = 0;
+        self.frame = self.frame.wrapping_add(1);
+    }
+
+    /// Drop whole frames from the oldest down while at least the
+    /// largest frame's worth of runs would remain, never a run of the
+    /// current frame. A frame is dropped whole or not at all: the runs
+    /// one frame asked for were on screen together, and a cut through
+    /// them would take half a redrawn screen because the frames since
+    /// used up the budget.
+    fn trim(&mut self) {
+        let frame = self.frame;
+        let age = |last_used: u32| frame.wrapping_sub(last_used);
+        let keep = self.peak;
+        let mut ages: Vec<u32> =
+            self.entries.values().map(|e| age(e.last_used)).collect();
+        ages.sort_unstable_by(|a, b| b.cmp(a));
+        let mut remaining = ages.len();
+        let mut youngest_dropped = None;
+        let mut index = 0;
+        while index < ages.len() {
+            let frame_age = ages[index];
+            if frame_age == 0 {
+                break;
+            }
+            let end = ages[index..]
+                .iter()
+                .position(|&a| a != frame_age)
+                .map_or(ages.len(), |next| index + next);
+            let in_frame = end - index;
+            if remaining - in_frame < keep {
+                break;
+            }
+            remaining -= in_frame;
+            youngest_dropped = Some(frame_age);
+            index = end;
+        }
+        if let Some(cutoff) = youngest_dropped {
+            self.entries.retain(|_, e| age(e.last_used) < cutoff);
+        }
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
+        self.touched = 0;
+        self.peak = 0;
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 /// One shaped glyph. Same shape from both CoreText (macOS) and swash
@@ -1310,14 +1435,18 @@ struct RunCacheEntry {
     /// Summed glyph advance, computed once at insert so per-frame
     /// consumers (the preedit overflow check) never re-walk glyphs.
     advance: f32,
-    /// 64-bit rapidhash of (font_id, size_bucket, style_flags, run bytes).
-    /// We key on the hash alone — no stored run string, no equality
-    /// check on lookup. `CellCacheTable` pattern
-    ///: rapidhash / wyhash pass
-    /// SMHasher, so a random collision costs a wrong-glyph frame
-    /// until the next row rebuild but never corrupts state. Birthday
-    /// bound at N=10k concurrent cache entries ≈ 2.7×10⁻¹².
+    /// 64-bit rapidhash of the run: each cell's codepoint and cluster
+    /// offset, its combining marks, then the cell count, the font and
+    /// the size bucket. The key is the hash alone, no stored text;
+    /// rapidhash passes SMHasher, so a random collision is a wrong
+    /// glyph frame until the next rebuild, never corrupt state, and
+    /// the birthday bound at 10k live entries is about 3 in 10^12.
     hash: u64,
+    /// Cells the run covered: a hit must agree, which rejects most
+    /// collisions at the cost of one compare.
+    cells: u32,
+    /// The frame that last asked for this run.
+    last_used: u32,
     glyphs: Vec<ShapedGlyph>,
 }
 
@@ -1337,7 +1466,7 @@ pub struct GridGlyphRasterizer {
     /// `FontData` synthesis flags; matches the rich-text rasterizer's
     /// convention.
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
-    run_cache: Vec<Vec<RunCacheEntry>>,
+    run_cache: RunCache,
 
     /// Per-run hasher rebuilt at every run-start. Hashed incrementally
     /// across the run-extension loop with `(codepoint, cluster)` pairs
@@ -1416,7 +1545,7 @@ impl GridGlyphRasterizer {
             ascent_cache: FxHashMap::default(),
             custom_glyph_ids: CustomGlyphIds::default(),
             synthesis_cache: FxHashMap::default(),
-            run_cache: new_run_cache(),
+            run_cache: RunCache::new(),
             run_hasher: rapidhash::fast::RapidHasher::default(),
             #[cfg(target_os = "macos")]
             run_utf16_scratch: Vec::new(),
@@ -1445,9 +1574,7 @@ impl GridGlyphRasterizer {
         self.ascent_cache.clear();
         self.custom_glyph_ids = CustomGlyphIds::default();
         self.synthesis_cache.clear();
-        for bucket in &mut self.run_cache {
-            bucket.clear();
-        }
+        self.run_cache.clear();
         self.lib_settings = None;
         #[cfg(target_os = "macos")]
         self.handle_cache.clear();
@@ -1456,6 +1583,13 @@ impl GridGlyphRasterizer {
             self.wght_cache.clear();
             self.font_data_cache.clear();
         }
+    }
+
+    /// A frame has been drawn: the run cache remembers what it asked
+    /// for and lets go of what nothing asks for any more. Called once
+    /// per frame by whoever drives the row builders.
+    pub fn end_frame(&mut self) {
+        self.run_cache.end_frame();
     }
 
     /// Library-wide `(hinting, features)`, cached until the next
@@ -1645,38 +1779,6 @@ fn is_skipped_spacer(sq: Square) -> bool {
     matches!(sq.wide(), Wide::Spacer | Wide::LeadingSpacer)
 }
 
-/// Lookup. Hash → bucket; scan from most-recent; rotate on hit. No
-/// secondary comparison — we trust the 64-bit rapidhash to be
-/// collision-free across realistic workloads. Matches
-///.
-fn run_cache_get(
-    buckets: &mut [Vec<RunCacheEntry>],
-    hash: u64,
-) -> Option<&RunCacheEntry> {
-    let idx = (hash as usize) & (RUN_BUCKET_COUNT - 1);
-    let bucket = &mut buckets[idx];
-    let last = bucket.len().checked_sub(1)?;
-    for i in (0..bucket.len()).rev() {
-        if bucket[i].hash == hash {
-            if i != last {
-                bucket[i..=last].rotate_left(1);
-            }
-            return Some(&bucket[last]);
-        }
-    }
-    None
-}
-
-/// Insert. Bucket full → evict oldest (front).
-fn run_cache_put(buckets: &mut [Vec<RunCacheEntry>], entry: RunCacheEntry) {
-    let idx = (entry.hash as usize) & (RUN_BUCKET_COUNT - 1);
-    let bucket = &mut buckets[idx];
-    if bucket.len() >= RUN_BUCKET_SIZE {
-        bucket.remove(0);
-    }
-    bucket.push(entry);
-}
-
 // Platform-specific shape + ascent helpers
 
 /// Shape a single run on macOS via CoreText and populate
@@ -1818,12 +1920,13 @@ fn shape_run_swash(
 fn shape_cached(
     rasterizer: &mut GridGlyphRasterizer,
     hash: u64,
+    cells: u32,
     font_id: u32,
     size_u16: u16,
     size_bucket: u16,
     font_library: &FontLibrary,
 ) -> Option<(i16, f32)> {
-    if let Some(entry) = run_cache_get(&mut rasterizer.run_cache, hash) {
+    if let Some(entry) = rasterizer.run_cache.get(hash, cells) {
         // Cache hit: advance stored, ascent in its own cache.
         let advance = entry.advance;
         return Some((
@@ -1843,14 +1946,13 @@ fn shape_cached(
         shape_run_swash(rasterizer, font_id, size_u16, size_bucket, font_library);
     let (glyphs, ascent_px) = shaped_opt?;
     let advance: f32 = glyphs.iter().map(|g| g.advance).sum();
-    run_cache_put(
-        &mut rasterizer.run_cache,
-        RunCacheEntry {
-            hash,
-            glyphs,
-            advance,
-        },
-    );
+    rasterizer.run_cache.put(RunCacheEntry {
+        hash,
+        cells,
+        last_used: 0,
+        glyphs,
+        advance,
+    });
     Some((ascent_px, advance))
 }
 
@@ -2320,6 +2422,7 @@ pub fn build_row_fg<P: GridPalette>(
         let Some((ascent_px, _)) = shape_cached(
             rasterizer,
             hash,
+            cell_count,
             font_id,
             size_u16,
             size_bucket,
@@ -2348,7 +2451,9 @@ pub fn build_row_fg<P: GridPalette>(
         // shaped emoji runs that outgrow 64 slots spill to heap once.
         let mut glyph_emits: SmallVec<[(u16, u16); 64]> = SmallVec::new();
         {
-            let glyphs = &run_cache_get(&mut rasterizer.run_cache, hash)
+            let glyphs = &rasterizer
+                .run_cache
+                .get(hash, cell_count)
                 .expect("just inserted")
                 .glyphs;
             let mut cell_idx_in_run: u16 = 0;
@@ -2608,9 +2713,11 @@ fn shape_preedit_text(
     rasterizer.run_hasher.write_u16(size_bucket);
     let hash = rasterizer.run_hasher.finish();
 
+    let cells = text.chars().count() as u32;
     let (ascent_px, advance) = shape_cached(
         rasterizer,
         hash,
+        cells,
         font_id,
         size_u16,
         size_bucket,
@@ -2669,28 +2776,31 @@ fn emit_preedit_cluster(
     ) else {
         return;
     };
-    let (hash, ascent_px) = if advance <= max_advance || base_str.len() == cluster.len() {
-        (hash, ascent_px)
-    } else {
-        let Some((hash, ascent_px, _)) = shape_preedit_text(
-            rasterizer,
-            base_str,
-            font_id,
-            size_u16,
-            size_bucket,
-            font_library,
-        ) else {
-            return;
+    let (hash, ascent_px, shaped) =
+        if advance <= max_advance || base_str.len() == cluster.len() {
+            (hash, ascent_px, cluster)
+        } else {
+            let Some((hash, ascent_px, _)) = shape_preedit_text(
+                rasterizer,
+                base_str,
+                font_id,
+                size_u16,
+                size_bucket,
+                font_library,
+            ) else {
+                return;
+            };
+            (hash, ascent_px, base_str)
         };
-        (hash, ascent_px)
-    };
 
     let (synthetic_bold, synthetic_italic) =
         rasterizer.get_synthesis(font_id, font_library);
 
     let mut glyph_ids: SmallVec<[u16; 4]> = SmallVec::new();
     {
-        let glyphs = &run_cache_get(&mut rasterizer.run_cache, hash)
+        let glyphs = &rasterizer
+            .run_cache
+            .get(hash, shaped.chars().count() as u32)
             .expect("just inserted")
             .glyphs;
         for g in glyphs {
@@ -3397,16 +3507,14 @@ fn rasterize_glyph_native(
 mod run_cache_tests {
     use super::*;
 
-    fn entry(hash: u64) -> RunCacheEntry {
+    fn entry(hash: u64, cells: u32) -> RunCacheEntry {
         RunCacheEntry {
             advance: 0.0,
             hash,
+            cells,
+            last_used: 0,
             glyphs: Vec::new(),
         }
-    }
-
-    fn buckets() -> Vec<Vec<RunCacheEntry>> {
-        new_run_cache()
     }
 
     /// The hash of a run of `text` in `font_id`, fed to the rasterizer's
@@ -3414,7 +3522,7 @@ mod run_cache_tests {
     /// codepoint and cluster offset, then the cell count, the font and
     /// the size bucket. The hasher's seed is fixed, so this is the hash
     /// the renderer computes for that run.
-    fn real_hash(text: &str, font_id: u32) -> u64 {
+    fn real_hash(text: &str, font_id: u32) -> (u64, u32) {
         let mut hasher = rapidhash::fast::RapidHasher::default();
         let mut cells = 0u32;
         for (offset, ch) in text.chars().enumerate() {
@@ -3425,72 +3533,207 @@ mod run_cache_tests {
         hasher.write_u32(cells);
         hasher.write_u32(font_id);
         hasher.write_u16(56);
-        hasher.finish()
+        (hasher.finish(), cells)
     }
 
-    /// A screen of 100 rows with nine runs each, as a row of 300 cells
-    /// reads when the weight changes every 33 cells or so: the text of
-    /// each run is distinct, and the font alternates between regular
-    /// and bold.
-    fn styled_screen() -> Vec<u64> {
-        (0..100)
-            .flat_map(|row| {
-                (0..9).map(move |run| {
-                    let text = format!("line {row:03} run {run} of a styled screen ");
-                    real_hash(&text, run % 2)
-                })
+    /// `runs` distinct runs, as a screen's rows read when the weight
+    /// changes every few words: the text of each run is distinct and
+    /// the font alternates between regular and bold.
+    fn screen(runs: usize, seed: usize) -> Vec<(u64, u32)> {
+        (0..runs)
+            .map(|run| {
+                let text = format!("screen {seed} run {run} of styled text ");
+                real_hash(&text, (run % 2) as u32)
             })
             .collect()
     }
 
-    // A full screen of styled text at 300 by 100 cells breaks into
-    // around nine hundred runs. Every one of them must still be in the
-    // cache when the next frame asks, or the frame reshapes it; with
-    // 256 buckets some of them were gone.
-    #[test]
-    fn a_screen_of_nine_hundred_runs_survives_a_frame() {
-        let mut cache = buckets();
-        let screen = styled_screen();
-        assert_eq!(screen.len(), 900);
-        for &hash in &screen {
-            run_cache_put(&mut cache, entry(hash));
+    /// Draw `runs` as one frame: a hit is a hit, a miss is shaped and
+    /// put. Returns how many were hits.
+    fn draw(cache: &mut RunCache, runs: &[(u64, u32)]) -> usize {
+        let mut hits = 0;
+        for &(hash, cells) in runs {
+            if cache.get(hash, cells).is_some() {
+                hits += 1;
+            } else {
+                cache.put(entry(hash, cells));
+            }
         }
-        let hits = screen
-            .iter()
-            .filter(|&&hash| run_cache_get(&mut cache, hash).is_some())
-            .count();
-        assert_eq!(hits, 900, "every run of the screen is still cached");
+        hits
     }
 
+    // A frame that asks for more runs than any fixed table would hold
+    // finds every one of them next frame: nothing is evicted to make
+    // room while it is being drawn.
     #[test]
-    fn a_hit_becomes_the_newest_and_a_full_bucket_drops_its_oldest() {
-        let mut cache = buckets();
-        // Hashes that share one bucket: same low bits.
-        let same_bucket = |i: u64| (i << 20) | 7;
-        for i in 0..RUN_BUCKET_SIZE as u64 {
-            run_cache_put(&mut cache, entry(same_bucket(i)));
+    fn a_screen_of_any_size_survives_a_frame() {
+        let mut cache = RunCache::new();
+        let big = screen(20_000, 1);
+        assert_eq!(draw(&mut cache, &big), 0, "all misses the first time");
+        cache.end_frame();
+        assert_eq!(draw(&mut cache, &big), big.len(), "all hits the second");
+        cache.end_frame();
+        assert_eq!(cache.len(), big.len(), "and nothing was dropped");
+    }
+
+    // A run of another length under the same hash is a collision, not
+    // a hit; the colliding run is shaped and takes the entry.
+    #[test]
+    fn a_hit_needs_the_same_cell_count() {
+        let mut cache = RunCache::new();
+        cache.put(entry(7, 5));
+        assert!(cache.get(7, 5).is_some());
+        assert!(cache.get(7, 6).is_none(), "another length is not this run");
+        cache.put(entry(7, 6));
+        assert!(cache.get(7, 6).is_some());
+        assert_eq!(cache.len(), 1, "the colliding run took the entry");
+    }
+
+    // Rows that keep changing add runs frame after frame while the
+    // rest of the screen keeps its old stamps. Once the cache holds
+    // more than twice the largest frame, it drops the runs used
+    // longest ago, keeps one screen's worth, and never one of the
+    // frame just drawn.
+    #[test]
+    fn outgrowing_two_screens_drops_the_runs_used_longest_ago() {
+        let mut cache = RunCache::new();
+        let full = screen(3000, 1);
+        draw(&mut cache, &full);
+        cache.end_frame();
+        assert_eq!(cache.peak, 3000);
+
+        let mut partials = Vec::new();
+        let mut trimmed_at = None;
+        for frame in 0..40 {
+            let partial = screen(200, 100 + frame);
+            draw(&mut cache, &partial);
+            let before = cache.len();
+            cache.end_frame();
+            partials.push(partial);
+            if cache.len() < before {
+                trimmed_at = Some(frame);
+                break;
+            }
+            assert!(cache.len() <= 2 * 3000, "no trim while under two screens");
         }
-        // Touch the oldest so it is the newest.
-        assert!(run_cache_get(&mut cache, same_bucket(0)).is_some());
-        run_cache_put(&mut cache, entry(same_bucket(99)));
+        let trimmed_at = trimmed_at.expect("the cache outgrew two screens");
         assert!(
-            run_cache_get(&mut cache, same_bucket(0)).is_some(),
-            "refreshed, kept"
+            cache.len() <= 3000,
+            "one screen's worth is kept, {} left",
+            cache.len()
         );
-        assert!(
-            run_cache_get(&mut cache, same_bucket(1)).is_none(),
-            "the oldest went"
+        let last = partials.last().unwrap();
+        assert_eq!(
+            last.iter()
+                .filter(|(h, c)| cache.get(*h, *c).is_some())
+                .count(),
+            last.len(),
+            "the frame just drawn is kept whole"
         );
-        assert!(run_cache_get(&mut cache, same_bucket(99)).is_some());
+        assert_eq!(
+            full.iter()
+                .filter(|(h, c)| cache.get(*h, *c).is_some())
+                .count(),
+            0,
+            "the oldest frame went first"
+        );
+        assert!(trimmed_at > 10, "trimmed at frame {trimmed_at}");
+    }
+
+    // A hit stamps the run as used now, so a screen drawn again after
+    // a stretch of changing rows outlives the runs those rows left
+    // behind, however old its first use.
+    #[test]
+    fn a_run_used_again_outlives_runs_used_once() {
+        let mut cache = RunCache::new();
+        let full = screen(3000, 1);
+        draw(&mut cache, &full);
+        cache.end_frame();
+        let mut early = Vec::new();
+        for frame in 0..5 {
+            let partial = screen(200, 100 + frame);
+            draw(&mut cache, &partial);
+            cache.end_frame();
+            early.push(partial);
+        }
+        assert_eq!(
+            draw(&mut cache, &full),
+            3000,
+            "the screen is drawn again, all hits"
+        );
+        cache.end_frame();
+        let mut trimmed = false;
+        for frame in 5..40 {
+            draw(&mut cache, &screen(200, 100 + frame));
+            let before = cache.len();
+            cache.end_frame();
+            if cache.len() < before {
+                trimmed = true;
+                break;
+            }
+        }
+        assert!(trimmed, "the cache outgrew two screens");
+        assert_eq!(
+            full.iter()
+                .filter(|(h, c)| cache.get(*h, *c).is_some())
+                .count(),
+            3000,
+            "the screen drawn again is kept whole"
+        );
+        for partial in &early {
+            assert_eq!(
+                partial
+                    .iter()
+                    .filter(|(h, c)| cache.get(*h, *c).is_some())
+                    .count(),
+                0,
+                "the rows changed before the redraw went first"
+            );
+        }
+    }
+
+    // A frame that itself asks for more than a screen's worth raises
+    // the peak instead of being trimmed.
+    #[test]
+    fn a_larger_screen_raises_the_peak_and_keeps_everything() {
+        let mut cache = RunCache::new();
+        draw(&mut cache, &screen(3000, 1));
+        cache.end_frame();
+        let larger = screen(7000, 2);
+        draw(&mut cache, &larger);
+        cache.end_frame();
+        assert_eq!(cache.peak, 7000);
+        assert_eq!(
+            cache.len(),
+            10_000,
+            "nothing dropped: under two of the new peak"
+        );
+        cache.end_frame();
+        assert_eq!(
+            draw(&mut cache, &larger),
+            7000,
+            "the larger screen all hits"
+        );
     }
 
     // The rasterizer's own cache, not a copy of the expression: a
-    // constructor that reserved entries again would show here.
+    // constructor that reserved entries would show here.
     #[test]
     fn an_idle_cache_owns_no_entry_storage() {
         let cache = GridGlyphRasterizer::new().run_cache;
-        assert_eq!(cache.len(), RUN_BUCKET_COUNT);
-        assert!(cache.iter().all(|b| b.capacity() == 0));
+        assert_eq!(cache.entries.capacity(), 0);
+    }
+
+    // A font change empties the cache and forgets how big the screen
+    // was; the next frame measures it again.
+    #[test]
+    fn a_font_change_empties_the_cache() {
+        let mut rasterizer = GridGlyphRasterizer::new();
+        draw(&mut rasterizer.run_cache, &screen(500, 1));
+        rasterizer.end_frame();
+        rasterizer.clear_font_caches();
+        assert_eq!(rasterizer.run_cache.len(), 0);
+        assert_eq!(rasterizer.run_cache.peak, 0);
     }
 }
 

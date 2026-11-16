@@ -1271,6 +1271,7 @@ pub unsafe extern "C" fn sl_render_surface(
                 );
                 grid.write_row(y as u32, &bg_scratch, &fg_scratch);
             }
+            rasterizer.end_frame();
         }
 
         // Cursor: pick the render style, emit its sprite into the block

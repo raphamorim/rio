@@ -3950,6 +3950,7 @@ dependencies = [
 name = "rio-grid"
 version = "0.6.0"
 dependencies = [
+ "criterion",
  "rapidhash",
  "rio-backend",
  "rio-unicode",
