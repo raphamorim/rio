@@ -38,6 +38,8 @@ use std::borrow::Cow;
 #[cfg(feature = "pty")]
 use std::io::{self, ErrorKind, Read};
 #[cfg(feature = "pty")]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(feature = "pty")]
 use std::sync::Arc;
 #[cfg(feature = "pty")]
 use std::thread::{Builder, JoinHandle};
@@ -166,6 +168,9 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     /// input pipe must close after the console.
     writer: Option<Writer<T::WriteHalf, U>>,
     writer_thread: Option<JoinHandle<Writer<T::WriteHalf, U>>>,
+    /// Set by the writer thread when it stops on an error of its own,
+    /// so the reader can tell that shutdown from the owner's.
+    writer_failed: Arc<AtomicBool>,
     poll: corcovado::Poll,
     terminal: Arc<TerminalLock<Crosswords<U>>>,
     event_proxy: U,
@@ -226,6 +231,7 @@ where
             writes,
             writer: Some(writer),
             writer_thread: None,
+            writer_failed: Arc::new(AtomicBool::new(false)),
             poll,
             pty,
             terminal,
@@ -402,12 +408,16 @@ where
 
     fn spawn_writer(&mut self) {
         if let Some(mut writer) = self.writer.take() {
+            let failed = Arc::clone(&self.writer_failed);
             self.writer_thread = Some(spawn_named("PTY writer", move || {
                 raise_io_thread_priority();
                 if let Err(err) = writer.run() {
                     // Without a writer the terminal cannot be typed to;
-                    // the reader shuts it down, as its own failure would.
+                    // the reader closes it, as it would on a failure of
+                    // its own. The flag is what tells this shutdown from
+                    // the owner's, which closes nothing.
                     error!("PTY writer failed: {err}");
+                    failed.store(true, Ordering::Release);
                     let _ = writer.control.send(Msg::Shutdown);
                 }
                 writer
@@ -502,6 +512,9 @@ where
 
             // Handle control messages, if there are any.
             if !self.drain_recv_channel() {
+                if self.writer_failed.load(Ordering::Acquire) {
+                    return Err(io::Error::other("the PTY writer stopped"));
+                }
                 return Ok(ExitReason::Shutdown);
             }
 

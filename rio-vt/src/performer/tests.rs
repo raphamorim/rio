@@ -71,6 +71,9 @@ struct RecordingWriter {
     written: Option<mpsc::Sender<Vec<u8>>>,
     /// A full PTY: every write is refused with `WouldBlock`.
     blocked: bool,
+    /// The write half cannot be watched: its registration fails, so
+    /// the writer thread stops before it writes anything.
+    refuses_registration: bool,
     /// Every write attempt, refused or not.
     attempts: Option<mpsc::Sender<()>>,
 }
@@ -126,6 +129,9 @@ impl corcovado::event::Evented for TestWriteHalf {
         interest: Ready,
         opts: PollOpt,
     ) -> io::Result<()> {
+        if self.writer.refuses_registration {
+            return Err(io::Error::from(ErrorKind::Other));
+        }
         poll.register(&self.registration, token, interest, opts)
     }
     fn reregister(
@@ -368,6 +374,34 @@ fn registration_failure_shuts_down_pty() {
     let (machine, _) = machine.spawn().join().unwrap();
     assert_eq!(machine.pty.shutdown_calls, 1);
     assert_eq!(machine.pty.deregister_calls, 1);
+}
+
+/// A writer that cannot run leaves a terminal nothing can be typed
+/// to, so the reader closes it the way it closes on a failure of its
+/// own: the child is shut down and the owner hears the terminal is
+/// gone, instead of the silent stop the owner's own shutdown gets.
+#[test]
+fn a_writer_failure_closes_the_terminal() {
+    let (sender, receiver) = mpsc::channel();
+    let recorder = EventRecorder(sender);
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        recorder.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let mut pty = test_pty(Vec::new(), Some(ErrorKind::WouldBlock));
+    pty.writer.refuses_registration = true;
+    let machine =
+        Machine::new(terminal.clone(), pty, recorder, WindowId::from(0), 0).unwrap();
+    let (machine, _) = machine.spawn().join().unwrap();
+
+    assert_eq!(machine.pty.shutdown_calls, 1);
+    let events: Vec<_> = receiver.try_iter().collect();
+    assert!(events.contains(&"exited"), "events: {events:?}");
+    assert!(events.contains(&"closed"), "events: {events:?}");
 }
 
 #[test]
@@ -1478,6 +1512,7 @@ impl EventListener for EventRecorder {
         let name = match event {
             RioEvent::TerminalDamaged(_) => "damaged",
             RioEvent::ChildExited(..) => "exited",
+            RioEvent::CloseTerminal(..) => "closed",
             RioEvent::PtyWrite(..) => "ptywrite",
             RioEvent::TextAreaSizeRequest(..) => "size",
             _ => return,
