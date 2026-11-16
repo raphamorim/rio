@@ -9,6 +9,12 @@ use teletypewriter::{ChildEvent, EventedPty, ProcessReadWrite, WinsizeBuilder};
 
 struct TestPty {
     bytes: io::Cursor<Vec<u8>>,
+    /// Later writes by the program, each read as its own burst once
+    /// `bytes` is exhausted and the test signals readiness again.
+    feed: Option<mpsc::Receiver<Vec<u8>>>,
+    /// Announces every read that finds nothing, so a test knows the
+    /// burst is over before it feeds the next write.
+    idle: Option<mpsc::Sender<()>>,
     ending: Option<ErrorKind>,
     exhausted: Option<mpsc::Sender<()>>,
     writer: RecordingWriter,
@@ -25,6 +31,13 @@ impl Read for TestPty {
         let got = self.bytes.read(buf)?;
         if got != 0 {
             return Ok(got);
+        }
+        if let Some(Ok(next)) = self.feed.as_ref().map(|feed| feed.try_recv()) {
+            self.bytes = io::Cursor::new(next);
+            return self.bytes.read(buf);
+        }
+        if let Some(idle) = &self.idle {
+            let _ = idle.send(());
         }
         if let Some(sender) = self.exhausted.take() {
             sender.send(()).unwrap();
@@ -157,6 +170,8 @@ fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidLi
         TestPty {
             bytes: io::Cursor::new(bytes),
             ending,
+            feed: None,
+            idle: None,
             exhausted: None,
             writer: RecordingWriter::default(),
             child: None,
@@ -173,7 +188,7 @@ fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidLi
     .unwrap()
 }
 
-fn first_line(machine: &Machine<TestPty, VoidListener>, len: usize) -> String {
+fn first_line<L: EventListener>(machine: &Machine<TestPty, L>, len: usize) -> String {
     let terminal = machine.terminal.lock();
     (0..len)
         .map(|col| terminal.grid[Line(0)][Column(col)].c())
@@ -387,7 +402,8 @@ fn input_is_written_on_the_wakeup_that_delivers_it() {
 }
 
 // Bytes refused by a full PTY wait for the writable event. Read
-// wakeups in between do not retry them.
+// wakeups in between do not retry them, and a reply the parse produces
+// meanwhile queues behind them.
 #[test]
 fn a_stuck_write_is_not_retried_on_read_wakeups() {
     let (events, damaged) = mpsc::channel();
@@ -404,8 +420,11 @@ fn a_stuck_write_is_not_retried_on_read_wakeups() {
     let machine = Machine::new(
         Arc::new(FairMutex::new(terminal)),
         TestPty {
-            bytes: io::Cursor::new(b"output".to_vec()),
+            // A query among the output: its reply must wait too.
+            bytes: io::Cursor::new(b"out\x1b[cput".to_vec()),
             ending: None,
+            feed: None,
+            idle: None,
             exhausted: None,
             writer: RecordingWriter {
                 blocked: true,
@@ -452,6 +471,71 @@ fn a_stuck_write_is_not_retried_on_read_wakeups() {
         "the bytes are still queued for the writable event"
     );
     assert!(machine.pty.writer.bytes.is_empty());
+    // The keystroke is still first in line, the reply behind it.
+    assert_eq!(state.writing.as_ref().unwrap().source.as_ref(), b"a");
+    assert_eq!(
+        state.write_list.iter().collect::<Vec<_>>(),
+        vec![&std::borrow::Cow::Borrowed(&b"\x1b[?62;4;6;22;52c"[..])],
+        "the reply queued behind the stuck keystroke"
+    );
+}
+
+// A query from the program is answered by this thread, written to the
+// PTY right after the parse that produced it, and never sent to the
+// event loop.
+#[test]
+fn a_parser_reply_is_written_by_the_reader_thread() {
+    let (events, recorded) = mpsc::channel();
+    let (registration, readiness) = corcovado::Registration::new2();
+    let (written_tx, written) = mpsc::channel();
+    let terminal = Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        EventRecorder(events.clone()),
+        WindowId::from(0),
+        0,
+        0,
+    );
+    let machine = Machine::new(
+        Arc::new(FairMutex::new(terminal)),
+        TestPty {
+            // Primary device attributes, then text.
+            bytes: io::Cursor::new(b"\x1b[cok".to_vec()),
+            ending: None,
+            feed: None,
+            idle: None,
+            exhausted: None,
+            writer: RecordingWriter {
+                written: Some(written_tx),
+                ..RecordingWriter::default()
+            },
+            child: Some(registration),
+            registration_error: false,
+            read_event: true,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        EventRecorder(events),
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let channel = machine.channel();
+    let handle = machine.spawn();
+
+    readiness.set_readiness(Ready::readable()).unwrap();
+    let reply = written.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(reply, b"\x1b[?62;4;6;22;52c".to_vec());
+
+    channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = handle.join().unwrap();
+    assert_eq!(first_line(&machine, 2), "ok");
+    let names: Vec<&str> = recorded.try_iter().collect();
+    assert!(
+        !names.contains(&"ptywrite"),
+        "the reply never went to the event loop: {names:?}"
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -488,6 +572,176 @@ fn explicit_shutdown_finalizes_once() {
     assert_eq!(machine.pty.deregister_calls, 1);
 }
 
+// A query only the owner answers, with the DA fence in a separate
+// write: the program sends `CSI 14 t`, then `CSI c` once the first is
+// flushed, and expects the size report before the attributes. The DA
+// arrives in its own burst while the owner has not answered yet, so it
+// goes through the owner too; the owner's answer settles the query and
+// the next DA is written here again. The PTY sees the answer first.
+#[test]
+fn a_fence_in_a_later_write_waits_for_the_owners_answer() {
+    let (events, recorded) = mpsc::channel();
+    let (registration, readiness) = corcovado::Registration::new2();
+    let (written_tx, written) = mpsc::channel();
+    let (feed_tx, feed) = mpsc::channel();
+    let (idle_tx, idle) = mpsc::channel();
+    let terminal = Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        EventRecorder(events.clone()),
+        WindowId::from(0),
+        0,
+        0,
+    );
+    let machine = Machine::new(
+        Arc::new(FairMutex::new(terminal)),
+        TestPty {
+            bytes: io::Cursor::new(b"\x1b[14t".to_vec()),
+            feed: Some(feed),
+            idle: Some(idle_tx),
+            ending: Some(ErrorKind::WouldBlock),
+            exhausted: None,
+            writer: RecordingWriter {
+                written: Some(written_tx),
+                ..RecordingWriter::default()
+            },
+            child: Some(registration),
+            registration_error: false,
+            read_event: true,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        EventRecorder(events),
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let channel = machine.channel();
+    let handle = machine.spawn();
+    let timeout = Duration::from_secs(5);
+    let next_named = |name: &str| loop {
+        if recorded.recv_timeout(timeout).unwrap() == name {
+            break;
+        }
+    };
+    let wake = || {
+        readiness.set_readiness(Ready::empty()).unwrap();
+        readiness.set_readiness(Ready::readable()).unwrap();
+    };
+    // The reader found nothing more: that burst is over.
+    let burst_over = || idle.recv_timeout(timeout).unwrap();
+
+    // First write: the query goes to the owner.
+    wake();
+    next_named("size");
+    burst_over();
+
+    // Second write, its own burst, before the owner answered: the DA
+    // goes to the owner too, and nothing is written to the PTY.
+    feed_tx.send(b"\x1b[c".to_vec()).unwrap();
+    wake();
+    next_named("ptywrite");
+    burst_over();
+    assert!(
+        written.try_recv().is_err(),
+        "the DA must not be written ahead of the size report"
+    );
+
+    // The owner answers: its answer is written, and the fence lifts.
+    channel
+        .send(Msg::Reply(std::borrow::Cow::Borrowed(b"\x1b[4;480;640t")))
+        .unwrap();
+    assert_eq!(written.recv_timeout(timeout).unwrap(), b"\x1b[4;480;640t");
+
+    // Third write: answered here again.
+    feed_tx.send(b"\x1b[c".to_vec()).unwrap();
+    wake();
+    assert_eq!(
+        written.recv_timeout(timeout).unwrap(),
+        b"\x1b[?62;4;6;22;52c".to_vec()
+    );
+    burst_over();
+
+    channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = handle.join().unwrap();
+    assert_eq!(
+        machine.pty.writer.bytes,
+        b"\x1b[4;480;640t\x1b[?62;4;6;22;52c".to_vec(),
+        "the size report reached the PTY before any attributes"
+    );
+    assert_eq!(
+        recorded.try_iter().filter(|n| *n == "ptywrite").count(),
+        0,
+        "the last DA was not routed through the owner"
+    );
+}
+
+// An owner that declines a query still settles it: an empty answer
+// writes nothing and lifts the fence.
+#[test]
+fn a_declined_query_lifts_the_fence_without_writing() {
+    let (events, recorded) = mpsc::channel();
+    let (registration, readiness) = corcovado::Registration::new2();
+    let (written_tx, written) = mpsc::channel();
+    let (feed_tx, feed) = mpsc::channel();
+    let (idle_tx, idle) = mpsc::channel();
+    let terminal = Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        EventRecorder(events.clone()),
+        WindowId::from(0),
+        0,
+        0,
+    );
+    let machine = Machine::new(
+        Arc::new(FairMutex::new(terminal)),
+        TestPty {
+            bytes: io::Cursor::new(b"\x1b[14t".to_vec()),
+            feed: Some(feed),
+            idle: Some(idle_tx),
+            ending: Some(ErrorKind::WouldBlock),
+            exhausted: None,
+            writer: RecordingWriter {
+                written: Some(written_tx),
+                ..RecordingWriter::default()
+            },
+            child: Some(registration),
+            registration_error: false,
+            read_event: true,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        EventRecorder(events),
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let channel = machine.channel();
+    let handle = machine.spawn();
+    let timeout = Duration::from_secs(5);
+
+    readiness.set_readiness(Ready::readable()).unwrap();
+    while recorded.recv_timeout(timeout).unwrap() != "size" {}
+    idle.recv_timeout(timeout).unwrap();
+    channel
+        .send(Msg::Reply(std::borrow::Cow::Borrowed(b"")))
+        .unwrap();
+
+    feed_tx.send(b"\x1b[c".to_vec()).unwrap();
+    readiness.set_readiness(Ready::empty()).unwrap();
+    readiness.set_readiness(Ready::readable()).unwrap();
+    assert_eq!(
+        written.recv_timeout(timeout).unwrap(),
+        b"\x1b[?62;4;6;22;52c".to_vec()
+    );
+
+    channel.send(Msg::Shutdown).unwrap();
+    let (machine, _) = handle.join().unwrap();
+    assert_eq!(machine.pty.writer.bytes, b"\x1b[?62;4;6;22;52c".to_vec());
+}
+
 #[derive(Clone)]
 struct EventRecorder(mpsc::Sender<&'static str>);
 
@@ -496,6 +750,8 @@ impl EventListener for EventRecorder {
         let name = match event {
             RioEvent::TerminalDamaged(_) => "damaged",
             RioEvent::ChildExited(..) => "exited",
+            RioEvent::PtyWrite(..) => "ptywrite",
+            RioEvent::TextAreaSizeRequest(..) => "size",
             _ => return,
         };
         let _ = self.0.send(name);

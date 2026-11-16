@@ -470,6 +470,23 @@ where
     pub grid: Grid<Square>,
     inactive_grid: Grid<Square>,
     scroll_region: Range<Line>,
+    /// Parser replies (DA, DSR, DECRQM and the like) waiting for the
+    /// PTY thread, when replies are routed through it; see
+    /// [`Self::set_enable_pty_reply`].
+    pty_replies: Vec<String>,
+    enable_pty_reply: bool,
+    /// The configured palette, so a color query is answered here with
+    /// the program's override or the configured color, without a trip
+    /// to the owner of the terminal. Unset for an embedder that keeps
+    /// its palette to itself; the query then goes out as an event.
+    default_colors: Option<crate::config::colors::term::List>,
+    /// Queries only the owner of the terminal can answer (the
+    /// clipboard, the text area in pixels, a color when no palette was
+    /// given) that went out as events and are not answered yet. While
+    /// one is outstanding every reply goes the same way, so a program
+    /// using one reply as a fence for another sees them in the order
+    /// it asked.
+    ui_queries_pending: u32,
     tabs: TabStops,
     event_proxy: U,
     pub selection: Option<Selection>,
@@ -574,6 +591,10 @@ impl<U: EventListener> Crosswords<U> {
             inactive_grid: alt,
             active_charset: CharsetIndex::default(),
             scroll_region,
+            pty_replies: Vec::new(),
+            enable_pty_reply: false,
+            default_colors: None,
+            ui_queries_pending: 0,
             event_proxy,
             colors: term_colors,
             title: String::from(""),
@@ -1232,6 +1253,64 @@ impl<U: EventListener> Crosswords<U> {
         self.grid
             .total_lines()
             .saturating_sub(self.grid.screen_lines())
+    }
+
+    /// Route parser replies to the thread that owns the PTY instead of
+    /// the event loop. The replies accumulate here while that thread
+    /// holds the lock to parse and it writes them when it lets go, so
+    /// a query is answered without crossing to the UI thread and back.
+    /// Off by default: an embedder that feeds bytes itself and has no
+    /// PTY thread receives each reply as a `PtyWrite` event.
+    pub fn set_enable_pty_reply(&mut self, enabled: bool) {
+        self.enable_pty_reply = enabled;
+    }
+
+    /// The configured palette, for answering color queries here; see
+    /// `dynamic_color_sequence`. Set at creation and whenever the
+    /// configuration changes it.
+    pub fn set_default_colors(&mut self, colors: crate::config::colors::term::List) {
+        self.default_colors = Some(colors);
+    }
+
+    /// Hand every reply accumulated since the last drain to `sink`,
+    /// oldest first.
+    pub fn drain_pty_replies(&mut self, mut sink: impl FnMut(String)) {
+        for reply in self.pty_replies.drain(..) {
+            sink(reply);
+        }
+    }
+
+    /// Answer the program: queued for the PTY thread, or sent as an
+    /// event for the owner of the terminal to write. While a query the
+    /// owner answers is outstanding, the event path keeps the order
+    /// between the two.
+    fn reply(&mut self, text: String) {
+        if self.enable_pty_reply && self.ui_queries_pending == 0 {
+            self.pty_replies.push(text);
+        } else {
+            self.event_proxy
+                .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        }
+    }
+
+    /// A query only the owner of the terminal can answer went out as
+    /// an event: the clipboard, the text area in pixels, or a color
+    /// when no palette was given. Its answer comes back through the
+    /// owner's queue, so until [`Self::ui_query_answered`] says it has
+    /// every reply takes that queue too, and a reply the program sends
+    /// behind the query as a fence, in the same write or a later one,
+    /// is answered after it. The color queries are answered here
+    /// whenever the palette is known so the common fence idiom never
+    /// leaves the PTY thread.
+    fn ui_query_sent(&mut self) {
+        self.ui_queries_pending = self.ui_queries_pending.saturating_add(1);
+    }
+
+    /// The owner answered, or declined, one outstanding query; its
+    /// answer is queued for the PTY ahead of any reply made from here
+    /// on. Called by the PTY thread when the answer reaches it.
+    pub fn ui_query_answered(&mut self) {
+        self.ui_queries_pending = self.ui_queries_pending.saturating_sub(1);
     }
 
     /// Damage the entire line at the cursor position
@@ -2902,6 +2981,16 @@ impl<U: EventListener> Crosswords<U> {
     }
 }
 
+/// The answer to an OSC 4, 10, 11 or 12 color query: `prefix` is the
+/// query's own leading parameters, each channel is repeated to the
+/// 16 bit form programs expect.
+fn color_reply(prefix: &str, color: ColorRgb, terminator: &str) -> String {
+    format!(
+        "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
+        prefix, color.r, color.g, color.b, terminator
+    )
+}
+
 impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn set_mode(&mut self, mode: AnsiMode) {
@@ -2953,13 +3042,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             AnsiMode::Unknown(_) => ModeState::NotSupported,
         };
 
-        self.event_proxy.send_event(
-            RioEvent::PtyWrite(
-                self.route_id,
-                format!("\x1b[{};{}$y", mode.raw(), state as u8,),
-            ),
-            self.window_id,
-        );
+        self.reply(format!("\x1b[{};{}$y", mode.raw(), state as u8,));
     }
 
     #[inline]
@@ -3196,13 +3279,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             PrivateMode::Unknown(_) => ModeState::NotSupported,
         };
 
-        self.event_proxy.send_event(
-            RioEvent::PtyWrite(
-                self.route_id,
-                format!("\x1b[?{};{}$y", mode.raw(), state as u8,),
-            ),
-            self.window_id,
-        );
+        self.reply(format!("\x1b[?{};{}$y", mode.raw(), state as u8,));
     }
 
     #[inline]
@@ -3212,17 +3289,28 @@ impl<U: EventListener> Handler for Crosswords<U> {
             prefix, index
         );
 
+        // The program's own override first, then the configured color.
+        // The cursor color is reported only when the program set it.
+        let color = match self.colors()[index] {
+            Some(color) => Some(ColorRgb::from_color_arr(color)),
+            None if index == NamedColor::Cursor as usize => return,
+            None => self
+                .default_colors
+                .map(|colors| ColorRgb::from_color_arr(colors[index])),
+        };
+        if let Some(color) = color {
+            self.reply(color_reply(&prefix, color, terminator));
+            return;
+        }
+
+        // No palette here: the owner of the terminal answers.
         let terminator = terminator.to_owned();
+        self.ui_query_sent();
         self.event_proxy.send_event(
             RioEvent::ColorRequest(
                 self.route_id,
                 index,
-                Arc::new(move |color| {
-                    format!(
-                        "\x1b]{};rgb:{1:02x}{1:02x}/{2:02x}{2:02x}/{3:02x}{3:02x}{4}",
-                        prefix, color.r, color.g, color.b, terminator
-                    )
-                }),
+                Arc::new(move |color| color_reply(&prefix, color, &terminator)),
             ),
             self.window_id,
         );
@@ -3692,8 +3780,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             "\x1b]7501;{}{terminator}",
             crate::event::PROGRAM_STATUS_QUERY_REPLY
         );
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        self.reply(text);
     }
 
     fn prompt_start(&mut self) {
@@ -4262,15 +4349,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 // color, 52: clipboard access via OSC 52 (probed by
                 // tcell and others before enabling clipboard writes).
                 let text = String::from("\x1b[?62;4;6;22;52c");
-                self.event_proxy
-                    .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+                self.reply(text);
             }
             Some('>') => {
                 trace!("Reporting secondary device attributes");
                 let version = version_number(env!("CARGO_PKG_VERSION"));
                 let text = format!("\x1b[>0;{version};1c");
-                self.event_proxy
-                    .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+                self.reply(text);
             }
             _ => debug!("Unsupported device attributes intermediate"),
         }
@@ -4281,8 +4366,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         trace!("Reporting terminal version (XTVERSION)");
         let version = env!("CARGO_PKG_VERSION");
         let text = format!("\x1bP>|Rio {version}\x1b\\");
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        self.reply(text);
     }
 
     #[inline]
@@ -4294,8 +4378,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     fn report_keyboard_mode(&mut self) {
         let current_mode = self.keyboard_mode_stack[self.keyboard_mode_idx];
         let text = format!("\x1b[?{current_mode}u");
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        self.reply(text);
     }
 
     #[inline]
@@ -4350,14 +4433,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         match arg {
             5 => {
                 let text = String::from("\x1b[0n");
-                self.event_proxy
-                    .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+                self.reply(text);
             }
             6 => {
                 let pos = self.grid.cursor.pos;
                 let text = format!("\x1b[{};{}R", pos.row + 1, pos.col + 1);
-                self.event_proxy
-                    .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+                self.reply(text);
             }
             _ => debug!("unknown device status query: {}", arg),
         };
@@ -4637,6 +4718,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         let terminator = terminator.to_owned();
 
+        self.ui_query_sent();
+
         self.event_proxy.send_event(
             RioEvent::ClipboardLoad(
                 self.route_id,
@@ -4788,6 +4871,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn text_area_size_pixels(&mut self) {
         debug!("text_area_size_pixels");
+        self.ui_query_sent();
         self.event_proxy.send_event(
             RioEvent::TextAreaSizeRequest(
                 self.route_id,
@@ -4809,8 +4893,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.graphics.cell_height, self.graphics.cell_width
         );
         debug!("cells_size_pixels {:?}", text);
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        self.reply(text);
     }
 
     #[inline]
@@ -4821,8 +4904,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.grid.columns()
         );
         debug!("text_area_size_chars {:?}", text);
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id);
+        self.reply(text);
     }
 
     #[inline]
@@ -4881,6 +4963,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             2 => {
                 match pa {
                     1 => {
+                        self.ui_query_sent();
                         self.event_proxy.send_event(
                             RioEvent::TextAreaSizeRequest(
                                 self.route_id,
@@ -4922,10 +5005,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
         };
 
-        self.event_proxy.send_event(
-            RioEvent::PtyWrite(self.route_id, generate_response(pi, ps, pv)),
-            self.window_id,
-        );
+        self.reply(generate_response(pi, ps, pv));
     }
 
     #[inline]
@@ -5605,20 +5685,17 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn kitty_graphics_response(&mut self, response: String) {
         // Send response back to the terminal
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, response), self.window_id);
+        self.reply(response);
     }
 
     #[inline]
     fn xtgettcap_response(&mut self, response: String) {
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, response), self.window_id);
+        self.reply(response);
     }
 
     #[inline]
     fn glyph_protocol_response(&mut self, response: String) {
-        self.event_proxy
-            .send_event(RioEvent::PtyWrite(self.route_id, response), self.window_id);
+        self.reply(response);
     }
 
     #[cfg(feature = "graphics")]
@@ -11882,6 +11959,183 @@ mod tests {
         events.borrow_mut().clear();
         parser.advance(&mut term, b"\x1b[?9h\x1b[?9$p");
         assert_eq!(replies(&events), vec!["\x1b[?9;1$y".to_string()]);
+    }
+
+    // A query only the owner answers fences the replies behind it until
+    // the owner's answer has passed: a DA sent right after the query,
+    // in the same write or in a later one, is answered after it.
+    #[test]
+    fn a_ui_answered_query_fences_replies_until_the_owner_answers() {
+        let (mut cw, events) = make_crosswords_with_events(4);
+        cw.set_enable_pty_reply(true);
+        let kinds = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
+            events
+                .borrow()
+                .iter()
+                .filter_map(|e| match e {
+                    RioEvent::ColorRequest(..) => Some("color"),
+                    RioEvent::TextAreaSizeRequest(..) => Some("size"),
+                    RioEvent::ClipboardLoad(..) => Some("clipboard"),
+                    RioEvent::PtyWrite(..) => Some("reply"),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut parser = crate::performer::handler::Processor::default();
+        let mut queued = Vec::new();
+
+        // Background color query, then primary DA as the fence.
+        parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b[c");
+        assert_eq!(kinds(&events), vec!["color", "reply"], "in the order asked");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert!(queued.is_empty(), "nothing overtook the color answer");
+
+        // The fence arriving in a later write is covered too: the drain
+        // does not lift the fence, the owner's answer does.
+        parser.advance(&mut cw, b"\x1b[c");
+        assert_eq!(kinds(&events).len(), 3, "still through the owner");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert!(queued.is_empty());
+        cw.ui_query_answered();
+        parser.advance(&mut cw, b"\x1b[c");
+        assert_eq!(kinds(&events).len(), 3, "direct again");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued.len(), 1);
+
+        // Every query the owner answers raises the fence: the text
+        // area in pixels, the graphics geometry, the clipboard.
+        for (query, kind) in [
+            (&b"\x1b[14t"[..], "size"),
+            (&b"\x1b[?2;1;0S"[..], "size"),
+            (&b"\x1b]52;c;?\x1b\\"[..], "clipboard"),
+        ] {
+            queued.clear();
+            let before = kinds(&events).len();
+            parser.advance(&mut cw, query);
+            parser.advance(&mut cw, b"\x1b[c");
+            assert_eq!(kinds(&events)[before..], [kind, "reply"], "{kind}");
+            cw.drain_pty_replies(|r| queued.push(r));
+            assert!(queued.is_empty(), "{kind} fences the DA behind it");
+            cw.ui_query_answered();
+        }
+
+        // Two outstanding queries need two answers.
+        queued.clear();
+        parser.advance(&mut cw, b"\x1b[14t");
+        parser.advance(&mut cw, b"\x1b[14t");
+        cw.ui_query_answered();
+        parser.advance(&mut cw, b"\x1b[c");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert!(queued.is_empty(), "one answer of two does not lift it");
+        cw.ui_query_answered();
+        parser.advance(&mut cw, b"\x1b[c");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued.len(), 1);
+
+        // A direct reply before the query stays direct, and the fence
+        // spans every parse behind it until the answer.
+        queued.clear();
+        let before = kinds(&events).len();
+        parser.advance(&mut cw, b"\x1b[c\x1b]11;?\x1b\\");
+        parser.advance(&mut cw, b"\x1b[6n");
+        assert_eq!(kinds(&events)[before..], ["color", "reply"]);
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued.len(), 1, "the DA before the query is direct");
+        assert!(queued[0].ends_with("c"));
+        cw.ui_query_answered();
+    }
+
+    // With the palette known, a color query is answered here: the
+    // program's override, else the configured color; the cursor color
+    // only when set. Without a palette it is the owner's to answer.
+    #[test]
+    fn color_queries_are_answered_here_when_the_palette_is_known() {
+        use crate::config::colors::term::List;
+        use crate::config::colors::Colors;
+        let (mut cw, events) = make_crosswords_with_events(6);
+        cw.set_enable_pty_reply(true);
+        let color_requests = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
+            events
+                .borrow()
+                .iter()
+                .filter(|e| matches!(e, RioEvent::ColorRequest(..)))
+                .count()
+        };
+        let mut parser = crate::performer::handler::Processor::default();
+
+        // No palette: the owner answers, and the burst is fenced.
+        parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b[c");
+        assert_eq!(color_requests(&events), 1);
+        let mut queued = Vec::new();
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert!(queued.is_empty());
+        cw.ui_query_answered();
+
+        let mut colors = Colors::default();
+        colors.background.0 = crate::config::colors::ColorRgb {
+            r: 0x11,
+            g: 0x22,
+            b: 0x33,
+        }
+        .to_arr();
+        cw.set_default_colors(List::from(&colors));
+        parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b]4;1;?\x1b\\\x1b[c");
+        assert_eq!(color_requests(&events), 1, "no more events");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued.len(), 3, "background, palette entry 1, DA, in order");
+        assert_eq!(queued[0], "\x1b]11;rgb:1111/2222/3333\x1b\\");
+        assert!(queued[1].starts_with("\x1b]4;1;rgb:"));
+        assert!(queued[2].ends_with("c"));
+
+        // The program's own override wins over the palette.
+        queued.clear();
+        parser.advance(&mut cw, b"\x1b]11;#445566\x1b\\\x1b]11;?\x1b\\");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued, vec!["\x1b]11;rgb:4444/5555/6666\x1b\\"]);
+
+        // The cursor color is reported only once the program set it.
+        queued.clear();
+        parser.advance(&mut cw, b"\x1b]12;?\x1b\\");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert!(queued.is_empty(), "unset cursor color: no answer");
+        assert_eq!(color_requests(&events), 1, "and no event either");
+        parser.advance(&mut cw, b"\x1b]12;#ff0000\x1b\\\x1b]12;?\x1b\\");
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued, vec!["\x1b]12;rgb:ffff/0000/0000\x1b\\"]);
+    }
+
+    // Parser replies reach the owner of the terminal as events unless
+    // the PTY thread takes them; then they queue for it and no event
+    // is sent.
+    #[test]
+    fn replies_are_events_unless_routed_through_the_pty() {
+        let (mut cw, events) = make_crosswords_with_events(3);
+        cw.identify_terminal(None);
+        let replies = |events: &std::rc::Rc<std::cell::RefCell<Vec<RioEvent>>>| {
+            events
+                .borrow()
+                .iter()
+                .filter(|e| matches!(e, RioEvent::PtyWrite(..)))
+                .count()
+        };
+        assert_eq!(replies(&events), 1);
+
+        cw.set_enable_pty_reply(true);
+        cw.identify_terminal(None);
+        cw.report_version();
+        assert_eq!(replies(&events), 1, "no event once routed");
+        let mut queued = Vec::new();
+        cw.drain_pty_replies(|r| queued.push(r));
+        assert_eq!(queued.len(), 2);
+        assert_eq!(queued[0], "\x1b[?62;4;6;22;52c");
+        assert!(queued[1].starts_with("\x1bP>|Rio "));
+        let mut again = Vec::new();
+        cw.drain_pty_replies(|r| again.push(r));
+        assert!(again.is_empty(), "a drain empties the queue");
+
+        cw.set_enable_pty_reply(false);
+        cw.identify_terminal(None);
+        assert_eq!(replies(&events), 2, "events again once unrouted");
     }
 
     // The bulk codepoint path under mode 2027. Every sample is written

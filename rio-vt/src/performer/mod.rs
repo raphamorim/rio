@@ -250,6 +250,10 @@ where
         let (sender, receiver) = channel::channel();
         let poll = corcovado::Poll::new()?;
 
+        // Replies the parser produces are written by this thread at the
+        // end of the burst that produced them.
+        terminal.lock().set_enable_pty_reply(true);
+
         Ok(Machine {
             sender,
             receiver: PeekableReceiver::new(receiver),
@@ -287,9 +291,12 @@ where
         let mut result = Ok(ReadOutcome::Budget);
 
         // Reserve the next terminal lock for PTY reading.
-        let _terminal_lease = Some(self.terminal.lease());
+        let terminal_lease = Some(self.terminal.lease());
         let mut terminal = None;
         let mut held_before = None;
+        // Replies are written below unless bytes were already waiting
+        // on the writable event; then they wait with them.
+        let had_pending = state.needs_write();
 
         loop {
             // Read from the PTY.
@@ -344,6 +351,15 @@ where
             }
         }
 
+        // The replies the burst produced, in order, behind any bytes
+        // already waiting. Drained once per burst so a query the UI
+        // thread answers fences the whole burst, not one chunk of it.
+        if let Some(ref mut term) = terminal {
+            term.drain_pty_replies(|reply| {
+                state.write_list.push_back(Cow::Owned(reply.into_bytes()))
+            });
+        }
+
         // Notify renderer that new damage is available.
         // Only send if no event is already in flight: the renderer will
         // extract all accumulated damage when it locks the terminal.
@@ -358,6 +374,16 @@ where
             }
         }
 
+        // The replies go out as soon as the lock is released. A PTY that
+        // cannot take them now leaves them for the writable event.
+        drop(terminal);
+        drop(terminal_lease);
+        if !had_pending && state.needs_write() {
+            if let Err(err) = self.pty_write(state) {
+                tracing::debug!("PTY reply deferred to the writable event: {err}");
+            }
+        }
+
         result
     }
 
@@ -368,6 +394,15 @@ where
         while let Some(msg) = self.receiver.recv() {
             match msg {
                 Msg::Input(input) => state.write_list.push_back(input),
+                Msg::Reply(answer) => {
+                    if !answer.is_empty() {
+                        state.write_list.push_back(answer);
+                    }
+                    // Queued ahead of whatever this wakeup's read
+                    // produces, so the terminal may hand the replies
+                    // behind the query back to this thread.
+                    self.terminal.lock().ui_query_answered();
+                }
                 Msg::Resize(window_size) => {
                     let _ = self.pty.set_winsize(window_size.into());
                 }

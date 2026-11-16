@@ -1032,19 +1032,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     // that never received a focus event yet (created in
                     // the background) must not have OSC 52 silently
                     // dropped by an is_focused that never initialized.
-                    if route.window.is_focused || !route.window.focus_seen {
-                        let text = format(clipboard.get(clipboard_type).as_str());
-                        // Route the paste back to the panel that asked for it
-                        // (OSC 52 reply), not whichever panel happens to be
-                        // focused now.
-                        if let Some(item) = route
-                            .window
-                            .screen
-                            .context_manager
-                            .get_by_route_id(route_id)
-                        {
-                            item.val.messenger.send_bytes(text.into_bytes());
-                        }
+                    // A declined query is still settled, with no bytes:
+                    // the terminal raised its fence when it parsed the
+                    // query, and only the reply lowers it. Sending
+                    // nothing would route every later reply through
+                    // this thread for good.
+                    let text = if route.window.is_focused || !route.window.focus_seen {
+                        format(clipboard.get(clipboard_type).as_str()).into_bytes()
+                    } else {
+                        Vec::new()
+                    };
+                    // Route the paste back to the panel that asked for it
+                    // (OSC 52 reply), not whichever panel happens to be
+                    // focused now.
+                    if let Some(item) = route
+                        .window
+                        .screen
+                        .context_manager
+                        .get_by_route_id(route_id)
+                    {
+                        item.val.messenger.send_reply(text);
                     }
                 }
             }
@@ -1081,7 +1088,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     // Route reply bytes (CSI / OSC responses) back to the
                     // PTY of the panel that emitted them, not whichever
-                    // panel happens to be focused.
+                    // panel happens to be focused. A panel with a PTY
+                    // thread writes its replies there; this is reached
+                    // for terminals driven without one, and for the
+                    // replies behind a query only this thread answers,
+                    // which keep their order by taking the same path.
                     if let Some(item) = route
                         .window
                         .screen
@@ -1104,15 +1115,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         let text = format(crate::renderer::utils::terminal_dimensions(
                             &dimension,
                         ));
-                        item.val.messenger.send_bytes(text.into_bytes());
+                        item.val.messenger.send_reply(text.into_bytes());
                     }
                 }
             }
             RioEventType::Rio(RioEvent::ColorRequest(route_id, index, format)) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
-                    // Read the originating panel's terminal colors and
-                    // route the reply back to that same panel — color
-                    // theme overrides via OSC 4 / OSC 10-19 are
+                    // A terminal given the palette answers color queries
+                    // itself with this same precedence; this is reached
+                    // for one without it. Read the originating panel's
+                    // terminal colors and route the reply back to that
+                    // same panel: overrides via OSC 4 / OSC 10-19 are
                     // per-context, so reading from `current()` would
                     // mis-report when the user has focused a different
                     // split mid-flight.
@@ -1126,19 +1139,21 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         return;
                     };
                     let terminal = item.val.terminal.lock();
-                    let color: ColorRgb = match terminal.colors()[index] {
-                        Some(color) => ColorRgb::from_color_arr(color),
+                    let color: Option<ColorRgb> = match terminal.colors()[index] {
+                        Some(color) => Some(ColorRgb::from_color_arr(color)),
                         // Ignore cursor color requests unless it was changed.
                         None if index
                             == crate::crosswords::NamedColor::Cursor as usize =>
                         {
-                            return
+                            None
                         }
-                        None => ColorRgb::from_color_arr(renderer_color),
+                        None => Some(ColorRgb::from_color_arr(renderer_color)),
                     };
                     drop(terminal);
 
-                    item.val.messenger.send_bytes(format(color).into_bytes());
+                    // An ignored query is still settled, with no bytes.
+                    let text = color.map(|c| format(c).into_bytes()).unwrap_or_default();
+                    item.val.messenger.send_reply(text);
                 }
             }
             RioEventType::Rio(RioEvent::CreateWindow) => {

@@ -141,6 +141,9 @@ pub struct ContextManagerConfig {
     pub keyboard: rio_backend::config::keyboard::Keyboard,
     pub scrollback_history_limit: usize,
     pub grapheme_clustering: bool,
+    /// The configured palette, handed to every terminal so it answers
+    /// color queries itself.
+    pub colors: rio_backend::config::colors::term::List,
 }
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
@@ -320,6 +323,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             config.scrollback_history_limit,
         );
         terminal.set_grapheme_clustering(config.grapheme_clustering);
+        terminal.set_default_colors(config.colors);
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<FairMutex<Crosswords<T>>> = Arc::new(FairMutex::new(terminal));
 
@@ -1533,6 +1537,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
+            colors: rio_backend::config::colors::term::List::from(&config.colors),
         };
 
         let current = self.current();
