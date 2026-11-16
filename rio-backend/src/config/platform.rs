@@ -62,6 +62,10 @@ pub struct PlatformWindow {
     pub macos_traffic_light_position_x: Option<f64>,
     #[serde(default = "Option::default", rename = "macos-traffic-light-position-y")]
     pub macos_traffic_light_position_y: Option<f64>,
+    #[serde(default = "Option::default", rename = "wayland-use-unified-titlebar")]
+    pub wayland_use_unified_titlebar: Option<bool>,
+    #[serde(default = "Option::default")]
+    pub menubar: Option<window::Menubar>,
     #[serde(default = "Option::default", rename = "initial-title")]
     pub initial_title: Option<String>,
     #[serde(default = "Option::default", rename = "windows-use-undecorated-shadow")]

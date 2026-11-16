@@ -625,6 +625,12 @@ impl Config {
             if let Some(y) = window_overwrite.macos_traffic_light_position_y {
                 self.window.macos_traffic_light_position_y = Some(y);
             }
+            if let Some(unified) = window_overwrite.wayland_use_unified_titlebar {
+                self.window.wayland_use_unified_titlebar = unified;
+            }
+            if let Some(menubar) = window_overwrite.menubar {
+                self.window.menubar = menubar;
+            }
             if let Some(initial_title) = &window_overwrite.initial_title {
                 self.window.initial_title = Some(initial_title.clone());
             }
@@ -1596,6 +1602,64 @@ mod tests {
         assert_eq!(result.window.height, 600);
         assert_eq!(result.window.opacity, 0.75);
         assert!(result.window.blur.is_enabled());
+    }
+
+    #[test]
+    fn test_wayland_titlebar_and_menubar_defaults() {
+        let result = create_temporary_config("wayland-chrome-defaults", "");
+
+        assert!(!result.window.wayland_use_unified_titlebar);
+        assert_eq!(result.window.menubar, window::Menubar::Disabled);
+    }
+
+    #[test]
+    fn test_wayland_titlebar_and_menubar() {
+        let result = create_temporary_config(
+            "wayland-chrome",
+            r#"
+            [window]
+            wayland-use-unified-titlebar = true
+            menubar = "Auto"
+        "#,
+        );
+
+        assert!(result.window.wayland_use_unified_titlebar);
+        assert_eq!(result.window.menubar, window::Menubar::Auto);
+        // Neither changes how the window is decorated elsewhere.
+        assert_eq!(result.window.decorations, window::Decorations::default());
+        assert!(!result.window.macos_use_unified_titlebar);
+    }
+
+    /// The Linux block is read on every platform, so a config shared with
+    /// macOS or Windows must keep parsing there and change nothing.
+    #[test]
+    fn test_platform_linux_titlebar_and_menubar_merge() {
+        let mut result = create_temporary_config(
+            "platform-linux-chrome-merge",
+            r#"
+            [window]
+            opacity = 0.75
+            menubar = "disabled"
+
+            [platform]
+            linux.window.wayland-use-unified-titlebar = true
+            linux.window.menubar = "auto"
+        "#,
+        );
+
+        result.overwrite_based_on_platform();
+
+        let linux = cfg!(target_os = "linux");
+        assert_eq!(result.window.wayland_use_unified_titlebar, linux);
+        assert_eq!(
+            result.window.menubar,
+            if linux {
+                window::Menubar::Auto
+            } else {
+                window::Menubar::Disabled
+            }
+        );
+        assert_eq!(result.window.opacity, 0.75);
     }
 
     #[test]

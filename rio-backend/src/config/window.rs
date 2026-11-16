@@ -65,6 +65,20 @@ impl Default for Decorations {
     }
 }
 
+/// Whether the window's menus are exported to the desktop's menu bar.
+///
+/// `Auto` exports them where the desktop can show them: on Wayland, with a
+/// compositor that has the KDE application menu protocol. It changes
+/// nothing anywhere else, and macOS always has its menu bar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Menubar {
+    #[default]
+    #[serde(alias = "disabled")]
+    Disabled,
+    #[serde(alias = "auto")]
+    Auto,
+}
+
 #[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
 pub enum WindowsCornerPreference {
     #[serde(alias = "default")]
@@ -214,6 +228,14 @@ pub struct Window {
     pub macos_traffic_light_position_x: Option<f64>,
     #[serde(rename = "macos-traffic-light-position-y", default = "Option::default")]
     pub macos_traffic_light_position_y: Option<f64>,
+    /// Let the compositor draw only the window control buttons, over the
+    /// tab strip, instead of a title bar above the window. Wayland only,
+    /// and only on a compositor with such a title bar: the others keep
+    /// their regular decorations, as does `decorations = "Disabled"`.
+    #[serde(default = "bool::default", rename = "wayland-use-unified-titlebar")]
+    pub wayland_use_unified_titlebar: bool,
+    #[serde(default = "Menubar::default")]
+    pub menubar: Menubar,
     #[serde(rename = "initial-title", skip_serializing)]
     pub initial_title: Option<String>,
     #[serde(rename = "windows-use-undecorated-shadow", default = "Option::default")]
@@ -261,6 +283,8 @@ impl Default for Window {
             macos_use_shadow: true,
             macos_traffic_light_position_x: None,
             macos_traffic_light_position_y: None,
+            wayland_use_unified_titlebar: false,
+            menubar: Menubar::default(),
             initial_title: None,
             windows_use_undecorated_shadow: None,
             windows_use_no_redirection_bitmap: None,
