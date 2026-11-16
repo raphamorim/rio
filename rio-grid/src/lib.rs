@@ -1274,7 +1274,13 @@ pub fn build_row_bg<P: GridPalette>(
 const SHAPING_FLAG_MASK: u16 = StyleFlags::BOLD.bits() | StyleFlags::ITALIC.bits();
 
 /// 256 × 8 bucketed LRU cache — CellCacheTable.
-const RUN_BUCKET_COUNT: usize = 256;
+/// Buckets in the run shaping cache. A full screen of styled text at
+/// 300 by 100 cells breaks into around nine hundred runs, since a run
+/// ends at every font or weight change, and with 256 buckets of 8
+/// several buckets overflowed every frame and their runs were reshaped
+/// each time. 1024 buckets hold that screen with room; the buckets
+/// fill lazily so an idle terminal pays nothing for the headroom.
+const RUN_BUCKET_COUNT: usize = 1024;
 const RUN_BUCKET_SIZE: usize = 8;
 
 /// One shaped glyph. Same shape from both CoreText (macOS) and swash
@@ -1401,9 +1407,7 @@ impl GridGlyphRasterizer {
             ascent_cache: FxHashMap::default(),
             custom_glyph_ids: CustomGlyphIds::default(),
             synthesis_cache: FxHashMap::default(),
-            run_cache: (0..RUN_BUCKET_COUNT)
-                .map(|_| Vec::with_capacity(RUN_BUCKET_SIZE))
-                .collect(),
+            run_cache: (0..RUN_BUCKET_COUNT).map(|_| Vec::new()).collect(),
             run_hasher: rapidhash::fast::RapidHasher::default(),
             #[cfg(target_os = "macos")]
             run_utf16_scratch: Vec::new(),
@@ -3378,6 +3382,78 @@ fn rasterize_glyph_native(
         is_color,
         bytes: image.data,
     })
+}
+
+#[cfg(test)]
+mod run_cache_tests {
+    use super::*;
+
+    fn entry(hash: u64) -> RunCacheEntry {
+        RunCacheEntry {
+            advance: 0.0,
+            hash,
+            glyphs: Vec::new(),
+        }
+    }
+
+    fn buckets() -> Vec<Vec<RunCacheEntry>> {
+        (0..RUN_BUCKET_COUNT).map(|_| Vec::new()).collect()
+    }
+
+    /// A deterministic stand in for the run hash: a 64 bit mix of the
+    /// run index, as uniform as the real hash over the buckets.
+    fn hash_of(run: u64) -> u64 {
+        let mut x = run.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xD1B5_4A32_D192_ED03;
+        x ^= x >> 31;
+        x = x.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        x ^= x >> 29;
+        x
+    }
+
+    // A full screen of styled text at 300 by 100 cells breaks into
+    // around nine hundred runs. Every one of them must still be in the
+    // cache when the next frame asks, or the frame reshapes it.
+    #[test]
+    fn a_screen_of_nine_hundred_runs_survives_a_frame() {
+        let mut cache = buckets();
+        let runs = 900u64;
+        for run in 0..runs {
+            run_cache_put(&mut cache, entry(hash_of(run)));
+        }
+        let hits = (0..runs)
+            .filter(|&run| run_cache_get(&mut cache, hash_of(run)).is_some())
+            .count() as u64;
+        assert_eq!(hits, runs, "every run of the screen is still cached");
+    }
+
+    #[test]
+    fn a_hit_becomes_the_newest_and_a_full_bucket_drops_its_oldest() {
+        let mut cache = buckets();
+        // Hashes that share one bucket: same low bits.
+        let same_bucket = |i: u64| (i << 20) | 7;
+        for i in 0..RUN_BUCKET_SIZE as u64 {
+            run_cache_put(&mut cache, entry(same_bucket(i)));
+        }
+        // Touch the oldest so it is the newest.
+        assert!(run_cache_get(&mut cache, same_bucket(0)).is_some());
+        run_cache_put(&mut cache, entry(same_bucket(99)));
+        assert!(
+            run_cache_get(&mut cache, same_bucket(0)).is_some(),
+            "refreshed, kept"
+        );
+        assert!(
+            run_cache_get(&mut cache, same_bucket(1)).is_none(),
+            "the oldest went"
+        );
+        assert!(run_cache_get(&mut cache, same_bucket(99)).is_some());
+    }
+
+    #[test]
+    fn an_idle_cache_owns_no_entry_storage() {
+        let cache = buckets();
+        assert_eq!(cache.len(), RUN_BUCKET_COUNT);
+        assert!(cache.iter().all(|b| b.capacity() == 0));
+    }
 }
 
 #[cfg(test)]
