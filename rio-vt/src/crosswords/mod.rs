@@ -635,6 +635,14 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.full = true;
     }
 
+    /// Ask the owner of the terminal to render. For a change made
+    /// outside the PTY thread's parse path, a viewport scroll or a
+    /// selection from the UI, since no burst follows to announce it.
+    pub fn request_render(&self) {
+        self.event_proxy
+            .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
+    }
+
     #[inline]
     pub fn is_fully_damaged(&self) -> bool {
         self.damage.full
@@ -808,8 +816,7 @@ impl<U: EventListener> Crosswords<U> {
         // announce the damage; ask for the render here.
         if old_display_offset != self.grid.display_offset() {
             self.mark_fully_damaged();
-            self.event_proxy
-                .send_event(RioEvent::RenderRoute(self.route_id), self.window_id);
+            self.request_render();
             // Scrolling changes image positions on screen
             if !self.graphics.kitty_placements.is_empty() {
                 self.graphics.kitty_graphics_dirty = true;
@@ -11906,6 +11913,8 @@ mod tests {
             burst.extend_from_slice(format!("line {i}\r\n").as_bytes());
         }
         burst.extend_from_slice(b"\x1b[2J\x1b[?1049h\x1b[?1049l");
+        // As after the renderer's first frame: nothing is damaged yet.
+        cw.reset_damage();
         parser.advance(&mut cw, &burst);
         assert!(cw.is_fully_damaged());
         assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Full));

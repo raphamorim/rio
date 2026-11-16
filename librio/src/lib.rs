@@ -990,6 +990,7 @@ impl Surface {
         let pos = Pos::new(Line(viewport_line - offset), PosColumn(col));
         term.selection = Some(Selection::new(kind.to_type(), pos, side));
         term.mark_fully_damaged();
+        term.request_render();
     }
 
     pub fn selection_update(&self, viewport_line: i32, col: usize, side: Side) {
@@ -999,6 +1000,7 @@ impl Surface {
         if let Some(selection) = &mut term.selection {
             selection.update(pos, side);
             term.mark_fully_damaged();
+            term.request_render();
         }
     }
 
@@ -1006,6 +1008,7 @@ impl Surface {
         let mut term = self.terminal.lock();
         if term.selection.take().is_some() {
             term.mark_fully_damaged();
+            term.request_render();
         }
     }
 
@@ -1231,6 +1234,11 @@ impl Surface {
         let processor = guard.get_or_insert_with(Default::default);
         let mut term = self.terminal.lock();
         processor.advance(&mut *term, bytes);
+        // No PTY thread announces injected bytes; the host that
+        // injected them is told what the reader thread would tell it.
+        if term.peek_damage_event().is_some() {
+            term.request_render();
+        }
     }
 
     /// Plain-text URL under a viewport cell, with the run to underline on
@@ -1395,6 +1403,35 @@ mod tests {
         fn handles_program_status(&self) -> bool {
             true
         }
+    }
+
+    // A selection and injected output change what is shown without a
+    // PTY thread to announce it, so the surface wakes the host itself.
+    #[test]
+    fn selection_and_injected_output_wake_the_host() {
+        let delegate = Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        });
+        let engine = Engine::new(delegate.clone());
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+
+        let before = delegate.wakeups.load(Ordering::SeqCst);
+        surface.selection_begin(0, 0, SelectionKind::Simple, Side::Left);
+        assert!(delegate.wakeups.load(Ordering::SeqCst) > before);
+
+        let before = delegate.wakeups.load(Ordering::SeqCst);
+        surface.selection_update(0, 3, Side::Right);
+        assert!(delegate.wakeups.load(Ordering::SeqCst) > before);
+
+        let before = delegate.wakeups.load(Ordering::SeqCst);
+        surface.selection_clear();
+        assert!(delegate.wakeups.load(Ordering::SeqCst) > before);
+
+        let before = delegate.wakeups.load(Ordering::SeqCst);
+        surface.inject_output(b"restored\x1b[2J");
+        assert!(delegate.wakeups.load(Ordering::SeqCst) > before);
     }
 
     // The wheel means different things to different programs. A pager on
