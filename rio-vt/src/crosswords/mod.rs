@@ -1290,11 +1290,19 @@ impl<U: EventListener> Crosswords<U> {
     /// Answer the program: handed to the PTY's writer, or sent as an
     /// event for the owner of the terminal to write. While a query the
     /// owner answers is outstanding, the event path keeps the order
-    /// between the two.
+    /// between the two: the reply takes the owner's queue behind the
+    /// query, and counts as one more thing the owner has to pass back,
+    /// so the fence stays up until it has and no reply made here in
+    /// the meantime overtakes it.
     fn reply(&mut self, text: String) {
         match &self.reply_sink {
             Some(sink) if self.ui_queries_pending == 0 => sink(text),
-            _ => self
+            Some(_) => {
+                self.ui_query_sent();
+                self.event_proxy
+                    .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id)
+            }
+            None => self
                 .event_proxy
                 .send_event(RioEvent::PtyWrite(self.route_id, text), self.window_id),
         }
@@ -1308,14 +1316,15 @@ impl<U: EventListener> Crosswords<U> {
     /// behind the query as a fence, in the same write or a later one,
     /// is answered after it. The color queries are answered here
     /// whenever the palette is known so the common fence idiom never
-    /// leaves the PTY thread.
+    /// leaves the PTY's threads.
     fn ui_query_sent(&mut self) {
         self.ui_queries_pending = self.ui_queries_pending.saturating_add(1);
     }
 
-    /// The owner answered, or declined, one outstanding query; its
-    /// answer is queued for the PTY ahead of any reply made from here
-    /// on. Called by the PTY's writer thread when the answer reaches it.
+    /// The owner answered, or declined, one outstanding query, or
+    /// passed back one reply that was routed through it; what it sent
+    /// is queued for the PTY ahead of any reply made from here on.
+    /// Called by the PTY's writer thread when that reaches it.
     pub fn ui_query_answered(&mut self) {
         self.ui_queries_pending = self.ui_queries_pending.saturating_sub(1);
     }
@@ -5852,8 +5861,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // Defer to the frontend: only it has access to both the per-
         // route registry and the FontLibrary, so only it can compute
         // the System / Glossary / Both bits accurately. The frontend
-        // formats the reply and writes it back to this pane's PTY
-        // asynchronously.
+        // formats the reply and answers it like the other queries only
+        // it can answer, so the replies behind it keep their place.
+        self.ui_query_sent();
         self.event_proxy.send_event(
             RioEvent::GlyphProtocolQuery {
                 route_id: self.route_id,
@@ -11987,6 +11997,7 @@ mod tests {
                     RioEvent::ColorRequest(..) => Some("color"),
                     RioEvent::TextAreaSizeRequest(..) => Some("size"),
                     RioEvent::ClipboardLoad(..) => Some("clipboard"),
+                    RioEvent::GlyphProtocolQuery { .. } => Some("glyph"),
                     RioEvent::PtyWrite(..) => Some("reply"),
                     _ => None,
                 })
@@ -12001,20 +12012,30 @@ mod tests {
         queued.extend(sunk.lock().unwrap().drain(..));
         assert!(queued.is_empty(), "nothing overtook the color answer");
 
-        // The fence arriving in a later write is covered too: the drain
-        // does not lift the fence, the owner's answer does.
+        // The fence arriving in a later write is covered too, and the
+        // owner's answer alone does not lift the fence: the replies
+        // routed through the owner are still its to pass back, and
+        // until it has, a reply made here would overtake them.
         parser.advance(&mut cw, b"\x1b[c");
         assert_eq!(kinds(&events).len(), 3, "still through the owner");
         queued.extend(sunk.lock().unwrap().drain(..));
         assert!(queued.is_empty());
         cw.ui_query_answered();
         parser.advance(&mut cw, b"\x1b[c");
-        assert_eq!(kinds(&events).len(), 3, "direct again");
+        assert_eq!(kinds(&events).len(), 4, "the owner still holds two");
+        queued.extend(sunk.lock().unwrap().drain(..));
+        assert!(queued.is_empty(), "nothing overtook the routed replies");
+        cw.ui_query_answered();
+        cw.ui_query_answered();
+        cw.ui_query_answered();
+        parser.advance(&mut cw, b"\x1b[c");
+        assert_eq!(kinds(&events).len(), 4, "direct again");
         queued.extend(sunk.lock().unwrap().drain(..));
         assert_eq!(queued.len(), 1);
 
         // Every query the owner answers raises the fence: the text
-        // area in pixels, the graphics geometry, the clipboard.
+        // area in pixels, the graphics geometry, the clipboard. The
+        // answer and the routed DA are two things to pass back.
         for (query, kind) in [
             (&b"\x1b[14t"[..], "size"),
             (&b"\x1b[?2;1;0S"[..], "size"),
@@ -12028,7 +12049,19 @@ mod tests {
             queued.extend(sunk.lock().unwrap().drain(..));
             assert!(queued.is_empty(), "{kind} fences the DA behind it");
             cw.ui_query_answered();
+            cw.ui_query_answered();
         }
+
+        // So does the glyph query, which only the owner can answer.
+        queued.clear();
+        let before = kinds(&events).len();
+        crate::performer::handler::Handler::glyph_query(&mut cw, 0x1F600);
+        parser.advance(&mut cw, b"\x1b[c");
+        assert_eq!(kinds(&events)[before..], ["glyph", "reply"]);
+        queued.extend(sunk.lock().unwrap().drain(..));
+        assert!(queued.is_empty(), "the glyph query fences the DA behind it");
+        cw.ui_query_answered();
+        cw.ui_query_answered();
 
         // Two outstanding queries need two answers.
         queued.clear();
@@ -12038,6 +12071,7 @@ mod tests {
         parser.advance(&mut cw, b"\x1b[c");
         queued.extend(sunk.lock().unwrap().drain(..));
         assert!(queued.is_empty(), "one answer of two does not lift it");
+        cw.ui_query_answered();
         cw.ui_query_answered();
         parser.advance(&mut cw, b"\x1b[c");
         queued.extend(sunk.lock().unwrap().drain(..));
@@ -12053,6 +12087,7 @@ mod tests {
         queued.extend(sunk.lock().unwrap().drain(..));
         assert_eq!(queued.len(), 1, "the DA before the query is direct");
         assert!(queued[0].ends_with("c"));
+        cw.ui_query_answered();
         cw.ui_query_answered();
     }
 
@@ -12078,12 +12113,14 @@ mod tests {
         };
         let mut parser = crate::performer::handler::Processor::default();
 
-        // No palette: the owner answers, and the burst is fenced.
+        // No palette: the owner answers, and the burst is fenced. The
+        // owner passes back the answer and the DA routed through it.
         parser.advance(&mut cw, b"\x1b]11;?\x1b\\\x1b[c");
         assert_eq!(color_requests(&events), 1);
         let mut queued = Vec::new();
         queued.extend(sunk.lock().unwrap().drain(..));
         assert!(queued.is_empty());
+        cw.ui_query_answered();
         cw.ui_query_answered();
 
         let mut colors = Colors::default();

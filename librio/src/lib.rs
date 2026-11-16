@@ -165,8 +165,8 @@ pub trait SurfaceDelegate: MaybeSendSync + 'static {
     /// update and the clear would otherwise be lost, and with it the output
     /// that follows.
     ///
-    /// Called with the surface's terminal locked, on librio's IO thread or
-    /// from inside any surface call that changes what is shown, such as
+    /// Called with the surface's terminal locked, on librio's reader thread
+    /// or from inside any surface call that changes what is shown, such as
     /// [`Surface::inject_output`], [`Surface::resize`] or [`Surface::scroll`].
     /// Only flag or schedule work here; calling back into the surface
     /// deadlocks.
@@ -216,7 +216,7 @@ impl Default for InlineImageStore {
 impl InlineImageStore {
     /// Every write is one insert or remove, so a thread that panicked
     /// while holding the lock left the map whole: a poisoned lock is
-    /// taken all the same rather than taking the PTY thread down.
+    /// taken all the same rather than taking a PTY thread down.
     pub(crate) fn lock(
         &self,
     ) -> std::sync::MutexGuard<
@@ -280,15 +280,19 @@ impl Listener {
             RioEvent::ClipboardStore(kind, text) => {
                 self.delegate.clipboard_write(self.surface_id, kind, text);
             }
+            // A reply the terminal routed through here, behind a query
+            // only the owner answers; passed back as an answer so the
+            // terminal knows when it has every one of them.
             RioEvent::PtyWrite(_, text) => {
-                self.write_to_child(Cow::Owned(text.into_bytes()));
+                self.pass_back(Cow::Owned(text.into_bytes()));
             }
             // Not answered here. The terminal is told the query is
             // settled, so the replies behind it take the direct path.
             RioEvent::ColorRequest(..)
             | RioEvent::TextAreaSizeRequest(..)
-            | RioEvent::ClipboardLoad(..) => {
-                self.decline_query();
+            | RioEvent::ClipboardLoad(..)
+            | RioEvent::GlyphProtocolQuery { .. } => {
+                self.pass_back(Cow::Borrowed(&[]));
             }
             // Delivered under the terminal lock, from the parser, so the
             // state is current and this orders with `Surface::set_focus`,
@@ -357,10 +361,17 @@ impl Listener {
     }
 
     /// A query from the program that this embedding does not answer.
-    fn decline_query(&self) {
+    /// An answer, a decline (no bytes) or a routed reply going back to
+    /// the terminal: the PTY's writer settles one fenced item with it
+    /// on `pty` builds, the delegate gets the bytes otherwise.
+    fn pass_back(&self, bytes: Cow<'static, [u8]>) {
         #[cfg(feature = "pty")]
         if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
-            let _ = channel.send(Msg::Reply(Cow::Borrowed(&[])));
+            let _ = channel.send(Msg::Reply(bytes));
+        }
+        #[cfg(not(feature = "pty"))]
+        if !bytes.is_empty() {
+            self.delegate.output(self.surface_id, &bytes);
         }
     }
 }
