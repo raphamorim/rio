@@ -89,10 +89,12 @@ pub enum Msg {
     Input(Cow<'static, [u8]>),
 
     /// The owner's answer to a query the parser could not answer itself
-    /// (see `Crosswords::ui_query_sent`), written like `Input`. It also
-    /// tells the reader thread that the query is answered, so the
-    /// replies behind it take the direct path again. Empty when the
-    /// owner declined to answer.
+    /// (see `Crosswords::ui_query_sent`), or a reply the terminal routed
+    /// through the owner behind such a query (a `PtyWrite` event),
+    /// written like `Input`. Once it is queued the writer thread tells
+    /// the terminal one more of those is settled, so once the owner has
+    /// passed back everything the replies take the direct path again.
+    /// Empty when the owner declined to answer.
     Reply(Cow<'static, [u8]>),
 
     #[allow(dead_code)]

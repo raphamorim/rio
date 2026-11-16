@@ -17,7 +17,7 @@ use rio_vt::crosswords::pos::Column;
 use rio_vt::crosswords::square::{ContentTag, Extras, Square};
 use rio_vt::crosswords::style::Style;
 use rio_vt::crosswords::Crosswords;
-use rio_vt::event::sync::FairMutex;
+use rio_vt::event::sync::TerminalLock;
 use rio_vt::event::TerminalDamage;
 use rustc_hash::FxHashMap;
 use std::sync::Arc;
@@ -193,7 +193,7 @@ pub(crate) fn apply_graphics_updates(images: &InlineImages, queues: UpdateQueues
 }
 
 pub struct RenderState {
-    terminal: Arc<FairMutex<Crosswords<Listener>>>,
+    terminal: Arc<TerminalLock<Crosswords<Listener>>>,
     rows: Vec<Row<Square>>,
     /// Per-row resolved cell styles, index-parallel to `rows`.
     row_styles: Vec<Vec<Style>>,

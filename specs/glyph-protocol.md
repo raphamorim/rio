@@ -17,13 +17,13 @@
 ## Abstract
 
 Glyph Protocol is a terminal protocol that lets applications ship
-custom vector glyphs to the terminal at runtime — monochrome via
-OpenType `glyf`, or full-colour via OpenType `COLR` v0 (flat layered
-colour) and `COLR` v1 (paint graph with gradients, transforms, and
-composites) — without requiring the user to install a patched font
+custom vector glyphs to the terminal at runtime (monochrome via
+OpenType `glyf`, or full-colour via OpenType `COLR` v0, flat layered
+colour, and `COLR` v1, a paint graph with gradients, transforms, and
+composites) without requiring the user to install a patched font
 (Nerd Fonts, Powerline, etc.). Registrations are restricted to the
-Unicode Private Use Areas — ranges the user never types and existing
-text never contains — so the protocol cannot be used to modify the
+Unicode Private Use Areas, ranges the user never types and existing
+text never contains, so the protocol cannot be used to modify the
 appearance of real text.
 
 The protocol is transported over APC (Application Program Command)
@@ -68,7 +68,7 @@ it can render before it renders it.
 - **Zero new terminal dependencies.** Every terminal that renders
   OpenType text already links a `glyf` rasterizer; terminals that
   render Apple / Google colour emoji also already parse `COLR` +
-  `CPAL`. No new format support is required — the protocol reuses
+  `CPAL`. No new format support is required: the protocol reuses
   the tables the font stack already decodes.
 - **Resolution independent.** Glyphs are vector and scale to any
   cell size.
@@ -76,7 +76,7 @@ it can render before it renders it.
   protocol ignore the APC message. Applications detect support by
   sending a query and watching for a reply.
 - **No override of user text.** Registrations are confined to PUA
-  codepoints — ranges no user types and no pre-existing text
+  codepoints, ranges no user types and no pre-existing text
   contains. The rendered appearance of `a`, `ssh`, or any URL
   cannot be changed by any program that writes to the terminal.
   See §9.
@@ -117,7 +117,7 @@ for lists). The `status` field's shape is verb-specific: `r` and
 
 | Verb | Meaning |
 |------|---------|
-| `s`  | Advertise supported payload formats. Doubles as a protocol-detection ping — any reply confirms Glyph Protocol; a timeout means unsupported. |
+| `s`  | Advertise supported payload formats. Doubles as a protocol-detection ping: any reply confirms Glyph Protocol; a timeout means unsupported. |
 | `q`  | Query the state of a codepoint. |
 | `r`  | Register a glyph for a PUA codepoint. |
 | `c`  | Clear one slot or every slot in this session's glossary. |
@@ -140,7 +140,7 @@ Format names defined in v1.8:
 
 Order is not significant; clients MUST treat the value as a set.
 An empty `fmt=` value means the terminal recognises Glyph Protocol
-but currently advertises no payload formats — every `r` will be
+but currently advertises no payload formats, so every `r` will be
 rejected. Clients MUST ignore names they do not recognise rather
 than failing the reply, so future format names are forward-
 compatible. A terminal that advertises only `fmt=glyf` and
@@ -159,9 +159,9 @@ to the three Unicode Private Use Areas:
 |------------------------------|-------|------------|
 | `U+E000`–`U+F8FF`             | BMP   | Basic PUA. Nerd Fonts, Powerline, Font Awesome all live here. |
 | `U+F0000`–`U+FFFFD`           | 15    | Supplementary PUA-A. Nerd Fonts v3 Material icons live here. |
-| `U+100000`–`U+10FFFD`         | 16    | Supplementary PUA-B. No common convention — clean space for apps that want it. |
+| `U+100000`–`U+10FFFD`         | 16    | Supplementary PUA-B. No common convention: clean space for apps that want it. |
 
-Any other codepoint — ASCII, Latin-1, CJK, emoji, control chars —
+Any other codepoint (ASCII, Latin-1, CJK, emoji, control chars)
 is rejected by `r` and `c` with `reason=out_of_namespace`.
 
 Each terminal session holds at most **1024 simultaneous
@@ -187,7 +187,7 @@ ESC _ 25a1 ; q ; cp=<hex> ESC \
 
 Parameters:
 
-- `cp` — codepoint in hex. Any valid Unicode scalar value (not a
+- `cp`: codepoint in hex. Any valid Unicode scalar value (not a
   surrogate). May be inside or outside PUA.
 
 ### 5.2 Response
@@ -196,7 +196,7 @@ Parameters:
 ESC _ 25a1 ; q ; cp=<hex> ; status=<list> ESC \
 ```
 
-`status` is a comma-separated list of coverage names — the set of
+`status` is a comma-separated list of coverage names: the set of
 sources that can render `cp` in this session. Order is not
 significant; clients MUST treat the value as a set.
 
@@ -221,35 +221,35 @@ ESC _ 25a1 ; r ; cp=<hex> ; fmt=glyf ; reply=<0|1|2> ; upm=<int> ; aw=<int> ; lh
 
 Parameters:
 
-- `cp` — target codepoint in hex. MUST be in one of the PUA ranges
+- `cp`: target codepoint in hex. MUST be in one of the PUA ranges
   defined in §4. Otherwise the request is rejected with
   `reason=out_of_namespace`.
-- `fmt` — payload format. One of `glyf`, `colrv0`, `colrv1`.
+- `fmt`: payload format. One of `glyf`, `colrv0`, `colrv1`.
   Optional; `glyf` is the default. See §8 for each format's wire
   layout.
-- `reply` — reply-level control. Optional; default `1`.
-  - `reply=0` — the terminal MUST NOT emit any reply for this
+- `reply`: reply-level control. Optional; default `1`.
+  - `reply=0`: the terminal MUST NOT emit any reply for this
     registration (neither success nor failure). Intended for bulk
     fire-and-forget startup registrations that won't be read back.
-  - `reply=1` — the terminal emits both success and failure replies
+  - `reply=1`: the terminal emits both success and failure replies
     (the default; equivalent to omitting the parameter).
-  - `reply=2` — the terminal emits failure replies only; success
+  - `reply=2`: the terminal emits failure replies only; success
     registrations are silent. Useful for bulk registrations that
     still want to learn about the broken ones without a success
     ACK for every glyph.
   Unknown values fall back to `reply=1`.
-- `upm` — units per em, the coordinate space the outline is
+- `upm`: units per em, the coordinate space the outline is
   authored in. Optional; default `1000`.
-- `aw` — authored advance width, in upm units. The intended
+- `aw`: authored advance width, in upm units. The intended
   horizontal extent of the glyph, NOT the outline's bounding box.
   Optional; default `upm` when the extent is declared (§8.5.1).
-- `lh` — authored line height, in upm units. The intended vertical
+- `lh`: authored line height, in upm units. The intended vertical
   extent (descender-to-ascender), NOT the outline's bounding box.
   Optional; default `upm` when the extent is declared (§8.5.1).
-- `ymin` — bottom of the authored extent, in upm units: the
+- `ymin`: bottom of the authored extent, in upm units: the
   descender, so `0` or negative for most glyphs. Optional; default
   `0` when the extent is declared (§8.5.1).
-- `width` — the glyph's render span in cells. One of `1` (one
+- `width`: the glyph's render span in cells. One of `1` (one
   cell) or `2` (two cells). Optional; default `1`. Render-level
   only: the codepoint's logical cell width stays its system
   `wcwidth` (`1` for every PUA codepoint), so cursor advance,
@@ -259,17 +259,17 @@ Parameters:
   cell plus the following cell in pixels; the client MUST leave
   that following cell blank (emit a space after the codepoint) so
   the overflow lands on empty space. See §8.5.2.
-- `size` — scale policy. One of `height`, `advance`, `contain`,
+- `size`: scale policy. One of `height`, `advance`, `contain`,
   `cover`, `stretch`. Optional; default `contain`. See §8.5.
-- `align` — placement of the scaled outline within the render span,
+- `align`: placement of the scaled outline within the render span,
   as a comma-separated pair `<h>,<v>`. `<h>` is one of `start`,
   `center`, `end`; `<v>` is one of `start`, `center`, `end`,
   `baseline`. Optional; default `center,center`. See §8.5.
-- `pad` — insets from the render span edges, as comma-separated
+- `pad`: insets from the render span edges, as comma-separated
   fractions `<top>,<right>,<bottom>,<left>` (each `0.0`–`1.0`;
   top/bottom are fractions of cell height, left/right of render
   span width). Optional; default `0,0,0,0`. See §8.5.
-- payload — base64-encoded payload for the declared `fmt`.
+- payload: base64-encoded payload for the declared `fmt`.
 
 An invalid value for `upm`, `width`, `aw`, `lh`, `ymin`, `size`,
 `align`, or
@@ -294,7 +294,7 @@ ESC _ 25a1 ; r ; cp=<hex> ; status=<nonzero u8> ; reason=<code> ESC \
 
 At `reply=2`, successful registrations are silent; failures still
 emit the error reply above. At `reply=0`, neither success nor
-failure produces any output — the registration is fire-and-forget.
+failure produces any output: the registration is fire-and-forget.
 
 Defined error codes:
 
@@ -495,8 +495,8 @@ H' = H × (1 − t − b)
 
 Padding values are fractions from `0.0` to `1.0`; one outside that
 range is an invalid value (§6.1). If `l + r ≥ 1` or `t + b ≥ 1` the
-terminal MUST treat the request as if `pad=0,0,0,0` (no padding)
-— a degenerate span is not useful and suggests a client bug. The
+terminal MUST treat the request as if `pad=0,0,0,0` (no padding):
+a degenerate span is not useful and suggests a client bug. The
 effective span `W' × H'` is what `size` and `align` operate on.
 
 #### 8.5.3 Size modes
@@ -530,22 +530,22 @@ and `align` picks where it sits within the effective span.
 
 Horizontal:
 
-- `start` — the extent's left edge aligns with the span's left edge
+- `start`: the extent's left edge aligns with the span's left edge
   (`pad_left`).
-- `center` — the extent's horizontal midpoint aligns with the span's
+- `center`: the extent's horizontal midpoint aligns with the span's
   horizontal midpoint.
-- `end` — the extent's right edge aligns with the span's right edge
+- `end`: the extent's right edge aligns with the span's right edge
   (`W − pad_right`).
 
 Vertical (Y-up):
 
-- `start` — the extent's bottom (`y=ymin`) aligns with the span's
+- `start`: the extent's bottom (`y=ymin`) aligns with the span's
   bottom edge (`pad_bottom`).
-- `center` — the extent's vertical midpoint aligns with the span's
+- `center`: the extent's vertical midpoint aligns with the span's
   vertical midpoint.
-- `end` — the extent's top (`y=ymin+lh`) aligns with the span's top
+- `end`: the extent's top (`y=ymin+lh`) aligns with the span's top
   edge (`H − pad_top`).
-- `baseline` — `y=0` aligns with the terminal's text baseline within
+- `baseline`: `y=0` aligns with the terminal's text baseline within
   the cell. Preferred for character-like glyphs that must sit on the
   same baseline as surrounding text; descenders extend below the
   baseline naturally.
@@ -568,7 +568,7 @@ current cell metrics.
 #### 8.5.6 Coordinated sets (no scale groups)
 
 There is no `group` parameter. A set of glyphs that must visually
-align — spinner frames, progress-bar steps, a multi-glyph logo —
+align (spinner frames, progress-bar steps, a multi-glyph logo)
 aligns automatically when each glyph declares the same extent (`aw`,
 `lh`, `ymin`) and uses the same `size`, `align`, and `pad`, because
 placement then does not depend on any glyph's own outline.
@@ -637,7 +637,7 @@ rejected with `reason=outline_too_large`.
 OpenType `COLR` v1 table, which adds a full paint graph: linear,
 radial, and sweep gradients, affine transforms, clip boxes, and
 per-layer compositing modes. `CPAL` remains valid but is optional
-— v1 paints may carry sRGBA directly — so `cpal_len = 0` is
+(v1 paints may carry sRGBA directly), so `cpal_len = 0` is
 permitted and means "the COLR references no palette index."
 
 **Paint types.** Terminals implementing `colrv1` SHOULD support
@@ -652,7 +652,7 @@ conforming subset for low-overhead implementations is:
 
 Terminals MAY render unsupported paint nodes (sweep gradients,
 blend modes beyond `src-over`, variations) using a reasonable
-fallback — typically the paint subtree's first solid colour —
+fallback (typically the paint subtree's first solid colour)
 rather than rejecting the registration.
 
 **Foreground inheritance.** CPAL palette index `0xFFFF` and
@@ -665,8 +665,8 @@ on foreground change for any glyph whose paint graph references
 **Security.** The colour formats add no new attack surface beyond
 §9: `cp` is still PUA-only, the cell buffer is still authoritative
 for copy/selection, and registrations are still session-scoped.
-A malformed `COLR` is a rendering error, not an injection vector
-— the rendered pixels can only affect cells the client itself
+A malformed `COLR` is a rendering error, not an injection vector:
+the rendered pixels can only affect cells the client itself
 emits at a PUA codepoint.
 
 ### 8.8 Authoring
@@ -690,8 +690,8 @@ is structural:
 - Register accepts a `cp` parameter, but `cp` MUST be in one of the
   three Unicode Private Use Areas (§4). Any non-PUA codepoint is
   rejected with `reason=out_of_namespace`.
-- Users never type PUA codepoints. No pre-existing text —
-  filenames, URLs, commands, variable names, log lines — contains
+- Users never type PUA codepoints. No pre-existing text
+  (filenames, URLs, commands, variable names, log lines) contains
   them. A program that registers a glyph can only affect how PUA
   codepoints render, and PUA codepoints only appear in text the
   same application (or another one opting into the same
@@ -728,7 +728,7 @@ Other considerations:
 ## 10. Non-goals (v1)
 
 - **No non-PUA codepoints.** Registration is restricted to the
-  three PUA ranges — see §4.
+  three PUA ranges (see §4).
 - **No ligatures.** Registration applies to a single codepoint.
   Sequence-keyed substitution is out of scope; programming
   ligatures are already handled by OpenType fonts.
@@ -807,7 +807,7 @@ pen.closePath()
 
 payload = base64.b64encode(pen.glyph().compile(None)).decode("ascii")
 
-# Register at U+100000 — the first codepoint of Supplementary PUA-B.
+# Register at U+100000, the first codepoint of Supplementary PUA-B.
 # No known font covers this range, so the registration is the sole
 # source of the rendered glyph and the demo is unambiguous.
 sys.stdout.write(
@@ -850,12 +850,12 @@ care about the reply have three options, in order of preference:
 2. Use `reply=2` to keep failure replies but drop success ACKs.
    Retains debuggability (you still learn about malformed payloads)
    without the success-reply noise of a 100-glyph registration.
-3. Let the framework's input reader swallow the reply — safe only
+3. Let the framework's input reader swallow the reply, which is safe only
    while that reader is alive.
 
 The failure mode to watch for is sending `r` or `c` with `reply=1`
-AFTER the framework has torn down its input reader — typically on
-exit — at which point the reply arrives in the PTY but nobody reads
+AFTER the framework has torn down its input reader, typically on
+exit, at which point the reply arrives in the PTY but nobody reads
 it, and the shell that takes over the PTY after the app exits emits
 the queued bytes as visible text (`.25a1;c;status=0` or
 `.25a1;r;cp=…;status=0`). For exit-time cleanup, prefer skipping
@@ -874,7 +874,7 @@ the `c` altogether (registrations expire with the session anyway).
 Because the source codepoint in the font is irrelevant to the
 protocol, applications commonly pull outlines from a Nerd Font's
 basic-PUA codepoints (`U+E0A0`, `U+F07B`, …) and register them at
-Supplementary PUA-B slots (`U+100000`+) — that way the rendered glyph
+Supplementary PUA-B slots (`U+100000`+), so that the rendered glyph
 is unambiguously from the registration, not from a system font that
 happens to cover the same codepoint.
 
@@ -896,8 +896,8 @@ rather than serving a stale bitmap.
 | 2026-04-19 | v1.3    | Added `reply=0|1|2` parameter to the `r` verb so bulk registrations can suppress success ACKs (`reply=2`) or go fully fire-and-forget (`reply=0`). Default `reply=1` preserves v1.0 behaviour. |
 | 2026-04-19 | v1.4    | Raised the glossary capacity from 256 to 1024 simultaneous registrations per session, and raised the `n_glyphs` cap in `fmt=colrv0`/`colrv1` containers from 256 to 1024 outlines. Both bumps quadruple the worst-case memory footprint; the 64 KiB per-payload cap is unchanged. |
 | 2026-04-21 | v1.5    | Added `cp=auto` to the `r` verb: the terminal allocates a free PUA codepoint (SHOULD come from PUA-B) and echoes it in the success reply so the client can emit it. Added `reason=auto_unsupported` and `reason=glossary_exhausted` error codes. `cp=auto` forces a success reply regardless of `reply=0|2` because the allocated codepoint is only carried in the reply. |
-| 2026-04-23 | v1.6    | Removed `cp=auto` from the `r` verb (introduced in v1.5). Auto-allocation forced a stateful round-trip reply the client depended on to learn its codepoint, which recording tools like `asciinema` and `tee` cannot capture or replay — making `cp=auto` output impossible to reproduce from a transcript. Clients must pick their own PUA codepoint. The `auto_unsupported` and `glossary_exhausted` error codes are withdrawn. |
-| 2026-04-23 | v1.7    | Added a sizing and placement model to the `r` verb: `aw` / `lh` (authored extent in upm units), `width` (Unicode/wcwidth width, `1` or `2`, authoritative), `size` (`height`/`advance`/`contain`/`cover`/`stretch`), `align` (`<h>,<v>` positioning after scale, with `v=baseline` for character-like glyphs), and `pad` (fractional insets from the render span). Pinned the coordinate convention: Y-up, `y=0` at baseline, `lh` measured descender-to-ascender (OpenType). Scale groups are intentionally omitted — coordinated sets align via matching parameters and outline geometry. |
+| 2026-04-23 | v1.6    | Removed `cp=auto` from the `r` verb (introduced in v1.5). Auto-allocation forced a stateful round-trip reply the client depended on to learn its codepoint, which recording tools like `asciinema` and `tee` cannot capture or replay, making `cp=auto` output impossible to reproduce from a transcript. Clients must pick their own PUA codepoint. The `auto_unsupported` and `glossary_exhausted` error codes are withdrawn. |
+| 2026-04-23 | v1.7    | Added a sizing and placement model to the `r` verb: `aw` / `lh` (authored extent in upm units), `width` (Unicode/wcwidth width, `1` or `2`, authoritative), `size` (`height`/`advance`/`contain`/`cover`/`stretch`), `align` (`<h>,<v>` positioning after scale, with `v=baseline` for character-like glyphs), and `pad` (fractional insets from the render span). Pinned the coordinate convention: Y-up, `y=0` at baseline, `lh` measured descender-to-ascender (OpenType). Scale groups are intentionally omitted: coordinated sets align via matching parameters and outline geometry. |
 | 2026-05-03 | v1.8    | Replaced the `s` reply's `u8` bitfield with a comma-separated list of format names (e.g. `fmt=glyf,colrv0,colrv1`). Names extend without bit-collision worries and stay readable in transcripts; an empty `fmt=` means the terminal advertises no payload formats. Unknown names MUST be ignored by clients, so future formats are forward-compatible. |
 | 2026-05-03 | v1.9    | Replaced the `q` reply's `u8` two-bit `status` field with a comma-separated list of coverage names: `status=system`, `status=glossary`, `status=system,glossary`, or empty for "free". Same motivation as v1.8 for the `s` reply. The `r` and `c` replies still use `status=<u8>` for success/failure since that's a closed boolean, not an extensible set. |
 | 2026-08-17 | v1.10   | Added a decoded-size budget to §8.2: 64 KiB of decoded outline data (12 bytes per point, i.e. 5,461 points), enforced per outline and per registration before point storage is allocated; violations reject with the new `reason=outline_too_large`. Closes a decode-amplification hole: repeat-compressed flags and omitted deltas let a 64 KiB wire payload expand to ~768 KiB per monochrome slot (~768 MiB per session at 1024 slots), and a colour container amplifies further via its up-to-1024 carried outlines. Requested by Mitchell Hashimoto, who hit the expansion while implementing the protocol in Ghostty; the budget follows his survey of Apple Symbols, Noto, and Nerd Fonts, where the largest real glyph decodes to ~40 KiB. |
