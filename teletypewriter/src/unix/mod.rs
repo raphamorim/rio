@@ -239,18 +239,13 @@ impl ProcessReadWrite for Pty {
         interest: corcovado::Ready,
         poll_opts: corcovado::PollOpt,
     ) -> io::Result<()> {
+        // Only the PTY's interest changes; the signal registration is
+        // the same as at `register` and stays as it is.
         poll.reregister(
             &EventedFd(&self.file.as_raw_fd()),
             self.token,
             interest,
             poll_opts,
-        )?;
-
-        poll.reregister(
-            &self.signals,
-            self.signals_token,
-            corcovado::Ready::readable(),
-            corcovado::PollOpt::level(),
         )
     }
 

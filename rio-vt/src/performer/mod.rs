@@ -62,6 +62,23 @@ where
         .expect("thread spawn works")
 }
 
+/// Ask the scheduler to treat the calling thread as serving the user:
+/// on macOS a thread without a QoS class may be scheduled on the
+/// efficiency cores, which throttles the read and parse loop behind
+/// everything on screen. Elsewhere this does nothing.
+#[cfg(feature = "pty")]
+pub fn raise_io_thread_priority() {
+    #[cfg(target_os = "macos")]
+    // SAFETY: sets a scheduling attribute of the calling thread only;
+    // no memory is touched and the call has no preconditions.
+    unsafe {
+        libc::pthread_set_qos_class_self_np(
+            libc::qos_class_t::QOS_CLASS_USER_INITIATED,
+            0,
+        );
+    }
+}
+
 #[cfg(feature = "pty")]
 const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes per read(2). Draining the whole tty queue in one giant
@@ -400,6 +417,7 @@ where
 
     pub fn spawn(mut self) -> JoinHandle<(Self, State)> {
         spawn_named("PTY reader", move || {
+            raise_io_thread_priority();
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
             let reason = self.run(&mut state, &mut buf);
@@ -473,6 +491,18 @@ where
             // Handle channel events, if there are any.
             if !self.drain_recv_channel(state) {
                 return Ok(ExitReason::Shutdown);
+            }
+
+            // Input is written on the wakeup that delivered it. The PTY
+            // is nearly always writable, so waiting for a writable
+            // event cost a re-registration, a second poll round and a
+            // second wakeup per keystroke. Whatever does not fit stays
+            // queued, the writable interest below picks it up, and an
+            // error surfaces through that path as before.
+            if state.needs_write() {
+                if let Err(err) = self.pty_write(state) {
+                    tracing::debug!("PTY write deferred to the writable event: {err}");
+                }
             }
 
             for event in events.iter() {
