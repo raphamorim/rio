@@ -552,6 +552,136 @@ fn a_parser_reply_is_written_by_the_reader_thread() {
     );
 }
 
+/// A burst of `chunks` reads piles up while another thread holds the
+/// terminal; a waiter appears once the pile is complete and the holder
+/// lets go. Returns what the waiter saw in the first cell, how long it
+/// waited, and the machine after the read for the final state. Every
+/// chunk homes the cursor and writes its ordinal, padded with
+/// attribute resets, so the first cell names the last parsed chunk.
+fn waiter_against_a_pile(chunks: u8) -> (char, Duration, String) {
+    let mut payload = Vec::new();
+    for n in 1..=chunks {
+        payload.extend_from_slice(b"\x1b[H");
+        payload.push(b'0' + n);
+        while payload.len() < READ_CHUNK * n as usize {
+            payload.extend_from_slice(b"\x1b[0m");
+        }
+    }
+    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        VoidListener,
+        WindowId::from(0),
+        0,
+        0,
+    )));
+
+    // The holder keeps the terminal busy, unfairly like a renderer that
+    // already has it, until told to let go. It is released by the read
+    // hook below, so it must not start before the machine, whose
+    // constructor takes the terminal lock, is built.
+    let (release_tx, release) = mpsc::channel::<()>();
+
+    let waiter_terminal = Arc::clone(&terminal);
+    let (saw_tx, saw) = mpsc::channel();
+    let before_read = move |read: usize| {
+        if read != chunks as usize + 1 {
+            return;
+        }
+        // The pile is complete. A thread now waits for the terminal,
+        // fairly like a renderer asking for its frame, and the holder
+        // lets go: the reader parses the pile with a waiter present.
+        let terminal = Arc::clone(&waiter_terminal);
+        let saw_tx = saw_tx.clone();
+        std::thread::spawn(move || {
+            let asked = std::time::Instant::now();
+            let guard = terminal.lock();
+            saw_tx
+                .send((guard.grid[Line(0)][Column(0)].c(), asked.elapsed()))
+                .unwrap();
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !waiter_terminal.has_waiters() {
+            assert!(std::time::Instant::now() < deadline, "no waiter appeared");
+            std::thread::yield_now();
+        }
+        release_tx.send(()).unwrap();
+    };
+    let mut machine = Machine::new(
+        Arc::clone(&terminal),
+        TestPty {
+            bytes: io::Cursor::new(payload),
+            ending: None,
+            exhausted: None,
+            feed: None,
+            idle: None,
+            before_read: Some(Box::new(before_read)),
+            reads: 0,
+            writer: RecordingWriter::default(),
+            child: None,
+            registration_error: false,
+            read_event: false,
+            shutdown_calls: 0,
+            deregister_calls: 0,
+            raw_error: None,
+        },
+        VoidListener,
+        WindowId::from(0),
+        0,
+    )
+    .unwrap();
+    let mut state = State::default();
+    // Room for the pile and one more read: a full buffer would force
+    // the lock before the hook that releases the holder runs.
+    let mut buf = vec![0; READ_BUFFER_SIZE + READ_CHUNK];
+
+    let (held_tx, held) = mpsc::channel::<()>();
+    let holder_terminal = Arc::clone(&terminal);
+    let holder = std::thread::spawn(move || {
+        let guard = holder_terminal.lock_unfair();
+        held_tx.send(()).unwrap();
+        release.recv().unwrap();
+        drop(guard);
+    });
+    held.recv_timeout(Duration::from_secs(5)).unwrap();
+
+    let outcome = machine.pty_read(&mut state, &mut buf).unwrap();
+    assert_eq!(outcome, ReadOutcome::Closed, "the whole pile was read");
+    holder.join().unwrap();
+    let (seen, waited) = saw.recv_timeout(Duration::from_secs(5)).unwrap();
+    (seen, waited, first_line(&machine, 1))
+}
+
+// Bytes that piled up while another thread held the terminal are
+// parsed a chunk at a time once it is free: a thread waiting for the
+// terminal meanwhile gets it between two chunks, not after the whole
+// pile, and the rest of the pile is parsed afterwards.
+#[test]
+fn a_waiting_thread_gets_the_terminal_between_chunks_of_a_pile() {
+    let (seen, _, first_line) = waiter_against_a_pile(4);
+    assert_eq!(seen, '1', "the waiter got the terminal after one chunk");
+    assert_eq!(first_line, "4", "the rest of the pile followed");
+}
+
+// How long a renderer waits for a 1 MiB pile. Run with
+// `cargo test -p rio-vt -- --ignored --nocapture pile_wait` to print it.
+#[test]
+#[ignore]
+fn pile_wait_latency() {
+    let mut waits = Vec::new();
+    for _ in 0..20 {
+        let (_, waited, _) = waiter_against_a_pile(16);
+        waits.push(waited);
+    }
+    waits.sort();
+    println!(
+        "1 MiB pile, waiter wait: median {:?}, min {:?}, max {:?}",
+        waits[waits.len() / 2],
+        waits[0],
+        waits[waits.len() - 1]
+    );
+}
+
 // A thread that asks for the terminal mid burst gets it after the
 // chunk being parsed, not after the whole burst, and the remaining
 // chunks are parsed on the next wakeup.

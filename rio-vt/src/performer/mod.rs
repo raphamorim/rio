@@ -291,8 +291,8 @@ where
         let mut result = Ok(ReadOutcome::Budget);
 
         // Reserve the next terminal lock for PTY reading.
-        let terminal_lease = self.terminal.lease();
-        let mut terminal = None;
+        let mut terminal_lease = self.terminal.lease();
+        let mut terminal: Option<parking_lot::MutexGuard<'_, Crosswords<U>>> = None;
         let mut held_before = None;
         // Replies are written below unless bytes were already waiting
         // on the writable event; then they wait with them.
@@ -325,22 +325,35 @@ where
             }
 
             // Attempt to lock the terminal.
-            let terminal = match &mut terminal {
-                Some(terminal) => terminal,
-                None => terminal.insert(match self.terminal.try_lock_unfair() {
+            if terminal.is_none() {
+                terminal = Some(match self.terminal.try_lock_unfair() {
                     // Force block if we are at the buffer size limit.
                     None if stopped || unprocessed == buf.len() => {
                         self.terminal.lock_unfair()
                     }
                     None => continue,
                     Some(terminal) => terminal,
-                }),
-            };
+                });
+            }
 
-            held_before.get_or_insert(terminal.synchronized_output());
-
-            // Parse the incoming bytes.
-            state.parser.advance(&mut **terminal, &buf[..unprocessed]);
+            // Parse the incoming bytes. Bytes that piled up while the
+            // terminal was busy are parsed a chunk at a time, and a
+            // thread that starts waiting meanwhile gets the terminal
+            // between two chunks, as it would between two reads.
+            let mut parsed = 0;
+            while parsed < unprocessed {
+                let end = (parsed + READ_CHUNK).min(unprocessed);
+                if parsed > 0 && self.terminal.has_waiters() {
+                    drop(terminal.take());
+                    parking_lot::MutexGuard::unlock_fair(terminal_lease);
+                    terminal_lease = self.terminal.lease();
+                    terminal = Some(self.terminal.lock_unfair());
+                }
+                let guard = terminal.as_mut().expect("locked above");
+                held_before.get_or_insert(guard.synchronized_output());
+                state.parser.advance(&mut **guard, &buf[parsed..end]);
+                parsed = end;
+            }
 
             processed += unprocessed;
             unprocessed = 0;
