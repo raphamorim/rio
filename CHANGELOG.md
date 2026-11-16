@@ -18,6 +18,10 @@
 
 - **librio: when a wakeup repeats.** `SurfaceDelegate::wakeup` and `wakeup_cb` now document that a wakeup may not be repeated until the next `RenderState::update`, so a host that keeps its own "needs render" flag must clear it before `update`, not after ([#2053](https://github.com/raphamorim/rio/pull/2053), with [@lu-zero](https://github.com/lu-zero)). Selection changes and `inject_output` ask for a render themselves, so an embedder repaints without waiting for the next output ([#2072](https://github.com/raphamorim/rio/pull/2072)).
 
+- **Notifications show their text as written.** On Windows, text containing `&` or `<` now appears. The title and body of a toast went into its XML as they were, so a notification such as `a && b` failed to load and nothing appeared, and text from terminal output (OSC 9, OSC 777, a finished command) could add elements to the toast. Both are now escaped, and control characters that XML forbids are dropped. On Linux and BSD the body is escaped when the notification server reads it as markup (the `body-markup` capability), so `<b>` or `<a href>` from terminal output is shown as text instead of being interpreted ([#2044](https://github.com/raphamorim/rio/pull/2044)).
+
+- **rio-window: a `notification` module replaces the `rio-notifier` crate.** `rio_window::notification::Notification` is a builder (`new`, `with_body`, `with_app_name`, `with_icon`) whose `show()` returns at once and posts through `UNUserNotificationCenter` on macOS, `org.freedesktop.Notifications` on Linux and BSD, and a toast on Windows; `request_permission()` asks for the macOS permission prompt. The app name and icon are set by the caller rather than fixed to Rio. `rio-notifier` is removed from the workspace and gets no further releases ([#2044](https://github.com/raphamorim/rio/pull/2044)).
+
 - Internals: the split layout and the context manager run without a GPU context, so the close paths, the font-size reflow and the divider drag are covered by tests ([#2057](https://github.com/raphamorim/rio/pull/2057), [#2059](https://github.com/raphamorim/rio/pull/2059)).
 
 ## 0.5.32 (2026-11-15)

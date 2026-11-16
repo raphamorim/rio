@@ -22,6 +22,7 @@ use rio_window::event::{
 use rio_window::event_loop::ActiveEventLoop;
 use rio_window::event_loop::ControlFlow;
 use rio_window::event_loop::{DeviceEvents, EventLoop};
+use rio_window::notification::Notification;
 #[cfg(target_os = "macos")]
 use rio_window::platform::macos::ActiveEventLoopExtMacOS;
 #[cfg(target_os = "macos")]
@@ -113,7 +114,7 @@ impl Application<'_> {
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         event_loop.set_confirm_before_quit(config.confirm_before_quit);
 
-        rio_notifier::request_authorization();
+        rio_window::notification::request_permission();
 
         Application {
             title_tracks_size: title_tracks_size(&config),
@@ -189,7 +190,12 @@ impl Application<'_> {
     }
 
     fn handle_desktop_notification(&self, title: &str, body: &str) {
-        rio_notifier::send_notification(title, body);
+        let title = if title.is_empty() { "Rio" } else { title };
+        Notification::new(title)
+            .with_body(body)
+            .with_app_name("Rio")
+            .with_icon("rio")
+            .show();
     }
 
     /// BEL from `route_id`: the audio bell, and the tab indicator when
