@@ -22,7 +22,7 @@ mod tests;
 #[cfg(feature = "pty")]
 use crate::crosswords::Crosswords;
 #[cfg(feature = "pty")]
-use crate::event::sync::FairMutex;
+use crate::event::sync::TerminalLock;
 #[cfg(feature = "pty")]
 use crate::event::RioEvent;
 #[cfg(feature = "pty")]
@@ -155,7 +155,7 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     receiver: PeekableReceiver<Msg>,
     pty: T,
     poll: corcovado::Poll,
-    terminal: Arc<FairMutex<Crosswords<U>>>,
+    terminal: Arc<TerminalLock<Crosswords<U>>>,
     event_proxy: U,
     window_id: WindowId,
     route_id: usize,
@@ -241,7 +241,7 @@ where
     U: EventListener + Send + 'static,
 {
     pub fn new(
-        terminal: Arc<FairMutex<Crosswords<U>>>,
+        terminal: Arc<TerminalLock<Crosswords<U>>>,
         pty: T,
         event_proxy: U,
         window_id: WindowId,
@@ -290,8 +290,6 @@ where
         let mut processed = 0;
         let mut result = Ok(ReadOutcome::Budget);
 
-        // Reserve the next terminal lock for PTY reading.
-        let mut terminal_lease = self.terminal.lease();
         let mut terminal: Option<parking_lot::MutexGuard<'_, Crosswords<U>>> = None;
         let mut held_before = None;
         // Replies are written below unless bytes were already waiting
@@ -326,10 +324,10 @@ where
 
             // Attempt to lock the terminal.
             if terminal.is_none() {
-                terminal = Some(match self.terminal.try_lock_unfair() {
+                terminal = Some(match self.terminal.try_lock_reader() {
                     // Force block if we are at the buffer size limit.
                     None if stopped || unprocessed == buf.len() => {
-                        self.terminal.lock_unfair()
+                        self.terminal.lock_reader()
                     }
                     None => continue,
                     Some(terminal) => terminal,
@@ -338,30 +336,15 @@ where
 
             // Parse the incoming bytes. Bytes that piled up while the
             // terminal was busy are parsed a chunk at a time, and a
-            // thread that starts waiting meanwhile gets the terminal
-            // between two chunks, as it would between two reads.
+            // thread that waits meanwhile gets the terminal between two
+            // chunks, as it would between two reads.
             let mut parsed = 0;
             while parsed < unprocessed {
                 let end = (parsed + READ_CHUNK).min(unprocessed);
-                if parsed > 0 && self.terminal.has_waiters() {
-                    // As at the end of a burst: the replies so far leave
-                    // with this thread, so another drainer of the
-                    // terminal cannot take them out of order, and the
-                    // renderer hears of the damage so far in case the
-                    // waiter is someone else.
-                    let mut guard = terminal.take().expect("locked above");
-                    guard.drain_pty_replies(|reply| {
-                        state.write_list.push_back(Cow::Owned(reply.into_bytes()))
-                    });
-                    if !guard.synchronized_output() && guard.peek_damage_event().is_some()
-                    {
-                        self.notify_damage(&mut guard);
-                    }
-                    drop(guard);
-                    parking_lot::MutexGuard::unlock_fair(terminal_lease);
-                    self.terminal.let_waiters_in();
-                    terminal_lease = self.terminal.lease();
-                    terminal = Some(self.terminal.lock_unfair());
+                if parsed > 0 && self.terminal.has_demand() {
+                    let guard = terminal.take().expect("locked above");
+                    self.hand_over(state, guard);
+                    terminal = Some(self.terminal.lock_reader());
                 }
                 let guard = terminal.as_mut().expect("locked above");
                 held_before.get_or_insert(guard.synchronized_output());
@@ -372,13 +355,12 @@ where
             processed += unprocessed;
             unprocessed = 0;
 
-            // Assure we're not blocking the terminal too long unnecessarily.
             // A thread waiting for the terminal, the renderer for its
             // frame or the UI thread for input, gets it after this chunk
             // rather than after the whole burst; the PTY is level
             // triggered, so the rest of the burst wakes this loop again
             // at once.
-            if stopped || processed >= MAX_LOCKED_READ || self.terminal.has_waiters() {
+            if stopped || processed >= MAX_LOCKED_READ || self.terminal.has_demand() {
                 break;
             }
         }
@@ -408,16 +390,37 @@ where
         // The replies go out as soon as the lock is released. A PTY that
         // cannot take them now leaves them for the writable event.
         drop(terminal);
-        // Handed on to a parked waiter rather than racing it; a waiter
-        // still spinning may win the lease back one more chunk later.
-        parking_lot::MutexGuard::unlock_fair(terminal_lease);
         if !had_pending && state.needs_write() {
             if let Err(err) = self.pty_write(state) {
                 tracing::debug!("PTY reply deferred to the writable event: {err}");
             }
         }
+        // Whoever waited for the terminal takes it before this thread
+        // can come back for the rest of the burst.
+        self.terminal.yield_to_demand();
 
         result
+    }
+
+    /// Let go of the terminal in the middle of a burst for a thread
+    /// that waits for it, and do not take it back until that thread
+    /// has had it. As at the end of a burst, the replies so far leave
+    /// with this thread, so another drainer of the terminal cannot take
+    /// them out of order, and the renderer hears of the damage so far
+    /// in case the waiter is someone else.
+    fn hand_over(
+        &self,
+        state: &mut State,
+        mut guard: parking_lot::MutexGuard<'_, Crosswords<U>>,
+    ) {
+        guard.drain_pty_replies(|reply| {
+            state.write_list.push_back(Cow::Owned(reply.into_bytes()))
+        });
+        if !guard.synchronized_output() && guard.peek_damage_event().is_some() {
+            self.notify_damage(&mut guard);
+        }
+        drop(guard);
+        self.terminal.yield_to_demand();
     }
 
     /// Drain the channel.

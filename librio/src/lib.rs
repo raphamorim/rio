@@ -25,7 +25,7 @@ pub use rio_vt::ansi::CursorShape;
 pub use rio_vt::crosswords::pos::Side;
 use rio_vt::crosswords::pos::{Column as PosColumn, Line, Pos};
 use rio_vt::crosswords::{Crosswords, Mode};
-use rio_vt::event::sync::FairMutex;
+use rio_vt::event::sync::TerminalLock;
 #[cfg(feature = "pty")]
 use rio_vt::event::Msg;
 #[cfg(feature = "pty")]
@@ -471,7 +471,7 @@ fn trailing_url_punctuation(text: &str) -> usize {
 pub struct Surface {
     id: SurfaceId,
     alt_is_meta: std::sync::atomic::AtomicBool,
-    terminal: Arc<FairMutex<Crosswords<Listener>>>,
+    terminal: Arc<TerminalLock<Crosswords<Listener>>>,
     /// Compiled URL detector, built on first hover. Hit-testing runs per
     /// pointer event, so the four lazy DFAs must not be rebuilt each time.
     url_regex: std::sync::Mutex<Option<rio_vt::crosswords::search::RegexSearch>>,
@@ -580,7 +580,7 @@ impl Surface {
         // by design; Arc stays because the pty build shares it with the IO
         // thread and the API is one type on every target.
         #[allow(clippy::arc_with_non_send_sync)]
-        let terminal = Arc::new(FairMutex::new(terminal));
+        let terminal = Arc::new(TerminalLock::new(terminal));
 
         #[cfg(not(feature = "pty"))]
         {
@@ -1365,7 +1365,7 @@ impl Surface {
         term.bounds_to_string(start, end)
     }
 
-    pub(crate) fn terminal(&self) -> Arc<FairMutex<Crosswords<Listener>>> {
+    pub(crate) fn terminal(&self) -> Arc<TerminalLock<Crosswords<Listener>>> {
         self.terminal.clone()
     }
 

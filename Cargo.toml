@@ -50,6 +50,7 @@ parking_lot = { version = "0.12.5", features = [
     "nightly",
     "hardware-lock-elision",
 ] }
+parking_lot_core = "0.9.12"
 rustc-hash = "2.1.3"
 smallvec = { version = "1.15.2", default-features = false }
 simdutf = "0.7.0"

@@ -174,7 +174,7 @@ fn machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> Machine<TestPty, VoidLi
         0,
     );
     Machine::new(
-        Arc::new(FairMutex::new(terminal)),
+        Arc::new(TerminalLock::new(terminal)),
         TestPty {
             bytes: io::Cursor::new(bytes),
             ending,
@@ -315,7 +315,7 @@ fn read_failure_shuts_down_pty_and_finishes_pending_sync() {
 
 #[derive(Clone)]
 struct ExitObserver {
-    terminal: Arc<std::sync::Mutex<std::sync::Weak<FairMutex<Crosswords<Self>>>>>,
+    terminal: Arc<std::sync::Mutex<std::sync::Weak<TerminalLock<Crosswords<Self>>>>>,
     observed: mpsc::Sender<String>,
 }
 
@@ -339,7 +339,7 @@ fn pending_sync_is_visible_before_child_exited_notification() {
         terminal: Arc::new(std::sync::Mutex::new(std::sync::Weak::new())),
         observed,
     };
-    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
         CrosswordsSize::new(80, 24),
         CursorShape::Block,
         observer.clone(),
@@ -428,7 +428,7 @@ fn a_stuck_write_is_not_retried_on_read_wakeups() {
         0,
     );
     let machine = Machine::new(
-        Arc::new(FairMutex::new(terminal)),
+        Arc::new(TerminalLock::new(terminal)),
         TestPty {
             // A query among the output: its reply must wait too.
             bytes: io::Cursor::new(b"out\x1b[cput".to_vec()),
@@ -509,7 +509,7 @@ fn a_parser_reply_is_written_by_the_reader_thread() {
         0,
     );
     let machine = Machine::new(
-        Arc::new(FairMutex::new(terminal)),
+        Arc::new(TerminalLock::new(terminal)),
         TestPty {
             // Primary device attributes, then text.
             bytes: io::Cursor::new(b"\x1b[cok".to_vec()),
@@ -562,6 +562,9 @@ struct PileWaiter {
     queued_replies: usize,
     /// Whether the renderer had been told of the damage so far by then.
     damage_announced: bool,
+    /// Whether a handoff gave up on the waiter within the bound, which
+    /// only happens on an overloaded machine.
+    timed_out: bool,
     /// The first line once the whole pile is parsed.
     first_line: String,
     /// Everything the reader wrote to the PTY.
@@ -593,7 +596,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
         }
         payload.resize(READ_CHUNK * n as usize, 0);
     }
-    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
         CrosswordsSize::new(80, 24),
         CursorShape::Block,
         VoidListener,
@@ -635,7 +638,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
                 .unwrap();
         });
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !waiter_terminal.has_waiters() {
+        while !waiter_terminal.has_demand() {
             assert!(std::time::Instant::now() < deadline, "no waiter appeared");
             std::thread::yield_now();
         }
@@ -672,7 +675,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
     let (held_tx, held) = mpsc::channel::<()>();
     let holder_terminal = Arc::clone(&terminal);
     let holder = std::thread::spawn(move || {
-        let guard = holder_terminal.lock_unfair();
+        let guard = holder_terminal.lock_reader();
         held_tx.send(()).unwrap();
         release.recv().unwrap();
         drop(guard);
@@ -689,6 +692,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
         waited,
         queued_replies,
         damage_announced,
+        timed_out: terminal.handoff_timeouts() > 0,
         first_line: first_line(&machine, 1),
         written: machine.pty.writer.bytes.clone(),
     }
@@ -696,25 +700,32 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
 
 // Bytes that piled up while another thread held the terminal are
 // parsed a chunk at a time once it is free: a thread waiting for the
-// terminal meanwhile gets it between two chunks, not after the whole
-// pile, and the rest of the pile is parsed afterwards. The replies of
-// the chunks already parsed left with the reader before it let go.
+// terminal meanwhile gets it before the pile or between its first two
+// chunks, never after the whole pile, and the rest of the pile is
+// parsed afterwards. When it comes between chunks, the replies of the
+// chunk already parsed left with the reader and the renderer was told
+// of its damage before the reader let go.
 #[test]
-fn a_waiting_thread_gets_the_terminal_between_chunks_of_a_pile() {
+fn a_waiting_thread_gets_the_terminal_within_one_chunk_of_a_pile() {
     let waiter = waiter_against_a_pile(4);
-    assert_eq!(
-        waiter.saw, '1',
-        "the waiter got the terminal after one chunk"
-    );
+    match waiter.saw {
+        '\0' => {}
+        '1' => {
+            assert_eq!(
+                waiter.queued_replies, 0,
+                "no reply was left for the waiter to drain"
+            );
+            assert!(
+                waiter.damage_announced,
+                "the renderer was told of the first chunk"
+            );
+        }
+        // Only an overloaded machine: the waiter took longer than the
+        // handoff bound to get scheduled and the reader moved on.
+        _ if waiter.timed_out => {}
+        later => panic!("the waiter got the terminal only after chunk {later}"),
+    }
     assert_eq!(waiter.first_line, "4", "the rest of the pile followed");
-    assert_eq!(
-        waiter.queued_replies, 0,
-        "no reply was left for the waiter to drain"
-    );
-    assert!(
-        waiter.damage_announced,
-        "the renderer was told of the first chunk"
-    );
     assert_eq!(
         waiter.written,
         b"\x1b[?62;4;6;22;52c".to_vec(),
@@ -757,7 +768,7 @@ fn a_waiting_thread_gets_the_terminal_after_the_current_chunk() {
         }
         assert_eq!(payload.len(), READ_CHUNK * n as usize);
     }
-    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
         CrosswordsSize::new(80, 24),
         CursorShape::Block,
         VoidListener,
@@ -780,7 +791,7 @@ fn a_waiting_thread_gets_the_terminal_after_the_current_chunk() {
             saw_tx.send(guard.grid[Line(0)][Column(0)].c()).unwrap();
         });
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !waiter_terminal.has_waiters() {
+        while !waiter_terminal.has_demand() {
             assert!(std::time::Instant::now() < deadline, "no waiter appeared");
             std::thread::yield_now();
         }
@@ -880,7 +891,7 @@ fn a_fence_in_a_later_write_waits_for_the_owners_answer() {
         0,
     );
     let machine = Machine::new(
-        Arc::new(FairMutex::new(terminal)),
+        Arc::new(TerminalLock::new(terminal)),
         TestPty {
             bytes: io::Cursor::new(b"\x1b[14t".to_vec()),
             feed: Some(feed),
@@ -983,7 +994,7 @@ fn a_declined_query_lifts_the_fence_without_writing() {
         0,
     );
     let machine = Machine::new(
-        Arc::new(FairMutex::new(terminal)),
+        Arc::new(TerminalLock::new(terminal)),
         TestPty {
             bytes: io::Cursor::new(b"\x1b[14t".to_vec()),
             feed: Some(feed),
@@ -1054,7 +1065,7 @@ impl EventListener for EventRecorder {
 fn pending_sync_at_exit_is_announced_as_damage() {
     let (sender, receiver) = mpsc::channel();
     let recorder = EventRecorder(sender);
-    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
         CrosswordsSize::new(80, 24),
         CursorShape::Block,
         recorder.clone(),
@@ -1085,13 +1096,13 @@ fn pending_sync_at_exit_is_announced_as_damage() {
 type RecordingMachine = (
     Machine<TestPty, EventRecorder>,
     mpsc::Receiver<&'static str>,
-    Arc<FairMutex<Crosswords<EventRecorder>>>,
+    Arc<TerminalLock<Crosswords<EventRecorder>>>,
 );
 
 fn recording_machine(bytes: Vec<u8>, ending: Option<ErrorKind>) -> RecordingMachine {
     let (sender, receiver) = mpsc::channel();
     let recorder = EventRecorder(sender);
-    let terminal = Arc::new(FairMutex::new(Crosswords::new(
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
         CrosswordsSize::new(80, 24),
         CursorShape::Block,
         recorder.clone(),

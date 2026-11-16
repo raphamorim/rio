@@ -21,6 +21,7 @@ rustc-hash = { workspace = true }
 regex = { workspace = true }
 image_rs = { workspace = true, optional = true }
 parking_lot = { workspace = true }
+parking_lot_core = { workspace = true }
 serde = { workspace = true }
 rio-graphics = { workspace = true }
 rio-grapheme-width = { workspace = true }
