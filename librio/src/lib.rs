@@ -291,7 +291,8 @@ impl Listener {
             RioEvent::ColorRequest(..)
             | RioEvent::TextAreaSizeRequest(..)
             | RioEvent::ClipboardLoad(..)
-            | RioEvent::GlyphProtocolQuery { .. } => {
+            | RioEvent::GlyphProtocolQuery { .. }
+            | RioEvent::GlyphProtocolGraphemeQuery { .. } => {
                 self.pass_back(Cow::Borrowed(&[]));
             }
             // Delivered under the terminal lock, from the parser, so the

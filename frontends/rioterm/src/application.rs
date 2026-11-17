@@ -856,7 +856,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .context_manager
                         .get_by_route_id(route_id)
                     {
-                        item.val.messenger.send_bytes(resp.into_bytes());
+                        item.context_mut().messenger.send_reply(resp.into_bytes());
                     }
                 }
             }

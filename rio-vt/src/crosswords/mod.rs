@@ -729,7 +729,9 @@ impl<U: EventListener> Crosswords<U> {
     /// `cap=grapheme` and `q;grapheme=` is forwarded to the listener
     /// as [`RioEvent::GlyphProtocolGraphemeQuery`]. The listener MUST
     /// answer every forwarded query, since clients pipeline them and
-    /// wait for replies in order.
+    /// wait for replies in order, and pass the answer back like the
+    /// other queries it answers, so the replies behind it keep their
+    /// place.
     pub fn set_glyph_grapheme_query(&mut self, enabled: bool) {
         self.glyph_grapheme_query = enabled;
     }
@@ -5956,6 +5958,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // cells is never drawn as one unit however the font shapes it.
         let one_cell =
             grapheme_fits_one_cell(&cps, self.mode.contains(Mode::GRAPHEME_CLUSTER));
+        // The font half only the frontend has, so it is answered like
+        // `glyph_query` and fences the replies behind it.
+        self.ui_query_sent();
         self.event_proxy.send_event(
             RioEvent::GlyphProtocolGraphemeQuery {
                 route_id: self.route_id,
@@ -12313,6 +12318,7 @@ mod tests {
                     RioEvent::TextAreaSizeRequest(..) => Some("size"),
                     RioEvent::ClipboardLoad(..) => Some("clipboard"),
                     RioEvent::GlyphProtocolQuery { .. } => Some("glyph"),
+                    RioEvent::GlyphProtocolGraphemeQuery { .. } => Some("grapheme"),
                     RioEvent::PtyWrite(..) => Some("reply"),
                     _ => None,
                 })
@@ -12375,6 +12381,23 @@ mod tests {
         assert_eq!(kinds(&events)[before..], ["glyph", "reply"]);
         queued.extend(sunk.lock().unwrap().drain(..));
         assert!(queued.is_empty(), "the glyph query fences the DA behind it");
+        cw.ui_query_answered();
+        cw.ui_query_answered();
+
+        // And the grapheme query, whose font half is the owner's.
+        queued.clear();
+        let before = kinds(&events).len();
+        crate::performer::handler::Handler::glyph_query_grapheme(
+            &mut cw,
+            vec!['\u{1F600}'],
+        );
+        parser.advance(&mut cw, b"\x1b[c");
+        assert_eq!(kinds(&events)[before..], ["grapheme", "reply"]);
+        queued.extend(sunk.lock().unwrap().drain(..));
+        assert!(
+            queued.is_empty(),
+            "the grapheme query fences the DA behind it"
+        );
         cw.ui_query_answered();
         cw.ui_query_answered();
 
