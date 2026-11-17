@@ -760,8 +760,10 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                 self.handler.glyph_protocol_response(resp);
             }
             Ok(glyph_protocol::GlyphCommand::QueryGrapheme { cps }) => {
-                // Same event queue as `cp` queries and PtyWrite replies,
-                // so answers keep request order (§5.5) either way.
+                // Either way the answer keeps request order (§5.5): a
+                // forwarded query raises the fence like a `cp` query,
+                // and the `unsupported` reply waits behind any query
+                // still out.
                 if self.handler.glyph_grapheme_query_enabled() {
                     self.handler.glyph_query_grapheme(cps);
                 } else {

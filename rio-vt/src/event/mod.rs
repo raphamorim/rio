@@ -181,7 +181,8 @@ pub enum RioEvent {
     /// whether the cluster, printed at the cursor in the current mode,
     /// lands in a single cell. The frontend adds the font half, by
     /// resolving and shaping the cluster the way the grid draws it,
-    /// and writes the reply back to the same pane's PTY. Only sent
+    /// and passes the reply back as the answer to a query only it can
+    /// answer, which lowers the fence the query raised. Only sent
     /// when the session opted in with `set_glyph_grapheme_query`.
     GlyphProtocolGraphemeQuery {
         route_id: usize,

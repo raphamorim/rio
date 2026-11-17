@@ -778,12 +778,14 @@ pub fn format_query_response(cp: u32, status: QueryStatus) -> String {
 /// The `grapheme=` value as echoed in replies: lowercase hex joined
 /// with `,`.
 fn grapheme_hex(cps: &[char]) -> String {
+    use std::fmt::Write;
     let mut out = String::with_capacity(cps.len() * 6);
     for (i, ch) in cps.iter().enumerate() {
         if i > 0 {
             out.push(',');
         }
-        out.push_str(&format!("{:x}", *ch as u32));
+        // Writing to a String can't fail.
+        let _ = write!(out, "{:x}", *ch as u32);
     }
     out
 }
