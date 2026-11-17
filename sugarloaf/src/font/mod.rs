@@ -616,9 +616,10 @@ pub struct FontLibraryData {
     /// Codepoints platform discovery found in no installed font, so a
     /// miss searches once per library instead of once per caller,
     /// pane and style: each search walks the installed fonts (1-3ms
-    /// on macOS). A font discovered later for another codepoint can't
-    /// change the answer, since the search already saw it; a config
-    /// reload builds a new library and starts empty.
+    /// on macOS). Loaded fonts are checked first, so only the system
+    /// search is skipped. Its answer holds until the library is
+    /// rebuilt, when the fonts config changes or Rio restarts, so a
+    /// font installed while Rio runs isn't seen before then.
     no_installed_font: FxHashSet<char>,
 }
 
