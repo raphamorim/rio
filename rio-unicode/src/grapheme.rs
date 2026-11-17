@@ -14,8 +14,8 @@
 //! tables (`scripts/grapheme.py`), so segmentation and width can never
 //! disagree about what Unicode says.
 
-use crate::grapheme_tables::GRAPHEME_CLASS_RANGES;
 pub use crate::grapheme_tables::GRAPHEME_UNICODE_VERSION;
+use crate::grapheme_tables::{DEFAULT_IGNORABLE_RANGES, GRAPHEME_CLASS_RANGES};
 
 /// Grapheme_Cluster_Break class, refined with the Extended_Pictographic
 /// and InCB properties so every rule can run on classes alone. The
@@ -96,6 +96,25 @@ pub fn grapheme_class(c: char) -> GraphemeClass {
         Ok(i) => GRAPHEME_CLASS_RANGES[i].2,
         Err(_) => GraphemeClass::Other,
     }
+}
+
+/// Whether `c` has the `Default_Ignorable_Code_Point` property: a
+/// codepoint with no glyph of its own (ZWJ, variation selectors, tag
+/// characters, bidi controls, ...), drawn only through its effect on
+/// its neighbours.
+pub fn is_default_ignorable(c: char) -> bool {
+    let cp = c as u32;
+    DEFAULT_IGNORABLE_RANGES
+        .binary_search_by(|&(lo, hi)| {
+            if cp < lo {
+                core::cmp::Ordering::Greater
+            } else if cp > hi {
+                core::cmp::Ordering::Less
+            } else {
+                core::cmp::Ordering::Equal
+            }
+        })
+        .is_ok()
 }
 
 /// Emoji ZWJ sequence progress (GB11): `\p{ExtPic} Extend* ZWJ × \p{ExtPic}`.
@@ -338,6 +357,23 @@ mod tests {
     fn versions_stay_in_lockstep() {
         // The whole point of this crate: one Unicode version.
         assert_eq!(GRAPHEME_UNICODE_VERSION, crate::UNICODE_VERSION);
+    }
+
+    #[test]
+    fn default_ignorables() {
+        for c in [
+            '\u{200D}',
+            '\u{FE0E}',
+            '\u{FE0F}',
+            '\u{E0067}',
+            '\u{AD}',
+            '\u{2060}',
+        ] {
+            assert!(is_default_ignorable(c), "{:X}", c as u32);
+        }
+        for c in ['a', '\u{301}', '\u{1F468}', '\u{20E3}', '\u{1F3FD}'] {
+            assert!(!is_default_ignorable(c), "{:X}", c as u32);
+        }
     }
 
     #[test]

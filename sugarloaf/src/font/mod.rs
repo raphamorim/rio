@@ -35,7 +35,7 @@ use crate::layout::SpanStyle;
 use crate::SugarloafErrors;
 use dashmap::DashMap;
 use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
@@ -292,16 +292,34 @@ impl FontLibrary {
         // Fast path: codepoint is covered by an already-registered
         // font. No locks upgraded, no FFI call. Shared across all
         // platforms — only the cascade-discovery slow path differs.
-        if let Some(found) =
-            self.inner
-                .read()
-                .find_best_font_match_strict(ch, fragment_style, route_id)
         {
-            return found;
+            let lib = self.inner.read();
+            if let Some(found) =
+                lib.find_best_font_match_strict(ch, fragment_style, route_id)
+            {
+                return found;
+            }
+            if lib.no_installed_font.contains(&ch) {
+                return (0, false);
+            }
         }
 
-        self.cascade_discover(ch, fragment_style)
-            .unwrap_or((0, false))
+        // Glyph Protocol's registration block holds no font's glyphs
+        // (spec §4), so asking the system is wasted work, and on macOS
+        // the most expensive kind: a codepoint there costs ~3ms of
+        // searching. A registered glyph was found above, and so is a
+        // font the user loaded.
+        if rio_graphics::glyph_namespace::in_registration_block(ch as u32) {
+            return (0, false);
+        }
+
+        match self.cascade_discover(ch, fragment_style) {
+            Some(found) => found,
+            None => {
+                self.inner.write().no_installed_font.insert(ch);
+                (0, false)
+            }
+        }
     }
 
     /// Slow-path cascade discovery — register a fallback font on
@@ -595,6 +613,14 @@ pub struct FontLibraryData {
     /// that have never seen a Glyph Protocol APC, so most callers
     /// pay nothing.
     glyph_registries: FxHashMap<usize, glyph_registry::GlyphRegistry>,
+    /// Codepoints platform discovery found in no installed font, so a
+    /// miss searches once per library instead of once per caller,
+    /// pane and style: each search walks the installed fonts (1-3ms
+    /// on macOS). Loaded fonts are checked first, so only the system
+    /// search is skipped. Its answer holds until the library is
+    /// rebuilt, when the fonts config changes or Rio restarts, so a
+    /// font installed while Rio runs isn't seen before then.
+    no_installed_font: FxHashSet<char>,
 }
 
 impl Default for FontLibraryData {
@@ -607,6 +633,7 @@ impl Default for FontLibraryData {
             primary_metrics_cache: FxHashMap::default(),
             postscript_to_id: FxHashMap::default(),
             glyph_registries: FxHashMap::default(),
+            no_installed_font: FxHashSet::default(),
         }
     }
 }
@@ -2779,6 +2806,65 @@ mod postscript_resolver_tests {
             len_after_first, len_after_second,
             "the second resolve must not register a duplicate font"
         );
+    }
+
+    /// A codepoint no installed font has must not register macOS's
+    /// `LastResort`. Its charmap covers everything, so once in the
+    /// library it would answer every later lookup: a codepoint a real
+    /// font has but Rio hadn't discovered yet would draw as a
+    /// placeholder box, and Glyph Protocol's `q` would report every
+    /// codepoint as covered.
+    #[test]
+    fn a_missing_codepoint_does_not_register_last_resort() {
+        use crate::SpanStyle;
+        use std::sync::Arc;
+
+        let mut data = FontLibraryData::default();
+        data.insert(FontData::from_static_slice(FONT_CASCADIA_CODE_NF).expect("load"));
+        let lib = FontLibrary {
+            inner: Arc::new(parking_lot::RwLock::new(data)),
+        };
+        let starting_len = lib.inner.read().inner.len();
+
+        // U+0378 is unassigned: no font has it.
+        let (font_id, _) =
+            lib.resolve_font_for_char('\u{378}', &SpanStyle::default(), None);
+        assert_eq!(font_id, 0, "a missing codepoint resolves to the primary");
+        assert_eq!(lib.inner.read().inner.len(), starting_len);
+        // The miss is remembered, so the next caller doesn't search.
+        assert!(lib.inner.read().no_installed_font.contains(&'\u{378}'));
+        let (again, _) = lib.resolve_font_for_char(
+            '\u{378}',
+            &SpanStyle {
+                font_attrs: swash::Attributes::new(
+                    swash::Stretch::NORMAL,
+                    swash::Weight::BOLD,
+                    swash::Style::Normal,
+                ),
+                ..SpanStyle::default()
+            },
+            Some(3),
+        );
+        assert_eq!(again, 0);
+
+        // The registration block is never searched: no font defines it.
+        let (block, _) =
+            lib.resolve_font_for_char('\u{100000}', &SpanStyle::default(), None);
+        assert_eq!(block, 0);
+        assert!(!lib.inner.read().no_installed_font.contains(&'\u{100000}'));
+        assert_eq!(lib.inner.read().inner.len(), starting_len);
+
+        // A codepoint a real system font has is still discovered.
+        let (cjk, _) = lib.resolve_font_for_char('\u{6C34}', &SpanStyle::default(), None);
+        assert_ne!(cjk, 0);
+        assert!(lib
+            .ct_font(cjk)
+            .is_some_and(|h| !crate::font::macos::is_last_resort(&h)));
+
+        assert!(!lib.covers_codepoint(0x378));
+        assert!(!lib.covers_codepoint(0x10_0000));
+        assert!(lib.covers_codepoint(0x6C34));
+        assert!(lib.covers_codepoint('a' as u32));
     }
 }
 

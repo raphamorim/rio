@@ -176,6 +176,19 @@ pub enum RioEvent {
         route_id: usize,
         cp: u32,
     },
+    /// A `q;grapheme=` request (spec §5.3) arrived from the PTY in
+    /// `route_id`. `one_cell` is the terminal's half of the answer:
+    /// whether the cluster, printed at the cursor in the current mode,
+    /// lands in a single cell. The frontend adds the font half, by
+    /// resolving and shaping the cluster the way the grid draws it,
+    /// and passes the reply back as the answer to a query only it can
+    /// answer, which lowers the fence the query raised. Only sent
+    /// when the session opted in with `set_glyph_grapheme_query`.
+    GlyphProtocolGraphemeQuery {
+        route_id: usize,
+        cps: Vec<char>,
+        one_cell: bool,
+    },
     Paste,
     Copy(String),
     UpdateFontSize(u8),
@@ -390,6 +403,16 @@ impl Debug for RioEvent {
             }
             RioEvent::GlyphProtocolQuery { route_id, cp } => {
                 write!(f, "GlyphProtocolQuery route {route_id} cp {cp:#x}")
+            }
+            RioEvent::GlyphProtocolGraphemeQuery {
+                route_id,
+                cps,
+                one_cell,
+            } => {
+                write!(
+                    f,
+                    "GlyphProtocolGraphemeQuery route {route_id} cps {cps:?} one_cell {one_cell}"
+                )
             }
             RioEvent::Scroll(scroll) => write!(f, "Scroll {scroll:?}"),
             RioEvent::Bell(route_id) => write!(f, "Bell route {route_id}"),

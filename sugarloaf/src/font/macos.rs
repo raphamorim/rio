@@ -1177,21 +1177,34 @@ pub fn font_attributes(handle: &FontHandle) -> FontAttributes {
     }
 }
 
-/// Ask CoreText which font should render `ch` when `primary` can't.
+/// Find the font that should render `ch` when `primary` can't, or
+/// `None` when no installed font has it.
 ///
-/// Wraps `CTFontCreateForString(primary, string, range)`. When the
-/// primary font carries a glyph for the codepoint, CoreText returns
-/// the primary itself; when it doesn't, CoreText walks its cascade
-/// list and returns the best available fallback (emoji, CJK, symbol,
-/// etc.).
+/// First `CTFontCreateForString(primary, string, range)`: CoreText's
+/// cascade list, which knows the system locale (the right Han font)
+/// and the emoji font. Its answer is used only when it really has the
+/// glyph. Two answers are not:
+///
+/// - `LastResort`, where the cascade ends. It maps every codepoint to
+///   a placeholder box naming the codepoint's block, so its charmap
+///   "covers" everything; registered once, it would win every later
+///   lookup. Rio treats it as not installed, as Ghostty, kitty and
+///   WezTerm do.
+/// - A font without the codepoint. CoreText hands back the primary
+///   when it can't do better, for one.
+///
+/// Neither means no font has the codepoint: the cascade list misses
+/// fonts it doesn't know about, Private Use Area icons in an installed
+/// Nerd Font among them. So on a miss Rio searches the installed fonts
+/// itself ([`search_installed_fonts`]), the way Ghostty discovers
+/// fallbacks and kitty recovers from a LastResort answer.
 ///
 /// The returned handle is normalized to 1pt so it matches the
 /// convention for stored [`FontHandle`]s — per-render sizing goes
 /// through `clone_with_font_size` at shape/raster time.
 ///
 /// Lets Rio register an unknown cascade font on first encounter rather
-/// than pre-registering every path-backed fallback at startup. Returns
-/// `None` only when CoreText itself refuses (exceptionally rare).
+/// than pre-registering every path-backed fallback at startup.
 pub fn discover_fallback(primary: &FontHandle, ch: char) -> Option<FontHandle> {
     use core_foundation::base::CFIndex;
 
@@ -1205,11 +1218,68 @@ pub fn discover_fallback(primary: &FontHandle, ch: char) -> Option<FontHandle> {
             range,
         )
     };
-    if ctfont_ref.is_null() {
-        return None;
+    if !ctfont_ref.is_null() {
+        let ct = unsafe { CTFont::wrap_under_create_rule(ctfont_ref) };
+        let handle = FontHandle::new(ct.clone_with_font_size(1.0));
+        if !is_last_resort(&handle) && font_has_char(&handle, ch) {
+            return Some(handle);
+        }
     }
-    let ct = unsafe { CTFont::wrap_under_create_rule(ctfont_ref) };
-    Some(FontHandle::new(ct.clone_with_font_size(1.0)))
+    search_installed_fonts(ch)
+}
+
+/// Whether `handle` is Apple's `LastResort` font (see
+/// [`discover_fallback`]).
+pub fn is_last_resort(handle: &FontHandle) -> bool {
+    handle.postscript_name() == "LastResort"
+}
+
+/// The installed font with a real glyph for `ch`, found by asking
+/// CoreText for every font whose character set contains it (a
+/// `kCTFontCharacterSetAttribute` descriptor, as Ghostty's discovery
+/// does). Among the matches an upright regular face is preferred, then
+/// a monospaced one, since the glyph lands in a terminal cell; ties
+/// keep CoreText's order. `LastResort` never qualifies.
+fn search_installed_fonts(ch: char) -> Option<FontHandle> {
+    use core_foundation::array::CFArray;
+    use core_foundation::base::{kCFAllocatorDefault, CFIndex};
+    use core_foundation::characterset::{
+        CFCharacterSet, CFCharacterSetCreateWithCharactersInRange,
+    };
+    use core_text::font_descriptor::kCTFontCharacterSetAttribute;
+
+    // CFCharacterSet ranges are in Unicode scalars, not UTF-16 units.
+    let set = unsafe {
+        let set_ref = CFCharacterSetCreateWithCharactersInRange(
+            kCFAllocatorDefault,
+            CFRange::init(ch as CFIndex, 1),
+        );
+        if set_ref.is_null() {
+            return None;
+        }
+        CFCharacterSet::wrap_under_create_rule(set_ref)
+    };
+    let key = unsafe { CFString::wrap_under_get_rule(kCTFontCharacterSetAttribute) };
+    let attrs: CFDictionary<CFString, CFType> =
+        CFDictionary::from_CFType_pairs(&[(key, set.as_CFType())]);
+    let wanted = font_descriptor::new_from_attributes(&attrs);
+    let collection =
+        font_collection::new_from_descriptors(&CFArray::from_CFTypes(&[wanted]));
+    let candidates = collection.get_descriptors()?;
+
+    let mut best: Option<((bool, bool), FontHandle)> = None;
+    for desc in candidates.iter() {
+        let handle = FontHandle::new(ct_font::new_from_descriptor(&desc, 1.0));
+        if is_last_resort(&handle) || !font_has_char(&handle, ch) {
+            continue;
+        }
+        let attrs = font_attributes(&handle);
+        let rank = (!attrs.is_bold && !attrs.is_italic, attrs.is_monospace);
+        if best.as_ref().is_none_or(|(r, _)| rank > *r) {
+            best = Some((rank, handle));
+        }
+    }
+    best.map(|(_, handle)| handle)
 }
 
 /// Check whether `handle`'s font has a real glyph for `ch`.
@@ -1801,6 +1871,23 @@ mod tests {
             result.is_some(),
             "discover_fallback should return a font for a covered char"
         );
+    }
+
+    #[test]
+    fn discover_fallback_never_returns_last_resort() {
+        let primary = FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).unwrap();
+        // Unassigned, and a codepoint in the Supplementary PUA-B that
+        // no font defines: CoreText's cascade ends in LastResort.
+        assert!(discover_fallback(&primary, '\u{378}').is_none());
+        assert!(discover_fallback(&primary, '\u{100000}').is_none());
+    }
+
+    #[test]
+    fn installed_font_search_finds_real_glyphs_only() {
+        let found = search_installed_fonts('\u{6C34}').expect("a CJK font");
+        assert!(!is_last_resort(&found));
+        assert!(font_has_char(&found, '\u{6C34}'));
+        assert!(search_installed_fonts('\u{378}').is_none());
     }
 
     #[test]
