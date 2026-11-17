@@ -184,6 +184,10 @@ pub struct Renderer {
     pub option_as_alt: String,
     #[allow(unused)]
     pub macos_use_unified_titlebar: bool,
+    /// The compositor draws only the window control buttons, over the
+    /// strip (`window.wayland-use-unified-titlebar`, where supported): the
+    /// strip is the window's title bar and is always there.
+    pub unified_titlebar: bool,
     // Dynamic background keep track of the original bg color and
     // the same r,g,b with the mutated alpha channel.
     pub dynamic_background: ([f32; 4], rio_backend::sugarloaf::Color, bool),
@@ -203,7 +207,17 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(config: &Config) -> Renderer {
+    /// Whether the top band is reserved as window chrome this frame; see
+    /// [`Navigation::chrome_band_reserved`]. A unified title bar always
+    /// reserves it. Must agree with `padding_top_from_config`.
+    ///
+    /// [`Navigation::chrome_band_reserved`]: rio_backend::config::navigation::Navigation::chrome_band_reserved
+    #[inline]
+    pub fn chrome_band_reserved(&self, num_tabs: usize) -> bool {
+        self.unified_titlebar || self.navigation.chrome_band_reserved(num_tabs)
+    }
+
+    pub fn new(config: &Config, unified_titlebar: bool) -> Renderer {
         let colors = List::from(&config.colors);
         let named_colors = config.colors;
 
@@ -226,13 +240,18 @@ impl Renderer {
             dynamic_background.2 = true;
         }
 
-        let island = if config.navigation.is_enabled() {
-            Some(island::Island::new(
+        let island = if config.navigation.is_enabled() || unified_titlebar {
+            let island = island::Island::new(
                 named_colors.tabs,
                 named_colors.tabs_active,
                 config.navigation.hide_if_single,
                 config.navigation.max_tab_width,
-            ))
+            );
+            Some(if unified_titlebar {
+                island.with_titlebar(config.navigation.is_enabled())
+            } else {
+                island
+            })
         } else {
             None
         };
@@ -245,6 +264,7 @@ impl Renderer {
             use_drawable_chars: config.fonts.use_drawable_chars,
             draw_bold_text_with_light_colors: config.draw_bold_text_with_light_colors,
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
+            unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
             config_has_blinking_enabled: config.cursor.blinking,
@@ -1166,10 +1186,13 @@ mod compute_bg_color_tests {
     use rio_backend::config::colors::ColorRgb;
 
     fn renderer(draw_bold_text_with_light_colors: bool) -> Renderer {
-        Renderer::new(&Config {
-            draw_bold_text_with_light_colors,
-            ..Config::default()
-        })
+        Renderer::new(
+            &Config {
+                draw_bold_text_with_light_colors,
+                ..Config::default()
+            },
+            false,
+        )
     }
 
     fn style(bg: AnsiColor, flags: StyleFlags) -> CellStyle {
@@ -1362,7 +1385,7 @@ mod grid_cell_bg_tests {
     /// `bg * DIM_FACTOR`, a dark block against the field around it.
     #[test]
     fn dim_cell_paints_its_explicit_background_unchanged() {
-        let renderer = Renderer::new(&Config::default());
+        let renderer = Renderer::new(&Config::default(), false);
         let colors = TermColors::default();
         let sq = Square::from_char('x');
         let bg = ColorRgb {
@@ -1394,7 +1417,7 @@ mod grid_cell_bg_tests {
     /// nothing, so window transparency keeps showing through.
     #[test]
     fn dim_cell_with_default_background_stays_unpainted() {
-        let renderer = Renderer::new(&Config::default());
+        let renderer = Renderer::new(&Config::default(), false);
         let colors = TermColors::default();
         let style = CellStyle {
             flags: StyleFlags::DIM,
@@ -1417,14 +1440,17 @@ mod cursor_color_tests {
     const OSC_12: ColorArray = [0.0, 0.5, 1.0, 1.0];
 
     fn renderer() -> Renderer {
-        Renderer::new(&Config {
-            colors: Colors {
-                cursor: CURSOR,
-                vi_cursor: VI_CURSOR,
-                ..Colors::default()
+        Renderer::new(
+            &Config {
+                colors: Colors {
+                    cursor: CURSOR,
+                    vi_cursor: VI_CURSOR,
+                    ..Colors::default()
+                },
+                ..Config::default()
             },
-            ..Config::default()
-        })
+            false,
+        )
     }
 
     #[test]

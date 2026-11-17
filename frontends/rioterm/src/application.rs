@@ -1485,10 +1485,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 if route.path != RoutePath::Terminal
                     || route.window.screen.renderer.confirm_quit.is_active()
                 {
-                    #[cfg(target_os = "macos")]
                     if state == ElementState::Pressed
                         && button == MouseButton::Left
-                        && route.window.screen.allow_manual_dragging
+                        && route.window.screen.chrome_moves_window()
                     {
                         use crate::renderer::island::ISLAND_HEIGHT;
                         let scale = route.window.screen.sugarloaf.scale_factor();
@@ -1981,8 +1980,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let scale_factor = route.window.screen.sugarloaf.scale_factor();
                 let island_height_px = (ISLAND_HEIGHT * scale_factor) as f64;
                 let num_tabs = route.window.screen.ctx().len();
-                let nav = &route.window.screen.renderer.navigation;
-                if nav.chrome_band_reserved(num_tabs) && y <= island_height_px {
+                let renderer = &route.window.screen.renderer;
+                if renderer.chrome_band_reserved(num_tabs) && y <= island_height_px {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
                 }

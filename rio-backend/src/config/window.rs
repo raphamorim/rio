@@ -208,6 +208,12 @@ pub struct Window {
     pub decorations: Decorations,
     #[serde(default = "bool::default", rename = "macos-use-unified-titlebar")]
     pub macos_use_unified_titlebar: bool,
+    /// Let the compositor draw only the window control buttons, over the
+    /// tab strip, instead of a title bar above the window. Wayland only,
+    /// and only on a compositor with such a title bar: the others keep
+    /// their regular decorations, as does `decorations = "Disabled"`.
+    #[serde(default = "bool::default", rename = "wayland-use-unified-titlebar")]
+    pub wayland_use_unified_titlebar: bool,
     #[serde(rename = "macos-use-shadow", default = "default_bool_true")]
     pub macos_use_shadow: bool,
     #[serde(rename = "macos-traffic-light-position-x", default = "Option::default")]
@@ -258,6 +264,7 @@ impl Default for Window {
             decorations: Decorations::default(),
             blur: WindowBlur::default(),
             macos_use_unified_titlebar: false,
+            wayland_use_unified_titlebar: false,
             macos_use_shadow: true,
             macos_traffic_light_position_x: None,
             macos_traffic_light_position_y: None,

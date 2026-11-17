@@ -77,9 +77,21 @@ const PICKER_COLORS: [[f32; 4]; 6] = [
     [0.68, 0.40, 0.80, 1.0],
 ];
 
-/// Left margin on macOS to account for traffic light buttons
-#[cfg(target_os = "macos")]
-const ISLAND_MARGIN_LEFT_MACOS: f32 = 76.0;
+/// Left margin for the window control buttons drawn over the strip: the
+/// traffic lights on macOS, and the compositor's buttons under a Wayland
+/// unified title bar.
+const WINDOW_CONTROLS_MARGIN_LEFT: f32 = 76.0;
+
+/// The strip's left margin. `titlebar` is whether the strip is the window's
+/// title bar outside macOS, where it always is.
+#[inline]
+pub fn strip_left_margin(titlebar: bool) -> f32 {
+    if cfg!(target_os = "macos") || titlebar {
+        WINDOW_CONTROLS_MARGIN_LEFT
+    } else {
+        0.0
+    }
+}
 
 const CLOSE_MARGIN_RIGHT: f32 = 14.0;
 const CLOSE_GLYPH_HALF: f32 = 3.5;
@@ -158,12 +170,8 @@ pub fn tab_strip_layout(
     scale_factor: f32,
     num_tabs: usize,
     max_tab_width: f32,
+    left_margin: f32,
 ) -> TabStripLayout {
-    #[cfg(target_os = "macos")]
-    let left_margin = ISLAND_MARGIN_LEFT_MACOS;
-    #[cfg(not(target_os = "macos"))]
-    let left_margin = 0.0;
-
     let available_width =
         (window_width / scale_factor) - ISLAND_MARGIN_RIGHT - left_margin;
     let tab_width =
@@ -368,6 +376,14 @@ fn bounce_x(elapsed: Duration) -> f32 {
 
 pub struct Island {
     pub hide_if_single: bool,
+    /// The strip is the window's title bar: the compositor draws the window
+    /// control buttons over its leading end and nothing else (a Wayland
+    /// unified title bar). The strip is then always drawn, with the current
+    /// tab's title alone when there are no tabs to show.
+    pub titlebar: bool,
+    /// Whether tabs are drawn (`navigation.mode = "Tab"`). Only a title bar
+    /// strip exists without them.
+    pub tabs: bool,
     /// Cap on tab width in logical px (`navigation.max-tab-width`).
     pub max_tab_width: f32,
     pub inactive_text_color: [f32; 4],
@@ -427,6 +443,8 @@ impl Island {
     ) -> Self {
         Self {
             hide_if_single,
+            titlebar: false,
+            tabs: true,
             max_tab_width,
             inactive_text_color,
             active_text_color,
@@ -451,6 +469,19 @@ impl Island {
             last_anim_frame: Instant::now(),
             close_hover: false,
         }
+    }
+
+    /// Make the strip the window's title bar, with or without tabs in it.
+    pub fn with_titlebar(mut self, tabs: bool) -> Self {
+        self.titlebar = true;
+        self.tabs = tabs;
+        self
+    }
+
+    /// The margin kept free for the window control buttons.
+    #[inline]
+    pub fn left_margin(&self) -> f32 {
+        strip_left_margin(self.titlebar)
     }
 
     /// Set whether the cursor hovers the active island's close button.
@@ -831,12 +862,13 @@ impl Island {
         bg_color: [f32; 4],
     ) {
         let (window_width, _window_height, scale_factor) = dimensions;
-        let num_tabs = context_manager.len();
         let current_tab_index = context_manager.current_index();
+        let tabs_shown =
+            self.tabs && !(self.hide_if_single && context_manager.len() == 1);
 
         // Immediate-mode: no cached ids to hide. If we early-return
         // without drawing, the tabs just don't appear this frame.
-        if self.hide_if_single && num_tabs == 1 {
+        if !tabs_shown && !self.titlebar {
             // No tab strip — drop any leftover drag/slide state so
             // `needs_redraw` doesn't keep frames alive for invisible
             // tabs.
@@ -845,6 +877,10 @@ impl Island {
             self.render_progress_bar(sugarloaf, window_width, scale_factor, 0.0);
             return;
         }
+
+        // A title bar with no tabs to show still names the window: it draws
+        // the current tab the way a lone tab is drawn.
+        let num_tabs = if tabs_shown { context_manager.len() } else { 1 };
 
         // A lone tab draws as a centred title with no island, and cannot be
         // reordered. A drag can only start with two or more tabs, but one can
@@ -878,15 +914,20 @@ impl Island {
         self.slide_springs
             .retain(|_, s| s.update(dt, DRAG_ANIMATION_LENGTH));
 
-        let layout =
-            tab_strip_layout(window_width, scale_factor, num_tabs, self.max_tab_width);
+        let layout = tab_strip_layout(
+            window_width,
+            scale_factor,
+            num_tabs,
+            self.max_tab_width,
+            self.left_margin(),
+        );
         let TabStripLayout {
             left_margin,
             tab_width,
             ..
         } = layout;
 
-        // Starting from left edge (with margin on macOS for traffic lights)
+        // Starting from left edge (with margin for the window control buttons)
         let mut x_position = left_margin;
 
         // Active drag: the dragged tab is skipped in the slot loop and
@@ -901,7 +942,9 @@ impl Island {
         let fills = island_fills(bg_color);
 
         // Render each tab
-        for tab_index in 0..num_tabs {
+        for slot in 0..num_tabs {
+            let tab_index = if tabs_shown { slot } else { current_tab_index };
+
             // The dragged tab floats — drawn after the loop instead.
             if Some(tab_index) == drag_index {
                 x_position += tab_width;
@@ -1287,7 +1330,13 @@ impl Island {
             left_margin,
             tab_width,
             ..
-        } = tab_strip_layout(window_width, scale_factor, num_tabs, self.max_tab_width);
+        } = tab_strip_layout(
+            window_width,
+            scale_factor,
+            num_tabs,
+            self.max_tab_width,
+            self.left_margin(),
+        );
         let tab_x = left_margin + picker_tab as f32 * tab_width;
 
         // Picker is rendered just below the island
@@ -1629,7 +1678,8 @@ mod tests {
     /// is the point of dropping the island.
     #[test]
     fn single_title_budget_beats_a_tab_slot() {
-        let slot = tab_strip_layout(1600.0, 2.0, 1, 240.0).tab_width;
+        let slot =
+            tab_strip_layout(1600.0, 2.0, 1, 240.0, strip_left_margin(false)).tab_width;
         let slot_budget = (slot - TAB_PADDING_X * 2.0).max(0.0);
         assert!(
             single_title_budget(1600.0, 2.0, 0.0) > slot_budget,
@@ -2036,10 +2086,10 @@ mod tests {
         // 1000 physical px @ 2x scale → 500 logical px window. Slots
         // stay below the cap here, so the math matches the old
         // fill-the-strip layout.
-        let layout = tab_strip_layout(1000.0, 2.0, 4, 240.0);
+        let layout = tab_strip_layout(1000.0, 2.0, 4, 240.0, strip_left_margin(false));
         #[cfg(target_os = "macos")]
         {
-            assert_eq!(layout.left_margin, ISLAND_MARGIN_LEFT_MACOS);
+            assert_eq!(layout.left_margin, WINDOW_CONTROLS_MARGIN_LEFT);
             assert_eq!(layout.tab_width, (500.0 - 8.0 - 76.0) / 4.0);
             assert_eq!(layout.tabs_width, layout.tab_width * 4.0);
         }
@@ -2050,19 +2100,31 @@ mod tests {
             assert_eq!(layout.tabs_width, 492.0);
         }
         // Zero tabs clamps the divisor.
-        assert!(tab_strip_layout(1000.0, 2.0, 0, 240.0)
-            .tab_width
-            .is_finite());
+        assert!(
+            tab_strip_layout(1000.0, 2.0, 0, 240.0, strip_left_margin(false))
+                .tab_width
+                .is_finite()
+        );
+    }
+
+    #[test]
+    fn title_bar_strip_keeps_the_window_controls_margin() {
+        let layout = tab_strip_layout(1000.0, 2.0, 4, 240.0, strip_left_margin(true));
+        assert_eq!(layout.left_margin, WINDOW_CONTROLS_MARGIN_LEFT);
+        assert_eq!(layout.tab_width, (500.0 - 8.0 - 76.0) / 4.0);
+
+        let island = Island::new([0.5; 4], [1.0; 4], true, 240.0).with_titlebar(false);
+        assert_eq!(island.left_margin(), WINDOW_CONTROLS_MARGIN_LEFT);
     }
 
     #[test]
     fn tab_strip_layout_caps_slot_width() {
-        let layout = tab_strip_layout(3000.0, 2.0, 2, 240.0);
+        let layout = tab_strip_layout(3000.0, 2.0, 2, 240.0, strip_left_margin(false));
         assert_eq!(layout.tab_width, 240.0);
         assert_eq!(layout.tabs_width, 480.0);
 
         // The cap is configurable via navigation.max-tab-width.
-        let layout = tab_strip_layout(3000.0, 2.0, 2, 280.0);
+        let layout = tab_strip_layout(3000.0, 2.0, 2, 280.0, strip_left_margin(false));
         assert_eq!(layout.tab_width, 280.0);
         assert_eq!(layout.tabs_width, 560.0);
         // The tabs region ends well before the 1500 logical px strip.
@@ -2070,7 +2132,7 @@ mod tests {
 
         // Pathologically narrow window: width clamps at 0 instead of
         // going negative.
-        let layout = tab_strip_layout(10.0, 2.0, 4, 240.0);
+        let layout = tab_strip_layout(10.0, 2.0, 4, 240.0, strip_left_margin(false));
         assert_eq!(layout.tab_width, 0.0);
         assert_eq!(layout.tabs_width, 0.0);
     }

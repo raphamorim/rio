@@ -10,7 +10,16 @@ pub fn padding_top_from_config(
     padding_y_top: f32,
     #[allow(unused)] num_tabs: usize,
     #[allow(unused)] macos_use_unified_titlebar: bool,
+    unified_titlebar: bool,
 ) -> f32 {
+    // Under a Wayland unified title bar the strip is the window's title
+    // bar, with the compositor's buttons over it: it is kept whatever the
+    // navigation mode and the number of tabs.
+    if unified_titlebar {
+        use crate::renderer::island::ISLAND_HEIGHT;
+        return ISLAND_HEIGHT + padding_y_top;
+    }
+
     // When navigation is enabled (Tab mode), start content below island
     if navigation.is_enabled() {
         // On Linux/Windows, if hide_if_single is true and there's only one tab,
@@ -70,6 +79,31 @@ pub fn update_colors_based_on_theme(config: &mut Config, theme_opt: Option<Theme
                     }
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::renderer::island::ISLAND_HEIGHT;
+    use rio_backend::config::navigation::NavigationMode;
+
+    #[test]
+    fn a_unified_titlebar_keeps_the_strip_band() {
+        let plain = Navigation {
+            mode: NavigationMode::Plain,
+            ..Navigation::default()
+        };
+        let single = Navigation {
+            hide_if_single: true,
+            ..Navigation::default()
+        };
+        for navigation in [plain, single] {
+            assert_eq!(
+                padding_top_from_config(&navigation, 2.0, 1, false, true),
+                ISLAND_HEIGHT + 2.0
+            );
         }
     }
 }

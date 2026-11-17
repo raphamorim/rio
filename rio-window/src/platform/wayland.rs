@@ -60,9 +60,28 @@ impl<T> EventLoopBuilderExtWayland for EventLoopBuilder<T> {
 }
 
 /// Additional methods on [`Window`] that are specific to Wayland.
-pub trait WindowExtWayland {}
+pub trait WindowExtWayland {
+    /// Whether the compositor applied the unified title bar asked for with
+    /// [`WindowAttributesExtWayland::with_unified_titlebar`]: it draws only
+    /// the window control buttons, over the leading end of the top of the
+    /// window, and the application draws the rest of that row and moves the
+    /// window from it.
+    ///
+    /// `false` on X11 and on compositors without such a title bar, where
+    /// the window keeps its regular decorations.
+    fn unified_titlebar(&self) -> bool;
+}
 
-impl WindowExtWayland for Window {}
+impl WindowExtWayland for Window {
+    #[inline]
+    fn unified_titlebar(&self) -> bool {
+        match &self.window {
+            crate::platform_impl::Window::Wayland(window) => window.unified_titlebar(),
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+        }
+    }
+}
 
 /// Additional methods on [`WindowAttributes`] that are specific to Wayland.
 pub trait WindowAttributesExtWayland {
@@ -74,6 +93,14 @@ pub trait WindowAttributesExtWayland {
     /// For details about application ID conventions, see the
     /// [Desktop Entry Spec](https://specifications.freedesktop.org/desktop-entry-spec/desktop-entry-spec-latest.html#desktop-file-id)
     fn with_name(self, general: impl Into<String>, instance: impl Into<String>) -> Self;
+
+    /// Ask the compositor for a unified title bar: it draws only the window
+    /// control buttons and leaves the row they lie in to the application.
+    ///
+    /// Compositors without one keep their regular decorations, as does a
+    /// window built without decorations.
+    /// [`WindowExtWayland::unified_titlebar`] tells which it was.
+    fn with_unified_titlebar(self, unified_titlebar: bool) -> Self;
 }
 
 impl WindowAttributesExtWayland for WindowAttributes {
@@ -87,6 +114,12 @@ impl WindowAttributesExtWayland for WindowAttributes {
             general.into(),
             instance.into(),
         ));
+        self
+    }
+
+    #[inline]
+    fn with_unified_titlebar(mut self, unified_titlebar: bool) -> Self {
+        self.platform_specific.unified_titlebar = unified_titlebar;
         self
     }
 }
