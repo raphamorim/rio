@@ -1488,10 +1488,15 @@ impl<U: EventListener> Crosswords<U> {
         // At the history cap the offset clamps, the view slides, and
         // every visible row changes while the region damage below only
         // covers active-area lines. Nothing less than full damage is
-        // correct then.
+        // correct then. The same holds when the region ends above the
+        // bottom and a fixed row below it is on screen: the offset grew
+        // but the fixed rows kept their grid index, so they moved down
+        // the viewport without changing.
+        let offset = self.grid.display_offset();
         if region.start == 0
             && pinned_offset != 0
-            && self.grid.display_offset() != pinned_offset + lines
+            && (offset != pinned_offset + lines
+                || region.end.0 as usize + offset < self.grid.screen_lines())
         {
             self.mark_fully_damaged();
         }
@@ -4818,6 +4823,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             let cell = self.grid.cursor_square();
             if cell.c() == '\0' {
                 cell.set_c(c);
+                // The cell changed even if the cursor stays put, as it
+                // does on the last column.
+                let row = self.grid.cursor.pos.row.0 as usize;
+                self.damage.damage_line(row);
             }
 
             loop {
@@ -7033,6 +7042,98 @@ mod tests {
         assert_eq!(cw.cursor().pos, Pos::new(Line(3), Column(1)));
     }
 
+    // A tab on the last column writes the tab into the cell and leaves
+    // the cursor where it is, so the cell change itself has to be the
+    // damage: there is no cursor move to carry the frame.
+    #[test]
+    fn a_tab_on_the_last_column_is_damage() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        let last = cw.grid.columns();
+        parser.advance(&mut cw, format!("\x1b[1;{last}H").as_bytes());
+        assert_eq!(cw.grid.cursor.pos.col, Column(last - 1));
+        cw.reset_damage();
+        assert!(cw.peek_damage_event().is_none());
+
+        parser.advance(&mut cw, b"\t");
+        assert_eq!(cw.grid.cursor.pos.col, Column(last - 1), "no move");
+        assert_eq!(cw.grid[Line(0)][Column(last - 1)].c(), '\t');
+        assert!(cw.peek_damage_event().is_some(), "the cell changed");
+    }
+
+    // A scroll in a region anchored at the top goes through history,
+    // so a viewport scrolled back grows its offset and keeps showing
+    // the same scrollback rows. The fixed rows below the region keep
+    // their grid index and so move down the screen without changing;
+    // the region's damage does not cover them, the frame must be full.
+    #[test]
+    fn a_top_anchored_region_scroll_in_a_scrolled_viewport_is_full_damage() {
+        use crate::event::TerminalDamage;
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(12, 5),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            40,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+        for i in 0..9 {
+            parser.advance(&mut cw, format!("L{i}\r\n").as_bytes());
+        }
+        parser.advance(&mut cw, b"Lx");
+        cw.scroll_display(Scroll::Delta(1));
+        assert_eq!(cw.display_offset(), 1);
+        let mut rows = Vec::new();
+        let mut row_styles = Vec::new();
+        let mut extras = rustc_hash::FxHashMap::default();
+        cw.reset_damage();
+        snap(
+            &mut cw,
+            &TerminalDamage::Full,
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        let text = |rows: &[Row<Square>]| -> Vec<String> {
+            rows.iter()
+                .map(|r| r.inner.iter().map(|s| s.c()).collect::<String>())
+                .map(|s| s.trim_end_matches(['\0', ' ']).to_string())
+                .collect()
+        };
+        assert_eq!(text(&rows), ["L4", "L5", "L6", "L7", "L8"]);
+
+        // Region rows 1 to 2, fixed rows 3 to 5; a linefeed at the
+        // region's bottom scrolls it.
+        parser.advance(&mut cw, b"\x1b[1;2r\x1b[2;1H\n");
+        assert_eq!(cw.display_offset(), 2, "the pin absorbed the scroll");
+        let peeked = cw.peek_damage_event();
+        assert_eq!(peeked, Some(TerminalDamage::Full));
+
+        cw.reset_damage();
+        snap(
+            &mut cw,
+            &peeked.unwrap(),
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        let mut fresh = Vec::new();
+        let mut fresh_styles = Vec::new();
+        let mut fresh_extras = rustc_hash::FxHashMap::default();
+        snap(
+            &mut cw,
+            &TerminalDamage::Full,
+            &mut fresh,
+            &mut fresh_styles,
+            &mut fresh_extras,
+        );
+        // The scrollback rows stay, the region shows its new blank row,
+        // and the fixed row below it moved down by one.
+        assert_eq!(text(&fresh), ["L4", "L5", "L6", "", "L7"]);
+        assert_eq!(text(&rows), text(&fresh), "the kept snapshot is current");
+    }
+
     // The legacy damage iterator names the line the cursor left. In vi
     // mode that cursor can be on a scrollback row, which has no line
     // of its own in the damage state; it must not be indexed.
@@ -7252,7 +7353,13 @@ mod tests {
                     .into(),
                 13 => rng.pick(&["\x1bM", "\x1bD", "\x1bE"]).into(),
                 14 => {
-                    let top = 1 + rng.below(lines.max(2) - 1);
+                    // Top-anchored regions take the history path with
+                    // fixed rows below them, so they come up often.
+                    let top = if rng.below(2) == 0 {
+                        1
+                    } else {
+                        1 + rng.below(lines.max(2) - 1)
+                    };
                     let bottom = top + 1 + rng.below(lines - top);
                     if rng.below(3) == 0 {
                         "\x1b[r".into()
@@ -7304,7 +7411,7 @@ mod tests {
     #[test]
     fn an_incremental_snapshot_matches_a_fresh_one_after_random_bursts() {
         use crate::event::TerminalDamage;
-        for seed in 1..=6u64 {
+        for seed in 1..=60u64 {
             let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
             let mut cw = Crosswords::new(
                 CrosswordsSize::new(12, 5),
