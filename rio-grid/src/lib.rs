@@ -1274,10 +1274,19 @@ pub fn build_row_bg<P: GridPalette>(
 /// affect shaping so they don't break runs.
 const SHAPING_FLAG_MASK: u16 = StyleFlags::BOLD.bits() | StyleFlags::ITALIC.bits();
 
-/// The smallest number of runs the cache holds before it trims; a
-/// screen never has fewer than this many cells, so no screen is ever
-/// trimmed to make room for itself.
+/// Below this many runs the cache never trims: a small screen's
+/// budget would be a few hundred entries, and sorting them to save a
+/// few kilobytes is not worth a frame's attention.
 const RUN_CACHE_FLOOR: usize = 4096;
+
+/// The cache trims once it holds more than this many of the largest
+/// frame, and trims down to [`RUN_CACHE_KEEP`] of them.
+const RUN_CACHE_TRIM_AT: usize = 3;
+
+/// How many of the largest frame a trim leaves, at least: two, so a
+/// screen switched away from survives a screen's worth of churn in
+/// the one switched to and comes back without a reshape.
+const RUN_CACHE_KEEP: usize = 2;
 
 /// The run key is already a 64-bit rapidhash, so the map takes it as
 /// its hash as it is.
@@ -1305,14 +1314,16 @@ impl Hasher for RunKeyHasher {
 /// did exactly that for the buckets a busy screen overfilled. Here
 /// nothing is evicted to make room: a run asked for this frame is
 /// there next frame whatever its hash, and the storage follows what
-/// is drawn. Only when the cache outgrows twice the largest frame it
-/// has seen (the screen plus as much again of runs that stopped
-/// appearing) does it trim, dropping the frames used longest ago while
-/// a screen's worth remains and never a run of the current frame.
-/// Rows that did not change are not redrawn, so their runs keep an
-/// old stamp while still on screen; the trim is rare enough, and the
-/// stamps on a full redraw fresh enough, that they are kept whenever
-/// room allows.
+/// is drawn. Only when the cache outgrows three times the largest
+/// frame it has seen (the screen plus twice as much again of runs
+/// that stopped appearing) does it trim, dropping the frames used
+/// longest ago while two screens' worth remain and never a run of the
+/// current frame. Rows that did not change are not redrawn, so their
+/// runs keep an old stamp while still on screen; the trim is rare
+/// enough, and the stamps on a full redraw fresh enough, that they
+/// are kept whenever room allows. The largest frame is forgotten only
+/// on a font change, so a window shrunk from a big screen keeps the
+/// big screen's budget: a few megabytes at the very most.
 struct RunCache {
     entries: HashMap<u64, RunCacheEntry, core::hash::BuildHasherDefault<RunKeyHasher>>,
     /// The frame being drawn; [`Self::end_frame`] moves it on.
@@ -1357,26 +1368,28 @@ impl RunCache {
     }
 
     /// The frame is drawn: remember how much it asked for, trim if the
-    /// cache has outgrown twice the largest frame, and start the next.
+    /// cache has outgrown three times the largest frame, and start the
+    /// next.
     fn end_frame(&mut self) {
         self.peak = self.peak.max(self.touched);
-        if self.entries.len() > (2 * self.peak).max(RUN_CACHE_FLOOR) {
+        if self.entries.len() > (RUN_CACHE_TRIM_AT * self.peak).max(RUN_CACHE_FLOOR) {
             self.trim();
         }
         self.touched = 0;
         self.frame = self.frame.wrapping_add(1);
     }
 
-    /// Drop whole frames from the oldest down while at least the
-    /// largest frame's worth of runs would remain, never a run of the
-    /// current frame. A frame is dropped whole or not at all: the runs
-    /// one frame asked for were on screen together, and a cut through
-    /// them would take half a redrawn screen because the frames since
-    /// used up the budget.
+    /// Drop whole frames from the oldest down while at least two of
+    /// the largest frame's worth of runs would remain, never a run of
+    /// the current frame. A frame is dropped whole or not at all: the
+    /// runs one frame asked for were on screen together, and a cut
+    /// through them would take half a redrawn screen because the
+    /// frames since used up the budget. The oldest frame holds at most
+    /// one screen's worth, so a trim always drops at least one.
     fn trim(&mut self) {
         let frame = self.frame;
         let age = |last_used: u32| frame.wrapping_sub(last_used);
-        let keep = self.peak;
+        let keep = RUN_CACHE_KEEP * self.peak;
         let mut ages: Vec<u32> =
             self.entries.values().map(|e| age(e.last_used)).collect();
         ages.sort_unstable_by(|a, b| b.cmp(a));
@@ -3591,11 +3604,11 @@ mod run_cache_tests {
 
     // Rows that keep changing add runs frame after frame while the
     // rest of the screen keeps its old stamps. Once the cache holds
-    // more than twice the largest frame, it drops the runs used
-    // longest ago, keeps one screen's worth, and never one of the
-    // frame just drawn.
+    // more than three times the largest frame, it drops the frames
+    // used longest ago, keeps two screens' worth, and never one of
+    // the frame just drawn.
     #[test]
-    fn outgrowing_two_screens_drops_the_runs_used_longest_ago() {
+    fn outgrowing_three_screens_drops_the_frames_used_longest_ago() {
         let mut cache = RunCache::new();
         let full = screen(3000, 1);
         draw(&mut cache, &full);
@@ -3614,13 +3627,13 @@ mod run_cache_tests {
                 trimmed_at = Some(frame);
                 break;
             }
-            assert!(cache.len() <= 2 * 3000, "no trim while under two screens");
+            assert!(cache.len() <= 3 * 3000, "no trim while under three screens");
         }
-        let trimmed_at = trimmed_at.expect("the cache outgrew two screens");
-        assert!(
-            cache.len() <= 3000,
-            "one screen's worth is kept, {} left",
-            cache.len()
+        let trimmed_at = trimmed_at.expect("the cache outgrew three screens");
+        assert_eq!(
+            cache.len(),
+            2 * 3000,
+            "the oldest frames went until two screens' worth was left"
         );
         let last = partials.last().unwrap();
         assert_eq!(
@@ -3637,7 +3650,10 @@ mod run_cache_tests {
             0,
             "the oldest frame went first"
         );
-        assert!(trimmed_at > 10, "trimmed at frame {trimmed_at}");
+        assert_eq!(
+            trimmed_at, 30,
+            "trimmed when the thirty-first partial frame went over"
+        );
     }
 
     // A hit stamps the run as used now, so a screen drawn again after
@@ -3672,7 +3688,7 @@ mod run_cache_tests {
                 break;
             }
         }
-        assert!(trimmed, "the cache outgrew two screens");
+        assert!(trimmed, "the cache outgrew three screens");
         assert_eq!(
             full.iter()
                 .filter(|(h, c)| cache.get(*h, *c).is_some())
@@ -3692,6 +3708,52 @@ mod run_cache_tests {
         }
     }
 
+    // Two screens' worth is kept so that a screen switched away from,
+    // while rows in the one switched to change for a screen's worth of
+    // frames, comes back with every run a hit. Coming back makes it the
+    // newest frame, so the trim that follows drops the other screen and
+    // keeps this one whole.
+    #[test]
+    fn a_screen_switched_away_from_survives_a_screens_worth_of_churn() {
+        let mut cache = RunCache::new();
+        let first = screen(3000, 1);
+        let second = screen(3000, 2);
+        draw(&mut cache, &first);
+        cache.end_frame();
+        draw(&mut cache, &second);
+        cache.end_frame();
+        for frame in 0..15 {
+            draw(&mut cache, &screen(200, 100 + frame));
+            cache.end_frame();
+        }
+        assert_eq!(cache.len(), 9000, "three screens' worth, not yet over");
+        assert_eq!(draw(&mut cache, &first), 3000, "switching back is all hits");
+        cache.end_frame();
+        assert_eq!(
+            draw(&mut cache, &screen(200, 200)),
+            0,
+            "one more frame of churn goes over the line"
+        );
+        cache.end_frame();
+        assert_eq!(cache.len(), 6000, "trimmed to two screens' worth");
+        assert_eq!(
+            first
+                .iter()
+                .filter(|(h, c)| cache.get(*h, *c).is_some())
+                .count(),
+            3000,
+            "the screen come back to is kept whole"
+        );
+        assert_eq!(
+            second
+                .iter()
+                .filter(|(h, c)| cache.get(*h, *c).is_some())
+                .count(),
+            0,
+            "the screen left behind went"
+        );
+    }
+
     // A frame that itself asks for more than a screen's worth raises
     // the peak instead of being trimmed.
     #[test]
@@ -3706,7 +3768,7 @@ mod run_cache_tests {
         assert_eq!(
             cache.len(),
             10_000,
-            "nothing dropped: under two of the new peak"
+            "nothing dropped: under three of the new peak"
         );
         cache.end_frame();
         assert_eq!(

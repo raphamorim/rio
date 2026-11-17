@@ -177,7 +177,7 @@ fn warm_frames(c: &mut Criterion) {
     let mut group = c.benchmark_group("grid_rows");
     group.sample_size(60);
     for (name, word_len) in [
-        ("styled 9 runs per row", 33usize),
+        ("styled 10 runs per row", 33usize),
         ("styled 50 runs per row", 6),
         ("plain 1 run per row", 0),
     ] {
