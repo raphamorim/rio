@@ -4,6 +4,8 @@
 // See https://msdn.microsoft.com/en-us/library/4cc7ya5b.aspx for more details.
 #![windows_subsystem = "windows"]
 
+#[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+mod app_menu;
 mod application;
 mod bindings;
 mod cli;

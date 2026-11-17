@@ -17,6 +17,7 @@ use crate::event_loop::{ActiveEventLoop, EventLoopBuilder};
 use crate::monitor::MonitorHandle;
 use crate::window::{Window, WindowAttributes};
 
+pub use crate::platform_impl::common::app_menu::AppMenuItem;
 pub use crate::window::Theme;
 
 /// Additional methods on [`ActiveEventLoop`] that are specific to Wayland.
@@ -101,5 +102,54 @@ impl MonitorHandleExtWayland for MonitorHandle {
     #[inline]
     fn native_id(&self) -> u32 {
         self.inner.native_identifier()
+    }
+}
+
+/// Additional methods on [`Window`] to export an application menu, for a
+/// desktop with a global menu bar.
+pub trait WindowExtAppMenu {
+    /// Export `items` as the application menu of the window, replacing the
+    /// menu exported before.
+    ///
+    /// The menu is served on the session bus as `com.canonical.dbusmenu`
+    /// and announced with the KDE application menu protocol. `handler` gets
+    /// the [`AppMenuItem::id`] of an activated entry and is called on the
+    /// thread that serves the menu, not on the event loop's.
+    ///
+    /// Returns `false`, exporting nothing, on X11 and on compositors
+    /// without that protocol.
+    fn set_app_menu(
+        &self,
+        items: Vec<AppMenuItem>,
+        handler: impl Fn(u32) + Send + Sync + 'static,
+    ) -> bool;
+
+    /// Stop exporting the application menu of the window.
+    fn remove_app_menu(&self);
+}
+
+impl WindowExtAppMenu for Window {
+    #[inline]
+    fn set_app_menu(
+        &self,
+        items: Vec<AppMenuItem>,
+        handler: impl Fn(u32) + Send + Sync + 'static,
+    ) -> bool {
+        match &self.window {
+            crate::platform_impl::Window::Wayland(window) => {
+                window.set_app_menu(items, std::sync::Arc::new(handler))
+            }
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => false,
+        }
+    }
+
+    #[inline]
+    fn remove_app_menu(&self) {
+        match &self.window {
+            crate::platform_impl::Window::Wayland(window) => window.remove_app_menu(),
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => (),
+        }
     }
 }

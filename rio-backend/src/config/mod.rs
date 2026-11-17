@@ -606,6 +606,9 @@ impl Config {
             if let Some(blur) = window_overwrite.blur {
                 self.window.blur = blur;
             }
+            if let Some(menubar) = window_overwrite.menubar {
+                self.window.menubar = menubar;
+            }
             #[cfg(feature = "renderer")]
             if let Some(bg_image) = &window_overwrite.background_image {
                 self.window.background_image = Some(bg_image.clone());
@@ -1766,5 +1769,28 @@ mod tests {
         // Before applying platform overrides, should only have global env vars
         assert_eq!(result.env_vars.len(), 1);
         assert!(result.env_vars.contains(&String::from("GLOBAL=1")));
+    }
+
+    #[test]
+    fn test_window_menubar() {
+        let mut result = create_temporary_config(
+            "window-menubar",
+            r#"
+            [window]
+            menubar = "disabled"
+
+            [platform]
+            linux.window.menubar = "auto"
+        "#,
+        );
+        assert_eq!(result.window.menubar, window::Menubar::Disabled);
+
+        result.overwrite_based_on_platform();
+        let expected = if cfg!(target_os = "linux") {
+            window::Menubar::Auto
+        } else {
+            window::Menubar::Disabled
+        };
+        assert_eq!(result.window.menubar, expected);
     }
 }

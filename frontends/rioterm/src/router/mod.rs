@@ -890,9 +890,13 @@ impl<'a> RouteWindow<'a> {
             window_id: winit_window.id(),
         };
 
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        let app_menu_proxy = event_proxy.clone();
         let mut screen =
             Screen::new(properties, config, event_proxy, font_library, open_url)
                 .expect("Screen not created");
+        #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+        crate::app_menu::sync(&winit_window, config, &screen.bindings, &app_menu_proxy);
 
         if config.window.columns.is_some() || config.window.rows.is_some() {
             let (physical_width, physical_height) = compute_window_size_from_grid(

@@ -89,6 +89,14 @@ This section documents the *[window]* table of the configuration file.
 
 	Default: _false_
 
+*menubar* = _"Disabled"_ | _"Auto"_
+
+	Export the window's File, Edit and View menus to the desktop's menu bar.
+	_"Auto"_ exports them on Wayland compositors with the KDE application
+	menu protocol, such as KDE Plasma, and changes nothing elsewhere.
+
+	Default: _"Disabled"_
+
 *decorations* = _"Enabled"_ | _"Disabled"_ | _"Transparent"_ | _"Buttonless"_
 
 	Window decorations.
