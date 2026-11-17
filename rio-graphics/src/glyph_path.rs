@@ -27,30 +27,39 @@
 //! without regard to locale. Arcs are expanded into cubics here, so
 //! the renderer only sees lines, quadratics and cubics.
 //!
-//! Limits keep drawing cheap. Every point, control points included,
-//! must lie within [`MAX_EXTENT_MULTIPLE`] viewBox sizes of the
-//! viewBox, and a registration holds at most [`MAX_SEGMENTS`]
-//! segments, counted after arcs are expanded, and [`MAX_LAYERS`]
-//! layers. Rasterizing cost follows both: curves that loop far outside
-//! the cell cross every scanline on each pass, and stroking adds a join
-//! per segment.
+//! Limits keep drawing cheap, since a glyph is rasterized while a frame
+//! is being built. Every point, control points included, must lie
+//! within [`MAX_EXTENT_MULTIPLE`] viewBox sizes of the viewBox; a
+//! registration holds at most [`MAX_SEGMENTS`] segments, counted after
+//! arcs are expanded, and [`MAX_LAYERS`] layers; and its total path
+//! length is capped by [`MAX_INK_MULTIPLE`]. Rasterizing cost follows
+//! how much path crosses the cell, not how many segments carry it, so
+//! the length cap is what bounds it: together these keep the worst case
+//! near a millisecond to draw one cell with tiny-skia.
 
 /// Most segments one registration may hold, counted after arcs are
 /// expanded into cubics. Moves and closes count too, so the cap also
-/// bounds the memory a registration keeps. With [`MAX_EXTENT_MULTIPLE`]
-/// it keeps the worst case under a millisecond to fill and about five
-/// to stroke into one cell with tiny-skia. The largest of 584 icons
+/// bounds the memory a registration keeps. The largest of 584 icons
 /// sampled from nine sets needs 226.
-pub const MAX_SEGMENTS: usize = 1024;
+pub const MAX_SEGMENTS: usize = 512;
 
 /// Most layers one registration may hold.
 pub const MAX_LAYERS: usize = 16;
 
 /// How far outside the viewBox a point may lie, in viewBox sizes (the
-/// larger of its width and height). Past one size, fill cost jumps
-/// (about 3 ms to 26 ms for the same 4,096 cubics at two sizes); none
-/// of the 584 sampled icons reaches a tenth of a size outside.
+/// larger of its width and height). None of the 584 sampled icons
+/// reaches a tenth of a size outside.
 pub const MAX_EXTENT_MULTIPLE: f32 = 1.0;
+
+/// Most path one registration may draw, in viewBox sizes: the length of
+/// every line, plus every curve's control polygon (which bounds the
+/// curve), across all layers. A stroked segment also costs one stroke
+/// width, for the round join or cap drawn around its end. 1,023 cubics
+/// looping to the margin and back fit the other limits and draw 8,680
+/// sizes of path, taking 1.4 ms to fill and 12 ms to stroke into an
+/// 80x160 cell; under this cap the worst case found takes 1.4 ms. The
+/// most any of the 584 sampled icons uses is 14.3.
+pub const MAX_INK_MULTIPLE: f32 = 64.0;
 
 /// Largest magnitude a viewBox value may have. Keeps the coordinate
 /// bound, `MAX_EXTENT_MULTIPLE` times the viewBox size, well inside
@@ -169,7 +178,10 @@ pub fn parse(payload: &[u8], view_box: ViewBox) -> Result<PathGlyph, PathError> 
         return Err(PathError::Malformed);
     }
     let bounds = Bounds::new(view_box);
-    let mut segment_budget = MAX_SEGMENTS;
+    let mut budget = Budget {
+        segments: MAX_SEGMENTS,
+        ink: (view_box.w.max(view_box.h) * MAX_INK_MULTIPLE) as f64,
+    };
     let mut layers = Vec::new();
     for raw_layer in payload.split(|&b| b == b'|') {
         if layers.len() == MAX_LAYERS {
@@ -180,8 +192,12 @@ pub fn parse(payload: &[u8], view_box: ViewBox) -> Result<PathGlyph, PathError> 
             .position(|&b| b == b':')
             .ok_or(PathError::Malformed)?;
         let (paint, color) = parse_header(&raw_layer[..colon], view_box)?;
+        let stroke_width = match paint {
+            LayerPaint::Stroke { width } => width as f64,
+            LayerPaint::Fill(_) => 0.0,
+        };
         let mut segments =
-            parse_path_data(&raw_layer[colon + 1..], &bounds, &mut segment_budget)?;
+            parse_path_data(&raw_layer[colon + 1..], &bounds, &mut budget, stroke_width)?;
         // The registry keeps this for the session.
         segments.shrink_to_fit();
         layers.push(PathLayer {
@@ -426,14 +442,31 @@ enum LastControl {
     Quad(f64, f64),
 }
 
+/// What a registration may still spend, shared by its layers.
+struct Budget {
+    segments: usize,
+    /// Path length left, in viewBox units; see [`MAX_INK_MULTIPLE`].
+    ink: f64,
+}
+
 struct PathWriter<'b> {
     segments: Vec<Segment>,
     bounds: &'b Bounds,
-    budget: &'b mut usize,
+    budget: &'b mut Budget,
+    /// The layer's stroke width, or 0 for a fill: each segment of a
+    /// stroke also costs one width of ink, for the join or cap drawn
+    /// around its end.
+    stroke_width: f64,
+    /// Where the last segment ended.
+    pen: (f64, f64),
     /// A `Z` closed the subpath and no `M` has opened the next one yet.
     needs_move: bool,
     start: (f64, f64),
     drew: bool,
+}
+
+fn distance((ax, ay): (f64, f64), (bx, by): (f64, f64)) -> f64 {
+    (bx - ax).hypot(by - ay)
 }
 
 impl PathWriter<'_> {
@@ -441,7 +474,11 @@ impl PathWriter<'_> {
     /// `M0 0Z` repeated would fill 64 KiB with segments the cap never
     /// sees.
     fn spend(&mut self) -> Result<(), PathError> {
-        *self.budget = self.budget.checked_sub(1).ok_or(PathError::TooLarge)?;
+        self.budget.segments = self
+            .budget
+            .segments
+            .checked_sub(1)
+            .ok_or(PathError::TooLarge)?;
         Ok(())
     }
 
@@ -452,11 +489,24 @@ impl PathWriter<'_> {
         Ok(())
     }
 
+    /// Charge `length` of path (a line, or a curve's control polygon,
+    /// which bounds the curve's length) plus a stroke's width.
+    fn spend_ink(&mut self, length: f64) -> Result<(), PathError> {
+        self.budget.ink -= length + self.stroke_width;
+        if self.budget.ink < 0.0 {
+            return Err(PathError::TooLarge);
+        }
+        Ok(())
+    }
+
     fn move_to(&mut self, x: f64, y: f64) -> Result<(), PathError> {
         self.spend()?;
         let (x, y) = self.bounds.check(x, y)?;
+        // No length, but a stroked subpath gets caps.
+        self.spend_ink(0.0)?;
         self.segments.push(Segment::MoveTo(x, y));
         self.start = (x as f64, y as f64);
+        self.pen = self.start;
         self.needs_move = false;
         Ok(())
     }
@@ -475,6 +525,9 @@ impl PathWriter<'_> {
         self.ensure_open()?;
         self.spend_drawing()?;
         let (x, y) = self.bounds.check(x, y)?;
+        let to = (x as f64, y as f64);
+        self.spend_ink(distance(self.pen, to))?;
+        self.pen = to;
         self.segments.push(Segment::LineTo(x, y));
         Ok(())
     }
@@ -484,6 +537,9 @@ impl PathWriter<'_> {
         self.spend_drawing()?;
         let (cx, cy) = self.bounds.check(cx, cy)?;
         let (x, y) = self.bounds.check(x, y)?;
+        let (c, to) = ((cx as f64, cy as f64), (x as f64, y as f64));
+        self.spend_ink(distance(self.pen, c) + distance(c, to))?;
+        self.pen = to;
         self.segments.push(Segment::QuadTo(cx, cy, x, y));
         Ok(())
     }
@@ -503,6 +559,13 @@ impl PathWriter<'_> {
         let (c1x, c1y) = self.bounds.check(c1x, c1y)?;
         let (c2x, c2y) = self.bounds.check(c2x, c2y)?;
         let (x, y) = self.bounds.check(x, y)?;
+        let (c1, c2, to) = (
+            (c1x as f64, c1y as f64),
+            (c2x as f64, c2y as f64),
+            (x as f64, y as f64),
+        );
+        self.spend_ink(distance(self.pen, c1) + distance(c1, c2) + distance(c2, to))?;
+        self.pen = to;
         self.segments
             .push(Segment::CubicTo(c1x, c1y, c2x, c2y, x, y));
         Ok(())
@@ -511,6 +574,8 @@ impl PathWriter<'_> {
     fn close(&mut self) -> Result<(), PathError> {
         if !self.needs_move {
             self.spend()?;
+            self.spend_ink(distance(self.pen, self.start))?;
+            self.pen = self.start;
             self.segments.push(Segment::Close);
             self.needs_move = true;
         }
@@ -521,13 +586,16 @@ impl PathWriter<'_> {
 fn parse_path_data(
     raw: &[u8],
     bounds: &Bounds,
-    budget: &mut usize,
+    budget: &mut Budget,
+    stroke_width: f64,
 ) -> Result<Vec<Segment>, PathError> {
     let mut c = Cursor { s: raw, pos: 0 };
     let mut out = PathWriter {
         segments: Vec::new(),
         bounds,
         budget,
+        stroke_width,
+        pen: (0.0, 0.0),
         needs_move: false,
         start: (0.0, 0.0),
         drew: false,
@@ -1102,6 +1170,59 @@ mod tests {
         // The implicit moveto after a close is charged as well.
         let reopen = format!("fill=nonzero,fg:M0 0{}", "h1z".repeat(MAX_SEGMENTS / 2));
         assert_eq!(layer(&reopen), Err(PathError::TooLarge));
+    }
+
+    #[test]
+    fn total_path_length_is_capped() {
+        // Each cubic loops to the margin and back: its control polygon
+        // is about 204 units, and 64 viewBox sizes allow 1,536.
+        let loops = |n: usize| {
+            let mut s = String::from("fill=nonzero,fg:M12 12");
+            for i in 0..n {
+                s.push_str(if i % 2 == 0 {
+                    "C-24 -24 48 48 12 12"
+                } else {
+                    "C48 48 -24 -24 12 12"
+                });
+            }
+            s
+        };
+        // Nine segments, far under the segment cap and inside the
+        // bounds: only the length is over.
+        assert!(layer(&loops(7)).is_ok());
+        assert_eq!(layer(&loops(8)), Err(PathError::TooLarge));
+
+        // A stroke costs its width per segment as well: 64 short
+        // segments are nothing filled, too much at the widest stroke.
+        let short = "h.1h-.1".repeat(32);
+        assert!(layer(&format!("fill=nonzero,fg:M12 12{short}")).is_ok());
+        assert!(layer(&format!("stroke=2,fg:M12 12{short}")).is_ok());
+        assert_eq!(
+            layer(&format!("stroke=24,fg:M12 12{short}")),
+            Err(PathError::TooLarge)
+        );
+
+        // Closing counts the segment back to the start.
+        let square = "M0 0h24v24h-24z"; // 96 units
+        let squares = |n: usize| format!("fill=nonzero,fg:{}", square.repeat(n));
+        assert!(layer(&squares(16)).is_ok());
+        assert_eq!(layer(&squares(17)), Err(PathError::TooLarge));
+
+        // The budget is per registration, across layers.
+        let half = format!("fill=nonzero,fg:{}", square.repeat(8));
+        assert!(parse(format!("{half}|{half}").as_bytes(), VB24).is_ok());
+        assert_eq!(
+            parse(
+                format!("{half}|{half}|fill=nonzero,fg:M0 0h1").as_bytes(),
+                VB24
+            ),
+            Err(PathError::TooLarge)
+        );
+
+        // The cap scales with the viewBox.
+        let vb = parse_view_box(b"0,0,960,960").unwrap();
+        let big = format!("fill=nonzero,fg:{}", "M0 0h960v960h-960z".repeat(16));
+        assert!(parse(big.as_bytes(), vb).is_ok());
     }
 
     /// Endpoints of every segment, `None` for a close.

@@ -1321,6 +1321,161 @@ struct RunCacheEntry {
     glyphs: Vec<ShapedGlyph>,
 }
 
+/// Time spent rasterising Glyph Protocol glyphs in the current frame.
+#[derive(Debug, Default)]
+struct CustomGlyphBudget {
+    limit: Option<std::time::Duration>,
+    spent: std::time::Duration,
+    /// Some glyph was rasterised this frame.
+    progressed: bool,
+    deferred: usize,
+}
+
+impl CustomGlyphBudget {
+    fn begin_frame(&mut self) {
+        self.spent = std::time::Duration::ZERO;
+        self.progressed = false;
+        self.deferred = 0;
+    }
+
+    /// Whether another rasterisation fits this frame. The first one
+    /// always does, so drawing progresses under any limit. Counts the
+    /// glyph as deferred when it doesn't fit.
+    fn admit(&mut self) -> bool {
+        match self.limit {
+            Some(limit) if self.progressed && self.spent >= limit => {
+                self.deferred += 1;
+                false
+            }
+            _ => true,
+        }
+    }
+
+    /// Time `f` against the budget. The clock is only read when a
+    /// limit is set.
+    fn charge<T>(&mut self, f: impl FnOnce() -> T) -> T {
+        self.progressed = true;
+        if self.limit.is_none() {
+            return f();
+        }
+        let start = std::time::Instant::now();
+        let out = f();
+        self.spent += start.elapsed();
+        out
+    }
+}
+
+#[cfg(test)]
+mod custom_glyph_budget_tests {
+    use super::CustomGlyphBudget;
+    use std::time::Duration;
+
+    #[test]
+    fn without_a_limit_nothing_is_deferred() {
+        let mut b = CustomGlyphBudget::default();
+        for _ in 0..1000 {
+            assert!(b.admit());
+            b.charge(|| std::thread::sleep(Duration::from_micros(1)));
+        }
+        assert_eq!(b.deferred, 0);
+        // The clock isn't read without a limit.
+        assert_eq!(b.spent, Duration::ZERO);
+    }
+
+    #[test]
+    fn past_the_limit_glyphs_are_deferred_until_the_next_frame() {
+        let mut b = CustomGlyphBudget {
+            limit: Some(Duration::from_millis(1)),
+            ..Default::default()
+        };
+        assert!(b.admit());
+        b.charge(|| std::thread::sleep(Duration::from_millis(2)));
+        assert!(!b.admit());
+        assert!(!b.admit());
+        assert_eq!(b.deferred, 2);
+        b.begin_frame();
+        assert_eq!(b.deferred, 0);
+        assert!(b.admit());
+    }
+
+    #[test]
+    fn the_first_glyph_of_a_frame_always_draws() {
+        let mut b = CustomGlyphBudget {
+            limit: Some(Duration::ZERO),
+            ..Default::default()
+        };
+        assert!(b.admit(), "a zero budget still makes progress");
+        b.charge(|| ());
+        assert!(!b.admit());
+    }
+
+    /// Through the real lookup path: with no time to spare, one glyph
+    /// draws per frame, the rest are deferred (not marked unrenderable),
+    /// and each following frame finishes one more while the ones
+    /// already drawn come from the atlas.
+    #[test]
+    fn deferred_glyphs_fill_in_over_the_following_frames() {
+        use rio_backend::sugarloaf::glyph_protocol::{
+            glyph_path::{parse, parse_view_box},
+            GlyphRegistry, StoredPayload,
+        };
+        use rio_backend::sugarloaf::grid::{cpu::CpuGridRenderer, GridRenderer};
+
+        let registry = GlyphRegistry::new();
+        let vb = parse_view_box(b"0,0,24,24").unwrap();
+        let cps = [0x10_0000u32, 0x10_0001, 0x10_0002];
+        for (i, cp) in cps.iter().enumerate() {
+            let payload = format!("fill=nonzero,fg:M{i} 0h4v4h-4z");
+            let glyph = parse(payload.as_bytes(), vb).unwrap();
+            registry
+                .register(
+                    *cp,
+                    StoredPayload::Path { glyph },
+                    1000,
+                    1,
+                    Default::default(),
+                )
+                .unwrap();
+        }
+        let mut grid = GridRenderer::Cpu(CpuGridRenderer::new(10, 2));
+        let mut rasterizer = super::GridGlyphRasterizer::new();
+        rasterizer.set_custom_glyph_frame_budget(Some(Duration::ZERO));
+
+        let mut frame = |rasterizer: &mut super::GridGlyphRasterizer| {
+            rasterizer.begin_frame();
+            let drawn = cps
+                .iter()
+                .filter(|&&cp| {
+                    super::ensure_custom_glyph_by_codepoint(
+                        &mut grid,
+                        rasterizer,
+                        &registry,
+                        cp,
+                        10,
+                        20.0,
+                        [255; 4],
+                        1,
+                        |_| Some(0),
+                    )
+                    .is_some()
+                })
+                .count();
+            (drawn, rasterizer.custom_glyphs_deferred())
+        };
+        assert_eq!(frame(&mut rasterizer), (1, 2));
+        assert_eq!(frame(&mut rasterizer), (2, 1));
+        assert_eq!(frame(&mut rasterizer), (3, 0));
+        // Nothing was given up on.
+        for cp in cps {
+            let entry = registry.get(cp).unwrap();
+            assert!(!entry
+                .render_state
+                .unrenderable
+                .load(std::sync::atomic::Ordering::Relaxed));
+        }
+    }
+}
+
 pub struct GridGlyphRasterizer {
     /// Cache of `(char, style_flags, route_id) → (font_id, is_emoji)`
     /// resolutions. The route_id is part of the key because Glyph
@@ -1333,6 +1488,9 @@ pub struct GridGlyphRasterizer {
     ascent_cache: FxHashMap<(u32, u16), i16>,
     /// Atlas ids for Glyph Protocol rasterisations.
     custom_glyph_ids: CustomGlyphIds,
+    /// Per-frame time limit for Glyph Protocol rasterisation; see
+    /// [`Self::set_custom_glyph_frame_budget`].
+    custom_glyph_budget: CustomGlyphBudget,
     /// `(should_embolden, should_italicize)` per font_id. Read from
     /// `FontData` synthesis flags; matches the rich-text rasterizer's
     /// convention.
@@ -1415,6 +1573,7 @@ impl GridGlyphRasterizer {
             font_resolve: FxHashMap::default(),
             ascent_cache: FxHashMap::default(),
             custom_glyph_ids: CustomGlyphIds::default(),
+            custom_glyph_budget: CustomGlyphBudget::default(),
             synthesis_cache: FxHashMap::default(),
             run_cache: new_run_cache(),
             run_hasher: rapidhash::fast::RapidHasher::default(),
@@ -1436,6 +1595,35 @@ impl GridGlyphRasterizer {
             #[cfg(not(target_os = "macos"))]
             font_data_cache: FxHashMap::default(),
         }
+    }
+
+    /// Limit how long one frame may spend rasterising Glyph Protocol
+    /// glyphs. Each registration is bounded, but a program can register
+    /// the whole block and show it all at once, and a font size change
+    /// re-rasterises everything visible. Past the budget, the remaining
+    /// custom glyphs are left out of the frame (their cells draw empty)
+    /// and counted in [`Self::custom_glyphs_deferred`]; the caller must
+    /// then rebuild those rows on a following frame, which picks up
+    /// where this one stopped since finished glyphs are in the atlas.
+    /// At least one glyph is rasterised per frame, so drawing always
+    /// progresses.
+    ///
+    /// `None` (the default) never defers, for callers that can't
+    /// schedule another frame.
+    pub fn set_custom_glyph_frame_budget(&mut self, budget: Option<std::time::Duration>) {
+        self.custom_glyph_budget.limit = budget;
+    }
+
+    /// Start a frame's custom glyph budget. Call once per frame, before
+    /// building any panel's rows.
+    pub fn begin_frame(&mut self) {
+        self.custom_glyph_budget.begin_frame();
+    }
+
+    /// Custom glyphs left out since [`Self::begin_frame`] because the
+    /// budget ran out.
+    pub fn custom_glyphs_deferred(&self) -> usize {
+        self.custom_glyph_budget.deferred
     }
 
     /// Drop every cache keyed by `font_id`; a swapped font library
@@ -3414,15 +3602,23 @@ fn ensure_custom_glyph_by_codepoint(
         return Some((key, slot, true, span));
     }
 
-    let Some(raster) = rio_backend::sugarloaf::glyph_protocol::rasterize_payload(
-        &entry.payload,
-        entry.upm,
-        span_w_px,
-        cell_h_px,
-        foreground_rgba,
-        &entry.layout,
-        baseline_px as f32,
-    ) else {
+    // Out of time this frame: leave the cell empty, not unrenderable.
+    // The caller rebuilds the row on a following frame.
+    if !rasterizer.custom_glyph_budget.admit() {
+        return None;
+    }
+    let raster = rasterizer.custom_glyph_budget.charge(|| {
+        rio_backend::sugarloaf::glyph_protocol::rasterize_payload(
+            &entry.payload,
+            entry.upm,
+            span_w_px,
+            cell_h_px,
+            foreground_rgba,
+            &entry.layout,
+            baseline_px as f32,
+        )
+    });
+    let Some(raster) = raster else {
         // The geometry is valid, so the payload itself can't be drawn.
         entry
             .render_state
