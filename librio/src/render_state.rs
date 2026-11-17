@@ -15,7 +15,7 @@ use rio_vt::crosswords::grid::row::Row;
 use rio_vt::crosswords::grid::Dimensions;
 use rio_vt::crosswords::pos::Column;
 use rio_vt::crosswords::square::{ContentTag, Extras, Square};
-use rio_vt::crosswords::style::Style;
+use rio_vt::crosswords::style::{PendingStyles, Style};
 use rio_vt::crosswords::Crosswords;
 use rio_vt::event::sync::TerminalLock;
 use rio_vt::event::TerminalDamage;
@@ -192,11 +192,22 @@ pub(crate) fn apply_graphics_updates(images: &InlineImages, queues: UpdateQueues
     }
 }
 
+/// What resolving kitty virtual placement runs needs from the terminal,
+/// taken under the lock so the runs can be resolved after it: the
+/// placement registry and, per image, its size and stamp.
+struct VirtualRunInputs {
+    placements: FxHashMap<(u32, u32), VirtualPlacement>,
+    images: FxHashMap<u32, (usize, usize, u64)>,
+}
+
 pub struct RenderState {
     terminal: Arc<TerminalLock<Crosswords<Listener>>>,
     rows: Vec<Row<Square>>,
     /// Per-row resolved cell styles, index-parallel to `rows`.
     row_styles: Vec<Vec<Style>>,
+    /// Style runs recorded under the terminal lock by the last update,
+    /// filled into `row_styles` once the lock is released.
+    pending_styles: PendingStyles,
     extras: FxHashMap<u16, Extras>,
     columns: usize,
     cursor_line: usize,
@@ -247,6 +258,7 @@ impl RenderState {
             terminal,
             rows: Vec::new(),
             row_styles: Vec::new(),
+            pending_styles: PendingStyles::default(),
             extras: FxHashMap::default(),
             columns,
             cursor_line: 0,
@@ -290,6 +302,7 @@ impl RenderState {
             &mut self.rows,
             &mut self.row_styles,
             &mut self.extras,
+            &mut self.pending_styles,
         );
         term.reset_damage();
         term.damage_event_in_flight = false;
@@ -319,7 +332,33 @@ impl RenderState {
                 }));
             }
         }
-        self.collect_virtual_runs(&term, &mut images);
+        // Virtual placement runs are read off the per-cell styles, which
+        // are filled only after the lock is released, so what resolving
+        // them needs from the terminal is taken now and they are
+        // resolved below.
+        let virtual_inputs =
+            (!term.graphics.kitty_virtual_placements.is_empty()).then(|| {
+                VirtualRunInputs {
+                    placements: term.graphics.kitty_virtual_placements.clone(),
+                    images: term
+                        .graphics
+                        .kitty_virtual_placements
+                        .values()
+                        .filter_map(|placement| {
+                            let image =
+                                term.graphics.get_kitty_image(placement.image_id)?;
+                            Some((
+                                placement.image_id,
+                                (
+                                    image.data.width,
+                                    image.data.height,
+                                    self.stamp(image.transmission_time),
+                                ),
+                            ))
+                        })
+                        .collect(),
+                }
+            });
         if !term.graphics.atlas_placements.is_empty() {
             // One lock per update; the accessors then read the stamp
             // from the entry.
@@ -334,34 +373,6 @@ impl RenderState {
                 }
             }));
         }
-        // Under-background placements (z < i32::MIN / 2) first, then
-        // under-text (z < 0), then over-text: drawing in order layers
-        // correctly, and the host can split the list at those bounds.
-        images.sort_by_key(ImageEntry::order);
-        let view = (self.history_size, self.display_offset, self.rows.len());
-        let list_changed = images != self.images;
-        // A scroll only moves what was or is in view: an image deep in
-        // the scrollback must not make every line of output a new
-        // generation.
-        let moved = view != self.images_view
-            && images
-                .iter()
-                .any(|entry| entry.in_view(self.images_view) || entry.in_view(view));
-        if list_changed || moved {
-            self.placements_generation = self.placements_generation.wrapping_add(1);
-        }
-        if list_changed {
-            self.kitty_indices.clear();
-            self.kitty_indices.extend(
-                images
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, entry)| matches!(entry, ImageEntry::Kitty(_)))
-                    .map(|(index, _)| index),
-            );
-        }
-        self.images_scratch = std::mem::replace(&mut self.images, images);
-        self.images_view = view;
         self.term_colors = *term.colors();
         let cursor = term.cursor();
         self.cursor_line = cursor.pos.row.0.max(0) as usize;
@@ -400,6 +411,42 @@ impl RenderState {
                     is_block: range.is_block,
                 })
             });
+        // Everything above needed the terminal; the style fan-out and
+        // the image list do not, so they run with the lock released and
+        // the reader free.
+        drop(term);
+        self.pending_styles.fill(&mut self.row_styles);
+        if let Some(inputs) = &virtual_inputs {
+            self.collect_virtual_runs(inputs, &mut images);
+        }
+        // Under-background placements (z < i32::MIN / 2) first, then
+        // under-text (z < 0), then over-text: drawing in order layers
+        // correctly, and the host can split the list at those bounds.
+        images.sort_by_key(ImageEntry::order);
+        let view = (self.history_size, self.display_offset, self.rows.len());
+        let list_changed = images != self.images;
+        // A scroll only moves what was or is in view: an image deep in
+        // the scrollback must not make every line of output a new
+        // generation.
+        let moved = view != self.images_view
+            && images
+                .iter()
+                .any(|entry| entry.in_view(self.images_view) || entry.in_view(view));
+        if list_changed || moved {
+            self.placements_generation = self.placements_generation.wrapping_add(1);
+        }
+        if list_changed {
+            self.kitty_indices.clear();
+            self.kitty_indices.extend(
+                images
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, entry)| matches!(entry, ImageEntry::Kitty(_)))
+                    .map(|(index, _)| index),
+            );
+        }
+        self.images_scratch = std::mem::replace(&mut self.images, images);
+        self.images_view = view;
     }
 
     pub fn columns(&self) -> usize {
@@ -667,25 +714,22 @@ impl RenderState {
     /// showing sequential image columns collapse into one run.
     fn collect_virtual_runs(
         &self,
-        term: &Crosswords<Listener>,
+        inputs: &VirtualRunInputs,
         entries: &mut Vec<ImageEntry>,
     ) {
-        let graphics = &term.graphics;
-        if graphics.kitty_virtual_placements.is_empty() {
-            return;
-        }
-
         let flush = |entries: &mut Vec<ImageEntry>,
                      run: PlaceholderRun,
                      line: usize,
                      start_col: usize| {
             let placement = resolve_virtual_placement(
-                &graphics.kitty_virtual_placements,
+                &inputs.placements,
                 run.image_id,
                 run.placement_id,
             );
             let Some(placement) = placement else { return };
-            let Some(image) = graphics.get_kitty_image(run.image_id) else {
+            let Some(&(image_width, image_height, image_stamp)) =
+                inputs.images.get(&run.image_id)
+            else {
                 return;
             };
             entries.push(ImageEntry::Kitty(KittyEntry::Virtual {
@@ -693,9 +737,9 @@ impl RenderState {
                 line,
                 start_col,
                 placement: placement.clone(),
-                image_width: image.data.width,
-                image_height: image.data.height,
-                image_stamp: self.stamp(image.transmission_time),
+                image_width,
+                image_height,
+                image_stamp,
             }));
         };
 

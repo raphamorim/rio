@@ -717,22 +717,42 @@ impl Grid<Square> {
         self.style_set.styles()
     }
 
-    /// Resolve `src`'s style ids into per-cell `Style` values, index-
-    /// parallel to the row's cells. Bg-only cells get the default
-    /// style; their color travels inline in the cell itself. Snapshots
-    /// carry these resolved values instead of ids, so id reuse by the
-    /// sweep can never affect rows copied on earlier frames.
-    pub fn resolve_row_styles(&self, src: &Row<Square>, out: &mut Vec<Style>) {
-        out.clear();
+    /// Record `src`'s styles as runs on `pending`, for `line` of the
+    /// snapshot: one lookup per stretch of cells sharing a style id,
+    /// filled out to per-cell values after the terminal lock is
+    /// released. Bg-only cells get the default style; their color
+    /// travels inline in the cell itself. Snapshots carry resolved
+    /// values instead of ids, so id reuse by the sweep can never
+    /// affect rows copied on earlier frames.
+    pub fn record_row_styles(
+        &self,
+        src: &Row<Square>,
+        line: usize,
+        pending: &mut crate::crosswords::style::PendingStyles,
+    ) {
+        pending.begin_row(line, src.inner.len());
         if !src.has_styles {
-            out.resize(src.inner.len(), Style::default());
             return;
         }
-        out.extend(src.inner.iter().map(|sq| {
-            sq.style_id_checked()
-                .map(|id| self.style_set.get(id))
-                .unwrap_or_default()
-        }));
+        let mut run_start = 0;
+        let mut run_id = None;
+        for (x, sq) in src.inner.iter().enumerate() {
+            let id = sq.style_id_checked();
+            if x == 0 {
+                run_id = id;
+                continue;
+            }
+            if id != run_id {
+                if let Some(id) = run_id {
+                    pending.push_run(run_start, x, self.style_set.get(id));
+                }
+                run_start = x;
+                run_id = id;
+            }
+        }
+        if let Some(id) = run_id {
+            pending.push_run(run_start, src.inner.len(), self.style_set.get(id));
+        }
     }
 
     /// Read the style id of the current cursor template.

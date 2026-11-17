@@ -82,6 +82,10 @@ pub struct Screen<'screen> {
     /// be rebuilt when the composition moves or ends even when
     /// terminal damage reports nothing.
     last_preedit_row: Option<usize>,
+    /// The search match focused on the last frame, so the rows of the
+    /// one it moves away from and the one it moves to are marked for
+    /// the snapshot; the focus paints over rows without changing them.
+    last_focused_match: Option<rio_backend::crosswords::search::Match>,
     last_ime_cursor_pos: Option<(f32, f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
     /// Hint regexes compiled on first use, keyed by pattern. Hover
@@ -340,6 +344,7 @@ impl Screen<'_> {
             context_manager,
             ime: crate::ime::Ime::new(),
             last_preedit_row: None,
+            last_focused_match: None,
             sugarloaf,
             mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
             touchpurpose: TouchPurpose::default(),
@@ -2110,45 +2115,46 @@ impl Screen<'_> {
                 return false;
             }
 
-            // Mark the hint range as damaged so it gets re-rendered.
-            //
-            // Two damage signals are required:
-            // * Terminal-side: `update_selection_damage` marks the affected
-            // lines so the partial render path knows what to redraw.
-            // * Renderer-side: `pending_update.set_terminal_damage(Full)`
-            // ensures the render loop doesn't early-exit on
-            // `!pending_update.is_dirty()`
+            // The highlight paints over rows without changing them, so
+            // the rows of the previous highlight and of this one are
+            // marked for the next snapshot: that both copies them and
+            // makes the frame a partial one.
             {
                 let mut terminal = current.terminal.lock();
-                let display_offset = terminal.display_offset();
-
-                let hint_range = rio_backend::selection::SelectionRange::new(
+                if let Some(old) = &current.renderable_content.highlighted_hint {
+                    terminal.damage_range_rows(
+                        &rio_backend::selection::SelectionRange::new(
+                            old.start, old.end, false,
+                        ),
+                    );
+                }
+                terminal.damage_range_rows(&rio_backend::selection::SelectionRange::new(
                     hint_match.start,
                     hint_match.end,
                     false,
-                );
-                terminal.update_selection_damage(Some(hint_range), display_offset);
+                ));
             }
 
             current
                 .renderable_content
                 .pending_update
-                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
             current.renderable_content.highlighted_hint = Some(hint_match);
             true
         } else {
-            if current.renderable_content.highlighted_hint.is_some() {
+            if let Some(old) = &current.renderable_content.highlighted_hint {
                 let mut terminal = current.terminal.lock();
-                let display_offset = terminal.display_offset();
-                terminal.update_selection_damage(None, display_offset);
+                terminal.damage_range_rows(&rio_backend::selection::SelectionRange::new(
+                    old.start, old.end, false,
+                ));
             }
 
-            // Force a render so the previously-highlighted line clears.
+            // A render so the previously highlighted rows clear.
             if had_highlight {
                 current
                     .renderable_content
                     .pending_update
-                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
             }
             current.renderable_content.highlighted_hint = None;
             had_highlight
@@ -2164,10 +2170,16 @@ impl Screen<'_> {
         let current = self.context_manager.current_mut();
         let had_highlight = current.renderable_content.highlighted_hint.is_some();
 
-        if had_highlight {
+        if let Some(old) = &current.renderable_content.highlighted_hint {
             let mut terminal = current.terminal.lock();
-            let display_offset = terminal.display_offset();
-            terminal.update_selection_damage(None, display_offset);
+            terminal.damage_range_rows(&rio_backend::selection::SelectionRange::new(
+                old.start, old.end, false,
+            ));
+            drop(terminal);
+            current
+                .renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
         }
 
         current.renderable_content.highlighted_hint = None;
@@ -3862,12 +3874,46 @@ impl Screen<'_> {
         }
 
         if is_search_active {
-            // Force invalidation for search with full damage
-            self.context_manager
-                .current_mut()
+            // The matches are found again every frame while searching,
+            // and the rows whose highlight changed are marked before the
+            // snapshot copies them; the panel only has to enter the
+            // render path. The focused match lives on the screen, so
+            // its rows are marked here when it moves.
+            let focused = self.search_state.focused_match.clone();
+            let current = self.context_manager.current_mut();
+            if focused != self.last_focused_match {
+                let mut terminal = current.terminal.lock();
+                for regex_match in self.last_focused_match.iter().chain(focused.iter()) {
+                    terminal.damage_range_rows(
+                        &rio_backend::selection::SelectionRange::new(
+                            *regex_match.start(),
+                            *regex_match.end(),
+                            false,
+                        ),
+                    );
+                }
+                drop(terminal);
+                current
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
+                self.last_focused_match = focused;
+            }
+            current.renderable_content.pending_update.set_dirty();
+        } else if let Some(last) = self.last_focused_match.take() {
+            // The search ended: the focus is gone from its rows.
+            let current = self.context_manager.current_mut();
+            let mut terminal = current.terminal.lock();
+            terminal.damage_range_rows(&rio_backend::selection::SelectionRange::new(
+                *last.start(),
+                *last.end(),
+                false,
+            ));
+            drop(terminal);
+            current
                 .renderable_content
                 .pending_update
-                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
         }
 
         let search_dfas = if is_search_active {

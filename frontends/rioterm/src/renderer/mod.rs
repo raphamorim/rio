@@ -481,22 +481,47 @@ impl Renderer {
             {
                 let mut terminal = context.terminal.lock();
                 any_panel_dirty = true;
-                let snapshotted = context
-                    .renderable_content
-                    .update_from_terminal(&mut terminal, force_full_damage);
-                if let Some(dfas) = search
+                // Search matches are found before the snapshot, so the
+                // rows whose highlight changed are among the rows it
+                // copies: a highlight paints over a row without
+                // changing it, and nothing else would mark it.
+                let new_matches: Option<Option<Vec<_>>> = search
                     .as_mut()
-                    .filter(|_| snapshotted && context.route_id == active_route)
-                {
-                    context.renderable_content.hint_matches =
+                    .filter(|_| context.route_id == active_route)
+                    .map(|dfas| {
                         dfas.as_deref_mut().map(|dfas| {
                             HintMatches::visible_regex_matches(&terminal, dfas)
                                 .iter()
                                 .cloned()
                                 .collect()
-                        });
+                        })
+                    });
+                if let Some(new_matches) = &new_matches {
+                    let old_matches = &context.renderable_content.hint_matches;
+                    if new_matches != old_matches {
+                        for regex_match in old_matches
+                            .iter()
+                            .flatten()
+                            .chain(new_matches.iter().flatten())
+                        {
+                            terminal.damage_range_rows(
+                                &rio_backend::selection::SelectionRange::new(
+                                    *regex_match.start(),
+                                    *regex_match.end(),
+                                    false,
+                                ),
+                            );
+                        }
+                    }
+                }
+                let snapshotted = context
+                    .renderable_content
+                    .update_from_terminal(&mut terminal, force_full_damage);
+                if let (true, Some(new_matches)) = (snapshotted, new_matches) {
+                    context.renderable_content.hint_matches = new_matches;
                 }
                 drop(terminal);
+                context.renderable_content.finish_update();
             }
 
             // Recalculate image overlay positions every frame when placements

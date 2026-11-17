@@ -274,8 +274,6 @@ struct TermDamageState {
 
     /// Last Vi cursor point.
     last_vi_cursor_point: Option<Pos>,
-    // Old selection range.
-    last_selection: Option<SelectionRange>,
 }
 
 impl TermDamageState {
@@ -287,7 +285,6 @@ impl TermDamageState {
             lines,
             last_cursor: Default::default(),
             last_vi_cursor_point: Default::default(),
-            last_selection: Default::default(),
         }
     }
 
@@ -296,7 +293,6 @@ impl TermDamageState {
         // Reset point, so old cursor won't end up outside of the viewport.
         self.last_cursor = Default::default();
         self.last_vi_cursor_point = None;
-        self.last_selection = None;
         self.full = true;
 
         self.lines.clear();
@@ -310,24 +306,6 @@ impl TermDamageState {
     #[inline]
     fn damage_line(&mut self, line: usize) {
         self.lines[line].mark_damaged();
-    }
-
-    fn damage_selection(&mut self, selection: SelectionRange, display_offset: usize) {
-        let display_offset = display_offset as i32;
-        let last_visible_line = self.lines.len() as i32 - 1;
-
-        // Don't damage invisible selection.
-        if selection.end.row.0 + display_offset < 0
-            || selection.start.row.0.abs() < display_offset - last_visible_line
-        {
-            return;
-        };
-
-        let start = std::cmp::max(selection.start.row.0 + display_offset, 0);
-        let end = (selection.end.row.0 + display_offset).clamp(0, last_visible_line);
-        for line in start as usize..=end as usize {
-            self.damage_line(line);
-        }
     }
 
     /// Reset information about terminal damage.
@@ -684,26 +662,6 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.full
     }
 
-    /// Update selection damage tracking.
-    /// This should be called when the selection changes to damage only the affected lines.
-    pub fn update_selection_damage(
-        &mut self,
-        new_selection: Option<SelectionRange>,
-        display_offset: usize,
-    ) {
-        // Damage old selection lines if they exist
-        if let Some(old_selection) = self.damage.last_selection {
-            self.damage.damage_selection(old_selection, display_offset);
-        }
-
-        // Damage new selection lines if they exist
-        if let Some(new_selection) = new_selection {
-            self.damage.damage_selection(new_selection, display_offset);
-        }
-
-        // Update the stored selection
-        self.damage.last_selection = new_selection;
-    }
     #[must_use]
     pub fn damage(&mut self) -> TermDamage<'_> {
         // Ensure the entire terminal is damaged after entering insert mode.
@@ -1351,6 +1309,33 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.damage_line(line);
     }
 
+    /// DECTCEM showed or hid the cursor. Its row shapes differently
+    /// with the cursor on it, the cursor cell being a run of its own,
+    /// so the row is copied again; and a burst that does nothing else
+    /// has to wake the renderer like any other, which the line damage
+    /// does.
+    fn damage_cursor_visibility(&mut self) {
+        let row = self.grid.cursor.pos.row;
+        self.grid[row].dirty = true;
+        self.damage_cursor_line();
+    }
+
+    /// Mark the visible rows of `range` for the next snapshot. A
+    /// selection or a highlight paints over rows without changing
+    /// their content, so nothing else would copy them again. Both the
+    /// row bits and the line damage are set: the bits pick the rows,
+    /// the line damage makes the frame a partial one.
+    pub fn damage_range_rows(&mut self, range: &SelectionRange) {
+        let display_offset = self.grid.display_offset() as i32;
+        let last_visible = self.grid.screen_lines() as i32 - 1;
+        let start = (range.start.row.0 + display_offset).max(0);
+        let end = (range.end.row.0 + display_offset).min(last_visible);
+        for viewport_line in start..=end {
+            self.grid[Line(viewport_line - display_offset)].dirty = true;
+            self.damage.damage_line(viewport_line as usize);
+        }
+    }
+
     #[inline]
     pub fn damage_cursor(&mut self) {
         self.damage_cursor_line();
@@ -1429,7 +1414,16 @@ impl<U: EventListener> Crosswords<U> {
         // Scroll between origin and bottom
         self.grid.sync_template_style();
         self.grid.scroll_down(&region, lines);
-        self.mark_fully_damaged();
+        // Mark the scroll region as damaged; a full-screen region
+        // coalesces into full damage, like scroll_up_relative. The rows
+        // themselves were marked by the grid.
+        if region.start.0 == 0 && region.end.0 as usize == self.grid.screen_lines() {
+            self.mark_fully_damaged();
+        } else {
+            for line in region.start.0..region.end.0 {
+                self.damage.damage_line(line as usize);
+            }
+        }
         // Partial-region scrolls move grid-plane images with their
         // content (kitty placements float and are not adjusted).
         self.shift_atlas_placements_in_region(&region, lines as i64);
@@ -2412,12 +2406,18 @@ impl<U: EventListener> Crosswords<U> {
         buf
     }
 
+    /// Copy the visible rows that `damage` says changed into `dst`,
+    /// marking each copied row dirty for the renderer, and record their
+    /// styles on `pending`. The caller fills `row_styles` from `pending`
+    /// after releasing the terminal lock; until then the per-cell
+    /// styles of the copied rows are stale.
     pub fn snapshot_visible(
         &mut self,
         damage: &crate::event::TerminalDamage,
         dst: &mut Vec<Row<Square>>,
         row_styles: &mut Vec<Vec<crate::crosswords::style::Style>>,
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
+        pending: &mut crate::crosswords::style::PendingStyles,
     ) {
         use crate::event::TerminalDamage;
         let (start, end) = self.visible_line_bounds();
@@ -2430,6 +2430,8 @@ impl<U: EventListener> Crosswords<U> {
         // Styles are resolved to values per copied row, so the snapshot
         // holds no style ids at all: sweeps reusing ids, table growth,
         // and grid swaps can't affect rows copied on earlier frames.
+        // The lookup happens here, one per run; the per-cell fan-out
+        // waits for the lock to drop.
         if needs_full {
             // Every full-screen scroll lands here, so a flood of output
             // takes this path on every frame. The rows already in `dst`
@@ -2446,7 +2448,7 @@ impl<U: EventListener> Crosswords<U> {
                     None => dst.push(src.clone()),
                 }
                 dst[i].dirty = true;
-                self.grid.resolve_row_styles(src, &mut row_styles[i]);
+                self.grid.record_row_styles(src, i, pending);
                 self.refresh_row_extras(src, extras);
             }
             for row_idx in start..end {
@@ -2475,7 +2477,7 @@ impl<U: EventListener> Crosswords<U> {
             let src = &self.grid[Line(row_idx)];
             dst[y].copy_from(src);
             dst[y].dirty = true;
-            self.grid.resolve_row_styles(src, &mut row_styles[y]);
+            self.grid.record_row_styles(src, y, pending);
             self.refresh_row_extras(src, extras);
         }
         for row_idx in start..end {
@@ -3107,7 +3109,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     self.swap_alt();
                 }
             }
-            NamedPrivateMode::ShowCursor => self.mode.insert(Mode::SHOW_CURSOR),
+            NamedPrivateMode::ShowCursor => {
+                if !self.mode.contains(Mode::SHOW_CURSOR) {
+                    self.mode.insert(Mode::SHOW_CURSOR);
+                    self.damage_cursor_visibility();
+                }
+            }
             NamedPrivateMode::CursorKeys => self.mode.insert(Mode::APP_CURSOR),
             // Mouse protocols are mutually exclusive.
             NamedPrivateMode::ReportX10MouseClicks => {
@@ -3213,7 +3220,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     self.swap_alt();
                 }
             }
-            NamedPrivateMode::ShowCursor => self.mode.remove(Mode::SHOW_CURSOR),
+            NamedPrivateMode::ShowCursor => {
+                if self.mode.contains(Mode::SHOW_CURSOR) {
+                    self.mode.remove(Mode::SHOW_CURSOR);
+                    self.damage_cursor_visibility();
+                }
+            }
             NamedPrivateMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
             // The mouse protocols are one setting, so resetting any of them
             // turns reporting off. There is no protocol underneath to fall
@@ -6279,6 +6291,20 @@ mod tests {
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
     }
 
+    /// A snapshot as a frontend takes it: the copy under the lock and
+    /// the style fill after it, back to back.
+    fn snap<T: EventListener>(
+        cw: &mut Crosswords<T>,
+        damage: &crate::event::TerminalDamage,
+        rows: &mut Vec<Row<Square>>,
+        row_styles: &mut Vec<Vec<crate::crosswords::style::Style>>,
+        extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
+    ) {
+        let mut pending = crate::crosswords::style::PendingStyles::default();
+        cw.snapshot_visible(damage, rows, row_styles, extras, &mut pending);
+        pending.fill(row_styles);
+    }
+
     /// A 20x4 terminal on `route_id` that records the events it sends.
     #[allow(clippy::type_complexity)]
     fn make_crosswords_with_events(
@@ -6673,7 +6699,8 @@ mod tests {
         for line in 0..lines {
             cw.input_str(&format!("{line}\r\n"));
         }
-        cw.snapshot_visible(
+        snap(
+            &mut cw,
             &TerminalDamage::Full,
             &mut rows,
             &mut row_styles,
@@ -6689,7 +6716,8 @@ mod tests {
         for line in lines..2 * lines {
             cw.input_str(&format!("{line}\r\n"));
         }
-        cw.snapshot_visible(
+        snap(
+            &mut cw,
             &TerminalDamage::Full,
             &mut rows,
             &mut row_styles,
@@ -6716,7 +6744,7 @@ mod tests {
         cw.terminal_attribute(Attr::Background(red));
         cw.input('x');
         let damage = cw.peek_damage_event().unwrap();
-        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+        snap(&mut cw, &damage, &mut rows, &mut row_styles, &mut extras);
         cw.reset_damage();
         assert_eq!(row_styles.len(), rows.len());
         assert_eq!(row_styles[0][0].bg, red);
@@ -6730,7 +6758,7 @@ mod tests {
         cw.terminal_attribute(Attr::Background(blue));
         cw.input('z');
         let damage = cw.peek_damage_event().unwrap();
-        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+        snap(&mut cw, &damage, &mut rows, &mut row_styles, &mut extras);
         cw.reset_damage();
         assert_eq!(row_styles[0][0].bg, red);
         assert_eq!(row_styles[1][0].bg, blue);
@@ -6740,10 +6768,367 @@ mod tests {
         cw.swap_alt();
         let damage = cw.peek_damage_event().unwrap();
         assert!(matches!(damage, TerminalDamage::Full));
-        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+        snap(&mut cw, &damage, &mut rows, &mut row_styles, &mut extras);
         cw.reset_damage();
         // The alt screen was cleared with the carried blue bg template.
         assert_eq!(row_styles[0][0].bg, blue);
+    }
+
+    // The copy under the lock records style runs; the per-cell values
+    // land only when the caller fills them after the lock. A frontend
+    // that reads the styles in between sees the previous frame's.
+    #[test]
+    fn snapshot_styles_are_filled_after_the_copy() {
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        use crate::crosswords::style::{PendingStyles, Style};
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut rows = Vec::new();
+        let mut row_styles = Vec::new();
+        let mut extras = rustc_hash::FxHashMap::default();
+        snap(
+            &mut cw,
+            &TerminalDamage::Full,
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        let red = AnsiColor::Spec(ColorRgb { r: 250, g: 0, b: 0 });
+        cw.terminal_attribute(Attr::Background(red));
+        cw.input_str("xy");
+        let before = row_styles.clone();
+        let mut pending = PendingStyles::default();
+        let damage = cw.peek_damage_event().unwrap();
+        cw.snapshot_visible(
+            &damage,
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+            &mut pending,
+        );
+        assert_eq!(row_styles, before, "nothing is written under the lock");
+        assert!(!pending.is_empty());
+        pending.fill(&mut row_styles);
+        assert_eq!(row_styles[0][0].bg, red);
+        assert_eq!(row_styles[0][1].bg, red);
+        assert_eq!(row_styles[0][2], Style::default());
+        assert!(pending.is_empty());
+    }
+
+    // DECTCEM alone is a change the renderer has to see: the cursor
+    // row is copied again (its shaping depends on the cursor being on
+    // it) and the frame is a partial one. Repeating the state it is
+    // already in is not news.
+    #[test]
+    fn hiding_or_showing_the_cursor_is_damage() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.input_str("ab");
+        cw.goto(Line(2), Column(1));
+        cw.reset_damage();
+        for row in 0..cw.grid.screen_lines() {
+            cw.grid[Line(row as i32)].dirty = false;
+        }
+
+        parser.advance(&mut cw, b"\x1b[?25l");
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        assert!(cw.grid[Line(2)].dirty, "the cursor row is copied again");
+        assert!(!cw.grid[Line(0)].dirty);
+        cw.reset_damage();
+        cw.grid[Line(2)].dirty = false;
+
+        parser.advance(&mut cw, b"\x1b[?25l");
+        assert_eq!(cw.peek_damage_event(), None, "already hidden");
+
+        parser.advance(&mut cw, b"\x1b[?25h");
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        assert!(cw.grid[Line(2)].dirty);
+    }
+
+    // A reverse index inside a scroll region moves only the region's
+    // rows, so only they are damaged; the full screen still coalesces
+    // into full damage.
+    #[test]
+    fn a_region_scroll_down_damages_only_the_region() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b[2;3r\x1b[2;1H");
+        cw.reset_damage();
+        for row in 0..cw.grid.screen_lines() {
+            cw.grid[Line(row as i32)].dirty = false;
+        }
+
+        parser.advance(&mut cw, b"\x1bM");
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        assert!(!cw.grid[Line(0)].dirty);
+        assert!(cw.grid[Line(1)].dirty);
+        assert!(cw.grid[Line(2)].dirty);
+        assert!(!cw.grid[Line(3)].dirty);
+
+        parser.advance(&mut cw, b"\x1b[r\x1b[1;1H");
+        cw.reset_damage();
+        parser.advance(&mut cw, b"\x1bM");
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Full));
+    }
+
+    // Marking a range marks the rows of it that are on screen, as rows
+    // to copy and as a partial frame; the part in scrollback is left
+    // alone.
+    #[test]
+    fn damage_range_rows_marks_the_visible_rows() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        for _ in 0..6 {
+            parser.advance(&mut cw, b"x\r\n");
+        }
+        assert!(
+            cw.history_size() >= 2,
+            "the rows above scrolled into history"
+        );
+        cw.reset_damage();
+        for row in -2..cw.grid.screen_lines() as i32 {
+            cw.grid[Line(row)].dirty = false;
+        }
+        let range = SelectionRange::new(
+            Pos::new(Line(-1), Column(0)),
+            Pos::new(Line(1), Column(2)),
+            false,
+        );
+        cw.damage_range_rows(&range);
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        assert!(!cw.grid[Line(-1)].dirty, "scrollback is not on screen");
+        assert!(cw.grid[Line(0)].dirty);
+        assert!(cw.grid[Line(1)].dirty);
+        assert!(!cw.grid[Line(2)].dirty);
+
+        // Scrolled back one line, the same range is one row lower on
+        // screen and its scrollback row is now visible.
+        cw.scroll_display(Scroll::Delta(1));
+        cw.reset_damage();
+        for row in -2..cw.grid.screen_lines() as i32 {
+            cw.grid[Line(row)].dirty = false;
+        }
+        cw.damage_range_rows(&range);
+        assert!(cw.grid[Line(-1)].dirty);
+        assert!(cw.grid[Line(0)].dirty);
+        assert!(cw.grid[Line(1)].dirty);
+        assert!(!cw.grid[Line(2)].dirty);
+    }
+
+    /// xorshift64*, enough randomness for an operation mix and a seed
+    /// that reproduces a failure.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+        fn pick<'a>(&mut self, items: &[&'a str]) -> &'a str {
+            items[self.below(items.len() as u64) as usize]
+        }
+    }
+
+    /// One random burst of terminal input, or a host action, applied
+    /// to `cw`. Returns a description for the failure message.
+    fn random_burst<T: EventListener>(
+        cw: &mut Crosswords<T>,
+        parser: &mut crate::performer::handler::Processor,
+        rng: &mut Rng,
+    ) -> String {
+        let cols = cw.grid.columns() as u64;
+        let lines = cw.grid.screen_lines() as u64;
+        match rng.below(40) {
+            0 => {
+                let delta = rng.below(7) as i32 - 3;
+                cw.scroll_display(Scroll::Delta(delta));
+                return format!("scroll_display({delta})");
+            }
+            1 if rng.below(4) == 0 => {
+                let c = 6 + rng.below(20) as usize;
+                let r = 3 + rng.below(6) as usize;
+                cw.resize(CrosswordsSize::new(c, r));
+                return format!("resize({c}x{r})");
+            }
+            _ => {}
+        }
+        let mut bytes = String::new();
+        let ops = 1 + rng.below(6);
+        for _ in 0..ops {
+            let op: String = match rng.below(26) {
+                0..=5 => {
+                    let n = 1 + rng.below(10);
+                    (0..n)
+                        .map(|_| {
+                            rng.pick(&[
+                                "a", "b", "Z", "9", " ", " ", "é", "中", "e\u{301}", "~",
+                            ])
+                        })
+                        .collect()
+                }
+                6 => "\r\n".into(),
+                7 => format!("\x1b[{};{}H", 1 + rng.below(lines), 1 + rng.below(cols)),
+                8 => format!(
+                    "\x1b[{}{}",
+                    1 + rng.below(3),
+                    rng.pick(&["A", "B", "C", "D"])
+                ),
+                9 => format!("\x1b[{}{}", 1 + rng.below(3), rng.pick(&["L", "M"])),
+                10 => format!("\x1b[{}{}", 1 + rng.below(4), rng.pick(&["@", "P", "X"])),
+                11 => rng.pick(&["\x1b[K", "\x1b[1K", "\x1b[2K"]).into(),
+                12 => rng
+                    .pick(&["\x1b[J", "\x1b[1J", "\x1b[2J", "\x1b[3J"])
+                    .into(),
+                13 => rng.pick(&["\x1bM", "\x1bD", "\x1bE"]).into(),
+                14 => {
+                    let top = 1 + rng.below(lines.max(2) - 1);
+                    let bottom = top + 1 + rng.below(lines - top);
+                    if rng.below(3) == 0 {
+                        "\x1b[r".into()
+                    } else {
+                        format!("\x1b[{top};{bottom}r")
+                    }
+                }
+                15 => rng
+                    .pick(&[
+                        "\x1b[0m",
+                        "\x1b[1m",
+                        "\x1b[4m",
+                        "\x1b[7m",
+                        "\x1b[31m",
+                        "\x1b[44m",
+                        "\x1b[38;2;10;20;30m",
+                        "\x1b[48;5;200m",
+                        "\x1b[39m",
+                        "\x1b[49m",
+                    ])
+                    .into(),
+                16 => rng.pick(&["\x1b[?1049h", "\x1b[?1049l"]).into(),
+                17 => rng.pick(&["\x1b[?25l", "\x1b[?25h"]).into(),
+                18 => format!("\x1b[{}{}", 1 + rng.below(3), rng.pick(&["S", "T"])),
+                19 => format!(
+                    "\x1b]8;;http://example/{}\x1b\\link\x1b]8;;\x1b\\",
+                    rng.below(5)
+                ),
+                20 => rng.pick(&["\x1b[?7l", "\x1b[?7h"]).into(),
+                21 => "\x1b#8".into(),
+                22 => rng.pick(&["\t", "\x08", "\x08\x08"]).into(),
+                23 => format!("\x1b[{}b", 1 + rng.below(5)),
+                24 => rng
+                    .pick(&["\x1b[4h", "\x1b[4l", "\x1b[?6h", "\x1b[?6l"])
+                    .into(),
+                _ => rng.pick(&["\x1b7", "\x1b8"]).into(),
+            };
+            bytes.push_str(&op);
+        }
+        parser.advance(cw, bytes.as_bytes());
+        bytes.escape_debug().to_string()
+    }
+
+    // The snapshot a frontend keeps across frames, copying only the
+    // rows the damage names, must equal one taken from scratch after
+    // every burst. Any operation that changes a visible row without
+    // marking it shows up here as a stale row, with the seed and the
+    // burst that did it.
+    #[test]
+    fn an_incremental_snapshot_matches_a_fresh_one_after_random_bursts() {
+        use crate::event::TerminalDamage;
+        for seed in 1..=6u64 {
+            let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+            let mut cw = Crosswords::new(
+                CrosswordsSize::new(12, 5),
+                CursorShape::Block,
+                VoidListener {},
+                crate::event::WindowId::from(0),
+                0,
+                40,
+            );
+            let mut parser = crate::performer::handler::Processor::default();
+            let mut rows = Vec::new();
+            let mut row_styles = Vec::new();
+            let mut extras = rustc_hash::FxHashMap::default();
+            let mut pending = crate::crosswords::style::PendingStyles::default();
+            let mut history: std::collections::VecDeque<String> =
+                std::collections::VecDeque::new();
+            for burst in 0..400 {
+                let what = random_burst(&mut cw, &mut parser, &mut rng);
+                history.push_back(what);
+                if history.len() > 4 {
+                    history.pop_front();
+                }
+                let damage = cw.peek_damage_event().unwrap_or(TerminalDamage::Noop);
+                cw.snapshot_visible(
+                    &damage,
+                    &mut rows,
+                    &mut row_styles,
+                    &mut extras,
+                    &mut pending,
+                );
+                cw.reset_damage();
+                pending.fill(&mut row_styles);
+
+                let mut fresh_rows = Vec::new();
+                let mut fresh_styles = Vec::new();
+                let mut fresh_extras = rustc_hash::FxHashMap::default();
+                snap(
+                    &mut cw,
+                    &TerminalDamage::Full,
+                    &mut fresh_rows,
+                    &mut fresh_styles,
+                    &mut fresh_extras,
+                );
+
+                let context = || {
+                    format!(
+                        "seed {seed}, burst {burst}, damage {damage:?}, last bursts {:?}",
+                        history
+                    )
+                };
+                assert_eq!(rows.len(), fresh_rows.len(), "{}", context());
+                for (y, (kept, fresh)) in rows.iter().zip(&fresh_rows).enumerate() {
+                    assert_eq!(kept.inner, fresh.inner, "row {y} cells: {}", context());
+                    assert_eq!(
+                        (
+                            kept.has_styles,
+                            kept.has_extras,
+                            kept.kitty_virtual_placeholder
+                        ),
+                        (
+                            fresh.has_styles,
+                            fresh.has_extras,
+                            fresh.kitty_virtual_placeholder
+                        ),
+                        "row {y} flags: {}",
+                        context()
+                    );
+                    assert_eq!(
+                        row_styles[y],
+                        fresh_styles[y],
+                        "row {y} styles: {}",
+                        context()
+                    );
+                    for sq in &fresh.inner {
+                        if let Some(id) = sq.extras_id_checked() {
+                            assert_eq!(
+                                extras.get(&id),
+                                fresh_extras.get(&id),
+                                "row {y} extras {id}: {}",
+                                context()
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]

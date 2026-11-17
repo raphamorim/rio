@@ -97,13 +97,20 @@ impl<T: EventListener> Context<T> {
     #[inline]
     pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
         let old_selection = self.renderable_content.selection_range;
-        let has_updated = old_selection != selection_range;
 
-        if has_updated {
-            // Selection affects terminal line rendering, so use terminal damage
+        if old_selection != selection_range {
+            // The selection paints over rows without changing them, so
+            // the rows of the old one and the new one are marked for the
+            // next snapshot and the frame is a partial one. A drag then
+            // rebuilds the rows it touches, not the screen.
+            let mut terminal = self.terminal.lock();
+            for range in old_selection.iter().chain(selection_range.iter()) {
+                terminal.damage_range_rows(range);
+            }
+            drop(terminal);
             self.renderable_content
                 .pending_update
-                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
         }
 
         self.renderable_content.selection_range = selection_range;
@@ -1733,6 +1740,97 @@ pub mod test {
                 _ => {}
             }
         }
+    }
+
+    // A selection paints over rows without changing them. Changing it
+    // marks the rows of the old one and the new one for the next
+    // snapshot and makes the frame a partial one, where it used to
+    // rebuild the whole screen; setting what is already set is not news.
+    #[test]
+    fn a_selection_change_marks_its_rows_and_is_partial() {
+        use rio_backend::config::layout::Margin;
+        use rio_backend::crosswords::pos::{Column, Line, Pos};
+        use rio_backend::event::TerminalDamage;
+        use rio_backend::selection::SelectionRange;
+        use rio_backend::sugarloaf::layout::TextDimensions;
+        let text = TextDimensions {
+            scale: 1.0,
+            width: 18.,
+            height: 9.,
+        };
+        let cell = rio_backend::sugarloaf::layout::CellMetrics {
+            cell_width: 18,
+            cell_height: 9,
+            cell_baseline: 0,
+            face_width: 18.0,
+            face_height: 9.0,
+            face_y: 0.0,
+        };
+        let dimension = ContextDimension::build(
+            1200.0,
+            800.0,
+            text,
+            cell,
+            1.0,
+            14.0,
+            Margin::default(),
+        );
+        let mut ctx =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, dimension);
+        let ctx = &mut ctx;
+        fn clear_rows(ctx: &mut Context<VoidListener>) {
+            let mut terminal = ctx.terminal.lock();
+            assert!(terminal.screen_lines() >= 4);
+            for line in 0..terminal.screen_lines() as i32 {
+                terminal.grid[Line(line)].dirty = false;
+            }
+        }
+        fn dirty_rows(ctx: &Context<VoidListener>) -> Vec<i32> {
+            let terminal = ctx.terminal.lock();
+            (0..terminal.screen_lines() as i32)
+                .filter(|&line| terminal.grid[Line(line)].dirty)
+                .collect()
+        }
+        clear_rows(ctx);
+        let _ = ctx.renderable_content.pending_update.take_terminal_damage();
+
+        let first = SelectionRange::new(
+            Pos::new(Line(1), Column(0)),
+            Pos::new(Line(2), Column(3)),
+            false,
+        );
+        ctx.set_selection(Some(first));
+        assert_eq!(
+            ctx.renderable_content.pending_update.take_terminal_damage(),
+            Some(TerminalDamage::Partial)
+        );
+        assert_eq!(dirty_rows(ctx), vec![1, 2]);
+
+        clear_rows(ctx);
+        ctx.set_selection(Some(first));
+        assert_eq!(
+            ctx.renderable_content.pending_update.take_terminal_damage(),
+            None,
+            "the same selection is not news"
+        );
+        assert!(dirty_rows(ctx).is_empty());
+
+        let second = SelectionRange::new(
+            Pos::new(Line(3), Column(0)),
+            Pos::new(Line(3), Column(1)),
+            false,
+        );
+        ctx.set_selection(Some(second));
+        assert_eq!(dirty_rows(ctx), vec![1, 2, 3], "rows left and rows entered");
+
+        clear_rows(ctx);
+        let _ = ctx.renderable_content.pending_update.take_terminal_damage();
+        ctx.set_selection(None);
+        assert_eq!(
+            ctx.renderable_content.pending_update.take_terminal_damage(),
+            Some(TerminalDamage::Partial)
+        );
+        assert_eq!(dirty_rows(ctx), vec![3]);
     }
 
     // Focus follows the pane the user is looking at, not just the window:

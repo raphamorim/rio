@@ -153,4 +153,6 @@ PTY IO threads, a reader and a writer; `wakeup_cb`/`action_cb` may fire on the
 reader and must only
 flag/schedule. All `render_state_*` calls and input calls are host-thread safe
 (input posts to the IO channel; render-state update takes the terminal lock,
-which the reader yields to between chunks).
+which the reader yields to between chunks, copies the rows that changed and
+records their styles as runs, then fills the per-cell styles after the lock is
+released).

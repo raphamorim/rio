@@ -79,6 +79,9 @@ pub struct RenderableContent {
     /// Values, not ids: rows copied on earlier frames can't be
     /// retinted by later style-table mutations.
     pub row_styles: Vec<Vec<rio_backend::crosswords::style::Style>>,
+    /// Style runs the snapshot recorded under the terminal lock, filled
+    /// into `row_styles` by `finish_update` once the lock is released.
+    pub pending_styles: rio_backend::crosswords::style::PendingStyles,
     /// Per-frame snapshot of extras (zero-width chars, hyperlinks,
     /// sixel/iterm graphics) actually referenced by visible cells —
     /// keyed by the cell's `extras_id`. Refreshed per-dirty-row by
@@ -132,6 +135,7 @@ impl RenderableContent {
             frame_damage: TerminalDamage::Full,
             visible_rows: Vec::new(),
             row_styles: Vec::new(),
+            pending_styles: Default::default(),
             extras: rustc_hash::FxHashMap::default(),
             term_colors: TermColors::default(),
             display_offset: 0,
@@ -201,6 +205,7 @@ impl RenderableContent {
             &mut self.visible_rows,
             &mut self.row_styles,
             &mut self.extras,
+            &mut self.pending_styles,
         );
         self.term_colors = terminal.colors;
         self.display_offset = terminal.display_offset();
@@ -237,6 +242,13 @@ impl RenderableContent {
         }
         self.frame_damage = damage;
         true
+    }
+
+    /// The half of the snapshot that needs no terminal: fill the styles
+    /// of the rows copied this frame. Called after the terminal lock is
+    /// released and before anything reads `row_styles`.
+    pub fn finish_update(&mut self) {
+        self.pending_styles.fill(&mut self.row_styles);
     }
 
     pub fn from_cursor_config(config_cursor: &CursorConfig) -> Self {
