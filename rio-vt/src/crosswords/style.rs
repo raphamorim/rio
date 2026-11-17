@@ -595,7 +595,10 @@ pub struct StyleRun {
 /// ids; the fill is a write per cell and needs nothing from the
 /// terminal. Splitting the two keeps the lock held for the copies and
 /// not for the fan-out. Between the snapshot and the fill the per-cell
-/// styles of the copied rows are stale and must not be read.
+/// styles of the copied rows are stale and must not be read. Fill once
+/// per snapshot: a second snapshot before the fill records its rows
+/// again, and a resize in between would leave the first recording's
+/// rows beyond the new height, which costs one full copy next frame.
 #[derive(Default, Debug)]
 pub struct PendingStyles {
     rows: Vec<PendingRow>,

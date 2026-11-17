@@ -79,7 +79,7 @@ pub struct Grid<T> {
     /// Private so interning must go through [`Self::intern_style`] /
     /// [`Self::sync_template_style`] and the mark-and-sweep cadence
     /// can't be bypassed; readers use [`Self::styles`] and
-    /// [`Self::resolve_row_styles`].
+    /// [`Self::record_row_styles`].
     style_set: crate::crosswords::style::StyleSet,
 
     /// Per-grid storage for the rare per-cell data that used to live inside

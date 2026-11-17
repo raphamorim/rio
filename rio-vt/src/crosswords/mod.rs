@@ -2427,11 +2427,12 @@ impl<U: EventListener> Crosswords<U> {
         buf
     }
 
-    /// Copy the visible rows that `damage` says changed into `dst`,
+    /// Copy the visible rows marked dirty into `dst`, or every visible
+    /// row when `damage` is full or the buffers are the wrong size,
     /// marking each copied row dirty for the renderer, and record their
     /// styles on `pending`. The caller fills `row_styles` from `pending`
-    /// after releasing the terminal lock; until then the per-cell
-    /// styles of the copied rows are stale.
+    /// once per snapshot, after releasing the terminal lock; until then
+    /// the per-cell styles of the copied rows are stale.
     pub fn snapshot_visible(
         &mut self,
         damage: &crate::event::TerminalDamage,
@@ -7119,13 +7120,15 @@ mod tests {
             let mut pending = crate::crosswords::style::PendingStyles::default();
             let mut history: std::collections::VecDeque<String> =
                 std::collections::VecDeque::new();
+            let mut previous: Vec<Vec<Square>> = Vec::new();
             for burst in 0..400 {
                 let what = random_burst(&mut cw, &mut parser, &mut rng);
                 history.push_back(what);
                 if history.len() > 4 {
                     history.pop_front();
                 }
-                let damage = cw.peek_damage_event().unwrap_or(TerminalDamage::Noop);
+                let peeked = cw.peek_damage_event();
+                let damage = peeked.unwrap_or(TerminalDamage::Noop);
                 cw.snapshot_visible(
                     &damage,
                     &mut rows,
@@ -7153,6 +7156,20 @@ mod tests {
                         history
                     )
                 };
+                // A burst that changed what is on screen must have been
+                // one the reader announces: the snapshot path above
+                // copies dirty rows even on a quiet frame, but the
+                // renderer is only woken when the peek says so.
+                let fresh_cells: Vec<Vec<Square>> =
+                    fresh_rows.iter().map(|row| row.inner.clone()).collect();
+                if fresh_cells != previous {
+                    assert!(
+                        peeked.is_some(),
+                        "the screen changed and no damage was reported: {}",
+                        context()
+                    );
+                }
+                previous = fresh_cells;
                 assert_eq!(rows.len(), fresh_rows.len(), "{}", context());
                 for (y, (kept, fresh)) in rows.iter().zip(&fresh_rows).enumerate() {
                     assert_eq!(kept.inner, fresh.inner, "row {y} cells: {}", context());

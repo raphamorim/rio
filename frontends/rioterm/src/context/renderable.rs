@@ -426,6 +426,7 @@ mod pipeline_tests {
             if !self.content.update_from_terminal(term, false) {
                 return;
             }
+            self.content.finish_update();
             let damage =
                 std::mem::replace(&mut self.content.frame_damage, TerminalDamage::Noop);
             let needs_full =
