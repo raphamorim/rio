@@ -1324,9 +1324,9 @@ struct RunCacheEntry {
 pub struct GridGlyphRasterizer {
     /// Cache of `(char, style_flags, route_id) → (font_id, is_emoji)`
     /// resolutions. The route_id is part of the key because Glyph
-    /// Protocol registrations are per-pane: the same PUA codepoint
+    /// Protocol registrations are per-pane: the same block codepoint
     /// can resolve to `CUSTOM_GLYPH_FONT_ID` in one pane and to a
-    /// system font in another. Non-PUA characters resolve identically
+    /// system font in another. Characters outside the block resolve identically
     /// across panes; the duplication is cheap (a few bytes per
     /// (char, route) pair) compared to the cost of mis-rendering.
     font_resolve: FxHashMap<(char, u8, usize), (u32, bool)>,
@@ -1494,7 +1494,7 @@ impl GridGlyphRasterizer {
         // ASCII printable + regular style → always primary font, never
         // emoji. Skips the FxHashMap lookup that dominates this fn's
         // cost on terminal-typical content. ASCII codepoints can never
-        // be Glyph-Protocol-registered (PUA-only restriction), so the
+        // be Glyph-Protocol-registered (registration block only), so the
         // route_id is irrelevant on this fast path.
         //
         // Bold / italic ASCII still goes through the cache because
@@ -3754,7 +3754,7 @@ mod custom_glyph_tests {
         GlyphLayout, GlyphRegistry, StoredPayload,
     };
 
-    const CP: u32 = 0xE0A0;
+    const CP: u32 = 0x10_0000;
     const RED: [u8; 4] = [255, 0, 0, 255];
     const BLUE: [u8; 4] = [0, 0, 255, 255];
 

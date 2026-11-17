@@ -624,7 +624,7 @@ impl FontLibraryData {
         // *this pane's* registry, the registration is what the user
         // is asking to see. Each pane consults its own registry via
         // route_id, so two panes can host different programs with
-        // overlapping PUA registrations without interfering. Checked
+        // overlapping registrations without interfering. Checked
         // before symbol maps and the font fallback chain because
         // neither of those should "beat" an explicit registration.
         if let Some(route_id) = route_id {
