@@ -676,9 +676,14 @@ impl<U: EventListener> Crosswords<U> {
         // Add information about old cursor position and new one if they are not the same, so we
         // cover everything that was produced by `Term::input`.
         if self.damage.last_cursor != previous_cursor {
-            // Damage the entire line where the previous cursor was
-            let previous_line = previous_cursor.row.0 as usize;
-            self.damage.damage_line(previous_line);
+            // Damage the line the previous cursor was on. The lines are
+            // the active area's rows; in vi mode the cursor can be on a
+            // scrollback row, which has no line here and is skipped.
+            if let Ok(line) = usize::try_from(previous_cursor.row.0) {
+                if line < self.damage.lines.len() {
+                    self.damage.damage_line(line);
+                }
+            }
         }
 
         // Always damage current cursor.
@@ -6963,6 +6968,43 @@ mod tests {
         assert!(!rows[2].dirty);
     }
 
+    // The legacy damage iterator names the line the cursor left. In vi
+    // mode that cursor can be on a scrollback row, which has no line
+    // of its own in the damage state; it must not be indexed.
+    #[test]
+    fn the_legacy_damage_handles_a_vi_cursor_that_left_scrollback() {
+        fn lines(cw: &mut Crosswords<VoidListener>) -> Vec<usize> {
+            match cw.damage() {
+                TermDamage::Partial(it) => it.map(|l| l.line).collect(),
+                TermDamage::Full => panic!("a cursor move is partial damage"),
+            }
+        }
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        for line in 0..8 {
+            parser.advance(&mut cw, format!("{line}\r\n").as_bytes());
+        }
+        assert!(cw.history_size() >= 3);
+        cw.toggle_vi_mode();
+        // Four screen lines, three in scrollback: rows -3 to 0 are shown.
+        cw.scroll_display(Scroll::Delta(3));
+        cw.vi_goto_pos(Pos::new(Line(-3), Column(0)));
+        let _ = cw.damage();
+        cw.reset_damage();
+        assert_eq!(cw.damage.last_cursor, Pos::new(Line(-3), Column(0)));
+
+        // Leaving a scrollback row names nothing: it has no line.
+        cw.vi_goto_pos(Pos::new(Line(0), Column(0)));
+        assert_eq!(cw.display_offset(), 3, "the viewport did not move");
+        assert_eq!(lines(&mut cw), Vec::<usize>::new());
+        cw.reset_damage();
+
+        // Leaving an active row names it, as the viewport line it is on.
+        cw.vi_goto_pos(Pos::new(Line(-1), Column(0)));
+        assert_eq!(cw.display_offset(), 3, "the viewport did not move");
+        assert_eq!(lines(&mut cw), vec![3], "grid row 0 is viewport line 3");
+    }
+
     // The cursor a renderer draws sits on the left half of a wide
     // character. In vi mode with the viewport scrolled, the vi cursor
     // is on a scrollback row; the spacer check has to read that row,
@@ -7221,6 +7263,13 @@ mod tests {
                 if history.len() > 4 {
                     history.pop_front();
                 }
+                // What the burst itself marked, before consuming the
+                // frame adds the cursor rows.
+                let full_before = cw.is_fully_damaged();
+                let offset = cw.display_offset() as i32;
+                let dirty_before: Vec<bool> = (0..cw.grid.screen_lines() as i32)
+                    .map(|y| cw.grid[Line(y - offset)].dirty)
+                    .collect();
                 // The frontends' order: peek, consume, copy, fill.
                 let peeked = cw.peek_damage_event();
                 let damage = peeked.unwrap_or(TerminalDamage::Noop);
@@ -7263,6 +7312,19 @@ mod tests {
                         "the screen changed and no damage was reported: {}",
                         context()
                     );
+                }
+                // Every row that changed carried its own mark, or the
+                // frame was full. Consuming the frame marks the cursor
+                // rows as well, which would otherwise hide a missing
+                // mark on the row the cursor writes.
+                for (y, fresh) in fresh_cells.iter().enumerate() {
+                    if previous.get(y) != Some(fresh) {
+                        assert!(
+                            full_before || dirty_before[y],
+                            "row {y} changed without a mark: {}",
+                            context()
+                        );
+                    }
                 }
                 previous = fresh_cells;
                 assert_eq!(rows.len(), fresh_rows.len(), "{}", context());
