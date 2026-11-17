@@ -477,11 +477,6 @@ mod pipeline_tests {
             spins += 1;
             assert!(spins < 8, "{context}: damage never quiesces");
         }
-        // A cursor-only event may fire once more; consuming it must not
-        // change painted content and must reach silence.
-        if event_would_fire(term) {
-            frame.consume(term, &mut None);
-        }
         assert!(
             !event_would_fire(term),
             "{context}: events keep firing with nothing to paint              (event storm: renders at PTY rate forever)"

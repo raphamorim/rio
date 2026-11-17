@@ -666,8 +666,8 @@ impl<U: EventListener> Crosswords<U> {
             self.mark_fully_damaged();
         }
 
-        let previous_cursor =
-            mem::replace(&mut self.damage.last_cursor, self.grid.cursor.pos);
+        let cursor = self.rendered_cursor_pos();
+        let previous_cursor = mem::replace(&mut self.damage.last_cursor, cursor);
 
         if self.damage.full {
             return TermDamage::Full;
@@ -6907,6 +6907,63 @@ mod tests {
         assert!(dirty(&cw).is_empty(), "no move, nothing marked");
     }
 
+    // In vi mode the vi cursor is the cursor a renderer draws, and it
+    // can stand on a scrollback row while the viewport is scrolled.
+    // Consuming a frame marks that row, and the snapshot copies it as
+    // the viewport row it is shown on.
+    #[test]
+    fn a_vi_cursor_move_in_scrollback_marks_the_row_shown() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        for line in 0..8 {
+            parser.advance(&mut cw, format!("{line}\r\n").as_bytes());
+        }
+        assert!(cw.history_size() >= 2);
+        cw.toggle_vi_mode();
+        cw.scroll_display(Scroll::Delta(2));
+        assert_eq!(cw.display_offset(), 2);
+        let mut rows = Vec::new();
+        let mut row_styles = Vec::new();
+        let mut extras = rustc_hash::FxHashMap::default();
+        cw.reset_damage();
+        snap(
+            &mut cw,
+            &TerminalDamage::Full,
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        for row in -2..cw.grid.screen_lines() as i32 {
+            cw.grid[Line(row)].dirty = false;
+        }
+        // A renderer clears the copied rows' bits once it has drawn them.
+        for row in &mut rows {
+            row.dirty = false;
+        }
+
+        // The vi cursor moves onto the first row shown, two lines into
+        // scrollback.
+        cw.vi_goto_pos(Pos::new(Line(-2), Column(1)));
+        assert_eq!(cw.display_offset(), 2, "the viewport did not move");
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        cw.reset_damage();
+        assert!(
+            cw.grid[Line(-2)].dirty,
+            "the scrollback row the cursor is on"
+        );
+        assert!(!cw.grid[Line(0)].dirty);
+        snap(
+            &mut cw,
+            &TerminalDamage::Partial,
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        assert!(rows[0].dirty, "copied as the top row of the viewport");
+        assert!(!rows[2].dirty);
+    }
+
     // A reverse index inside a scroll region moves only the region's
     // rows, so only they are damaged; the full screen still coalesces
     // into full damage.
@@ -7127,8 +7184,10 @@ mod tests {
                 if history.len() > 4 {
                     history.pop_front();
                 }
+                // The frontends' order: peek, consume, copy, fill.
                 let peeked = cw.peek_damage_event();
                 let damage = peeked.unwrap_or(TerminalDamage::Noop);
+                cw.reset_damage();
                 cw.snapshot_visible(
                     &damage,
                     &mut rows,
@@ -7136,7 +7195,6 @@ mod tests {
                     &mut extras,
                     &mut pending,
                 );
-                cw.reset_damage();
                 pending.fill(&mut row_styles);
 
                 let mut fresh_rows = Vec::new();
@@ -8271,11 +8329,9 @@ mod tests {
             "Input should cause damage"
         );
 
-        // Reset damage to simulate a render cycle completing
+        // Reset damage to simulate a render cycle completing; it records
+        // the cursor position as rendered.
         cw.reset_damage();
-
-        // Update last cursor position to match current (simulating that cursor position was rendered)
-        cw.damage.last_cursor = cw.grid.cursor.pos;
 
         // Verify damage was cleared
         assert!(
@@ -10937,7 +10993,7 @@ mod tests {
     }
 
     /// Consuming a frame records the cursor position it carried:
-    /// without that, every subsequent peek reports CursorOnly and
+    /// without that, every subsequent peek reports the move again and
     /// each PTY drain fires a redraw event forever.
     #[test]
     fn reset_damage_quiesces_cursor_events() {
