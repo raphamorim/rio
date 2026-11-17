@@ -65,6 +65,20 @@ impl Default for Decorations {
     }
 }
 
+/// Whether the window's menus are exported to the desktop's menu bar.
+///
+/// `Auto` exports them where the desktop can show them: on Wayland, with a
+/// compositor that has the KDE application menu protocol. It changes
+/// nothing anywhere else, and macOS always has its menu bar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Menubar {
+    #[default]
+    #[serde(alias = "disabled")]
+    Disabled,
+    #[serde(alias = "auto")]
+    Auto,
+}
+
 #[derive(PartialEq, Serialize, Deserialize, Clone, Debug)]
 pub enum WindowsCornerPreference {
     #[serde(alias = "default")]
@@ -201,6 +215,8 @@ pub struct Window {
     pub opacity_cells: bool,
     #[serde(default)]
     pub blur: WindowBlur,
+    #[serde(default = "Menubar::default")]
+    pub menubar: Menubar,
     #[cfg(feature = "renderer")]
     #[serde(rename = "background-image", skip_serializing)]
     pub background_image: Option<ImageProperties>,
@@ -257,6 +273,7 @@ impl Default for Window {
             background_image: None,
             decorations: Decorations::default(),
             blur: WindowBlur::default(),
+            menubar: Menubar::default(),
             macos_use_unified_titlebar: false,
             macos_use_shadow: true,
             macos_traffic_light_position_x: None,

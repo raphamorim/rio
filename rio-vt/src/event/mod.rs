@@ -200,6 +200,9 @@ pub enum RioEvent {
     HideOtherApplications,
     UpdateConfig,
     CreateWindow,
+    /// An entry of the application menu a desktop's menu bar shows for the
+    /// window was activated. Carries the id the frontend gave the entry.
+    AppMenuAction(u32),
     ToggleQuake,
     CloseWindow,
     CreateNativeTab(Option<String>),
@@ -434,6 +437,7 @@ impl Debug for RioEvent {
                 write!(f, "ChildExited(route={route}, status={status:?})")
             }
             RioEvent::CreateWindow => write!(f, "CreateWindow"),
+            RioEvent::AppMenuAction(id) => write!(f, "AppMenuAction({id})"),
             RioEvent::ToggleQuake => write!(f, "ToggleQuake"),
             RioEvent::CloseWindow => write!(f, "CloseWindow"),
             RioEvent::CreateNativeTab(_) => write!(f, "CreateNativeTab"),

@@ -764,6 +764,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         route.window.screen.context_manager.clear_all_bells();
                     }
                     route.window.configure_window(&self.config);
+                    #[cfg(all(
+                        feature = "wayland",
+                        not(any(target_os = "macos", windows))
+                    ))]
+                    crate::app_menu::sync(
+                        &route.window.winit_window,
+                        &self.config,
+                        &route.window.screen.bindings,
+                        &self.event_proxy,
+                    );
 
                     if let Some(error) = &config_error {
                         route.report_error(&error.to_owned().into());
@@ -1206,6 +1216,25 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     None,
                     self.app_id.as_deref(),
                 );
+            }
+            #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+            RioEventType::Rio(RioEvent::AppMenuAction(id)) => {
+                let Router {
+                    routes, clipboard, ..
+                } = &mut self.router;
+                if let (Some(route), Some(action)) =
+                    (routes.get_mut(&window_id), crate::app_menu::action(id))
+                {
+                    // The welcome and error screens have no terminal to run
+                    // the entry on.
+                    if route.path == RoutePath::Terminal {
+                        route
+                            .window
+                            .screen
+                            .execute_palette_action(action, clipboard);
+                        route.request_redraw();
+                    }
+                }
             }
             RioEventType::Rio(RioEvent::ToggleQuake) => {
                 self.toggle_quake_window(event_loop);

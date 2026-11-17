@@ -62,7 +62,7 @@ const MAX_SEARCH_WHILE_TYPING: Option<usize> = Some(1000);
 const MAX_SEARCH_HISTORY_SIZE: usize = 255;
 
 pub struct Screen<'screen> {
-    bindings: crate::bindings::KeyBindings,
+    pub bindings: crate::bindings::KeyBindings,
     mouse_bindings: Vec<MouseBinding>,
     pub modifiers: Modifiers,
     pub mouse: Mouse,

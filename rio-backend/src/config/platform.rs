@@ -45,6 +45,8 @@ pub struct PlatformWindow {
     pub opacity: Option<f32>,
     #[serde(default = "Option::default")]
     pub blur: Option<window::WindowBlur>,
+    #[serde(default = "Option::default")]
+    pub menubar: Option<window::Menubar>,
     #[cfg(feature = "renderer")]
     #[serde(
         default = "Option::default",

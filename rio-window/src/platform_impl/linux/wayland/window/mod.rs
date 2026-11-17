@@ -429,6 +429,23 @@ impl Window {
     }
 
     #[inline]
+    pub fn set_app_menu(
+        &self,
+        items: Vec<crate::platform::wayland::AppMenuItem>,
+        handler: crate::platform_impl::common::app_menu::AppMenuHandler,
+    ) -> bool {
+        self.window_state
+            .lock()
+            .unwrap()
+            .set_app_menu(items, handler)
+    }
+
+    #[inline]
+    pub fn remove_app_menu(&self) {
+        self.window_state.lock().unwrap().remove_app_menu();
+    }
+
+    #[inline]
     pub fn set_blur(&self, blur: crate::window::BlurStyle) {
         self.window_state
             .lock()
