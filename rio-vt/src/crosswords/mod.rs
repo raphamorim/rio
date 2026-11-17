@@ -823,12 +823,7 @@ impl<U: EventListener> Crosswords<U> {
         self.event_proxy
             .send_event(RioEvent::MouseCursorDirty, self.window_id);
 
-        // Clamp vi mode cursor to the viewport.
-        let viewport_start = -(self.grid.display_offset() as i32);
-        let viewport_end = viewport_start + self.grid.bottommost_line().0;
-        let vi_cursor_line = &mut self.vi_mode_cursor.pos.row.0;
-        *vi_cursor_line =
-            std::cmp::min(viewport_end, std::cmp::max(viewport_start, *vi_cursor_line));
+        self.clamp_vi_cursor_to_viewport();
         self.vi_mode_recompute_selection();
 
         // Damage everything if display offset changed. This is a
@@ -854,6 +849,17 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     pub fn bottommost_line(&self) -> Line {
         self.grid.bottommost_line()
+    }
+
+    /// Keeps the vi cursor on a row and column the viewport shows. The
+    /// viewport runs from the display offset into scrollback to the
+    /// bottom row of the grid minus that offset.
+    fn clamp_vi_cursor_to_viewport(&mut self) {
+        let viewport_top = Line(-(self.grid.display_offset() as i32));
+        let viewport_bottom = viewport_top + self.grid.bottommost_line();
+        let pos = &mut self.vi_mode_cursor.pos;
+        pos.row = std::cmp::max(std::cmp::min(pos.row, viewport_bottom), viewport_top);
+        pos.col = std::cmp::min(pos.col, self.grid.last_column());
     }
 
     #[inline]
@@ -1001,14 +1007,7 @@ impl<U: EventListener> Crosswords<U> {
             self.selection = selection.rotate(&self.grid, &range, -delta);
         }
 
-        // Clamp vi cursor to viewport.
-        let vi_pos = self.vi_mode_cursor;
-        let viewport_top = Line(-(self.grid.display_offset() as i32));
-        let viewport_bottom = viewport_top + self.bottommost_line();
-        self.vi_mode_cursor.pos.row =
-            std::cmp::max(std::cmp::min(vi_pos.pos.row, viewport_bottom), viewport_top);
-        self.vi_mode_cursor.pos.col =
-            std::cmp::min(vi_pos.pos.col, self.grid.last_column());
+        self.clamp_vi_cursor_to_viewport();
 
         // Reset scrolling region.
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
@@ -1431,10 +1430,15 @@ impl<U: EventListener> Crosswords<U> {
             .take()
             .and_then(|s| s.rotate(&self.grid, &region, -(lines as i32)));
 
-        // Scroll vi mode cursor.
+        // Scroll vi mode cursor. The region can reach below a viewport
+        // scrolled into history, so the cursor stops at the viewport's
+        // bottom row rather than the region's.
+        let viewport_bottom =
+            self.grid.bottommost_line() - self.grid.display_offset() as i32;
         let line = &mut self.vi_mode_cursor.pos.row;
         if region.start <= *line && region.end > *line {
             *line = std::cmp::min(*line + lines, region.end - 1);
+            *line = std::cmp::min(*line, viewport_bottom);
         }
 
         // Scroll between origin and bottom
@@ -2754,6 +2758,9 @@ impl<U: EventListener> Crosswords<U> {
         mem::swap(&mut self.grid, &mut self.inactive_grid);
         self.mode ^= Mode::ALT_SCREEN;
         self.selection = None;
+        // The vi cursor may be on a scrollback row the alt screen does
+        // not have, or below a primary viewport scrolled into history.
+        self.clamp_vi_cursor_to_viewport();
 
         // Swap kitty graphics state per screen so each screen owns its
         // own image cache, placements, number map, and virtual placements.
@@ -6966,6 +6973,64 @@ mod tests {
         );
         assert!(rows[0].dirty, "copied as the top row of the viewport");
         assert!(!rows[2].dirty);
+    }
+
+    // A reverse scroll moves the vi cursor down with the region's rows.
+    // With the viewport scrolled into history the region reaches below
+    // the viewport, and the cursor must not follow it off screen.
+    #[test]
+    fn a_reverse_scroll_keeps_the_vi_cursor_in_a_scrolled_viewport() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        for line in 0..8 {
+            parser.advance(&mut cw, format!("{line}\r\n").as_bytes());
+        }
+        cw.toggle_vi_mode();
+        // Four lines shown, two in scrollback: rows -2 to 1.
+        cw.scroll_display(Scroll::Delta(2));
+        cw.vi_goto_pos(Pos::new(Line(1), Column(0)));
+        assert_eq!(cw.display_offset(), 2);
+
+        // Insert two lines at the top of the active area.
+        parser.advance(&mut cw, b"\x1b[1;1H\x1b[2L");
+        assert_eq!(cw.display_offset(), 2, "the viewport did not move");
+        assert_eq!(
+            cw.vi_mode_cursor.pos.row,
+            Line(1),
+            "the bottom row of the viewport, not of the region"
+        );
+        let cursor = cw.cursor();
+        assert_eq!(cursor.pos.row, Line(3), "drawn on the last viewport row");
+    }
+
+    // The alt screen has no scrollback and the primary viewport may be
+    // scrolled into it. A screen swap brings the vi cursor onto a row
+    // the new viewport shows, in both directions.
+    #[test]
+    fn a_screen_swap_keeps_the_vi_cursor_in_the_viewport() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        for line in 0..8 {
+            parser.advance(&mut cw, format!("{line}\r\n").as_bytes());
+        }
+        cw.toggle_vi_mode();
+        cw.scroll_display(Scroll::Delta(3));
+        cw.vi_goto_pos(Pos::new(Line(-3), Column(2)));
+        assert_eq!(cw.display_offset(), 3);
+
+        parser.advance(&mut cw, b"\x1b[?1049h");
+        assert!(cw.mode().contains(Mode::ALT_SCREEN));
+        assert_eq!(cw.history_size(), 0);
+        assert_eq!(cw.vi_mode_cursor.pos, Pos::new(Line(0), Column(2)));
+        assert_eq!(cw.cursor().pos, Pos::new(Line(0), Column(2)));
+
+        // Back on the primary screen the viewport is still rows -3 to 0.
+        cw.vi_goto_pos(Pos::new(Line(3), Column(1)));
+        parser.advance(&mut cw, b"\x1b[?1049l");
+        assert!(!cw.mode().contains(Mode::ALT_SCREEN));
+        assert_eq!(cw.display_offset(), 3);
+        assert_eq!(cw.vi_mode_cursor.pos, Pos::new(Line(0), Column(1)));
+        assert_eq!(cw.cursor().pos, Pos::new(Line(3), Column(1)));
     }
 
     // The legacy damage iterator names the line the cursor left. In vi
