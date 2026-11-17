@@ -269,11 +269,9 @@ struct TermDamageState {
     /// Information about damage on terminal lines.
     lines: Vec<LineDamage>,
 
-    /// Old terminal cursor point.
+    /// Where the rendered cursor was when the last frame was consumed:
+    /// the vi cursor in vi mode, the terminal cursor otherwise.
     last_cursor: Pos,
-
-    /// Last Vi cursor point.
-    last_vi_cursor_point: Option<Pos>,
 }
 
 impl TermDamageState {
@@ -284,7 +282,6 @@ impl TermDamageState {
             full: true,
             lines,
             last_cursor: Default::default(),
-            last_vi_cursor_point: Default::default(),
         }
     }
 
@@ -292,7 +289,6 @@ impl TermDamageState {
     fn resize(&mut self, num_lines: usize) {
         // Reset point, so old cursor won't end up outside of the viewport.
         self.last_cursor = Default::default();
-        self.last_vi_cursor_point = None;
         self.full = true;
 
         self.lines.clear();
@@ -694,29 +690,54 @@ impl<U: EventListener> Crosswords<U> {
         TermDamage::Partial(TermDamageIterator::new(&self.damage.lines, display_offset))
     }
 
-    /// Peek damage event based on current damage state
+    /// The grid position of the cursor a renderer draws: the vi cursor
+    /// in vi mode, the terminal cursor otherwise. The row may be in
+    /// scrollback in vi mode.
+    fn rendered_cursor_pos(&self) -> Pos {
+        if self.mode.contains(Mode::VI) {
+            self.vi_mode_cursor.pos
+        } else {
+            self.grid.cursor.pos
+        }
+    }
+
+    /// Peek damage event based on current damage state. A cursor move
+    /// is partial damage, not cursor-only: the cursor cell is a run of
+    /// its own, so the row it left and the row it is on shape
+    /// differently, and `reset_damage` marks both for the snapshot.
     pub fn peek_damage_event(&self) -> Option<TerminalDamage> {
         if self.damage.full {
             Some(TerminalDamage::Full)
-        } else if self.damage.lines.iter().any(|line| line.is_damaged()) {
+        } else if self.damage.lines.iter().any(|line| line.is_damaged())
+            || self.damage.last_cursor != self.rendered_cursor_pos()
+        {
             Some(TerminalDamage::Partial)
-        } else if self.damage.last_cursor != self.grid.cursor.pos {
-            Some(TerminalDamage::CursorOnly)
         } else {
             None
         }
     }
 
+    /// Consume the frame's damage, to be called before the snapshot
+    /// that draws it. The consumer snapshots the cursor along with the
+    /// rows, so the position is painted once this frame is consumed;
+    /// without recording it `peek_damage_event` would report the move
+    /// forever. When the cursor moved, the row it left and the row it
+    /// is on are marked for the snapshot: the cursor cell is a run of
+    /// its own, so both shape differently now.
     #[inline]
     pub fn reset_damage(&mut self) {
         self.damage.reset();
-        // The consumer snapshots the cursor along with the rows, so the
-        // position is painted once this frame is consumed. Without this,
-        // `peek_damage_event` reports CursorOnly forever after the first
-        // cursor movement (`last_cursor` was only maintained by the
-        // legacy `damage()` path), so every PTY drain fires a redraw
-        // event even when nothing changed.
-        self.damage.last_cursor = self.grid.cursor.pos;
+        let cursor = self.rendered_cursor_pos();
+        if self.damage.last_cursor != cursor {
+            let oldest = -(self.history_size() as i32);
+            let lines = self.grid.screen_lines() as i32;
+            for row in [self.damage.last_cursor.row, cursor.row] {
+                if (oldest..lines).contains(&row.0) {
+                    self.grid[row].dirty = true;
+                }
+            }
+        }
+        self.damage.last_cursor = cursor;
     }
 
     /// Whether a synchronized update (mode 2026) is active, during which
@@ -6844,6 +6865,45 @@ mod tests {
         parser.advance(&mut cw, b"\x1b[?25h");
         assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
         assert!(cw.grid[Line(2)].dirty);
+    }
+
+    // The cursor cell is a run of its own, so a cursor move reshapes
+    // the row it left and the row it is on. Consuming a frame after a
+    // move marks both for the snapshot; a move within a row marks that
+    // row; a frame without a move marks nothing.
+    #[test]
+    fn a_cursor_move_marks_the_row_it_left_and_the_row_it_is_on() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let clear = |cw: &mut Crosswords<VoidListener>| {
+            for row in 0..cw.grid.screen_lines() as i32 {
+                cw.grid[Line(row)].dirty = false;
+            }
+        };
+        let dirty = |cw: &Crosswords<VoidListener>| -> Vec<i32> {
+            (0..cw.grid.screen_lines() as i32)
+                .filter(|&row| cw.grid[Line(row)].dirty)
+                .collect()
+        };
+        cw.input_str("ab");
+        cw.goto(Line(2), Column(1));
+        cw.reset_damage();
+        clear(&mut cw);
+
+        cw.goto(Line(0), Column(1));
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        cw.reset_damage();
+        assert_eq!(dirty(&cw), vec![0, 2], "the row left and the row entered");
+
+        clear(&mut cw);
+        cw.goto(Line(0), Column(3));
+        cw.reset_damage();
+        assert_eq!(dirty(&cw), vec![0], "a move within the row");
+
+        clear(&mut cw);
+        assert_eq!(cw.peek_damage_event(), None);
+        cw.reset_damage();
+        assert!(dirty(&cw).is_empty(), "no move, nothing marked");
     }
 
     // A reverse index inside a scroll region moves only the region's

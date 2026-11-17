@@ -297,6 +297,9 @@ impl RenderState {
                 None => TerminalDamage::Full,
             }
         };
+        // Consuming the damage first: it marks the rows the cursor left
+        // and entered, which the snapshot then copies.
+        term.reset_damage();
         term.snapshot_visible(
             &damage,
             &mut self.rows,
@@ -304,7 +307,6 @@ impl RenderState {
             &mut self.extras,
             &mut self.pending_styles,
         );
-        term.reset_damage();
         term.damage_event_in_flight = false;
         self.columns = term.grid.columns();
         self.display_offset = term.display_offset();
