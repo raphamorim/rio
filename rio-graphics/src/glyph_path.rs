@@ -29,20 +29,28 @@
 //!
 //! Limits keep drawing cheap. Every point, control points included,
 //! must lie within [`MAX_EXTENT_MULTIPLE`] viewBox sizes of the
-//! viewBox: geometry far outside the cell is what makes a rasterizer
-//! slow. A registration holds at most [`MAX_SEGMENTS`] segments,
-//! counted after arcs are expanded, and [`MAX_LAYERS`] layers.
+//! viewBox, and a registration holds at most [`MAX_SEGMENTS`]
+//! segments, counted after arcs are expanded, and [`MAX_LAYERS`]
+//! layers. Rasterizing cost follows both: curves that loop far outside
+//! the cell cross every scanline on each pass, and stroking adds a join
+//! per segment.
 
-/// Most drawing segments one registration may hold, counted after arcs
-/// are expanded into cubics.
-pub const MAX_SEGMENTS: usize = 4096;
+/// Most segments one registration may hold, counted after arcs are
+/// expanded into cubics. Moves and closes count too, so the cap also
+/// bounds the memory a registration keeps. With [`MAX_EXTENT_MULTIPLE`]
+/// it keeps the worst case under a millisecond to fill and about five
+/// to stroke into one cell with tiny-skia. The largest of 584 icons
+/// sampled from nine sets needs 226.
+pub const MAX_SEGMENTS: usize = 1024;
 
 /// Most layers one registration may hold.
 pub const MAX_LAYERS: usize = 16;
 
 /// How far outside the viewBox a point may lie, in viewBox sizes (the
-/// larger of its width and height).
-pub const MAX_EXTENT_MULTIPLE: f32 = 32.0;
+/// larger of its width and height). Past one size, fill cost jumps
+/// (about 3 ms to 26 ms for the same 4,096 cubics at two sizes); none
+/// of the 584 sampled icons reaches a tenth of a size outside.
+pub const MAX_EXTENT_MULTIPLE: f32 = 1.0;
 
 /// Largest magnitude a viewBox value may have. Keeps the coordinate
 /// bound, `MAX_EXTENT_MULTIPLE` times the viewBox size, well inside
@@ -172,14 +180,17 @@ pub fn parse(payload: &[u8], view_box: ViewBox) -> Result<PathGlyph, PathError> 
             .position(|&b| b == b':')
             .ok_or(PathError::Malformed)?;
         let (paint, color) = parse_header(&raw_layer[..colon], view_box)?;
-        let segments =
+        let mut segments =
             parse_path_data(&raw_layer[colon + 1..], &bounds, &mut segment_budget)?;
+        // The registry keeps this for the session.
+        segments.shrink_to_fit();
         layers.push(PathLayer {
             paint,
             color,
             segments,
         });
     }
+    layers.shrink_to_fit();
     Ok(PathGlyph { view_box, layers })
 }
 
@@ -230,7 +241,8 @@ fn parse_header(
 }
 
 fn parse_hex_color(hex: &[u8]) -> Option<[u8; 4]> {
-    if hex.len() != 6 && hex.len() != 8 {
+    // `from_str_radix` would also take a sign: `#+f+f+f`.
+    if (hex.len() != 6 && hex.len() != 8) || !hex.iter().all(u8::is_ascii_hexdigit) {
         return None;
     }
     let mut out = [0, 0, 0, 0xFF];
@@ -425,13 +437,23 @@ struct PathWriter<'b> {
 }
 
 impl PathWriter<'_> {
+    /// Every segment is charged, moves and closes included: otherwise
+    /// `M0 0Z` repeated would fill 64 KiB with segments the cap never
+    /// sees.
     fn spend(&mut self) -> Result<(), PathError> {
         *self.budget = self.budget.checked_sub(1).ok_or(PathError::TooLarge)?;
+        Ok(())
+    }
+
+    /// Charge a segment that draws something.
+    fn spend_drawing(&mut self) -> Result<(), PathError> {
+        self.spend()?;
         self.drew = true;
         Ok(())
     }
 
     fn move_to(&mut self, x: f64, y: f64) -> Result<(), PathError> {
+        self.spend()?;
         let (x, y) = self.bounds.check(x, y)?;
         self.segments.push(Segment::MoveTo(x, y));
         self.start = (x as f64, y as f64);
@@ -451,7 +473,7 @@ impl PathWriter<'_> {
 
     fn line_to(&mut self, x: f64, y: f64) -> Result<(), PathError> {
         self.ensure_open()?;
-        self.spend()?;
+        self.spend_drawing()?;
         let (x, y) = self.bounds.check(x, y)?;
         self.segments.push(Segment::LineTo(x, y));
         Ok(())
@@ -459,7 +481,7 @@ impl PathWriter<'_> {
 
     fn quad_to(&mut self, cx: f64, cy: f64, x: f64, y: f64) -> Result<(), PathError> {
         self.ensure_open()?;
-        self.spend()?;
+        self.spend_drawing()?;
         let (cx, cy) = self.bounds.check(cx, cy)?;
         let (x, y) = self.bounds.check(x, y)?;
         self.segments.push(Segment::QuadTo(cx, cy, x, y));
@@ -477,7 +499,7 @@ impl PathWriter<'_> {
         y: f64,
     ) -> Result<(), PathError> {
         self.ensure_open()?;
-        self.spend()?;
+        self.spend_drawing()?;
         let (c1x, c1y) = self.bounds.check(c1x, c1y)?;
         let (c2x, c2y) = self.bounds.check(c2x, c2y)?;
         let (x, y) = self.bounds.check(x, y)?;
@@ -486,11 +508,13 @@ impl PathWriter<'_> {
         Ok(())
     }
 
-    fn close(&mut self) {
+    fn close(&mut self) -> Result<(), PathError> {
         if !self.needs_move {
+            self.spend()?;
             self.segments.push(Segment::Close);
             self.needs_move = true;
         }
+        Ok(())
     }
 }
 
@@ -540,7 +564,7 @@ fn parse_path_data(
                 last = LastControl::None;
             }
             b'Z' => {
-                out.close();
+                out.close()?;
                 (cx, cy) = out.start;
                 last = LastControl::None;
             }
@@ -867,6 +891,8 @@ mod tests {
             "fill=nonzero:M0 0h4",
             "fill=nonzero,red:M0 0h4",
             "fill=nonzero,#fff:M0 0h4",
+            "fill=nonzero,#+f+f+f:M0 0h4",
+            "fill=nonzero,#ff00zz:M0 0h4",
             "fill=nonzero,fg@1.5:M0 0h4",
             "stroke=0,fg:M0 0h4",
             "stroke=25,fg:M0 0h4",
@@ -997,14 +1023,27 @@ mod tests {
 
     #[test]
     fn points_must_stay_near_the_view_box() {
-        // 32 viewBox sizes of margin: 24 * 32 = 768.
-        assert!(layer("fill=nonzero,fg:M0 0L792 0").is_ok());
+        // One viewBox size of margin on every side: [-24, 48].
+        assert!(layer("fill=nonzero,fg:M0 0L48 0").is_ok());
+        assert!(layer("fill=nonzero,fg:M0 0L0 -24").is_ok());
+        assert_eq!(layer("fill=nonzero,fg:M0 0L49 0"), Err(PathError::TooLarge));
         assert_eq!(
-            layer("fill=nonzero,fg:M0 0L793 0"),
+            layer("fill=nonzero,fg:M0 0L0 -25"),
+            Err(PathError::TooLarge)
+        );
+        // Control points count, not just the points the curve passes.
+        assert_eq!(
+            layer("fill=nonzero,fg:M0 0C-30 0 54 24 12 12"),
             Err(PathError::TooLarge)
         );
         assert_eq!(
-            layer("fill=nonzero,fg:M0 0C-90000 -90000 90000 90000 12 12"),
+            layer("fill=nonzero,fg:M0 0Q12 60 24 0"),
+            Err(PathError::TooLarge)
+        );
+        // So do the cubics an arc becomes: a 30-unit radius bulges past
+        // the margin even though both endpoints are inside the box.
+        assert_eq!(
+            layer("fill=nonzero,fg:M2 12A30 30 0 1 1 22 12"),
             Err(PathError::TooLarge)
         );
         assert_eq!(
@@ -1023,17 +1062,18 @@ mod tests {
 
     #[test]
     fn segment_and_layer_caps() {
-        let at_cap = format!(
-            "fill=nonzero,fg:M0 0{}",
-            "l1 0 -1 0 ".repeat(MAX_SEGMENTS / 2)
-        );
+        // `n` linetos that go back and forth, staying in the box.
+        let back_and_forth =
+            |n: usize| "h1h-1".repeat(n / 2) + if n % 2 == 1 { "h1" } else { "" };
+        // The moveto is a segment too.
+        let at_cap = format!("fill=nonzero,fg:M0 0{}", back_and_forth(MAX_SEGMENTS - 1));
         assert!(layer(&at_cap).is_ok());
-        let over = format!("{at_cap}l1 0");
+        let over = format!("{at_cap}h-1");
         assert_eq!(layer(&over), Err(PathError::TooLarge));
         // The cap is per registration, across layers.
         let half = format!(
             "fill=nonzero,fg:M0 0{}",
-            "l1 0 -1 0 ".repeat(MAX_SEGMENTS / 4)
+            back_and_forth(MAX_SEGMENTS / 2 - 1)
         );
         assert!(parse(format!("{half}|{half}").as_bytes(), VB24).is_ok());
         assert_eq!(
@@ -1045,6 +1085,180 @@ mod tests {
         );
         let layers = vec!["fill=nonzero,fg:M0 0h1"; MAX_LAYERS + 1].join("|");
         assert_eq!(parse(layers.as_bytes(), VB24), Err(PathError::TooLarge));
+    }
+
+    #[test]
+    fn moves_and_closes_count_against_the_cap() {
+        // Subpaths that draw nothing still cost memory for the whole
+        // session: each `M x yZ` is two segments.
+        let pairs = (MAX_SEGMENTS - 2) / 2;
+        let fits = format!("fill=nonzero,fg:M0 0h1{}", "M1 1Z".repeat(pairs));
+        assert!(layer(&fits).is_ok());
+        let flood = format!("fill=nonzero,fg:M0 0h1{}", "M1 1Z".repeat(pairs + 1));
+        assert_eq!(layer(&flood), Err(PathError::TooLarge));
+        // A run of bare movetos is no cheaper.
+        let moves = format!("fill=nonzero,fg:M0 0h1{}", "M1 1".repeat(MAX_SEGMENTS));
+        assert_eq!(layer(&moves), Err(PathError::TooLarge));
+        // The implicit moveto after a close is charged as well.
+        let reopen = format!("fill=nonzero,fg:M0 0{}", "h1z".repeat(MAX_SEGMENTS / 2));
+        assert_eq!(layer(&reopen), Err(PathError::TooLarge));
+    }
+
+    /// Endpoints of every segment, `None` for a close.
+    fn ends(data: &str) -> Vec<Option<(f32, f32)>> {
+        segments(data).iter().map(|s| end(Some(s))).collect()
+    }
+
+    #[test]
+    fn conformance_implicit_commands_and_subpaths() {
+        let p = |x: f32, y: f32| Some((x, y));
+        // Pairs after a moveto are linetos, absolute after M.
+        assert_eq!(ends("M2 2 8 2 8 8"), vec![p(2., 2.), p(8., 2.), p(8., 8.)]);
+        // A second relative moveto starts from the current point, and
+        // its own extra pairs are relative linetos.
+        assert_eq!(
+            ends("m2 2 4 0m0 4 4 0"),
+            vec![p(2., 2.), p(6., 2.), p(6., 6.), p(10., 6.)]
+        );
+        // H and V repeat their single coordinate.
+        assert_eq!(
+            ends("M1 1H5 9V4 7"),
+            vec![p(1., 1.), p(5., 1.), p(9., 1.), p(9., 4.), p(9., 7.)]
+        );
+        assert_eq!(
+            ends("M1 1h2 2v3 3"),
+            vec![p(1., 1.), p(3., 1.), p(5., 1.), p(5., 4.), p(5., 7.)]
+        );
+        // After Z the current point is the subpath start, so a relative
+        // moveto counts from there.
+        assert_eq!(
+            ends("M4 4h6v6zm2 2h1"),
+            vec![
+                p(4., 4.),
+                p(10., 4.),
+                p(10., 10.),
+                None,
+                p(6., 6.),
+                p(7., 6.)
+            ]
+        );
+        // Consecutive movetos are kept; the last one starts the drawing.
+        assert_eq!(ends("M1 1M3 3L5 5"), vec![p(1., 1.), p(3., 3.), p(5., 5.)]);
+        // Repeated closes collapse into one.
+        assert_eq!(
+            ends("M0 0h4v4zzz"),
+            vec![p(0., 0.), p(4., 0.), p(4., 4.), None]
+        );
+        // Signs separate numbers; so do commas, once, between arguments.
+        assert_eq!(
+            ends("M0,0L4-4+4-4 8,8,2 2"),
+            vec![p(0., 0.), p(4., -4.), p(4., -4.), p(8., 8.), p(2., 2.)]
+        );
+    }
+
+    #[test]
+    fn conformance_shorthand_reflection_rules() {
+        // S reflects only a cubic's control: after Q its first control
+        // is the current point.
+        assert_eq!(
+            segments("M0 0Q4 8 8 0S12 8 16 0")[2],
+            Segment::CubicTo(8., 0., 12., 8., 16., 0.)
+        );
+        // T reflects only a quadratic's control: after C it is the
+        // current point.
+        assert_eq!(
+            segments("M0 0C0 8 8 8 8 0T16 0")[2],
+            Segment::QuadTo(8., 0., 16., 0.)
+        );
+        // Chained T keeps reflecting the control it inferred.
+        assert_eq!(
+            segments("M0 0T4 4T8 0")[1..],
+            [
+                Segment::QuadTo(0., 0., 4., 4.),
+                Segment::QuadTo(8., 8., 8., 0.)
+            ]
+        );
+        // Relative t after relative q: the reflection is absolute.
+        assert_eq!(
+            segments("M0 6q2 6 4 0t4 0")[1..],
+            [
+                Segment::QuadTo(2., 12., 4., 6.),
+                Segment::QuadTo(6., 0., 8., 6.)
+            ]
+        );
+        // A moveto in between forgets the previous control.
+        assert_eq!(
+            segments("M0 0C0 8 8 8 8 0M10 0S14 8 16 0")[3],
+            Segment::CubicTo(10., 0., 14., 8., 16., 0.)
+        );
+    }
+
+    #[test]
+    fn conformance_arc_flags() {
+        // Flags are one character, so they pack against each other and
+        // against the next coordinate in every combination.
+        let reference = segments("M4 12a8 8 0 0 1 16 0");
+        for packed in [
+            "M4 12a8 8 0 0116 0",
+            "M4 12a8,8,0,0,1,16,0",
+            "M4 12a8 8 0 01 16 0",
+        ] {
+            assert_eq!(segments(packed), reference, "{packed}");
+        }
+        // A sign ends the flag as well.
+        assert_eq!(
+            end(segments("M20 12a8 8 0 0 1-16 0").last()),
+            Some((4., 12.))
+        );
+        // Sweep picks the side: positive-angle (1) goes over the top in
+        // y-down coordinates, so the midpoint control rises above y=12.
+        let over = segments("M4 12a8 8 0 0 1 16 0");
+        let under = segments("M4 12a8 8 0 0 0 16 0");
+        let mid_y = |s: &[Segment]| match s[1] {
+            Segment::CubicTo(.., y) => y,
+            _ => unreachable!(),
+        };
+        assert!(mid_y(&over) < 12.0 && mid_y(&under) > 12.0);
+        // Anything other than a lone 0 or 1 rejects the payload, as does
+        // a number that swallowed the flags (ry = 401, then no flags).
+        for data in [
+            "M4 12a8 8 0 2 1 16 0",
+            "M4 12a8 8 0 0 7 16 0",
+            "M4 12a8 8 0 -1 1 16 0",
+            "M4 12a8 8 0 1 -0 16 0",
+            "M4 12a8 401 18 0",
+        ] {
+            assert_eq!(
+                layer(&format!("fill=nonzero,fg:{data}")),
+                Err(PathError::Malformed),
+                "{data}"
+            );
+        }
+    }
+
+    #[test]
+    fn conformance_malformed_data_rejects_everything() {
+        // SVG renders up to the error; here nothing registers, so every
+        // terminal agrees on the result.
+        for data in [
+            "M0 0L4 4 8",
+            "M0 0L4#4",
+            "M0 0L4,,4",
+            "M0 0L,4 4",
+            "M0 0L4 4,",
+            "M0 0 L4 4 Z 1 1",
+            "M0 0L.",
+            "M0 0L1e+ 4",
+            "M1 1M3 3",
+            "m0 0z",
+            "  ",
+        ] {
+            assert_eq!(
+                layer(&format!("fill=nonzero,fg:{data}")),
+                Err(PathError::Malformed),
+                "{data:?}"
+            );
+        }
     }
 
     #[test]

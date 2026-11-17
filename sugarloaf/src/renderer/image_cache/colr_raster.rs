@@ -1192,6 +1192,107 @@ mod tests {
         }
 
         #[test]
+        fn y_points_down_as_in_svg() {
+            // Every other test is symmetric top to bottom; this one would
+            // catch a flipped glyph.
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M0 0h24v8H0Z", 24, 24);
+            assert_eq!(alpha(&r, 12, 3), 255, "top band filled");
+            assert_eq!(alpha(&r, 12, 20), 0, "bottom empty");
+            // Same with the box shifted, so the origin isn't at a corner.
+            let r = draw(
+                "100,-50,24,24",
+                "fill=nonzero,fg:M100 -50h24v8h-24Z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 12, 3), 255);
+            assert_eq!(alpha(&r, 12, 20), 0);
+        }
+
+        #[test]
+        fn implicit_linetos_draw_the_shape() {
+            // A triangle given as one moveto with extra pairs.
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M2 2 22 2 2 22Z", 24, 24);
+            assert_eq!(alpha(&r, 5, 5), 255);
+            assert_eq!(alpha(&r, 19, 19), 0);
+        }
+
+        #[test]
+        fn a_relative_move_after_close_starts_from_the_subpath() {
+            // After `z` the pen is back at (2, 2), so `m12 0` lands at
+            // (14, 2), not below the first square.
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 2h6v6h-6zm12 0h6v6h-6z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 5, 5), 255);
+            assert_eq!(alpha(&r, 17, 5), 255);
+            assert_eq!(alpha(&r, 17, 13), 0);
+        }
+
+        #[test]
+        fn drawing_after_close_reopens_the_subpath() {
+            // `z` then `l` with no moveto: a second triangle from (2, 2).
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M2 2h8v8zl0 20h20z", 24, 24);
+            assert_eq!(alpha(&r, 8, 4), 255, "first triangle");
+            assert_eq!(alpha(&r, 4, 18), 255, "second, from the start point");
+        }
+
+        #[test]
+        fn arc_sweep_picks_the_side() {
+            // Sweep 1 is the positive-angle direction: over the top in
+            // y-down coordinates. Packed flags draw the same arc.
+            let over = draw("0,0,24,24", "fill=nonzero,fg:M4 12a8 8 0 0116 0Z", 24, 24);
+            assert_eq!(alpha(&over, 12, 7), 255);
+            assert_eq!(alpha(&over, 12, 17), 0);
+            let under = draw("0,0,24,24", "fill=nonzero,fg:M4 12a8 8 0 0016 0Z", 24, 24);
+            assert_eq!(alpha(&under, 12, 7), 0);
+            assert_eq!(alpha(&under, 12, 17), 255);
+        }
+
+        #[test]
+        fn large_arc_takes_the_long_way() {
+            // Same endpoints and radius; the large arc covers the centre
+            // of the far circle, the small one doesn't reach it.
+            let large = draw("0,0,24,24", "fill=nonzero,fg:M6 6A8 8 0 1 0 18 6Z", 24, 24);
+            let small = draw("0,0,24,24", "fill=nonzero,fg:M6 6A8 8 0 0 0 18 6Z", 24, 24);
+            assert_eq!(alpha(&large, 12, 16), 255);
+            assert_eq!(alpha(&small, 12, 16), 0);
+        }
+
+        #[test]
+        fn shorthand_curves_draw_like_the_full_form() {
+            let full = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12C2 2 12 2 12 12C12 22 22 22 22 12Z",
+                24,
+                24,
+            );
+            let short = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12C2 2 12 2 12 12S22 22 22 12Z",
+                24,
+                24,
+            );
+            assert_eq!(full.data, short.data);
+            let quad = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12Q7 2 12 12Q17 22 22 12Z",
+                24,
+                24,
+            );
+            let quad_short = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12Q7 2 12 12T22 12Z",
+                24,
+                24,
+            );
+            assert_eq!(quad.data, quad_short.data);
+        }
+
+        #[test]
         fn foreground_tracking() {
             let glyph = |text: &str| StoredPayload::Path {
                 glyph: parse(text.as_bytes(), parse_view_box(b"0,0,24,24").unwrap())
