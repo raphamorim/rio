@@ -20,6 +20,9 @@
 //   colrv1 — same layer model as colrv0 but each layer carries a paint:
 //            solid, linear gradient, radial gradient, or foreground. No
 //            affine transforms and no sweep gradients in v1.
+//   path   — layers of SVG path data sent as plain ASCII, not base64,
+//            in the coordinate system of a `vb=x,y,w,h` key. Proof of
+//            concept, not in the spec yet; see `rio_graphics::glyph_path`.
 //
 // `cp` is always a single codepoint. For `r` and `c`, `cp` MUST be in
 // the registration block `U+100000`–`U+1003FF` (spec §4); otherwise the
@@ -57,7 +60,7 @@ pub const MAX_PAYLOAD_BYTES: usize = 32 * 1024;
 /// produces `fmt=` (protocol implemented but no payload format
 /// accepted) — a degenerate state reserved for future negotiation,
 /// never produced by this build.
-pub const SUPPORTED_FORMATS: &[&str] = &["glyf", "colrv0", "colrv1"];
+pub const SUPPORTED_FORMATS: &[&str] = &["glyf", "colrv0", "colrv1", "path"];
 
 pub use rio_graphics::glyph_namespace::in_registration_block;
 
@@ -121,11 +124,26 @@ const MAX_COLR_GLYPHS: u16 = 1024;
 /// applications can slice existing fonts directly; the terminal uses
 /// `ttf_parser::colr::Table` to walk the paint graph and our own
 /// `glyf` decoder (same as `fmt=glyf`) for the leaf outlines.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Path` is already parsed and validated: a malformed or oversized
+/// payload is rejected here, at registration, like every other format.
+#[derive(Debug, Clone, PartialEq)]
 pub enum GlyphPayload {
-    Glyf { glyf: Vec<u8>, upm: u16 },
-    ColrV0 { container: ColrContainer, upm: u16 },
-    ColrV1 { container: ColrContainer, upm: u16 },
+    Glyf {
+        glyf: Vec<u8>,
+        upm: u16,
+    },
+    ColrV0 {
+        container: ColrContainer,
+        upm: u16,
+    },
+    ColrV1 {
+        container: ColrContainer,
+        upm: u16,
+    },
+    Path {
+        glyph: rio_graphics::glyph_path::PathGlyph,
+    },
 }
 
 /// Wire container for `fmt=colrv0` and `fmt=colrv1` payloads.
@@ -344,8 +362,9 @@ fn parse_query(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
 }
 
 fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
-    // Register splits control parameters from the base64 payload at
-    // the LAST `;`. Base64 has no `;` so this is unambiguous.
+    // Register splits control parameters from the payload at the LAST
+    // `;`. Neither base64 nor `fmt=path` text has a `;`, so this is
+    // unambiguous.
     let (control, payload_b64) = split_last(rest, b';');
     let params = parse_params(control);
 
@@ -377,7 +396,7 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     }
 
     let fmt = params.get("fmt").copied().unwrap_or(b"glyf");
-    if fmt != b"glyf" && fmt != b"colrv0" && fmt != b"colrv1" {
+    if fmt != b"glyf" && fmt != b"colrv0" && fmt != b"colrv1" && fmt != b"path" {
         return Err(ParseError::Malformed("register fmt unknown"));
     }
 
@@ -406,6 +425,18 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     };
 
     let layout = parse_layout(&params).ok_or_else(malformed)?;
+
+    if fmt == b"path" {
+        let payload = parse_path_payload(&params, trim(payload_b64))
+            .map_err(|reason| ParseError::RegisterFailed { cp, reason, reply })?;
+        return Ok(GlyphCommand::Register {
+            cp,
+            payload,
+            reply,
+            width,
+            layout,
+        });
+    }
 
     let payload_b64 = trim(payload_b64);
     let raw = BASE64
@@ -458,6 +489,28 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         width,
         layout,
     })
+}
+
+/// `fmt=path`: the payload is the text itself, read against the `vb`
+/// key. `upm`, `aw`, `lh` and `ymin` don't apply; the viewBox is the
+/// declared extent that `size`, `align` and `pad` place.
+fn parse_path_payload(
+    params: &Params<'_>,
+    text: &[u8],
+) -> Result<GlyphPayload, RegisterError> {
+    use rio_graphics::glyph_path::{self, PathError};
+    if text.len() > MAX_PAYLOAD_BYTES {
+        return Err(RegisterError::PayloadTooLarge);
+    }
+    let view_box = params
+        .get("vb")
+        .and_then(|raw| glyph_path::parse_view_box(raw))
+        .ok_or(RegisterError::MalformedPayload)?;
+    let glyph = glyph_path::parse(text, view_box).map_err(|err| match err {
+        PathError::Malformed => RegisterError::MalformedPayload,
+        PathError::TooLarge => RegisterError::OutlineTooLarge,
+    })?;
+    Ok(GlyphPayload::Path { glyph })
 }
 
 /// Read the §8.5 sizing keys; each absent key takes the protocol's
@@ -1189,6 +1242,67 @@ mod tests {
     }
 
     #[test]
+    fn parses_register_with_fmt_path() {
+        let body = b"25a1;r;cp=100001;fmt=path;vb=0,0,24,24;size=contain;\
+stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z";
+        match parse(body) {
+            Ok(GlyphCommand::Register {
+                cp,
+                payload: GlyphPayload::Path { glyph },
+                ..
+            }) => {
+                assert_eq!(cp, 0x10_0001);
+                assert_eq!(glyph.view_box.w, 24.0);
+                assert_eq!(glyph.layers.len(), 1);
+            }
+            other => panic!("expected a path registration, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fmt_path_rejections() {
+        let reason = |body: &str| match parse(body.as_bytes()) {
+            Err(ParseError::RegisterFailed { reason, .. }) => Some(reason),
+            _ => None,
+        };
+        // No viewBox, or a bad one.
+        assert_eq!(
+            reason("25a1;r;cp=100000;fmt=path;fill=nonzero,fg:M0 0h4v4z"),
+            Some(RegisterError::MalformedPayload)
+        );
+        assert_eq!(
+            reason("25a1;r;cp=100000;fmt=path;vb=0,0,0,24;fill=nonzero,fg:M0 0h4v4z"),
+            Some(RegisterError::MalformedPayload)
+        );
+        // Bad path data rejects the whole registration.
+        assert_eq!(
+            reason("25a1;r;cp=100000;fmt=path;vb=0,0,24,24;fill=nonzero,fg:M0 0L1"),
+            Some(RegisterError::MalformedPayload)
+        );
+        // Geometry far outside the viewBox, and too many segments.
+        assert_eq!(
+            reason("25a1;r;cp=100000;fmt=path;vb=0,0,24,24;fill=nonzero,fg:M0 0L1e6 0"),
+            Some(RegisterError::OutlineTooLarge)
+        );
+        let many = format!(
+            "25a1;r;cp=100000;fmt=path;vb=0,0,24,24;fill=nonzero,fg:M0 0{}",
+            "l1 0 -1 0 ".repeat(3000)
+        );
+        assert_eq!(reason(&many), Some(RegisterError::OutlineTooLarge));
+        // Past 64 KiB of text.
+        let huge = format!(
+            "25a1;r;cp=100000;fmt=path;vb=0,0,24,24;fill=nonzero,fg:M0 0{}",
+            "l0 0".repeat(17_000)
+        );
+        assert_eq!(reason(&huge), Some(RegisterError::PayloadTooLarge));
+        // The block check still comes first.
+        assert_eq!(
+            reason("25a1;r;cp=E000;fmt=path;vb=0,0,24,24;fill=nonzero,fg:M0 0h4v4z"),
+            Some(RegisterError::OutOfNamespace)
+        );
+    }
+
+    #[test]
     fn register_rejects_bad_base64() {
         let body = b"25a1;r;cp=100000;upm=1000;$$$$not_base64";
         assert!(matches!(
@@ -1398,10 +1512,10 @@ mod tests {
     }
 
     #[test]
-    fn support_response_advertises_glyf_colrv0_colrv1() {
+    fn support_response_advertises_every_format() {
         assert_eq!(
             format_support_response(SUPPORTED_FORMATS, &[]),
-            "\x1b_25a1;s;fmt=glyf,colrv0,colrv1\x1b\\"
+            "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,path\x1b\\"
         );
     }
 
@@ -1418,7 +1532,7 @@ mod tests {
     fn support_response_lists_capabilities() {
         assert_eq!(
             format_support_response(SUPPORTED_FORMATS, &[CAP_GRAPHEME]),
-            "\x1b_25a1;s;fmt=glyf,colrv0,colrv1;cap=grapheme\x1b\\"
+            "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,path;cap=grapheme\x1b\\"
         );
     }
 

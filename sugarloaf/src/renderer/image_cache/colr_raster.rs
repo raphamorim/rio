@@ -92,6 +92,14 @@ pub fn rasterize_payload(
             layout,
             baseline_px,
         ),
+        StoredPayload::Path { glyph } => rasterize_path(
+            glyph,
+            cell_width_px,
+            cell_height_px,
+            foreground_rgba,
+            layout,
+            baseline_px,
+        ),
     }
 }
 
@@ -131,7 +139,32 @@ impl SpanPlacement {
             let [x_min, y_min, x_max, y_max] = bounds()?;
             (x_min, x_max - x_min, y_min, y_max - y_min)
         };
-        if upm == 0 || aw <= 0.0 || lh <= 0.0 || span_w_px == 0 || cell_h_px == 0 {
+        if upm == 0 {
+            return None;
+        }
+        // Without a declared extent the em keeps a set in proportion.
+        let em_cap = (!declared).then_some(upm as f32);
+        Self::for_extent(
+            layout,
+            [x0, aw, y0, lh],
+            em_cap,
+            span_w_px,
+            cell_h_px,
+            baseline_px,
+        )
+    }
+
+    /// Place a known extent `[x0, aw, y0, lh]` (Y-up design units).
+    /// `em_cap`, when set, keeps `contain` from scaling past the em.
+    fn for_extent(
+        layout: &GlyphLayout,
+        [x0, aw, y0, lh]: [f32; 4],
+        em_cap: Option<f32>,
+        span_w_px: u16,
+        cell_h_px: u16,
+        baseline_px: f32,
+    ) -> Option<Self> {
+        if aw <= 0.0 || lh <= 0.0 || span_w_px == 0 || cell_h_px == 0 {
             return None;
         }
 
@@ -144,11 +177,9 @@ impl SpanPlacement {
 
         // §8.5.3: scale factors.
         let (fit_w, fit_h) = (w / aw, h / lh);
-        // Without a declared extent the em keeps a set in proportion.
-        let contain = if declared {
-            fit_w.min(fit_h)
-        } else {
-            fit_w.min(fit_h).min(w.min(h) / upm as f32)
+        let contain = match em_cap {
+            None => fit_w.min(fit_h),
+            Some(em) => fit_w.min(fit_h).min(w.min(h) / em),
         };
         let (sx, sy) = match layout.size {
             GlyphSize::Height => (fit_h, fit_h),
@@ -260,6 +291,99 @@ fn rasterize_mono(
     })
 }
 
+/// Draw a `fmt=path` glyph. The viewBox is the declared extent, placed
+/// by the §8.5 keys like any other format. A glyph whose layers all use
+/// the foreground colour becomes an A8 mask (layer alphas composite
+/// into its coverage) so the grid tints it like `glyf`; any fixed
+/// colour makes it RGBA with the foreground resolved now.
+fn rasterize_path(
+    glyph: &rio_graphics::glyph_path::PathGlyph,
+    cell_width_px: u16,
+    cell_height_px: u16,
+    foreground_rgba: [u8; 4],
+    layout: &GlyphLayout,
+    baseline_px: f32,
+) -> Option<RasterizedPayload> {
+    use rio_graphics::glyph_path::{self, LayerColor, LayerPaint, Segment};
+    use tiny_skia::{LineCap, LineJoin, Stroke};
+
+    let vb = glyph.view_box;
+    // Path data is Y-down; the placement works in Y-up design units, so
+    // the viewBox's vertical range [y, y + h] becomes [-(y + h), -y].
+    let span = SpanPlacement::for_extent(
+        layout,
+        [vb.x, vb.w, -(vb.y + vb.h), vb.h],
+        None,
+        cell_width_px,
+        cell_height_px,
+        baseline_px,
+    )?;
+    // A design point (x, -vy) lands on (tx + x * sx, ty + vy * sy).
+    let ctm = Transform::from_row(span.sx, 0.0, 0.0, span.sy, span.tx, span.ty);
+
+    let monochrome = glyph.is_monochrome();
+    let (pix_w, pix_h) = (cell_width_px as u32, cell_height_px as u32);
+    let mut pixmap = Pixmap::new(pix_w, pix_h)?;
+    for layer in &glyph.layers {
+        let mut pb = PathBuilder::new();
+        for segment in &layer.segments {
+            match *segment {
+                Segment::MoveTo(x, y) => pb.move_to(x, y),
+                Segment::LineTo(x, y) => pb.line_to(x, y),
+                Segment::QuadTo(cx, cy, x, y) => pb.quad_to(cx, cy, x, y),
+                Segment::CubicTo(c1x, c1y, c2x, c2y, x, y) => {
+                    pb.cubic_to(c1x, c1y, c2x, c2y, x, y)
+                }
+                Segment::Close => pb.close(),
+            }
+        }
+        // A layer that is only a degenerate line has no area to draw.
+        let Some(path) = pb.finish() else { continue };
+
+        let [r, g, b, a] = match layer.color {
+            LayerColor::Foreground { alpha } if monochrome => [0xFF, 0xFF, 0xFF, alpha],
+            LayerColor::Foreground { alpha } => {
+                let [r, g, b, fg_a] = foreground_rgba;
+                [r, g, b, ((fg_a as u16 * alpha as u16 + 127) / 255) as u8]
+            }
+            LayerColor::Rgba(rgba) => rgba,
+        };
+        let mut paint = SkPaint::default();
+        paint.set_color_rgba8(r, g, b, a);
+        paint.anti_alias = true;
+        match layer.paint {
+            LayerPaint::Fill(rule) => {
+                let rule = match rule {
+                    glyph_path::FillRule::NonZero => FillRule::Winding,
+                    glyph_path::FillRule::EvenOdd => FillRule::EvenOdd,
+                };
+                pixmap.fill_path(&path, &paint, rule, ctm, None);
+            }
+            LayerPaint::Stroke { width } => {
+                let stroke = Stroke {
+                    width,
+                    line_cap: LineCap::Round,
+                    line_join: LineJoin::Round,
+                    ..Stroke::default()
+                };
+                pixmap.stroke_path(&path, &paint, &stroke, ctm, None);
+            }
+        }
+    }
+
+    let data = if monochrome {
+        pixmap.pixels().iter().map(|p| p.alpha()).collect()
+    } else {
+        pixmap_to_rgba(&pixmap)
+    };
+    Some(RasterizedPayload {
+        data,
+        width: pix_w as u16,
+        height: pix_h as u16,
+        is_color: !monochrome,
+    })
+}
+
 /// Parse a colour container's `COLR` table against its `CPAL`.
 ///
 /// A container may ship no CPAL (legal for v1 paints that only use
@@ -321,6 +445,11 @@ pub fn payload_uses_foreground(
     use crate::font::glyph_registry::StoredPayload;
     let (glyphs, colr, cpal) = match payload {
         StoredPayload::Glyf { .. } => return false,
+        // An all-foreground path glyph is an alpha mask tinted at draw
+        // time; one with fixed colours bakes the foreground in.
+        StoredPayload::Path { glyph } => {
+            return !glyph.is_monochrome() && glyph.uses_foreground()
+        }
         StoredPayload::ColrV0 { glyphs, colr, cpal }
         | StoredPayload::ColrV1 { glyphs, colr, cpal } => (glyphs, colr, cpal),
     };
@@ -958,6 +1087,128 @@ fn intersect_masks(dst: &mut Mask, src: &Mask) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod path_format {
+        use super::*;
+        use crate::font::glyph_registry::StoredPayload;
+        use rio_graphics::glyph_path::{parse, parse_view_box};
+
+        const FG: [u8; 4] = [10, 200, 30, 255];
+
+        fn draw(vb: &str, text: &str, w: u16, h: u16) -> RasterizedPayload {
+            let glyph = parse(text.as_bytes(), parse_view_box(vb.as_bytes()).unwrap())
+                .expect("payload parses");
+            rasterize_payload(
+                &StoredPayload::Path { glyph },
+                1000,
+                w,
+                h,
+                FG,
+                &GlyphLayout::default(),
+                0.0,
+            )
+            .expect("draws")
+        }
+
+        fn alpha(r: &RasterizedPayload, x: usize, y: usize) -> u8 {
+            if r.is_color {
+                r.data[(y * r.width as usize + x) * 4 + 3]
+            } else {
+                r.data[y * r.width as usize + x]
+            }
+        }
+
+        #[test]
+        fn foreground_fill_is_an_alpha_mask() {
+            // A 24-unit box contained and centred in a 20x40 cell: 20 px
+            // square from y = 10 to 30.
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M0 0h24v24H0Z", 20, 40);
+            assert!(!r.is_color);
+            assert_eq!((r.width, r.height), (20, 40));
+            assert_eq!(alpha(&r, 10, 20), 255);
+            assert_eq!(alpha(&r, 10, 5), 0, "above the contained square");
+            assert_eq!(alpha(&r, 10, 35), 0, "below it");
+        }
+
+        #[test]
+        fn even_odd_cuts_a_hole_and_nonzero_does_not() {
+            let rings = "M0 0h24v24H0ZM6 6h12v12H6Z";
+            let evenodd = draw("0,0,24,24", &format!("fill=evenodd,fg:{rings}"), 24, 24);
+            let nonzero = draw("0,0,24,24", &format!("fill=nonzero,fg:{rings}"), 24, 24);
+            assert_eq!(alpha(&evenodd, 12, 12), 0);
+            assert_eq!(alpha(&nonzero, 12, 12), 255);
+            assert_eq!(alpha(&evenodd, 2, 2), 255);
+        }
+
+        #[test]
+        fn strokes_are_round_and_scale_with_the_glyph() {
+            // A 4-unit line across the middle of a 24-unit box at 1:1.
+            let r = draw("0,0,24,24", "stroke=4,fg:M6 12h12", 24, 24);
+            assert_eq!(alpha(&r, 12, 12), 255);
+            assert_eq!(alpha(&r, 12, 5), 0);
+            // The round cap reaches past the end point by half the width.
+            assert!(alpha(&r, 19, 12) > 0);
+            assert_eq!(alpha(&r, 12, 17), 0);
+        }
+
+        #[test]
+        fn foreground_alpha_composites_into_the_mask() {
+            let r = draw("0,0,24,24", "fill=nonzero,fg@0.2:M0 0h24v24H0Z", 24, 24);
+            assert!(!r.is_color);
+            assert_eq!(alpha(&r, 12, 12), 51);
+        }
+
+        #[test]
+        fn a_fixed_colour_makes_it_rgba_with_the_foreground_resolved() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M0 0h12v24H0Z|fill=nonzero,#ff000080:M12 0h12v24H12Z",
+                24,
+                24,
+            );
+            assert!(r.is_color);
+            let px = |x: usize, y: usize| {
+                let i = (y * 24 + x) * 4;
+                [r.data[i], r.data[i + 1], r.data[i + 2], r.data[i + 3]]
+            };
+            assert_eq!(px(6, 12), FG);
+            // Half-transparent red, premultiplied as the colour atlas
+            // takes it.
+            assert_eq!(px(18, 12)[3], 128);
+            assert!(px(18, 12)[0] >= 127 && px(18, 12)[1] == 0);
+        }
+
+        #[test]
+        fn a_negative_view_box_origin_is_honoured() {
+            // Material Symbols: y runs from -960 to 0.
+            let r = draw(
+                "0,-960,960,960",
+                "fill=nonzero,fg:M0-960h480v960H0Z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 6, 12), 255, "left half filled");
+            assert_eq!(alpha(&r, 18, 12), 0, "right half empty");
+        }
+
+        #[test]
+        fn foreground_tracking() {
+            let glyph = |text: &str| StoredPayload::Path {
+                glyph: parse(text.as_bytes(), parse_view_box(b"0,0,24,24").unwrap())
+                    .unwrap(),
+            };
+            // Masks are tinted at draw time; only RGBA bakes it in.
+            assert!(!payload_uses_foreground(&glyph(
+                "fill=nonzero,fg:M0 0h4v4z"
+            )));
+            assert!(!payload_uses_foreground(&glyph(
+                "fill=nonzero,#ffffffff:M0 0h4v4z"
+            )));
+            assert!(payload_uses_foreground(&glyph(
+                "fill=nonzero,fg:M0 0h4v4z|fill=nonzero,#ffffffff:M8 8h4v4z"
+            )));
+        }
+    }
 
     /// Helper: vector dot product in 2D.
     fn dot(a: (f32, f32), b: (f32, f32)) -> f32 {
