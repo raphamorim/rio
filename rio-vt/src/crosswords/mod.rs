@@ -2653,20 +2653,19 @@ impl<U: EventListener> Crosswords<U> {
         let mut content = self.cursor_shape;
         let vi_mode = self.mode.contains(Mode::VI);
         let scroll = self.display_offset() as i32;
-        let mut pos = if vi_mode {
-            let mut vi_cursor_pos = self.vi_mode_cursor.pos;
-            if scroll > 0 {
-                vi_cursor_pos.row += scroll;
-            }
-            vi_cursor_pos
-        } else {
-            if scroll != 0 {
-                content = CursorShape::Hidden;
-            }
-            self.grid.cursor.pos
-        };
+        // The spacer check reads the grid, so it looks at the grid
+        // position before the row is shifted into viewport coordinates:
+        // in vi mode the cursor can be on a scrollback row.
+        let mut pos = self.rendered_cursor_pos();
         if matches!(self.grid[pos].wide(), Wide::Spacer) {
             pos.col -= 1;
+        }
+        if vi_mode {
+            if scroll > 0 {
+                pos.row += scroll;
+            }
+        } else if scroll != 0 {
+            content = CursorShape::Hidden;
         }
 
         // If the cursor is hidden then set content as hidden
@@ -6962,6 +6961,44 @@ mod tests {
         );
         assert!(rows[0].dirty, "copied as the top row of the viewport");
         assert!(!rows[2].dirty);
+    }
+
+    // The cursor a renderer draws sits on the left half of a wide
+    // character. In vi mode with the viewport scrolled, the vi cursor
+    // is on a scrollback row; the spacer check has to read that row,
+    // not the active-area row at the same viewport index.
+    #[test]
+    fn a_vi_cursor_on_a_wide_spacer_in_scrollback_moves_left() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, "中x\r\n".as_bytes());
+        for _ in 0..7 {
+            parser.advance(&mut cw, b"ab\r\n");
+        }
+        let history = cw.history_size();
+        assert!(history >= 5);
+        let wide_line = Line(-(history as i32));
+        assert_eq!(cw.grid[wide_line][Column(0)].c(), '中');
+        assert!(matches!(cw.grid[wide_line][Column(1)].wide(), Wide::Spacer));
+        assert_eq!(
+            cw.grid[Line(0)][Column(1)].c(),
+            'b',
+            "the active row under it is plain"
+        );
+
+        cw.toggle_vi_mode();
+        cw.scroll_display(Scroll::Delta(history as i32));
+        assert_eq!(cw.display_offset(), history);
+        cw.vi_goto_pos(Pos::new(wide_line, Column(1)));
+        assert_eq!(cw.display_offset(), history, "the viewport did not move");
+
+        let cursor = cw.cursor();
+        assert_eq!(cursor.pos.row, Line(0), "shown on the top viewport row");
+        assert_eq!(
+            cursor.pos.col,
+            Column(0),
+            "drawn on the wide character, not its spacer"
+        );
     }
 
     // A reverse index inside a scroll region moves only the region's
