@@ -24,6 +24,15 @@
 //! - `clip=<n>,nonzero` or `clip=<n>,evenodd`: the path clips the next
 //!   `n` layers, which can't be clips themselves (one level).
 //!
+//! Any header may end with `,m a b c d e f`, a matrix like SVG's
+//! `matrix(a b c d e f)` from the layer's coordinates to the viewBox,
+//! so a converter doesn't have to bake transforms into path data (arcs
+//! under a non-uniform scale don't stay arcs). The path and any
+//! gradient on the layer are in the layer's coordinates; bounds and
+//! path length are checked after the matrix, and strokes are drawn
+//! through it, so a non-uniform scale draws an elliptical pen as in
+//! SVG.
+//!
 //! A colour is `fg` (the cell's foreground when the glyph is drawn),
 //! `fg@<alpha 0..1>`, `#rrggbb`, `#rrggbbaa`, or a gradient:
 //!
@@ -240,7 +249,12 @@ pub enum Segment {
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorLayer {
     pub op: LayerOp,
+    /// In the layer's own coordinates; `transform` maps them to the
+    /// viewBox.
     pub segments: Vec<Segment>,
+    /// The layer's `m a b c d e f`, as SVG's `matrix(a b c d e f)`.
+    /// A gradient on the layer is in the same coordinates as its path.
+    pub transform: Option<[f32; 6]>,
 }
 
 /// A validated `fmt=vg` registration.
@@ -325,16 +339,25 @@ pub fn parse(payload: &[u8], view_box: ViewBox) -> Result<VectorGlyph, VectorErr
             .iter()
             .position(|&b| b == b':')
             .ok_or(VectorError::Malformed)?;
-        let op = parse_header(&raw_layer[..colon], view_box)?;
+        let (op, transform) = parse_header(&raw_layer[..colon], view_box)?;
         let stroke_width = match &op {
-            LayerOp::Stroke { style, .. } => style.width as f64,
+            LayerOp::Stroke { style, .. } => style.width as f64 * scale_of(transform),
             LayerOp::Fill { .. } | LayerOp::Clip { .. } => 0.0,
         };
-        let mut segments =
-            parse_path_data(&raw_layer[colon + 1..], &bounds, &mut budget, stroke_width)?;
+        let mut segments = parse_path_data(
+            &raw_layer[colon + 1..],
+            &bounds,
+            &mut budget,
+            stroke_width,
+            transform,
+        )?;
         // The registry keeps this for the session.
         segments.shrink_to_fit();
-        layers.push(VectorLayer { op, segments });
+        layers.push(VectorLayer {
+            op,
+            segments,
+            transform,
+        });
     }
     check_clips(&layers)?;
     layers.shrink_to_fit();
@@ -357,29 +380,45 @@ fn check_clips(layers: &[VectorLayer]) -> Result<(), VectorError> {
     Ok(())
 }
 
-fn parse_header(raw: &[u8], view_box: ViewBox) -> Result<LayerOp, VectorError> {
+/// The largest factor a matrix stretches a length by, roughly: used to
+/// charge and cap a stroke width in viewBox units.
+fn scale_of(transform: Option<[f32; 6]>) -> f64 {
+    transform.map_or(1.0, |[a, b, c, d, ..]| {
+        (a as f64).hypot(b as f64).max((c as f64).hypot(d as f64))
+    })
+}
+
+/// A layer header: `<paint>,<value>[,m a b c d e f]`, where the value is
+/// a colour (or a fill rule for a clip). Returns the op and its matrix.
+fn parse_header(
+    raw: &[u8],
+    view_box: ViewBox,
+) -> Result<(LayerOp, Option<[f32; 6]>), VectorError> {
     let raw = trim(raw);
     let comma = raw
         .iter()
         .position(|&b| b == b',')
         .ok_or(VectorError::Malformed)?;
-    let (paint_raw, rest) = (trim(&raw[..comma]), trim(&raw[comma + 1..]));
+    let paint_raw = trim(&raw[..comma]);
+    let (rest, transform) = split_matrix(trim(&raw[comma + 1..]))?;
 
     if let Some(rule) = paint_raw.strip_prefix(b"fill=") {
-        return Ok(LayerOp::Fill {
+        let op = LayerOp::Fill {
             rule: parse_fill_rule(rule)?,
             color: parse_color(rest)?,
-        });
+        };
+        return Ok((op, transform));
     }
     if let Some(count) = paint_raw.strip_prefix(b"clip=") {
         let count = parse_count(count)?;
         if count == 0 || count >= MAX_LAYERS {
             return Err(VectorError::Malformed);
         }
-        return Ok(LayerOp::Clip {
+        let op = LayerOp::Clip {
             rule: parse_fill_rule(rest)?,
             count,
-        });
+        };
+        return Ok((op, transform));
     }
     let spec = paint_raw
         .strip_prefix(b"stroke=")
@@ -387,8 +426,9 @@ fn parse_header(raw: &[u8], view_box: ViewBox) -> Result<LayerOp, VectorError> {
     let mut parts = spec.split(|&b| b == b'/');
     let width = parse_whole_number(parts.next().unwrap_or_default())?;
     // A stroke wider than the viewBox only costs time: it covers the
-    // whole span either way.
-    if !(width > 0.0 && width <= view_box.w.max(view_box.h)) {
+    // whole span either way. Measured in viewBox units.
+    let scaled = width as f64 * scale_of(transform);
+    if !(width > 0.0 && scaled <= view_box.w.max(view_box.h) as f64) {
         return Err(VectorError::Malformed);
     }
     let cap = match parts.next() {
@@ -416,7 +456,7 @@ fn parse_header(raw: &[u8], view_box: ViewBox) -> Result<LayerOp, VectorError> {
     if parts.next().is_some() {
         return Err(VectorError::Malformed);
     }
-    Ok(LayerOp::Stroke {
+    let op = LayerOp::Stroke {
         style: StrokeStyle {
             width,
             cap,
@@ -424,7 +464,56 @@ fn parse_header(raw: &[u8], view_box: ViewBox) -> Result<LayerOp, VectorError> {
             miter_limit,
         },
         color: parse_color(rest)?,
-    })
+    };
+    Ok((op, transform))
+}
+
+/// Split `<value>[,m a b c d e f]`. A gradient's parentheses may hold
+/// commas of their own, so its value runs to the closing parenthesis.
+fn split_matrix(rest: &[u8]) -> Result<(&[u8], Option<[f32; 6]>), VectorError> {
+    let end = if rest.starts_with(b"lin(") || rest.starts_with(b"rad(") {
+        rest.iter()
+            .position(|&b| b == b')')
+            .ok_or(VectorError::Malformed)?
+            + 1
+    } else {
+        rest.iter().position(|&b| b == b',').unwrap_or(rest.len())
+    };
+    let (value, tail) = rest.split_at(end);
+    let tail = trim(tail);
+    if tail.is_empty() {
+        return Ok((trim(value), None));
+    }
+    let matrix = tail
+        .strip_prefix(b",")
+        .map(trim)
+        .and_then(|t| t.strip_prefix(b"m"))
+        .ok_or(VectorError::Malformed)?;
+    let mut c = Cursor { s: matrix, pos: 0 };
+    let transform = read_matrix(&mut c)?;
+    c.skip_wsp();
+    if !c.eof() {
+        return Err(VectorError::Malformed);
+    }
+    Ok((trim(value), Some(transform)))
+}
+
+/// Six numbers after an `m`, an invertible affine matrix.
+fn read_matrix(c: &mut Cursor<'_>) -> Result<[f32; 6], VectorError> {
+    c.skip_wsp();
+    let mut m = [0f32; 6];
+    for (i, value) in m.iter_mut().enumerate() {
+        if i > 0 {
+            c.skip_comma_wsp();
+        }
+        *value = c.number().map_err(|_| VectorError::Malformed)?;
+    }
+    let [a, b, cc, d, ..] = m;
+    let det = a as f64 * d as f64 - b as f64 * cc as f64;
+    if det == 0.0 || !det.is_finite() {
+        return Err(VectorError::Malformed);
+    }
+    Ok(m)
 }
 
 fn parse_fill_rule(raw: &[u8]) -> Result<FillRule, VectorError> {
@@ -524,18 +613,7 @@ fn parse_gradient(body: &[u8], radial: bool) -> Result<LayerColor, VectorError> 
     let mut transform = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
     if c.peek() == Some(b'm') {
         c.pos += 1;
-        c.skip_wsp();
-        for (i, value) in transform.iter_mut().enumerate() {
-            if i > 0 {
-                c.skip_comma_wsp();
-            }
-            *value = c.number().map_err(|_| VectorError::Malformed)?;
-        }
-        let [a, b, cc, d, ..] = transform;
-        let det = a as f64 * d as f64 - b as f64 * cc as f64;
-        if det == 0.0 || !det.is_finite() {
-            return Err(VectorError::Malformed);
-        }
+        transform = read_matrix(&mut c)?;
     }
     c.skip_wsp();
     if !c.eof() {
@@ -768,6 +846,9 @@ struct Budget {
     ink: f64,
 }
 
+/// A point in the layer's coordinates and where it lands in the viewBox.
+type Placed = ((f32, f32), (f64, f64));
+
 struct PathWriter<'b> {
     segments: Vec<Segment>,
     bounds: &'b Bounds,
@@ -776,11 +857,16 @@ struct PathWriter<'b> {
     /// stroke also costs one width of ink, for the join or cap drawn
     /// around its end.
     stroke_width: f64,
-    /// Where the last segment ended.
+    /// The layer's matrix, applied before bounds and length are checked.
+    transform: Option<[f64; 6]>,
+    /// Where the last segment ended, in viewBox units.
     pen: (f64, f64),
     /// A `Z` closed the subpath and no `M` has opened the next one yet.
     needs_move: bool,
+    /// The subpath's start, in the layer's coordinates and in viewBox
+    /// units.
     start: (f64, f64),
+    start_vb: (f64, f64),
 }
 
 fn distance((ax, ay): (f64, f64), (bx, by): (f64, f64)) -> f64 {
@@ -815,14 +901,26 @@ impl PathWriter<'_> {
         Ok(())
     }
 
+    /// A point as stored (layer coordinates, f32) and as checked
+    /// (viewBox units): bounds and path length apply after the matrix.
+    fn place(&self, x: f64, y: f64) -> Result<Placed, VectorError> {
+        let (vx, vy) = match self.transform {
+            None => (x, y),
+            Some([a, b, c, d, e, f]) => (a * x + c * y + e, b * x + d * y + f),
+        };
+        let (cx, cy) = self.bounds.check(vx, vy)?;
+        Ok(((x as f32, y as f32), (cx as f64, cy as f64)))
+    }
+
     fn move_to(&mut self, x: f64, y: f64) -> Result<(), VectorError> {
         self.spend()?;
-        let (x, y) = self.bounds.check(x, y)?;
+        let ((x, y), vb) = self.place(x, y)?;
         // No length, but a stroked subpath gets caps.
         self.spend_ink(0.0)?;
         self.segments.push(Segment::MoveTo(x, y));
         self.start = (x as f64, y as f64);
-        self.pen = self.start;
+        self.start_vb = vb;
+        self.pen = vb;
         self.needs_move = false;
         Ok(())
     }
@@ -840,8 +938,7 @@ impl PathWriter<'_> {
     fn line_to(&mut self, x: f64, y: f64) -> Result<(), VectorError> {
         self.ensure_open()?;
         self.spend_drawing()?;
-        let (x, y) = self.bounds.check(x, y)?;
-        let to = (x as f64, y as f64);
+        let ((x, y), to) = self.place(x, y)?;
         self.spend_ink(distance(self.pen, to))?;
         self.pen = to;
         self.segments.push(Segment::LineTo(x, y));
@@ -851,9 +948,8 @@ impl PathWriter<'_> {
     fn quad_to(&mut self, cx: f64, cy: f64, x: f64, y: f64) -> Result<(), VectorError> {
         self.ensure_open()?;
         self.spend_drawing()?;
-        let (cx, cy) = self.bounds.check(cx, cy)?;
-        let (x, y) = self.bounds.check(x, y)?;
-        let (c, to) = ((cx as f64, cy as f64), (x as f64, y as f64));
+        let ((cx, cy), c) = self.place(cx, cy)?;
+        let ((x, y), to) = self.place(x, y)?;
         self.spend_ink(distance(self.pen, c) + distance(c, to))?;
         self.pen = to;
         self.segments.push(Segment::QuadTo(cx, cy, x, y));
@@ -872,14 +968,9 @@ impl PathWriter<'_> {
     ) -> Result<(), VectorError> {
         self.ensure_open()?;
         self.spend_drawing()?;
-        let (c1x, c1y) = self.bounds.check(c1x, c1y)?;
-        let (c2x, c2y) = self.bounds.check(c2x, c2y)?;
-        let (x, y) = self.bounds.check(x, y)?;
-        let (c1, c2, to) = (
-            (c1x as f64, c1y as f64),
-            (c2x as f64, c2y as f64),
-            (x as f64, y as f64),
-        );
+        let ((c1x, c1y), c1) = self.place(c1x, c1y)?;
+        let ((c2x, c2y), c2) = self.place(c2x, c2y)?;
+        let ((x, y), to) = self.place(x, y)?;
         self.spend_ink(distance(self.pen, c1) + distance(c1, c2) + distance(c2, to))?;
         self.pen = to;
         self.segments
@@ -890,8 +981,8 @@ impl PathWriter<'_> {
     fn close(&mut self) -> Result<(), VectorError> {
         if !self.needs_move {
             self.spend()?;
-            self.spend_ink(distance(self.pen, self.start))?;
-            self.pen = self.start;
+            self.spend_ink(distance(self.pen, self.start_vb))?;
+            self.pen = self.start_vb;
             self.segments.push(Segment::Close);
             self.needs_move = true;
         }
@@ -904,6 +995,7 @@ fn parse_path_data(
     bounds: &Bounds,
     budget: &mut Budget,
     stroke_width: f64,
+    transform: Option<[f32; 6]>,
 ) -> Result<Vec<Segment>, VectorError> {
     let mut c = Cursor { s: raw, pos: 0 };
     let mut out = PathWriter {
@@ -911,9 +1003,11 @@ fn parse_path_data(
         bounds,
         budget,
         stroke_width,
+        transform: transform.map(|m| m.map(f64::from)),
         pen: (0.0, 0.0),
         needs_move: false,
         start: (0.0, 0.0),
+        start_vb: (0.0, 0.0),
     };
     let (mut cx, mut cy) = (0.0f64, 0.0f64);
     let mut last = LastControl::None;
@@ -1643,6 +1737,69 @@ mod tests {
 
     fn layer_count_err(payload: &str) -> Result<usize, VectorError> {
         parse(payload.as_bytes(), VB24).map(|g| g.layers.len())
+    }
+
+    #[test]
+    fn layer_matrices_map_the_path_into_the_view_box() {
+        let l = layer("fill=nonzero,fg,m 1 0 0 1 12 0:M0 0h4v4z").unwrap();
+        assert_eq!(l.transform, Some([1.0, 0.0, 0.0, 1.0, 12.0, 0.0]));
+        // The path stays in its own coordinates.
+        assert_eq!(l.segments[0], Segment::MoveTo(0.0, 0.0));
+        // Bounds apply after the matrix: in the box once moved...
+        assert!(layer("fill=nonzero,fg,m 1 0 0 1 -60 0:M60 0h4v4z").is_ok());
+        // ...and out of it once moved past the margin.
+        assert_eq!(
+            layer("fill=nonzero,fg,m 1 0 0 1 40 0:M0 0h10v4z"),
+            Err(VectorError::TooLarge)
+        );
+        // So does the path length: 40 short lines become 40 long ones.
+        let lines = "h10h-10".repeat(20);
+        assert!(layer(&format!("fill=nonzero,fg:M0 0{lines}")).is_ok());
+        assert_eq!(
+            layer(&format!("fill=nonzero,fg,m 4 0 0 4 0 0:M0 0{lines}")),
+            Err(VectorError::TooLarge)
+        );
+        // A stroke width is capped in viewBox units.
+        assert!(layer("stroke=12,fg,m 2 0 0 2 0 0:M0 0h1").is_ok());
+        assert_eq!(
+            layer("stroke=13,fg,m 2 0 0 2 0 0:M0 0h1"),
+            Err(VectorError::Malformed)
+        );
+        // Gradients may hold commas; the matrix follows the parenthesis.
+        let g =
+            layer("fill=nonzero,lin(0,0,24,0 / 0 fg / 1 fg@0),m 2 0 0 2 0 0:M0 0h4v4z")
+                .unwrap();
+        assert_eq!(g.transform, Some([2.0, 0.0, 0.0, 2.0, 0.0, 0.0]));
+        assert!(matches!(
+            g.op,
+            LayerOp::Fill {
+                color: LayerColor::Gradient(_),
+                ..
+            }
+        ));
+        // Clips take one too.
+        let glyph = parse(
+            b"clip=1,nonzero,m 1 0 0 1 2 2:M0 0h4v4z|fill=nonzero,fg:M0 0h1",
+            VB24,
+        )
+        .unwrap();
+        assert_eq!(
+            glyph.layers[0].transform,
+            Some([1.0, 0.0, 0.0, 1.0, 2.0, 2.0])
+        );
+        for header in [
+            "fill=nonzero,fg,m 1 0 0 0 0 0",   // not invertible
+            "fill=nonzero,fg,m 1 0 0 1 0",     // five numbers
+            "fill=nonzero,fg,m 1 0 0 1 0 0 x", // trailing text
+            "fill=nonzero,fg,1 0 0 1 0 0",     // no m
+            "fill=nonzero,fg,",                // empty
+        ] {
+            assert_eq!(
+                layer(&format!("{header}:M0 0h4v4z")),
+                Err(VectorError::Malformed),
+                "{header}"
+            );
+        }
     }
 
     #[test]

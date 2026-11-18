@@ -343,6 +343,14 @@ fn rasterize_vector(
         // A path that is only a degenerate line has no area: drawn, it
         // shows nothing; as a clip, it hides everything it covers.
         let path = pb.finish();
+        // The layer's own matrix, then the placement. A gradient on the
+        // layer is in the path's coordinates, so it follows too.
+        let ctm = match layer.transform {
+            Some([a, b, c, d, e, f]) => {
+                ctm.pre_concat(Transform::from_row(a, b, c, d, e, f))
+            }
+            None => ctm,
+        };
 
         if let LayerOp::Clip { rule, count } = &layer.op {
             let mut mask = Mask::new(pix_w, pix_h)?;
@@ -1490,6 +1498,30 @@ mod tests {
             assert_eq!(alpha(&r, 4, 4), 255, "inside the clip");
             assert_eq!(alpha(&r, 20, 4), 0, "outside the clip");
             assert_eq!(alpha(&r, 20, 21), 255, "after the clip's range");
+        }
+
+        #[test]
+        fn a_layer_matrix_moves_the_path_and_its_gradient() {
+            // A left-half square with a red-to-blue gradient across it,
+            // moved 12 units right: the right half is filled, red at its
+            // left edge.
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 12 0 / 0 #ff0000 / 1 #0000ff),m 1 0 0 1 12 0:M0 0h12v24H0Z",
+                24,
+                24,
+            );
+            assert_eq!(rgba_at(&r, 4, 12)[3], 0, "left half empty");
+            let near = rgba_at(&r, 13, 12);
+            let far = rgba_at(&r, 22, 12);
+            assert!(
+                near[0] > 200 && near[2] < 60,
+                "red near the left edge: {near:?}"
+            );
+            assert!(
+                far[2] > 200 && far[0] < 60,
+                "blue near the right edge: {far:?}"
+            );
         }
 
         #[test]

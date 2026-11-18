@@ -427,9 +427,8 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         None => 1,
     };
 
-    let layout = parse_layout(&params).ok_or_else(malformed)?;
-
     if fmt == b"vg" {
+        let layout = parse_vector_layout(&params).ok_or_else(malformed)?;
         let payload = parse_vector_payload(&params, trim(payload_b64))
             .map_err(|reason| ParseError::RegisterFailed { cp, reason, reply })?;
         return Ok(GlyphCommand::Register {
@@ -441,6 +440,7 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         });
     }
 
+    let layout = parse_layout(&params).ok_or_else(malformed)?;
     let payload_b64 = trim(payload_b64);
     let raw = BASE64
         .decode(payload_b64)
@@ -519,6 +519,42 @@ fn parse_vector_payload(
 /// Read the §8.5 sizing keys; each absent key takes the protocol's
 /// default (`size=contain`, `align=center,center`, no padding). `None`
 /// when a value is invalid.
+/// `fmt=vg` placement: the viewBox is the extent, so the keys are the
+/// ones SVG's `preserveAspectRatio` has. `fit` is `contain` (default),
+/// `cover` or `stretch`; `align` is `<h>,<v>` with `start`, `center`
+/// or `end` on each axis. A viewBox is Y-down with no baseline, so
+/// `baseline` is invalid here. `size`, `pad` and the font-metric keys
+/// (`upm`, `aw`, `lh`, `ymin`) belong to the font formats and are
+/// ignored, like any key a format doesn't use.
+fn parse_vector_layout(params: &Params<'_>) -> Option<GlyphLayout> {
+    let mut layout = GlyphLayout::default();
+    if let Some(raw) = params.get("fit") {
+        layout.size = match trim(raw) {
+            b"contain" => GlyphSize::Contain,
+            b"cover" => GlyphSize::Cover,
+            b"stretch" => GlyphSize::Stretch,
+            _ => return None,
+        };
+    }
+    if let Some(raw) = params.get("align") {
+        let mut parts = raw.split(|&b| b == b',').map(trim);
+        let (Some(h), Some(v), None) = (parts.next(), parts.next(), parts.next()) else {
+            return None;
+        };
+        let axis = |raw: &[u8]| match raw {
+            b"start" => Some(0),
+            b"center" => Some(1),
+            b"end" => Some(2),
+            _ => None,
+        };
+        layout.align_h =
+            [GlyphAlignH::Start, GlyphAlignH::Center, GlyphAlignH::End][axis(h)?];
+        layout.align_v =
+            [GlyphAlignV::Start, GlyphAlignV::Center, GlyphAlignV::End][axis(v)?];
+    }
+    Some(layout)
+}
+
 fn parse_layout(params: &Params<'_>) -> Option<GlyphLayout> {
     let extent = |key: &str| match params.get(key) {
         Some(raw) => parse_decimal_u16(raw).filter(|value| *value > 0).map(Some),
@@ -1259,6 +1295,42 @@ stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A
                 assert_eq!(glyph.layers.len(), 1);
             }
             other => panic!("expected a vg registration, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fmt_vg_placement_is_fit_and_align() {
+        let layout = |keys: &str| match parse(
+            format!(
+                "25a1;r;cp=100000;fmt=vg;vb=0,0,24,24;{keys}fill=nonzero,fg:M0 0h4v4z"
+            )
+            .as_bytes(),
+        ) {
+            Ok(GlyphCommand::Register { layout, .. }) => Ok(layout),
+            Err(ParseError::RegisterFailed { reason, .. }) => Err(reason),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(layout("").unwrap(), GlyphLayout::default());
+        let l = layout("fit=cover;align=end,start;").unwrap();
+        assert_eq!(l.size, GlyphSize::Cover);
+        assert_eq!(
+            (l.align_h, l.align_v),
+            (GlyphAlignH::End, GlyphAlignV::Start)
+        );
+        assert_eq!(layout("fit=stretch;").unwrap().size, GlyphSize::Stretch);
+        // The font formats' keys don't apply and are ignored.
+        assert_eq!(
+            layout("size=height;pad=0.2,0.2,0.2,0.2;upm=2048;aw=600;").unwrap(),
+            GlyphLayout::default()
+        );
+        // A viewBox has no baseline, and fit has no height or advance.
+        for keys in [
+            "align=center,baseline;",
+            "fit=height;",
+            "fit=advance;",
+            "align=center;",
+        ] {
+            assert_eq!(layout(keys), Err(RegisterError::MalformedPayload), "{keys}");
         }
     }
 
