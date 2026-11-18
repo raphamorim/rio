@@ -2,7 +2,7 @@
 
 **Author:** Raphael Amorim
 **Year:** 2026
-**Last updated:** 2026-11-15
+**Last updated:** 2026-11-18
 
 **See also:**
 - Blog post introducing the protocol and its rationale:
@@ -72,9 +72,10 @@ it can render before it renders it.
   the tables the font stack already decodes.
 - **Resolution independent.** Glyphs are vector and scale to any
   cell size.
-- **Graceful degradation.** Terminals that do not implement the
-  protocol ignore the APC message. Applications detect support by
-  sending a query and watching for a reply.
+- **Graceful degradation.** Applications detect support by sending
+  `s` and watching for a reply, and send nothing else unless the
+  terminal answered. Most terminals that do not implement the
+  protocol discard `s`; §3.4 covers the programs that don't.
 - **No override of user text.** Registrations are confined to a
   reserved block that nothing else assigns. The rendered appearance
   of `a`, `ssh`, any URL, or a Nerd Fonts icon in the user's prompt
@@ -86,17 +87,33 @@ it can render before it renders it.
 ## 3. Transport
 
 Glyph Protocol uses APC (Application Program Command,
-`ESC _ ... ESC \`). APC is specified for application-defined
-commands; terminals that do not implement a particular APC command
-are required to ignore it, making APC safer than OSC for
-introducing new protocols.
+`ESC _ ... ESC \`). ECMA-48 defines APC as a control string whose
+content is interpreted by the program that receives it, so
+everything between the introducer and the string terminator is
+defined by this specification. ECMA-48 does not require a program
+that doesn't implement a command to ignore it. Most terminal
+emulators discard an APC they don't recognise, but some programs
+give APC a meaning of their own; §3.4 says how clients detect
+support so that such programs receive the probe and nothing else.
 
 ### 3.1 Identifier
 
 Every Glyph Protocol message begins with the Unicode codepoint
 **U+25A1** (WHITE SQUARE), written in the message as the
-lowercase hex string `25a1`. Terminals MUST ignore any APC
-message whose body does not begin with this identifier.
+lowercase hex string `25a1`, followed by `;`. Terminals MUST
+ignore any APC message whose body does not begin with `25a1;`.
+
+Some terminals dispatch control strings the way DEC structures
+them, by intermediate and final bytes like an escape sequence. To
+such a dispatcher a Glyph Protocol message is `APC 2`: `2` (03/02)
+is the final byte, with no intermediates, and the rest of the
+identifier starts the command string, so `ESC _ 25a1 ; s ESC \`
+is `APC 2` with the command string `5a1;s`. A terminal that
+dispatches this way handles `APC 2` and checks that the command
+string begins with `5a1;`. An `APC 2` whose command string doesn't
+is not Glyph Protocol, and is treated like any unknown APC.
+`2` is in the 03/00–03/15 final range that ECMA-35 leaves for
+private use.
 
 ### 3.2 Framing
 
@@ -118,7 +135,7 @@ and a `reason=` when it cannot answer (§5.4).
 
 | Verb | Meaning |
 |------|---------|
-| `s`  | Advertise supported payload formats and optional capabilities. Doubles as a protocol-detection ping: any reply confirms Glyph Protocol; a timeout means unsupported. |
+| `s`  | Advertise supported payload formats and optional capabilities. Doubles as a protocol-detection ping: any reply confirms Glyph Protocol; a DA1 reply with no `s` reply before it means unsupported (§3.4). |
 | `q`  | Query the state of a codepoint or of a grapheme cluster. |
 | `r`  | Register a glyph for a codepoint in the registration block. |
 | `c`  | Clear one slot or every slot in this session's glossary. |
@@ -167,6 +184,50 @@ Capability names defined in v1.14:
 A terminal with no optional capabilities MAY leave `cap` out; a
 missing `cap` and an empty `cap=` mean the same. Clients MUST treat
 the value as a set and ignore names they do not recognise.
+
+### 3.4 Detecting support
+
+Clients detect support by sending `s` followed by Primary Device
+Attributes (DA1, `CSI c`):
+
+```
+ESC _ 25a1 ; s ESC \  CSI c
+```
+
+Terminals answer requests in the order they receive them, and
+nearly every terminal answers DA1. If the DA1 reply arrives with
+no `s` reply before it, the terminal does not implement Glyph
+Protocol. This is how kitty's graphics and keyboard protocols are
+detected too.
+
+Clients MUST NOT send `q`, `r`, or `c` to a terminal that has not
+answered `s`. A program that doesn't implement the protocol then
+receives one short `s` message at most, instead of every
+registration.
+
+Some programs give APC a meaning of their own, and act on the `s`
+message instead of discarding it:
+
+- GNU screen shows the content of an APC in its hardstatus line,
+  or as the window title when there is none.
+- tmux sets the pane title from an APC it doesn't recognise, when
+  `allow-set-title` is on (the default), so the title becomes
+  `25a1;s`.
+
+That is a side effect of the probe, not a failure: the multiplexer
+never answers `s`, so the client concludes the protocol is
+unsupported and sends nothing else. The protocol can't work through
+a multiplexer as is anyway, since a registration has to reach the
+terminal that draws the glyph and the multiplexer sits in between.
+
+A client MAY wrap its messages in the multiplexer's passthrough
+(for tmux, `ESC P tmux; … ESC \` with every `ESC` inside doubled,
+which needs `allow-passthrough` on). It then wraps DA1 too, since
+the multiplexer answers an unwrapped DA1 itself, before the outer
+terminal could answer `s`. Replies from the outer terminal reach
+the client through the multiplexer's key input. Through
+passthrough, registrations belong to the outer terminal's session
+and every pane in it shares them.
 
 ## 4. Glossary namespace
 
@@ -874,7 +935,7 @@ Other considerations:
 
 A terminal emulator is Glyph Protocol v1 conformant if it:
 
-1. Recognizes the `25a1` identifier in APC sequences.
+1. Recognizes APC sequences whose body begins with `25a1;` (§3.1).
 2. Implements the `s`, `q`, `r`, and `c` verbs with the semantics
    defined in this specification, and lists every accepted payload
    format by name in the `fmt=` value of the `s` reply.
@@ -911,8 +972,9 @@ A client (application) is Glyph Protocol v1 conformant if it:
 
 1. Registers `cp` only from the registration block, and registers
    every block codepoint before emitting it (§6.4).
-2. Treats query timeout as "terminal does not implement Glyph
-   Protocol."
+2. Treats a DA1 reply with no `s` reply before it as "terminal
+   does not implement Glyph Protocol", and then sends no other
+   Glyph Protocol message (§3.4).
 3. Emits only the `glyf` subset defined in §8.2.
 4. Handles all `reason=*` error codes without crashing.
 5. Leaves the cell after every `width=2` codepoint blank (emits a
@@ -941,6 +1003,7 @@ pen.closePath()
 
 payload = base64.b64encode(pen.glyph().compile(None)).decode("ascii")
 
+# The terminal has already answered `s` (§3.4).
 # Register at U+100000, the first codepoint of the registration
 # block (U+100000-U+1003FF). No font covers the block, so the
 # registration is the only source of the rendered glyph.
@@ -962,6 +1025,7 @@ def q(cp: int) -> None:
     sys.stdout.write(f"\x1b_25a1;q;cp={cp:x}\x1b\\")
     sys.stdout.flush()
 
+# The terminal has already answered `s` (§3.4).
 # Does the user already have Nerd Fonts installed?
 q(0xE0A0)
 # Expected reply parsed from the PTY:
@@ -1053,3 +1117,4 @@ fresh bytes rather than serving a stale bitmap.
 | 2026-11-08 | v1.12   | Made the authored extent explicit: added `ymin`, the extent's bottom in upm units, because `lh` alone did not say where the extent sits and implementations had to guess. Placement now uses the declared extent and never the outline's bounds; with no `aw`, `lh`, or `ymin`, the extent is the outline's bounding box and `contain` is capped by the em. A client written for v1.11 that sends `lh` for an outline with descenders must add `ymin`, since `ymin` defaults to `0`. Changed the `size` default from `height` to `contain`, so a client that says nothing about sizing gets a whole glyph inside its span. Terminals MUST clip a glyph to its render span (§8.5.7). An invalid sizing value now rejects with `reason=malformed_payload`. A `width=2` glyph with no blank following cell renders with a one-cell span. |
 | 2026-11-15 | v1.13   | Restricted registration to one reserved block, `U+100000`–`U+1003FF` (the first 1024 codepoints of Supplementary PUA-B); `r` and `c` reject every other codepoint, including the rest of the Private Use Areas, with `reason=out_of_namespace`. Allowing all of PUA let a program redefine a Nerd Fonts icon such as the git branch glyph and exit, leaving the user's prompt drawing it for the rest of the session. Raised by Kovid Goyal in kitty#10872; Nerd Fonts confirmed it will not use the block (nerd-fonts#2105). The block is the size of the glossary, so FIFO eviction is removed. Clients MUST register every block codepoint they emit, since registrations outlive the program that made them. Clients registering in the Basic PUA, PUA-A, or elsewhere in PUA-B must move into the block. Removed the claim that an `svg2glyf` helper ships with the reference implementation; it was never published. |
 | 2026-11-15 | v1.14   | Added the grapheme query `q;grapheme=`: one grapheme cluster as up to 32 codepoints, answered for the cluster as a whole. `status` keeps its meaning as a set of sources but is empty unless the cluster renders correctly in the current mode, so a ZWJ emoji sequence the font does not join, or a cluster the terminal would split across cells, reports empty. Default-ignorable codepoints are never reported as missing. It is optional: the `s` reply gains a `cap` key listing optional capabilities, the first being `grapheme`, and a terminal without it replies `reason=unsupported`. `q` replies can now carry `reason=` (`unsupported`, `malformed_query`) and arrive in request order. Registration stays per codepoint. Raised by Jeff Quast in contour#2019, for tofu detection in blessed and ucs-detect. |
+| 2026-11-18 | v1.15   | Added a note to §3.1 on dispatch: to a terminal that dispatches control strings by intermediate and final bytes, as DEC structures them, a message is `APC 2` with the command string starting `5a1;`, and `2` is in the private-use final range; terminals now recognise a message by `25a1;`, not `25a1` alone. Corrected §3: ECMA-48 leaves an APC's content to the program that receives it and does not require a program that doesn't implement a command to ignore it, as the earlier wording claimed. Added §3.4: clients detect support with `s` followed by DA1, so a DA1 reply with no `s` reply before it means unsupported, as with kitty's graphics and keyboard protocols, and MUST NOT send `q`, `r`, or `c` to a terminal that has not answered `s`. GNU screen and tmux give APC their own meaning (the hardstatus line or window title, the pane title), so there the probe shows up as text, but it is never answered and nothing else is sent. Clients that use the multiplexer's passthrough wrap DA1 too, since the multiplexer answers an unwrapped DA1 itself. Clients that register without sending `s` first must add the probe. Wire format unchanged. |
