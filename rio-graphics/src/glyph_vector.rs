@@ -31,7 +31,8 @@
 //! gradient on the layer are in the layer's coordinates; bounds and
 //! path length are checked after the matrix, and strokes are drawn
 //! through it, so a non-uniform scale draws an elliptical pen as in
-//! SVG.
+//! SVG. A matrix, a layer's or a gradient's, may stretch or shrink a
+//! length at most [`MAX_MATRIX_STRETCH`] times.
 //!
 //! A colour is `fg` (the cell's foreground when the glyph is drawn),
 //! `fg@<alpha 0..1>`, `#rrggbb`, `#rrggbbaa`, or a gradient:
@@ -106,6 +107,14 @@ pub const MAX_EXTENT_MULTIPLE: f32 = 1.0;
 /// costing 4 sizes. The most any of the 584 sampled icons uses is 14.3,
 /// and of the 600 sampled emoji 41.
 pub const MAX_INK_MULTIPLE: f32 = 64.0;
+
+/// How much a matrix (a layer's or a gradient's) may stretch or shrink
+/// a length: its singular values must lie within `1/MAX_MATRIX_STRETCH`
+/// and `MAX_MATRIX_STRETCH`. Invertible alone would let a layer keep
+/// coordinates and stroke widths of 1e30 that a 1e-30 scale brings back
+/// into the viewBox, far outside what a rasterizer is tested with. The
+/// matrices in 608 converted emoji stretch from 0.29 to 59.
+pub const MAX_MATRIX_STRETCH: f64 = 4096.0;
 
 /// Largest magnitude a viewBox value may have. Keeps the coordinate
 /// bound, `MAX_EXTENT_MULTIPLE` times the viewBox size, well inside
@@ -236,7 +245,8 @@ pub enum LayerOp {
     },
 }
 
-/// One drawing command in viewBox coordinates.
+/// One drawing command, in its layer's coordinates (the viewBox's,
+/// unless the layer has a matrix).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Segment {
     MoveTo(f32, f32),
@@ -380,16 +390,22 @@ fn check_clips(layers: &[VectorLayer]) -> Result<(), VectorError> {
     Ok(())
 }
 
-/// The most a matrix stretches a length by (its largest singular
-/// value): a stroke width is capped and charged in viewBox units with
-/// it, so no rotation or shear draws a wider pen than the cap allows.
+/// The least and most a matrix stretches a length by: its singular
+/// values.
+fn stretch(m: [f32; 6]) -> (f64, f64) {
+    let [a, b, c, d] = [m[0], m[1], m[2], m[3]].map(f64::from);
+    let sum = a * a + b * b + c * c + d * d;
+    let det = (a * d - b * c).abs();
+    let most = ((sum + (sum * sum - 4.0 * det * det).max(0.0).sqrt()) / 2.0).sqrt();
+    let least = if most > 0.0 { det / most } else { 0.0 };
+    (least, most)
+}
+
+/// The most a layer's matrix stretches a length by: a stroke width is
+/// capped and charged in viewBox units with it, so no rotation or shear
+/// draws a wider pen than the cap allows.
 fn scale_of(transform: Option<[f32; 6]>) -> f64 {
-    transform.map_or(1.0, |m| {
-        let [a, b, c, d] = [m[0], m[1], m[2], m[3]].map(f64::from);
-        let sum = a * a + b * b + c * c + d * d;
-        let det = a * d - b * c;
-        ((sum + (sum * sum - 4.0 * det * det).max(0.0).sqrt()) / 2.0).sqrt()
-    })
+    transform.map_or(1.0, |m| stretch(m).1)
 }
 
 /// A layer header: `<paint>,<value>[,m a b c d e f]`, where the value is
@@ -502,7 +518,9 @@ fn split_matrix(rest: &[u8]) -> Result<(&[u8], Option<[f32; 6]>), VectorError> {
     Ok((trim(value), Some(transform)))
 }
 
-/// Six numbers after an `m`, an invertible affine matrix.
+/// Six numbers after an `m`: an affine matrix that stretches no length
+/// by more than [`MAX_MATRIX_STRETCH`] or less than its inverse, so it
+/// is invertible too.
 fn read_matrix(c: &mut Cursor<'_>) -> Result<[f32; 6], VectorError> {
     c.skip_wsp();
     let mut m = [0f32; 6];
@@ -512,9 +530,8 @@ fn read_matrix(c: &mut Cursor<'_>) -> Result<[f32; 6], VectorError> {
         }
         *value = c.number().map_err(|_| VectorError::Malformed)?;
     }
-    let [a, b, cc, d, ..] = m;
-    let det = a as f64 * d as f64 - b as f64 * cc as f64;
-    if det == 0.0 || !det.is_finite() {
+    let (least, most) = stretch(m);
+    if !(least >= 1.0 / MAX_MATRIX_STRETCH && most <= MAX_MATRIX_STRETCH) {
         return Err(VectorError::Malformed);
     }
     Ok(m)
@@ -607,7 +624,9 @@ fn parse_gradient(body: &[u8], radial: bool) -> Result<LayerColor, VectorError> 
         (b"reflect", Spread::Reflect),
         (b"repeat", Spread::Repeat),
     ] {
-        if c.s[c.pos..].starts_with(word) {
+        let rest = &c.s[c.pos..];
+        // A whole word: `padm 1 0 0 1 0 0` is not a spread and a matrix.
+        if rest.starts_with(word) && matches!(rest.get(word.len()), None | Some(b' ')) {
             c.pos += word.len();
             spread = value;
             break;
@@ -2108,6 +2127,298 @@ mod tests {
                 "{data:?}"
             );
         }
+    }
+
+    #[test]
+    fn numbers_split_where_svg_parsers_split_them() {
+        let p = |x: f32, y: f32| Some((x, y));
+        // A second `.` starts a new number, as does a sign after an
+        // exponent's digits.
+        assert_eq!(ends("M.5.5L1e1.5"), vec![p(0.5, 0.5), p(10.0, 0.5)]);
+        assert_eq!(ends("M1e-1-1"), vec![p(0.1, -1.0)]);
+        assert_eq!(ends("M+.5-.5L1E1 -0"), vec![p(0.5, -0.5), p(10.0, -0.0)]);
+        // Underflow is zero; overflow past f32 is too large, not wrapped.
+        assert_eq!(ends("M1e-50 0"), vec![p(0.0, 0.0)]);
+        assert_eq!(
+            layer("fill=nonzero,fg:M0 0L1e39 0"),
+            Err(VectorError::TooLarge)
+        );
+        // A trailing dot is not part of a number. svgtypes (usvg) takes
+        // `1.` as 1; Chrome and Firefox reject it, and so do we, since
+        // the strict reading is the one every terminal can agree on.
+        assert_eq!(layer("fill=nonzero,fg:M1. 2"), Err(VectorError::Malformed));
+    }
+
+    #[test]
+    fn tiny_arc_radii_scale_up_instead_of_flattening() {
+        // SVG 2 draws a straight line only for a radius of exactly zero;
+        // any other radius too small for the endpoints is scaled up, so
+        // this is a half circle bulging 5 units (kurbo would flatten
+        // radii under 1e-5 into a line).
+        let half = segments("M2 12a1e-6 1e-6 0 0 1 10 0");
+        assert_eq!(half.len(), 3, "two quarter-turn cubics");
+        let Segment::CubicTo(_, _, _, _, x, y) = half[1] else {
+            panic!("{half:?}")
+        };
+        assert!((x - 7.0).abs() < 1e-3 && (y - 7.0).abs() < 1e-3, "{x} {y}");
+    }
+
+    #[test]
+    fn arcs_land_on_their_endpoint_and_honour_rotation() {
+        // Relative arcs end exactly where the path data says, so the
+        // next relative command starts from the right place.
+        assert_eq!(
+            ends("M1 1a3 2 30 0 1 7.3 4.1l1 0")
+                .last()
+                .copied()
+                .flatten(),
+            Some((9.3, 5.1))
+        );
+        // An ellipse rotated a quarter turn is the same as one with its
+        // radii swapped: same cubics, to within rounding.
+        let rotated = segments("M4 12A8 4 90 0 1 20 12");
+        let swapped = segments("M4 12A4 8 0 0 1 20 12");
+        assert_eq!(rotated.len(), swapped.len());
+        for (a, b) in rotated.iter().zip(&swapped) {
+            let (
+                Segment::CubicTo(a1, a2, a3, a4, a5, a6),
+                Segment::CubicTo(b1, b2, b3, b4, b5, b6),
+            ) = (a, b)
+            else {
+                assert_eq!(a, b);
+                continue;
+            };
+            for (u, v) in [(a1, b1), (a2, b2), (a3, b3), (a4, b4), (a5, b5), (a6, b6)] {
+                assert!((u - v).abs() < 1e-3, "{rotated:?} vs {swapped:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn arcs_count_their_cubics_against_the_segment_cap() {
+        // A near-full circle is four cubics; with the moveto that's five
+        // segments, so it doesn't fit when only four are left.
+        let filler =
+            |n: usize| "h.5h-.5".repeat(n / 2) + if n % 2 == 1 { "h.5" } else { "" };
+        let arc = "M12 2a10 10 0 1 1 -0.01 0";
+        let room = MAX_SEGMENTS - 5;
+        let fits = format!(
+            "fill=nonzero,fg:M0 0{}|fill=nonzero,fg:{arc}",
+            filler(room - 1)
+        );
+        assert!(parse(fits.as_bytes(), VB24).is_ok());
+        let over = format!("fill=nonzero,fg:M0 0{}|fill=nonzero,fg:{arc}", filler(room));
+        assert_eq!(parse(over.as_bytes(), VB24), Err(VectorError::TooLarge));
+    }
+
+    #[test]
+    fn exactly_the_layer_cap_is_accepted() {
+        let at_cap = vec!["fill=nonzero,fg:M0 0h1"; MAX_LAYERS].join("|");
+        assert_eq!(
+            parse(at_cap.as_bytes(), VB24).unwrap().layers.len(),
+            MAX_LAYERS
+        );
+        // Empty layers aren't layers: `|` must separate two of them.
+        for payload in [
+            "fill=nonzero,fg:M0 0h1|",
+            "|fill=nonzero,fg:M0 0h1",
+            "fill=nonzero,fg:M0 0h1||fill=nonzero,fg:M0 0h1",
+        ] {
+            assert_eq!(
+                parse(payload.as_bytes(), VB24),
+                Err(VectorError::Malformed),
+                "{payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn matrices_have_a_bounded_stretch() {
+        let with = |m: &str| layer(&format!("fill=nonzero,fg,m {m}:M0 0h1"));
+        let grad = |m: &str| {
+            layer(&format!(
+                "fill=nonzero,lin(0 0 1 0 m {m} / 0 fg / 1 #000000):M0 0h1"
+            ))
+        };
+        for m in [
+            "4096 0 0 4096 0 0",
+            "0.000244140625 0 0 0.000244140625 0 0", // 1/4096
+            "0 1 -1 0 0 0",                          // a quarter turn
+            "1 0 0 -1 0 24",                         // a flip
+            "0.29 0 0 59 0 0",                       // the emoji extremes
+        ] {
+            assert!(grad(m).is_ok(), "gradient {m}");
+            if m != "4096 0 0 4096 0 0" {
+                assert!(with(m).is_ok(), "layer {m}");
+            }
+        }
+        for m in [
+            "4097 0 0 1 0 0",
+            "0.0002 0 0 1 0 0",
+            "1e-30 0 0 1e-30 0 0", // invertible, but coordinates of 1e30
+            "1 0 0 0 0 0",         // singular
+            "1 1 1 1 0 0",         // singular, every entry non-zero
+            "3000 3000 0 1 0 0",   // a shear past the stretch cap
+        ] {
+            assert_eq!(with(m), Err(VectorError::Malformed), "layer {m}");
+            assert_eq!(grad(m), Err(VectorError::Malformed), "gradient {m}");
+        }
+    }
+
+    #[test]
+    fn matrix_syntax() {
+        let ok =
+            |header: &str| layer(&format!("{header}:M0 0h4v4z")).map(|l| l.transform);
+        let id = Some([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        // Spaces and commas between numbers, like path data.
+        assert_eq!(ok("fill=nonzero,fg,m1 0 0 1 0 0"), Ok(id));
+        assert_eq!(ok("fill=nonzero,fg,m 1,0,0,1,0,0"), Ok(id));
+        assert_eq!(ok("fill=nonzero,fg , m 1 0 0 1 0 0 "), Ok(id));
+        assert_eq!(ok("stroke=1/butt/miter2,#112233,m 1 0 0 1 0 0"), Ok(id));
+        for header in [
+            "fill=nonzero,fg m 1 0 0 1 0 0",
+            "fill=nonzero,fg,m 1 0 0 1 0 0,m 1 0 0 1 0 0",
+            "fill=nonzero,fg,M 1 0 0 1 0 0",
+            "fill=nonzero,lin(0 0 1 0 / 0 fg / 1 fg)m 1 0 0 1 0 0",
+            "fill=nonzero,lin(0 0 1 0 / 0 fg / 1 fg,m 1 0 0 1 0 0",
+            "fill=nonzero,fg,m 1 0 0 1 0 0)",
+        ] {
+            assert_eq!(ok(header), Err(VectorError::Malformed), "{header}");
+        }
+    }
+
+    #[test]
+    fn a_spread_is_a_whole_word() {
+        let g = |inside: &str| {
+            layer(&format!(
+                "fill=nonzero,lin({inside} / 0 fg / 1 #000000):M0 0h1"
+            ))
+        };
+        assert!(g("0 0 1 0 reflect").is_ok());
+        assert!(g("0 0 1 0 repeat m 1 0 0 1 0 0").is_ok());
+        for inside in [
+            "0 0 1 0 padm 1 0 0 1 0 0",
+            "0 0 1 0 reflected",
+            "0 0 1 0 repeat2",
+        ] {
+            assert_eq!(g(inside), Err(VectorError::Malformed), "{inside}");
+        }
+    }
+
+    #[test]
+    fn relative_commands_under_a_matrix_stay_in_layer_space() {
+        // Stored in the layer's coordinates: the renderer applies the
+        // matrix, so relative steps add up before it, as in SVG.
+        let l = layer("fill=nonzero,fg,m 2 0 0 2 0 0:M1 1l2 0v3z").unwrap();
+        assert_eq!(
+            l.segments,
+            vec![
+                Segment::MoveTo(1.0, 1.0),
+                Segment::LineTo(3.0, 1.0),
+                Segment::LineTo(3.0, 4.0),
+                Segment::Close
+            ]
+        );
+        // After Z, drawing restarts at the start in layer coordinates
+        // too: (1, 1) doubled is in the box, (1, 1) + 30 doubled isn't.
+        assert!(layer("fill=nonzero,fg,m 2 0 0 2 0 0:M1 1h2zh10").is_ok());
+        assert_eq!(
+            layer("fill=nonzero,fg,m 2 0 0 2 0 0:M1 1h2zh30"),
+            Err(VectorError::TooLarge)
+        );
+    }
+
+    #[test]
+    fn colour_queries_skip_clip_layers() {
+        let glyph = |p: &str| parse(p.as_bytes(), VB24).unwrap();
+        // A clip has no colour, so it doesn't make a glyph coloured.
+        let g = glyph("clip=1,nonzero:M0 0h12v24H0Z|fill=nonzero,fg@0.5:M0 0h4v4z");
+        assert!(g.is_monochrome() && g.uses_foreground());
+        let g = glyph("clip=1,nonzero:M0 0h12v24H0Z|fill=nonzero,#ff000080:M0 0h4v4z");
+        assert!(!g.is_monochrome() && !g.uses_foreground());
+        // A gradient from a fixed colour to the foreground is both.
+        let g = glyph("fill=nonzero,rad(4 4 0 4 4 4 / 0 #000000 / 1 fg@0):M0 0h4v4z");
+        assert!(!g.is_monochrome() && g.uses_foreground());
+    }
+
+    /// Mutations of valid payloads must never panic, and whatever they
+    /// parse to must respect every limit: points (through the layer's
+    /// matrix) in bounds, segments and layers under their caps.
+    #[test]
+    fn mutated_payloads_never_panic_or_escape_the_limits() {
+        const SEEDS: &[&str] = &[
+            "fill=nonzero,fg:M4 4h16v16H4Z|stroke=2/butt/miter,#e5534bff:M6 12h12",
+            "clip=1,nonzero:M0 0h12v24H0Z|fill=nonzero,lin(0 0 24 0 reflect / 0 fg / 1 #e5534b):M2 2h20v20H2Z",
+            "fill=evenodd,rad(9 9 0 12 12 10 m 1 0 0 1 0 0 / 0 fg@.5 / .5 #fff000 / 1 #e5534b80):m2 2c4-2 8 2 12 0s4 4 6 6q2 2 4 0t2 2a3 2 30 1 0 4 4z",
+            "stroke=1.5,fg,m 0.5 0.2 -0.2 0.5 6 6:M0 0L20 0 20 20 0 20zM5 5h10v10h-10z",
+        ];
+        const ALPHABET: &[u8] =
+            b"0123456789.-+eE ,MmLlHhVvCcSsQqTtAaZz|:=/()#@fglinradmpbuttsqrcl";
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = |n: usize| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % n as u64) as usize
+        };
+        let bounds = Bounds::new(VB24);
+        let mut accepted = 0;
+        for _ in 0..50_000 {
+            let mut bytes = SEEDS[next(SEEDS.len())].as_bytes().to_vec();
+            for _ in 0..1 + next(2) {
+                let at = next(bytes.len() + 1);
+                // Half the edits are digits, which mostly keep the
+                // grammar valid and move points, radii and matrices.
+                let byte = if next(2) == 0 {
+                    b'0' + next(10) as u8
+                } else {
+                    ALPHABET[next(ALPHABET.len())]
+                };
+                match next(3) {
+                    0 if at < bytes.len() => bytes[at] = byte,
+                    1 if at < bytes.len() => {
+                        bytes.remove(at);
+                    }
+                    _ => bytes.insert(at, byte),
+                }
+            }
+            let Ok(glyph) = parse(&bytes, VB24) else {
+                continue;
+            };
+            accepted += 1;
+            assert!(glyph.layers.len() <= MAX_LAYERS);
+            let total: usize = glyph.layers.iter().map(|l| l.segments.len()).sum();
+            assert!(total <= MAX_SEGMENTS);
+            for layer in &glyph.layers {
+                let m = layer.transform.unwrap_or([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+                let place = |x: f32, y: f32| {
+                    let (x, y) = (x as f64, y as f64);
+                    let [a, b, c, d, e, f] = m.map(f64::from);
+                    bounds
+                        .check(a * x + c * y + e, b * x + d * y + f)
+                        .unwrap_or_else(|_| {
+                            panic!("{}", String::from_utf8_lossy(&bytes))
+                        });
+                };
+                for segment in &layer.segments {
+                    match *segment {
+                        Segment::MoveTo(x, y) | Segment::LineTo(x, y) => place(x, y),
+                        Segment::QuadTo(a, b, x, y) => {
+                            place(a, b);
+                            place(x, y);
+                        }
+                        Segment::CubicTo(a, b, c, d, x, y) => {
+                            place(a, b);
+                            place(c, d);
+                            place(x, y);
+                        }
+                        Segment::Close => {}
+                    }
+                }
+            }
+        }
+        // Enough survive mutation to exercise the checks above.
+        assert!(accepted > 5_000, "only {accepted} parsed");
     }
 
     #[test]
