@@ -533,6 +533,9 @@ where
     /// consumers flip it
     /// via [`set_grapheme_clustering`](Self::set_grapheme_clustering).
     grapheme_clustering_default: bool,
+    /// Whether the renderer breaks shaping runs around the cursor cell.
+    /// A cursor move then rebuilds the rows where that changes glyphs.
+    cursor_shaping_break: bool,
 
     // The stack for the keyboard modes.
     modify_other_keys: u8,
@@ -594,6 +597,7 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::URGENCY_HINTS
                 | Mode::GRAPHEME_CLUSTER,
             grapheme_clustering_default: true,
+            cursor_shaping_break: true,
             damage: TermDamageState::new(rows),
             graphics: Graphics::new(&dimensions),
             #[cfg(feature = "graphics")]
@@ -633,6 +637,18 @@ impl<U: EventListener> Crosswords<U> {
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
         self.grapheme_clustering_default = enabled;
         self.mode.set(Mode::GRAPHEME_CLUSTER, enabled);
+    }
+
+    /// Tell the terminal whether the renderer breaks shaping runs around
+    /// the cursor cell. When it does, a cursor move rebuilds the row it
+    /// left and the row it is on where the break changes glyphs. When it
+    /// does not, a cursor move rebuilds no row. On by default.
+    pub fn set_cursor_shaping_break(&mut self, enabled: bool) {
+        self.cursor_shaping_break = enabled;
+    }
+
+    pub fn cursor_shaping_break(&self) -> bool {
+        self.cursor_shaping_break
     }
 
     /// Everything on screen changed. No event goes out from here: the
@@ -733,7 +749,7 @@ impl<U: EventListener> Crosswords<U> {
     pub fn reset_damage(&mut self) {
         self.damage.reset();
         let cursor = self.rendered_cursor_pos();
-        if self.damage.last_cursor != cursor {
+        if self.cursor_shaping_break && self.damage.last_cursor != cursor {
             // A renderer shapes the cursor cell as its own run, so a
             // ligature under the cursor is split while it is there and
             // joined again once it leaves. The rows the cursor left and
@@ -7030,6 +7046,43 @@ mod tests {
         cw.goto(Line(2), Column(1));
         cw.reset_damage();
         assert_eq!(dirty(&cw), vec![2]);
+    }
+
+    // With the break at the cursor turned off the renderer shapes rows
+    // the same wherever the cursor is, so a move rebuilds no row. It is
+    // still a frame for the cursor itself.
+    #[test]
+    fn with_the_cursor_shaping_break_off_a_move_marks_no_row() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        assert!(cw.cursor_shaping_break(), "on by default");
+        cw.input_str("ab");
+        cw.goto(Line(2), Column(0));
+        cw.input_str("cd");
+        cw.goto(Line(2), Column(1));
+        cw.reset_damage();
+        for row in 0..cw.grid.screen_lines() as i32 {
+            cw.grid[Line(row)].dirty = false;
+        }
+
+        cw.set_cursor_shaping_break(false);
+        cw.goto(Line(0), Column(1));
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        cw.reset_damage();
+        let dirty: Vec<i32> = (0..cw.grid.screen_lines() as i32)
+            .filter(|&row| cw.grid[Line(row)].dirty)
+            .collect();
+        assert!(dirty.is_empty(), "inside words, nothing marked: {dirty:?}");
+        assert_eq!(cw.peek_damage_event(), None, "the move was consumed");
+
+        // Back on, the same move marks both rows.
+        cw.set_cursor_shaping_break(true);
+        cw.goto(Line(2), Column(1));
+        cw.reset_damage();
+        let dirty: Vec<i32> = (0..cw.grid.screen_lines() as i32)
+            .filter(|&row| cw.grid[Line(row)].dirty)
+            .collect();
+        assert_eq!(dirty, vec![0, 2]);
     }
 
     // The renderer shapes a typed space inside its run and skips a

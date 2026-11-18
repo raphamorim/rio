@@ -174,6 +174,10 @@ pub struct Renderer {
     /// active panel's OSC state" loop avoid redundant resyncs.
     last_window_bg: Option<rio_backend::sugarloaf::Color>,
     pub config_has_blinking_enabled: bool,
+    /// Where shaping breaks runs beyond what the content forces; the
+    /// row builder gets the cursor column only when the break at the
+    /// cursor is on.
+    pub shaping_break: rio_backend::sugarloaf::font::fonts::ShapingBreak,
     pub config_blinking_interval: u64,
     pub(crate) ignore_selection_fg_color: bool,
     pub search: search::SearchOverlay,
@@ -248,6 +252,7 @@ impl Renderer {
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
             config_has_blinking_enabled: config.cursor.blinking,
+            shaping_break: config.fonts.shaping_break,
             is_window_focused: true,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
@@ -1385,6 +1390,16 @@ mod grid_cell_bg_tests {
     /// re-emits the pane's OSC 11 as an explicit SGR 48 on every cell,
     /// so a faint cell arrived as `Spec(bg) + DIM` and was painted at
     /// `bg * DIM_FACTOR`, a dark block against the field around it.
+    // The row builder is handed the cursor column only when the break
+    // at the cursor is on, which the font config decides.
+    #[test]
+    fn the_shaping_break_comes_from_the_font_config() {
+        assert!(Renderer::new(&Config::default()).shaping_break.cursor);
+        let mut config = Config::default();
+        config.fonts.shaping_break.cursor = false;
+        assert!(!Renderer::new(&config).shaping_break.cursor);
+    }
+
     #[test]
     fn dim_cell_paints_its_explicit_background_unchanged() {
         let renderer = Renderer::new(&Config::default());

@@ -133,6 +133,7 @@ void rio_surface_set_size(rio_surface_t*, uint16_t cols, uint16_t rows,
 void rio_surface_set_content_scale(rio_surface_t*, double);
 void rio_surface_set_focus(rio_surface_t*, bool);
 void rio_surface_set_occlusion(rio_surface_t*, bool);
+void rio_surface_set_cursor_shaping_break(rio_surface_t*, bool); /* host splits runs at the cursor; default true */
 
 rio_render_state_t *rio_render_state_new(rio_surface_t*);
 void rio_render_state_free(rio_render_state_t*);

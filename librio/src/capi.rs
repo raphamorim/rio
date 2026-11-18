@@ -946,6 +946,19 @@ pub unsafe extern "C" fn rio_surface_set_grapheme_clustering(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn rio_surface_set_cursor_shaping_break(
+    surface: *mut Surface,
+    enabled: bool,
+) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return;
+        }
+        unsafe { &*surface }.set_cursor_shaping_break(enabled);
+    }));
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn rio_surface_resize(
     surface: *mut Surface,
     cols: u16,

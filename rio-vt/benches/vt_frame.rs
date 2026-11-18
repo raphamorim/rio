@@ -132,6 +132,15 @@ fn scenarios() -> Vec<Scenario> {
             }),
         },
         Scenario {
+            // The same move with the break at the cursor turned off.
+            name: "cursor move inside words, break off",
+            prepare: Box::new(|cw, parser, i| {
+                cw.set_cursor_shaping_break(false);
+                let row = 1 + (i * 7) % ROWS;
+                parser.advance(cw, format!("\x1b[{row};2H").as_bytes());
+            }),
+        },
+        Scenario {
             name: "selection drag one row",
             prepare: Box::new(|cw, _, i| {
                 let anchor = Pos::new(Line(5), Column(0));
