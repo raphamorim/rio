@@ -757,20 +757,40 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Whether the cell at `pos` is shaped together with the cell on
     /// either side of it, so that a run split at that cell changes the
-    /// row's glyphs. A space, a cell with no character or a cell with
-    /// only a background does not take part in a ligature, so a cursor
-    /// on or next to one leaves the glyphs as they are. `pos.row` must
-    /// be in the grid.
+    /// row's glyphs. This follows the renderer's run model: a cell with
+    /// no character or with only a background ends a run, a wide
+    /// character's spacer is skipped over, and a typed space is part of
+    /// the run. Two spaces never shape together. A cursor on a spacer
+    /// is drawn on the wide character, so it is judged there. `pos.row`
+    /// must be in the grid.
     fn cursor_cell_shapes_with_a_neighbor(&self, pos: Pos) -> bool {
         let row = &self.grid[pos.row];
-        let in_run = |col: usize| -> bool {
-            col < row.len() && {
-                let sq = row[Column(col)];
-                !sq.is_bg_only() && !matches!(sq.c(), '\0' | ' ')
-            }
+        let len = row.len();
+        let spacer = |col: usize| {
+            matches!(row[Column(col)].wide(), Wide::Spacer | Wide::LeadingSpacer)
         };
-        let col = pos.col.0;
-        in_run(col) && ((col > 0 && in_run(col - 1)) || in_run(col + 1))
+        let in_run = |col: usize| -> bool {
+            let sq = row[Column(col)];
+            !sq.is_bg_only() && sq.c() != '\0'
+        };
+        let mut col = pos.col.0;
+        if col >= len {
+            return false;
+        }
+        if col > 0 && matches!(row[Column(col)].wide(), Wide::Spacer) {
+            col -= 1;
+        }
+        if !in_run(col) {
+            return false;
+        }
+        let shapes_with = |neighbor: Option<usize>| -> bool {
+            neighbor.is_some_and(|n| {
+                in_run(n) && !(row[Column(col)].c() == ' ' && row[Column(n)].c() == ' ')
+            })
+        };
+        let left = (0..col).rev().find(|&c| !spacer(c));
+        let right = (col + 1..len).find(|&c| !spacer(c));
+        shapes_with(left) || shapes_with(right)
     }
 
     /// Whether a synchronized update (mode 2026) is active, during which
@@ -6961,9 +6981,9 @@ mod tests {
     }
 
     // The split at the cursor only changes glyphs where the cursor cell
-    // shapes with a neighbor. Between blanks, after the end of a line,
-    // or on a character standing alone, a move is still a frame for
-    // the cursor itself but copies no row.
+    // shapes with a neighbor. After the end of a line, among blanks, or
+    // on a character standing alone, a move is still a frame for the
+    // cursor itself but copies no row.
     #[test]
     fn a_cursor_move_over_blanks_or_lone_characters_marks_no_row() {
         use crate::event::TerminalDamage;
@@ -6978,8 +6998,8 @@ mod tests {
                 .filter(|&row| cw.grid[Line(row)].dirty)
                 .collect()
         };
-        // A prompt-like row: "$ " with the cursor after it, a lone
-        // character on row 2.
+        // A prompt with the cursor after it, blanks on row 1, and a
+        // lone character on row 2.
         cw.input_str("$ ");
         cw.goto(Line(2), Column(1));
         cw.input_str("x");
@@ -6996,23 +7016,95 @@ mod tests {
         cw.reset_damage();
         assert!(dirty(&cw).is_empty(), "onto a lone character");
 
-        cw.goto(Line(0), Column(0));
+        cw.goto(Line(1), Column(3));
         cw.reset_damage();
-        assert!(
-            dirty(&cw).is_empty(),
-            "the dollar sign has a blank on its right"
-        );
+        assert!(dirty(&cw).is_empty(), "off a lone character");
 
         // Grow the lone character into a word: now the cell shapes
         // with a neighbor and a move onto it is row work.
         cw.goto(Line(2), Column(2));
         cw.input_str("y");
-        cw.goto(Line(0), Column(0));
+        cw.goto(Line(1), Column(3));
         cw.reset_damage();
         clear(&mut cw);
         cw.goto(Line(2), Column(1));
         cw.reset_damage();
         assert_eq!(dirty(&cw), vec![2]);
+    }
+
+    // The renderer shapes a typed space inside its run and skips a
+    // wide character's spacer, so the gate does the same: a space next
+    // to text marks, spaces among spaces do not, and a letter after a
+    // wide character shapes with it through the spacer.
+    #[test]
+    fn a_cursor_move_follows_the_renderers_run_model_for_spaces_and_wide_cells() {
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(8, 4),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            10,
+        );
+        let clear = |cw: &mut Crosswords<VoidListener>| {
+            for row in 0..cw.grid.screen_lines() as i32 {
+                cw.grid[Line(row)].dirty = false;
+            }
+        };
+        let dirty = |cw: &Crosswords<VoidListener>| -> Vec<i32> {
+            (0..cw.grid.screen_lines() as i32)
+                .filter(|&row| cw.grid[Line(row)].dirty)
+                .collect()
+        };
+        let moves_to = |cw: &mut Crosswords<VoidListener>, pos: Pos| -> Vec<i32> {
+            // Park the cursor on a cell that never shapes, consume, then
+            // move: only the destination decides.
+            cw.goto(Line(3), Column(7));
+            cw.reset_damage();
+            clear(cw);
+            cw.goto(pos.row, pos.col);
+            cw.reset_damage();
+            dirty(cw)
+        };
+        cw.input_str("a b    ");
+        cw.goto(Line(1), Column(0));
+        cw.input_str("中x");
+        cw.goto(Line(2), Column(0));
+        cw.input_str("b中");
+        cw.goto(Line(3), Column(0));
+        cw.input_str("中");
+        let none: Vec<i32> = Vec::new();
+
+        let at = |row: i32, col: usize| Pos::new(Line(row), Column(col));
+        assert_eq!(
+            moves_to(&mut cw, at(0, 1)),
+            vec![0],
+            "a space between words"
+        );
+        assert_eq!(moves_to(&mut cw, at(0, 3)), vec![0], "a space after a word");
+        assert_eq!(moves_to(&mut cw, at(0, 4)), none, "a space among spaces");
+        assert_eq!(
+            moves_to(&mut cw, at(1, 2)),
+            vec![1],
+            "a letter after a wide character"
+        );
+        assert_eq!(
+            moves_to(&mut cw, at(1, 1)),
+            vec![1],
+            "on the spacer, judged at the wide character"
+        );
+        assert_eq!(
+            moves_to(&mut cw, at(2, 1)),
+            vec![2],
+            "a wide character after a letter"
+        );
+        assert_eq!(moves_to(&mut cw, at(2, 2)), vec![2], "on that spacer");
+        assert_eq!(
+            moves_to(&mut cw, at(3, 0)),
+            none,
+            "a wide character standing alone"
+        );
+        assert_eq!(moves_to(&mut cw, at(3, 1)), none, "and its spacer");
     }
 
     // In vi mode the vi cursor is the cursor a renderer draws, and it
