@@ -561,7 +561,10 @@ impl Screen<'_> {
             }
         }
         if let Some(mut island) = old_island {
-            island.update_colors(config.colors.tabs, config.colors.tabs_active);
+            island.update_colors(
+                config.colors.tabs,
+                config.colors.tabs_active_or_foreground(),
+            );
             island.max_tab_width = config.navigation.max_tab_width;
             self.renderer.island = Some(island);
         }
