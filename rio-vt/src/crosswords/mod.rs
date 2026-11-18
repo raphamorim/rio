@@ -5896,7 +5896,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             // Parsed and bounded by the wire parser. The viewBox is the
             // glyph's extent, so `upm` only has to be non-zero.
-            GlyphPayload::Path { glyph } => (StoredPayload::Path { glyph }, 1000),
+            GlyphPayload::Vector { glyph } => (StoredPayload::Vector { glyph }, 1000),
         };
 
         // Lazily allocate the registry — idle terminals that never see
@@ -6694,7 +6694,7 @@ mod tests {
         assert_eq!(
             pty_writes(&events),
             vec![
-                "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,path\x1b\\".to_string(),
+                "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,vg\x1b\\".to_string(),
                 "\x1b_25a1;q;grapheme=1f468,200d,1f469;reason=unsupported\x1b\\"
                     .to_string(),
             ]
@@ -6713,7 +6713,7 @@ mod tests {
         parser.advance(&mut cw, b"\x1b_25a1;s\x1b\\");
         assert_eq!(
             pty_writes(&events),
-            vec!["\x1b_25a1;s;fmt=glyf,colrv0,colrv1,path;cap=grapheme\x1b\\".to_string()]
+            vec!["\x1b_25a1;s;fmt=glyf,colrv0,colrv1,vg;cap=grapheme\x1b\\".to_string()]
         );
 
         let family = b"\x1b_25a1;q;grapheme=1f468,200d,1f469\x1b\\";
@@ -7426,12 +7426,14 @@ mod tests {
 
     #[cfg(feature = "graphics")]
     #[test]
-    fn glyph_protocol_registers_a_path_glyph_from_the_wire() {
+    fn glyph_protocol_registers_a_vector_glyph_from_the_wire() {
         let (mut cw, events) = make_crosswords_with_events(2);
         let mut parser = crate::performer::handler::Processor::default();
         parser.advance(
             &mut cw,
-            b"\x1b_25a1;r;cp=100002;fmt=path;vb=0,0,24,24;fill=nonzero,fg:M4 4h16v16H4Z|stroke=2,#e5534bff:M6 12h12\x1b\\",
+            // A clip, a gradient fill and a butt/miter stroke: everything
+            // in the grammar survives the APC framing (no `;` inside).
+            b"\x1b_25a1;r;cp=100002;fmt=vg;vb=0,0,24,24;clip=1,nonzero:M0 0h12v24H0Z|fill=nonzero,rad(9 9 0 12 12 10 m 1 0 0 1 0 0 / 0 fg / 1 #e5534b80):M4 4h16v16H4Z|stroke=2/butt/miter,#e5534bff:M6 12h12\x1b\\",
         );
         assert_eq!(
             pty_writes(&events),
@@ -7440,8 +7442,8 @@ mod tests {
         let stored = cw.glyph_registry.as_ref().unwrap().get(0x10_0002).unwrap();
         assert!(matches!(
             &*stored.payload,
-            rio_graphics::glyph::glyph_registry::StoredPayload::Path { glyph }
-                if glyph.layers.len() == 2
+            rio_graphics::glyph::glyph_registry::StoredPayload::Vector { glyph }
+                if glyph.layers.len() == 3
         ));
     }
 

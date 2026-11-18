@@ -3,21 +3,46 @@
 // This source code is licensed under the MIT license found in the
 // LICENSE file in the root directory of this source tree.
 
-//! Glyph Protocol `fmt=path` payloads: SVG path data sent as text.
+//! Glyph Protocol `fmt=vg` payloads: SVG's path data and paint
+//! model sent as text. Not an SVG document: there is no XML.
 //!
-//! A payload is one or more layers separated by `|`. Each layer is a
-//! header, `:`, then SVG 2 path data:
+//! A payload is one or more layers separated by `|`, drawn in order.
+//! Each layer is a header, `:`, then SVG 2 path data:
 //!
 //! ```text
-//! fill=nonzero,fg:M4 4h16v16H4Z|stroke=2,#e5534bff:M6 12h12
+//! fill=nonzero,fg:M4 4h16v16H4Z|stroke=2/butt/miter,#e5534bff:M6 12h12
+//! clip=1,nonzero:M0 0h12v24H0Z|fill=nonzero,lin(0 0 24 0 / 0 fg / 1 #e5534b):M2 2h20v20H2Z
 //! ```
 //!
-//! - The header is a paint (`fill=nonzero`, `fill=evenodd`, or
-//!   `stroke=<width>`) and a colour (`fg`, `fg@<alpha 0..1>`,
-//!   `#rrggbb` or `#rrggbbaa`). `fg` is the cell's foreground colour
-//!   when the glyph is drawn. Strokes always have round caps and joins.
-//! - Coordinates are in the registration's viewBox (`vb=x,y,w,h`),
-//!   y down, as in SVG.
+//! A layer is one of:
+//!
+//! - `fill=nonzero` or `fill=evenodd`, then a colour.
+//! - `stroke=<width>[/<cap>[/<join>]]`, then a colour. Caps are `round`
+//!   (the default), `butt` or `square`; joins are `round` (the
+//!   default), `bevel` or `miter`, optionally followed by its limit
+//!   (`miter4`, the default limit being 4).
+//! - `clip=<n>,nonzero` or `clip=<n>,evenodd`: the path clips the next
+//!   `n` layers, which can't be clips themselves (one level).
+//!
+//! A colour is `fg` (the cell's foreground when the glyph is drawn),
+//! `fg@<alpha 0..1>`, `#rrggbb`, `#rrggbbaa`, or a gradient:
+//!
+//! ```text
+//! lin(x1 y1 x2 y2 [spread] [m a b c d e f] / offset colour / offset colour ...)
+//! rad(fx fy fr cx cy r [spread] [m a b c d e f] / offset colour ...)
+//! ```
+//!
+//! `lin` runs from (x1, y1) to (x2, y2); `rad` is a two-point conical
+//! gradient from the focal circle (fx, fy, fr) to the circle (cx, cy,
+//! r), which covers SVG's radial gradient including its focal point.
+//! `spread` is `pad` (the default), `reflect` or `repeat`. The optional
+//! matrix maps gradient space to the viewBox, as SVG's
+//! `matrix(a b c d e f)`. A gradient has 2 to [`MAX_STOPS`] stops with
+//! offsets from 0 to 1 that never decrease, and a stop's colour is
+//! `fg`, `fg@<alpha>`, `#rrggbb` or `#rrggbbaa`.
+//!
+//! Coordinates are in the registration's viewBox (`vb=x,y,w,h`), y
+//! down, as in SVG.
 //!
 //! Parsing happens once, at registration, and is strict so every
 //! terminal draws the same thing: the payload is printable ASCII, the
@@ -33,18 +58,28 @@
 //! registration holds at most [`MAX_SEGMENTS`] segments, counted after
 //! arcs are expanded, and [`MAX_LAYERS`] layers; and its total path
 //! length is capped by [`MAX_INK_MULTIPLE`]. Rasterizing cost follows
-//! how much path crosses the cell, not how many segments carry it, so
-//! the length cap is what bounds it: together these keep the worst case
-//! near a millisecond to draw one cell with tiny-skia.
+//! how much path crosses the cell, not how many segments or layers
+//! carry it, so the length cap is what bounds it, gradient overdraw
+//! included: together these keep the worst case near a millisecond and
+//! a half to draw one cell with tiny-skia.
 
 /// Most segments one registration may hold, counted after arcs are
-/// expanded into cubics. Moves and closes count too, so the cap also
-/// bounds the memory a registration keeps. The largest of 584 icons
-/// sampled from nine sets needs 226.
-pub const MAX_SEGMENTS: usize = 512;
+/// expanded into cubics, clip paths included. Moves and closes count
+/// too, so the cap also bounds the memory a registration keeps. The
+/// largest of 584 icons sampled from nine sets needs 226; the largest
+/// of 600 emoji sampled from Twemoji, OpenMoji, Noto and Fluent Flat
+/// needs 955.
+pub const MAX_SEGMENTS: usize = 2048;
 
-/// Most layers one registration may hold.
-pub const MAX_LAYERS: usize = 16;
+/// Most layers one registration may hold, clip layers included. Emoji
+/// are dozens of differently coloured shapes; the largest of the 600
+/// sampled needs 83. Converters can't merge same-colour fills to save
+/// layers, since overlapping shapes drawn in opposite directions cancel
+/// under nonzero winding.
+pub const MAX_LAYERS: usize = 128;
+
+/// Most stops one gradient may have. Noto's emoji use at most 8.
+pub const MAX_STOPS: usize = 16;
 
 /// How far outside the viewBox a point may lie, in viewBox sizes (the
 /// larger of its width and height). None of the 584 sampled icons
@@ -54,11 +89,13 @@ pub const MAX_EXTENT_MULTIPLE: f32 = 1.0;
 /// Most path one registration may draw, in viewBox sizes: the length of
 /// every line, plus every curve's control polygon (which bounds the
 /// curve), across all layers. A stroked segment also costs one stroke
-/// width, for the round join or cap drawn around its end. 1,023 cubics
+/// width, for the join or cap drawn around its end. 1,023 cubics
 /// looping to the margin and back fit the other limits and draw 8,680
 /// sizes of path, taking 1.4 ms to fill and 12 ms to stroke into an
-/// 80x160 cell; under this cap the worst case found takes 1.4 ms. The
-/// most any of the 584 sampled icons uses is 14.3.
+/// 80x160 cell. Under this cap the worst case found takes 1.4 ms: 16
+/// full-cell squares with a 16-stop radial gradient, a full-cell square
+/// costing 4 sizes. The most any of the 584 sampled icons uses is 14.3,
+/// and of the 600 sampled emoji 41.
 pub const MAX_INK_MULTIPLE: f32 = 64.0;
 
 /// Largest magnitude a viewBox value may have. Keeps the coordinate
@@ -82,22 +119,112 @@ pub enum FillRule {
     EvenOdd,
 }
 
-/// How a layer's path is painted.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LayerPaint {
-    Fill(FillRule),
-    /// Width in viewBox units; caps and joins are round.
-    Stroke {
-        width: f32,
-    },
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineCap {
+    Round,
+    Butt,
+    Square,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LayerColor {
+pub enum LineJoin {
+    Round,
+    Bevel,
+    Miter,
+}
+
+/// How a stroke is drawn. Width is in viewBox units.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StrokeStyle {
+    pub width: f32,
+    pub cap: LineCap,
+    pub join: LineJoin,
+    /// Used when `join` is `Miter`; at least 1.
+    pub miter_limit: f32,
+}
+
+/// A solid colour: the cell's foreground, or a fixed one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Solid {
     /// The cell's foreground colour, with this alpha on top of its own.
     Foreground { alpha: u8 },
     /// Straight (not premultiplied) sRGB.
     Rgba([u8; 4]),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Spread {
+    Pad,
+    Reflect,
+    Repeat,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GradientShape {
+    Linear {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+    },
+    /// Two-point conical: from the focal circle to the outer circle.
+    Radial {
+        fx: f32,
+        fy: f32,
+        fr: f32,
+        cx: f32,
+        cy: f32,
+        r: f32,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GradientStop {
+    pub offset: f32,
+    pub color: Solid,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Gradient {
+    pub shape: GradientShape,
+    pub spread: Spread,
+    /// Gradient space to viewBox, as SVG's `matrix(a b c d e f)`.
+    pub transform: [f32; 6],
+    pub stops: Vec<GradientStop>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LayerColor {
+    Solid(Solid),
+    Gradient(Box<Gradient>),
+}
+
+impl LayerColor {
+    fn solids(&self) -> impl Iterator<Item = &Solid> {
+        let (one, many) = match self {
+            LayerColor::Solid(s) => (Some(s), &[][..]),
+            LayerColor::Gradient(g) => (None, &g.stops[..]),
+        };
+        one.into_iter().chain(many.iter().map(|stop| &stop.color))
+    }
+}
+
+/// What a layer does with its path.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LayerOp {
+    Fill {
+        rule: FillRule,
+        color: LayerColor,
+    },
+    Stroke {
+        style: StrokeStyle,
+        color: LayerColor,
+    },
+    /// Clip the next `count` layers to this path.
+    Clip {
+        rule: FillRule,
+        count: usize,
+    },
 }
 
 /// One drawing command in viewBox coordinates.
@@ -111,40 +238,47 @@ pub enum Segment {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PathLayer {
-    pub paint: LayerPaint,
-    pub color: LayerColor,
+pub struct VectorLayer {
+    pub op: LayerOp,
     pub segments: Vec<Segment>,
 }
 
-/// A validated `fmt=path` registration.
+/// A validated `fmt=vg` registration.
 #[derive(Debug, Clone, PartialEq)]
-pub struct PathGlyph {
+pub struct VectorGlyph {
     pub view_box: ViewBox,
-    pub layers: Vec<PathLayer>,
+    pub layers: Vec<VectorLayer>,
 }
 
-impl PathGlyph {
-    /// Every layer is drawn in the foreground colour, so the glyph can
-    /// be kept as an alpha mask and tinted at draw time, like `glyf`.
-    pub fn is_monochrome(&self) -> bool {
-        self.layers
-            .iter()
-            .all(|layer| matches!(layer.color, LayerColor::Foreground { .. }))
+impl VectorGlyph {
+    fn colors(&self) -> impl Iterator<Item = &LayerColor> {
+        self.layers.iter().filter_map(|layer| match &layer.op {
+            LayerOp::Fill { color, .. } | LayerOp::Stroke { color, .. } => Some(color),
+            LayerOp::Clip { .. } => None,
+        })
     }
 
-    /// Some layer is drawn in the foreground colour.
+    /// Every colour, gradient stops included, is the foreground, so the
+    /// glyph can be kept as an alpha mask and tinted at draw time, like
+    /// `glyf`.
+    pub fn is_monochrome(&self) -> bool {
+        self.colors()
+            .flat_map(LayerColor::solids)
+            .all(|solid| matches!(solid, Solid::Foreground { .. }))
+    }
+
+    /// Some colour, gradient stops included, is the foreground.
     pub fn uses_foreground(&self) -> bool {
-        self.layers
-            .iter()
-            .any(|layer| matches!(layer.color, LayerColor::Foreground { .. }))
+        self.colors()
+            .flat_map(LayerColor::solids)
+            .any(|solid| matches!(solid, Solid::Foreground { .. }))
     }
 }
 
 /// Why a payload was rejected. The wire parser maps these onto the
 /// register errors: `malformed_payload` and `outline_too_large`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PathError {
+pub enum VectorError {
     Malformed,
     TooLarge,
 }
@@ -173,9 +307,9 @@ pub fn parse_view_box(raw: &[u8]) -> Option<ViewBox> {
 }
 
 /// Parse and validate a payload against its viewBox.
-pub fn parse(payload: &[u8], view_box: ViewBox) -> Result<PathGlyph, PathError> {
+pub fn parse(payload: &[u8], view_box: ViewBox) -> Result<VectorGlyph, VectorError> {
     if payload.is_empty() || !payload.iter().all(|b| (0x20..=0x7E).contains(b)) {
-        return Err(PathError::Malformed);
+        return Err(VectorError::Malformed);
     }
     let bounds = Bounds::new(view_box);
     let mut budget = Budget {
@@ -185,75 +319,260 @@ pub fn parse(payload: &[u8], view_box: ViewBox) -> Result<PathGlyph, PathError> 
     let mut layers = Vec::new();
     for raw_layer in payload.split(|&b| b == b'|') {
         if layers.len() == MAX_LAYERS {
-            return Err(PathError::TooLarge);
+            return Err(VectorError::TooLarge);
         }
         let colon = raw_layer
             .iter()
             .position(|&b| b == b':')
-            .ok_or(PathError::Malformed)?;
-        let (paint, color) = parse_header(&raw_layer[..colon], view_box)?;
-        let stroke_width = match paint {
-            LayerPaint::Stroke { width } => width as f64,
-            LayerPaint::Fill(_) => 0.0,
+            .ok_or(VectorError::Malformed)?;
+        let op = parse_header(&raw_layer[..colon], view_box)?;
+        let stroke_width = match &op {
+            LayerOp::Stroke { style, .. } => style.width as f64,
+            LayerOp::Fill { .. } | LayerOp::Clip { .. } => 0.0,
         };
         let mut segments =
             parse_path_data(&raw_layer[colon + 1..], &bounds, &mut budget, stroke_width)?;
         // The registry keeps this for the session.
         segments.shrink_to_fit();
-        layers.push(PathLayer {
-            paint,
-            color,
-            segments,
-        });
+        layers.push(VectorLayer { op, segments });
     }
+    check_clips(&layers)?;
     layers.shrink_to_fit();
-    Ok(PathGlyph { view_box, layers })
+    Ok(VectorGlyph { view_box, layers })
 }
 
-fn parse_header(
-    raw: &[u8],
-    view_box: ViewBox,
-) -> Result<(LayerPaint, LayerColor), PathError> {
+/// Every clip covers layers that exist and aren't clips themselves.
+fn check_clips(layers: &[VectorLayer]) -> Result<(), VectorError> {
+    let mut clipped_left = 0usize;
+    for (i, layer) in layers.iter().enumerate() {
+        if let LayerOp::Clip { count, .. } = layer.op {
+            if clipped_left > 0 || i + count >= layers.len() {
+                return Err(VectorError::Malformed);
+            }
+            clipped_left = count;
+        } else {
+            clipped_left = clipped_left.saturating_sub(1);
+        }
+    }
+    Ok(())
+}
+
+fn parse_header(raw: &[u8], view_box: ViewBox) -> Result<LayerOp, VectorError> {
     let raw = trim(raw);
     let comma = raw
         .iter()
         .position(|&b| b == b',')
-        .ok_or(PathError::Malformed)?;
-    let (paint_raw, color_raw) = (trim(&raw[..comma]), trim(&raw[comma + 1..]));
+        .ok_or(VectorError::Malformed)?;
+    let (paint_raw, rest) = (trim(&raw[..comma]), trim(&raw[comma + 1..]));
 
-    let paint = match paint_raw {
-        b"fill=nonzero" => LayerPaint::Fill(FillRule::NonZero),
-        b"fill=evenodd" => LayerPaint::Fill(FillRule::EvenOdd),
-        _ => {
-            let width_raw = paint_raw
-                .strip_prefix(b"stroke=")
-                .ok_or(PathError::Malformed)?;
-            let width = parse_whole_number(width_raw)?;
-            // A stroke wider than the viewBox only costs time: it covers
-            // the whole span either way.
-            if !(width > 0.0 && width <= view_box.w.max(view_box.h)) {
-                return Err(PathError::Malformed);
+    if let Some(rule) = paint_raw.strip_prefix(b"fill=") {
+        return Ok(LayerOp::Fill {
+            rule: parse_fill_rule(rule)?,
+            color: parse_color(rest)?,
+        });
+    }
+    if let Some(count) = paint_raw.strip_prefix(b"clip=") {
+        let count = parse_count(count)?;
+        if count == 0 || count >= MAX_LAYERS {
+            return Err(VectorError::Malformed);
+        }
+        return Ok(LayerOp::Clip {
+            rule: parse_fill_rule(rest)?,
+            count,
+        });
+    }
+    let spec = paint_raw
+        .strip_prefix(b"stroke=")
+        .ok_or(VectorError::Malformed)?;
+    let mut parts = spec.split(|&b| b == b'/');
+    let width = parse_whole_number(parts.next().unwrap_or_default())?;
+    // A stroke wider than the viewBox only costs time: it covers the
+    // whole span either way.
+    if !(width > 0.0 && width <= view_box.w.max(view_box.h)) {
+        return Err(VectorError::Malformed);
+    }
+    let cap = match parts.next() {
+        None | Some(b"round") => LineCap::Round,
+        Some(b"butt") => LineCap::Butt,
+        Some(b"square") => LineCap::Square,
+        Some(_) => return Err(VectorError::Malformed),
+    };
+    let (join, miter_limit) = match parts.next() {
+        None | Some(b"round") => (LineJoin::Round, 4.0),
+        Some(b"bevel") => (LineJoin::Bevel, 4.0),
+        Some(miter) => {
+            let limit = miter.strip_prefix(b"miter").ok_or(VectorError::Malformed)?;
+            let limit = if limit.is_empty() {
+                4.0
+            } else {
+                parse_whole_number(limit)?
+            };
+            if !(1.0..=1000.0).contains(&limit) {
+                return Err(VectorError::Malformed);
             }
-            LayerPaint::Stroke { width }
+            (LineJoin::Miter, limit)
         }
     };
+    if parts.next().is_some() {
+        return Err(VectorError::Malformed);
+    }
+    Ok(LayerOp::Stroke {
+        style: StrokeStyle {
+            width,
+            cap,
+            join,
+            miter_limit,
+        },
+        color: parse_color(rest)?,
+    })
+}
 
-    let color = if color_raw == b"fg" {
-        LayerColor::Foreground { alpha: 0xFF }
-    } else if let Some(alpha_raw) = color_raw.strip_prefix(b"fg@") {
+fn parse_fill_rule(raw: &[u8]) -> Result<FillRule, VectorError> {
+    match raw {
+        b"nonzero" => Ok(FillRule::NonZero),
+        b"evenodd" => Ok(FillRule::EvenOdd),
+        _ => Err(VectorError::Malformed),
+    }
+}
+
+/// A count in plain decimal digits.
+fn parse_count(raw: &[u8]) -> Result<usize, VectorError> {
+    if raw.is_empty() || raw.len() > 4 || !raw.iter().all(u8::is_ascii_digit) {
+        return Err(VectorError::Malformed);
+    }
+    Ok(raw.iter().fold(0, |n, d| n * 10 + (d - b'0') as usize))
+}
+
+fn parse_color(raw: &[u8]) -> Result<LayerColor, VectorError> {
+    if let Some(body) = raw.strip_prefix(b"lin(") {
+        return parse_gradient(body, false);
+    }
+    if let Some(body) = raw.strip_prefix(b"rad(") {
+        return parse_gradient(body, true);
+    }
+    parse_solid(raw).map(LayerColor::Solid)
+}
+
+fn parse_solid(raw: &[u8]) -> Result<Solid, VectorError> {
+    if raw == b"fg" {
+        return Ok(Solid::Foreground { alpha: 0xFF });
+    }
+    if let Some(alpha_raw) = raw.strip_prefix(b"fg@") {
         let alpha = parse_whole_number(alpha_raw)?;
         if !(0.0..=1.0).contains(&alpha) {
-            return Err(PathError::Malformed);
+            return Err(VectorError::Malformed);
         }
-        LayerColor::Foreground {
+        return Ok(Solid::Foreground {
             alpha: (alpha * 255.0).round() as u8,
-        }
-    } else if let Some(hex) = color_raw.strip_prefix(b"#") {
-        LayerColor::Rgba(parse_hex_color(hex).ok_or(PathError::Malformed)?)
-    } else {
-        return Err(PathError::Malformed);
+        });
+    }
+    let hex = raw.strip_prefix(b"#").ok_or(VectorError::Malformed)?;
+    parse_hex_color(hex)
+        .map(Solid::Rgba)
+        .ok_or(VectorError::Malformed)
+}
+
+/// The inside of `lin(...)` or `rad(...)`, closing parenthesis included.
+fn parse_gradient(body: &[u8], radial: bool) -> Result<LayerColor, VectorError> {
+    let body = body.strip_suffix(b")").ok_or(VectorError::Malformed)?;
+    let mut parts = body.split(|&b| b == b'/');
+    let mut c = Cursor {
+        s: parts.next().unwrap_or_default(),
+        pos: 0,
     };
-    Ok((paint, color))
+    c.skip_wsp();
+    let mut geometry = [0f32; 6];
+    let n = if radial { 6 } else { 4 };
+    for (i, value) in geometry.iter_mut().take(n).enumerate() {
+        if i > 0 {
+            c.skip_comma_wsp();
+        }
+        *value = c.number().map_err(|_| VectorError::Malformed)?;
+    }
+    let shape = if radial {
+        let [fx, fy, fr, cx, cy, r] = geometry;
+        if fr < 0.0 || r < 0.0 {
+            return Err(VectorError::Malformed);
+        }
+        GradientShape::Radial {
+            fx,
+            fy,
+            fr,
+            cx,
+            cy,
+            r,
+        }
+    } else {
+        let [x1, y1, x2, y2, ..] = geometry;
+        GradientShape::Linear { x1, y1, x2, y2 }
+    };
+
+    c.skip_wsp();
+    let mut spread = Spread::Pad;
+    for (word, value) in [
+        (&b"pad"[..], Spread::Pad),
+        (b"reflect", Spread::Reflect),
+        (b"repeat", Spread::Repeat),
+    ] {
+        if c.s[c.pos..].starts_with(word) {
+            c.pos += word.len();
+            spread = value;
+            break;
+        }
+    }
+    c.skip_wsp();
+    let mut transform = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+    if c.peek() == Some(b'm') {
+        c.pos += 1;
+        c.skip_wsp();
+        for (i, value) in transform.iter_mut().enumerate() {
+            if i > 0 {
+                c.skip_comma_wsp();
+            }
+            *value = c.number().map_err(|_| VectorError::Malformed)?;
+        }
+        let [a, b, cc, d, ..] = transform;
+        let det = a as f64 * d as f64 - b as f64 * cc as f64;
+        if det == 0.0 || !det.is_finite() {
+            return Err(VectorError::Malformed);
+        }
+    }
+    c.skip_wsp();
+    if !c.eof() {
+        return Err(VectorError::Malformed);
+    }
+
+    let mut stops = Vec::new();
+    let mut last = 0.0f32;
+    for raw_stop in parts {
+        if stops.len() == MAX_STOPS {
+            return Err(VectorError::TooLarge);
+        }
+        let raw_stop = trim(raw_stop);
+        let mut c = Cursor {
+            s: raw_stop,
+            pos: 0,
+        };
+        let offset = c.number().map_err(|_| VectorError::Malformed)?;
+        if !(last..=1.0).contains(&offset) {
+            return Err(VectorError::Malformed);
+        }
+        last = offset;
+        if c.peek() != Some(b' ') {
+            return Err(VectorError::Malformed);
+        }
+        let color = parse_solid(trim(&raw_stop[c.pos..]))?;
+        stops.push(GradientStop { offset, color });
+    }
+    if stops.len() < 2 {
+        return Err(VectorError::Malformed);
+    }
+    Ok(LayerColor::Gradient(Box::new(Gradient {
+        shape,
+        spread,
+        transform,
+        stops,
+    })))
 }
 
 fn parse_hex_color(hex: &[u8]) -> Option<[u8; 4]> {
@@ -270,13 +589,13 @@ fn parse_hex_color(hex: &[u8]) -> Option<[u8; 4]> {
 }
 
 /// A number that must fill `raw` entirely.
-fn parse_whole_number(raw: &[u8]) -> Result<f32, PathError> {
+fn parse_whole_number(raw: &[u8]) -> Result<f32, VectorError> {
     let mut cursor = Cursor { s: raw, pos: 0 };
     let value = cursor.number()?;
     if cursor.eof() {
         Ok(value)
     } else {
-        Err(PathError::Malformed)
+        Err(VectorError::Malformed)
     }
 }
 
@@ -308,13 +627,13 @@ impl Bounds {
         }
     }
 
-    fn check(&self, x: f64, y: f64) -> Result<(f32, f32), PathError> {
+    fn check(&self, x: f64, y: f64) -> Result<(f32, f32), VectorError> {
         let (x, y) = (x as f32, y as f32);
         if x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1 {
             Ok((x, y))
         } else {
             // NaN fails the comparisons and lands here too.
-            Err(PathError::TooLarge)
+            Err(VectorError::TooLarge)
         }
     }
 }
@@ -376,7 +695,7 @@ impl Cursor<'_> {
     /// `digit+ "." digit+`, then an optional exponent. A trailing `.`
     /// with no digits after it is not part of the number. Parsed with
     /// Rust's float parser, which never consults the locale.
-    fn number(&mut self) -> Result<f32, PathError> {
+    fn number(&mut self) -> Result<f32, VectorError> {
         let start = self.pos;
         if matches!(self.peek(), Some(b'+' | b'-')) {
             self.pos += 1;
@@ -392,7 +711,7 @@ impl Cursor<'_> {
             }
         }
         if int_digits == 0 && frac_digits == 0 {
-            return Err(PathError::Malformed);
+            return Err(VectorError::Malformed);
         }
         if matches!(self.peek(), Some(b'e' | b'E')) {
             let mark = self.pos;
@@ -406,27 +725,27 @@ impl Cursor<'_> {
         }
         // Only ASCII digits, signs, `.` and `e` were consumed.
         let text = std::str::from_utf8(&self.s[start..self.pos])
-            .map_err(|_| PathError::Malformed)?;
-        let value: f64 = text.parse().map_err(|_| PathError::Malformed)?;
+            .map_err(|_| VectorError::Malformed)?;
+        let value: f64 = text.parse().map_err(|_| VectorError::Malformed)?;
         let value = value as f32;
         if value.is_finite() {
             Ok(value)
         } else {
-            Err(PathError::TooLarge)
+            Err(VectorError::TooLarge)
         }
     }
 
-    fn flag(&mut self) -> Result<bool, PathError> {
+    fn flag(&mut self) -> Result<bool, VectorError> {
         let flag = match self.peek() {
             Some(b'0') => false,
             Some(b'1') => true,
-            _ => return Err(PathError::Malformed),
+            _ => return Err(VectorError::Malformed),
         };
         self.pos += 1;
         Ok(flag)
     }
 
-    fn pair(&mut self) -> Result<(f64, f64), PathError> {
+    fn pair(&mut self) -> Result<(f64, f64), VectorError> {
         let x = self.number()? as f64;
         self.skip_comma_wsp();
         let y = self.number()? as f64;
@@ -462,7 +781,6 @@ struct PathWriter<'b> {
     /// A `Z` closed the subpath and no `M` has opened the next one yet.
     needs_move: bool,
     start: (f64, f64),
-    drew: bool,
 }
 
 fn distance((ax, ay): (f64, f64), (bx, by): (f64, f64)) -> f64 {
@@ -473,33 +791,31 @@ impl PathWriter<'_> {
     /// Every segment is charged, moves and closes included: otherwise
     /// `M0 0Z` repeated would fill 64 KiB with segments the cap never
     /// sees.
-    fn spend(&mut self) -> Result<(), PathError> {
+    fn spend(&mut self) -> Result<(), VectorError> {
         self.budget.segments = self
             .budget
             .segments
             .checked_sub(1)
-            .ok_or(PathError::TooLarge)?;
+            .ok_or(VectorError::TooLarge)?;
         Ok(())
     }
 
     /// Charge a segment that draws something.
-    fn spend_drawing(&mut self) -> Result<(), PathError> {
-        self.spend()?;
-        self.drew = true;
-        Ok(())
+    fn spend_drawing(&mut self) -> Result<(), VectorError> {
+        self.spend()
     }
 
     /// Charge `length` of path (a line, or a curve's control polygon,
     /// which bounds the curve's length) plus a stroke's width.
-    fn spend_ink(&mut self, length: f64) -> Result<(), PathError> {
+    fn spend_ink(&mut self, length: f64) -> Result<(), VectorError> {
         self.budget.ink -= length + self.stroke_width;
         if self.budget.ink < 0.0 {
-            return Err(PathError::TooLarge);
+            return Err(VectorError::TooLarge);
         }
         Ok(())
     }
 
-    fn move_to(&mut self, x: f64, y: f64) -> Result<(), PathError> {
+    fn move_to(&mut self, x: f64, y: f64) -> Result<(), VectorError> {
         self.spend()?;
         let (x, y) = self.bounds.check(x, y)?;
         // No length, but a stroked subpath gets caps.
@@ -513,7 +829,7 @@ impl PathWriter<'_> {
 
     /// A drawing command right after `Z` starts a new subpath at the
     /// closed one's start point, as SVG specifies.
-    fn ensure_open(&mut self) -> Result<(), PathError> {
+    fn ensure_open(&mut self) -> Result<(), VectorError> {
         if self.needs_move {
             let (x, y) = self.start;
             self.move_to(x, y)?;
@@ -521,7 +837,7 @@ impl PathWriter<'_> {
         Ok(())
     }
 
-    fn line_to(&mut self, x: f64, y: f64) -> Result<(), PathError> {
+    fn line_to(&mut self, x: f64, y: f64) -> Result<(), VectorError> {
         self.ensure_open()?;
         self.spend_drawing()?;
         let (x, y) = self.bounds.check(x, y)?;
@@ -532,7 +848,7 @@ impl PathWriter<'_> {
         Ok(())
     }
 
-    fn quad_to(&mut self, cx: f64, cy: f64, x: f64, y: f64) -> Result<(), PathError> {
+    fn quad_to(&mut self, cx: f64, cy: f64, x: f64, y: f64) -> Result<(), VectorError> {
         self.ensure_open()?;
         self.spend_drawing()?;
         let (cx, cy) = self.bounds.check(cx, cy)?;
@@ -553,7 +869,7 @@ impl PathWriter<'_> {
         c2y: f64,
         x: f64,
         y: f64,
-    ) -> Result<(), PathError> {
+    ) -> Result<(), VectorError> {
         self.ensure_open()?;
         self.spend_drawing()?;
         let (c1x, c1y) = self.bounds.check(c1x, c1y)?;
@@ -571,7 +887,7 @@ impl PathWriter<'_> {
         Ok(())
     }
 
-    fn close(&mut self) -> Result<(), PathError> {
+    fn close(&mut self) -> Result<(), VectorError> {
         if !self.needs_move {
             self.spend()?;
             self.spend_ink(distance(self.pen, self.start))?;
@@ -588,7 +904,7 @@ fn parse_path_data(
     bounds: &Bounds,
     budget: &mut Budget,
     stroke_width: f64,
-) -> Result<Vec<Segment>, PathError> {
+) -> Result<Vec<Segment>, VectorError> {
     let mut c = Cursor { s: raw, pos: 0 };
     let mut out = PathWriter {
         segments: Vec::new(),
@@ -598,7 +914,6 @@ fn parse_path_data(
         pen: (0.0, 0.0),
         needs_move: false,
         start: (0.0, 0.0),
-        drew: false,
     };
     let (mut cx, mut cy) = (0.0f64, 0.0f64);
     let mut last = LastControl::None;
@@ -606,7 +921,7 @@ fn parse_path_data(
     c.skip_wsp();
     // Path data starts with a moveto.
     if !matches!(c.peek(), Some(b'M' | b'm')) {
-        return Err(PathError::Malformed);
+        return Err(VectorError::Malformed);
     }
 
     loop {
@@ -755,13 +1070,10 @@ fn parse_path_data(
                     break;
                 }
             },
-            _ => return Err(PathError::Malformed),
+            _ => return Err(VectorError::Malformed),
         }
     }
 
-    if !out.drew {
-        return Err(PathError::Malformed);
-    }
     Ok(out.segments)
 }
 
@@ -779,7 +1091,7 @@ fn arc_to(
     large_arc: bool,
     sweep: bool,
     (x2, y2): (f64, f64),
-) -> Result<(), PathError> {
+) -> Result<(), VectorError> {
     use std::f64::consts::{FRAC_PI_2, TAU};
 
     if x1 == x2 && y1 == y2 {
@@ -835,7 +1147,7 @@ fn arc_to(
         delta += TAU;
     }
     if !delta.is_finite() {
-        return Err(PathError::Malformed);
+        return Err(VectorError::Malformed);
     }
 
     let pieces = ((delta.abs() / FRAC_PI_2).ceil() as usize).clamp(1, 4);
@@ -892,7 +1204,7 @@ mod tests {
         h: 24.0,
     };
 
-    fn layer(payload: &str) -> Result<PathLayer, PathError> {
+    fn layer(payload: &str) -> Result<VectorLayer, VectorError> {
         let mut glyph = parse(payload.as_bytes(), VB24)?;
         assert_eq!(glyph.layers.len(), 1);
         Ok(glyph.layers.remove(0))
@@ -937,15 +1249,32 @@ mod tests {
         )
         .unwrap();
         assert_eq!(glyph.layers.len(), 3);
-        assert_eq!(glyph.layers[0].paint, LayerPaint::Fill(FillRule::NonZero));
-        assert_eq!(glyph.layers[0].color, LayerColor::Foreground { alpha: 255 });
-        assert_eq!(glyph.layers[1].paint, LayerPaint::Fill(FillRule::EvenOdd));
         assert_eq!(
-            glyph.layers[1].color,
-            LayerColor::Rgba([0xe5, 0x53, 0x4b, 0xff])
+            glyph.layers[0].op,
+            LayerOp::Fill {
+                rule: FillRule::NonZero,
+                color: LayerColor::Solid(Solid::Foreground { alpha: 255 })
+            }
         );
-        assert_eq!(glyph.layers[2].paint, LayerPaint::Stroke { width: 2.0 });
-        assert_eq!(glyph.layers[2].color, LayerColor::Foreground { alpha: 51 });
+        assert_eq!(
+            glyph.layers[1].op,
+            LayerOp::Fill {
+                rule: FillRule::EvenOdd,
+                color: LayerColor::Solid(Solid::Rgba([0xe5, 0x53, 0x4b, 0xff]))
+            }
+        );
+        assert_eq!(
+            glyph.layers[2].op,
+            LayerOp::Stroke {
+                style: StrokeStyle {
+                    width: 2.0,
+                    cap: LineCap::Round,
+                    join: LineJoin::Round,
+                    miter_limit: 4.0
+                },
+                color: LayerColor::Solid(Solid::Foreground { alpha: 51 })
+            }
+        );
         assert!(!glyph.is_monochrome());
         assert!(glyph.uses_foreground());
     }
@@ -965,8 +1294,18 @@ mod tests {
             "stroke=0,fg:M0 0h4",
             "stroke=25,fg:M0 0h4",
             "stroke=-1,fg:M0 0h4",
+            // Stroke styles.
+            "stroke=2/flat,fg:M0 0h4",
+            "stroke=2/butt/sharp,fg:M0 0h4",
+            "stroke=2/butt/miter0.5,fg:M0 0h4",
+            "stroke=2/butt/miter/x,fg:M0 0h4",
+            "stroke=2/,fg:M0 0h4",
+            // Clip headers.
+            "clip=0,nonzero:M0 0h4",
+            "clip=x,nonzero:M0 0h4",
+            "clip=1,fg:M0 0h4",
         ] {
-            assert_eq!(layer(payload), Err(PathError::Malformed), "{payload}");
+            assert_eq!(layer(payload), Err(VectorError::Malformed), "{payload}");
         }
     }
 
@@ -977,7 +1316,7 @@ mod tests {
             "fill=nonzero,fg:M0 0h4\n",
             "fill=nonzero,fg:M0 0h4\u{e9}",
         ] {
-            assert_eq!(layer(payload), Err(PathError::Malformed), "{payload:?}");
+            assert_eq!(layer(payload), Err(VectorError::Malformed), "{payload:?}");
         }
     }
 
@@ -1019,11 +1358,10 @@ mod tests {
             "M0 0a4 4 0 2 0 4 0",
             "M0 0,L1 1",
             "M0 0L1e 1",
-            "M0 0",
         ] {
             assert_eq!(
                 layer(&format!("fill=nonzero,fg:{data}")),
-                Err(PathError::Malformed),
+                Err(VectorError::Malformed),
                 "{data:?}"
             );
         }
@@ -1073,10 +1411,10 @@ mod tests {
     fn arcs_follow_svg_edge_rules() {
         // A zero radius is a line.
         assert_eq!(segments("M0 0A0 4 0 0 0 4 0")[1], Segment::LineTo(4.0, 0.0));
-        // Identical endpoints draw nothing, so the layer is empty.
+        // Identical endpoints draw nothing: only the moveto is left.
         assert_eq!(
-            layer("fill=nonzero,fg:M4 4A2 2 0 0 0 4 4"),
-            Err(PathError::Malformed)
+            segments("M4 4A2 2 0 0 0 4 4"),
+            vec![Segment::MoveTo(4.0, 4.0)]
         );
         // Radii too small for the endpoints are scaled up: a half circle.
         let half = segments("M0 12A1 1 0 0 1 24 12");
@@ -1094,29 +1432,32 @@ mod tests {
         // One viewBox size of margin on every side: [-24, 48].
         assert!(layer("fill=nonzero,fg:M0 0L48 0").is_ok());
         assert!(layer("fill=nonzero,fg:M0 0L0 -24").is_ok());
-        assert_eq!(layer("fill=nonzero,fg:M0 0L49 0"), Err(PathError::TooLarge));
+        assert_eq!(
+            layer("fill=nonzero,fg:M0 0L49 0"),
+            Err(VectorError::TooLarge)
+        );
         assert_eq!(
             layer("fill=nonzero,fg:M0 0L0 -25"),
-            Err(PathError::TooLarge)
+            Err(VectorError::TooLarge)
         );
         // Control points count, not just the points the curve passes.
         assert_eq!(
             layer("fill=nonzero,fg:M0 0C-30 0 54 24 12 12"),
-            Err(PathError::TooLarge)
+            Err(VectorError::TooLarge)
         );
         assert_eq!(
             layer("fill=nonzero,fg:M0 0Q12 60 24 0"),
-            Err(PathError::TooLarge)
+            Err(VectorError::TooLarge)
         );
         // So do the cubics an arc becomes: a 30-unit radius bulges past
         // the margin even though both endpoints are inside the box.
         assert_eq!(
             layer("fill=nonzero,fg:M2 12A30 30 0 1 1 22 12"),
-            Err(PathError::TooLarge)
+            Err(VectorError::TooLarge)
         );
         assert_eq!(
             layer("fill=nonzero,fg:M0 0L1e39 0"),
-            Err(PathError::TooLarge)
+            Err(VectorError::TooLarge)
         );
         // A negative origin moves the box with it.
         let material = ViewBox {
@@ -1128,16 +1469,218 @@ mod tests {
         assert!(parse(b"fill=nonzero,fg:M480-480h100v100z", material).is_ok());
     }
 
+    fn op(payload: &str) -> LayerOp {
+        layer(payload).unwrap().op
+    }
+
+    fn stroke_style(payload: &str) -> StrokeStyle {
+        match op(payload) {
+            LayerOp::Stroke { style, .. } => style,
+            other => panic!("not a stroke: {other:?}"),
+        }
+    }
+
+    fn gradient(payload: &str) -> Gradient {
+        match op(payload) {
+            LayerOp::Fill {
+                color: LayerColor::Gradient(g),
+                ..
+            } => *g,
+            other => panic!("not a gradient fill: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn stroke_caps_and_joins() {
+        let s = stroke_style("stroke=2,fg:M0 0h4");
+        assert_eq!((s.cap, s.join), (LineCap::Round, LineJoin::Round));
+        let s = stroke_style("stroke=2/butt,fg:M0 0h4");
+        assert_eq!((s.cap, s.join), (LineCap::Butt, LineJoin::Round));
+        let s = stroke_style("stroke=1.5/square/bevel,fg:M0 0h4");
+        assert_eq!(
+            (s.width, s.cap, s.join),
+            (1.5, LineCap::Square, LineJoin::Bevel)
+        );
+        let s = stroke_style("stroke=2/butt/miter,fg:M0 0h4");
+        assert_eq!((s.join, s.miter_limit), (LineJoin::Miter, 4.0));
+        let s = stroke_style("stroke=2/round/miter10,fg:M0 0h4");
+        assert_eq!((s.join, s.miter_limit), (LineJoin::Miter, 10.0));
+    }
+
+    #[test]
+    fn linear_and_radial_gradients() {
+        let g = gradient("fill=nonzero,lin(0 0 24 0 / 0 #ff0000 / 1 fg@0.5):M0 0h4v4z");
+        assert_eq!(
+            g.shape,
+            GradientShape::Linear {
+                x1: 0.0,
+                y1: 0.0,
+                x2: 24.0,
+                y2: 0.0
+            }
+        );
+        assert_eq!(g.spread, Spread::Pad);
+        assert_eq!(g.transform, [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        assert_eq!(
+            g.stops,
+            vec![
+                GradientStop {
+                    offset: 0.0,
+                    color: Solid::Rgba([0xff, 0, 0, 0xff])
+                },
+                GradientStop {
+                    offset: 1.0,
+                    color: Solid::Foreground { alpha: 128 }
+                },
+            ]
+        );
+        // Focal point, spread, a matrix with packed signs, three stops.
+        let g = gradient(
+            "fill=evenodd,rad(10 10 0 12 12 8 reflect m 1 0 0-1 0 24 / 0 fg / 0.5 #00ff0080 / 1 #0000ff):M0 0h4v4z",
+        );
+        assert_eq!(
+            g.shape,
+            GradientShape::Radial {
+                fx: 10.0,
+                fy: 10.0,
+                fr: 0.0,
+                cx: 12.0,
+                cy: 12.0,
+                r: 8.0
+            }
+        );
+        assert_eq!(g.spread, Spread::Reflect);
+        assert_eq!(g.transform, [1.0, 0.0, 0.0, -1.0, 0.0, 24.0]);
+        assert_eq!(g.stops.len(), 3);
+        // Strokes take gradients too.
+        assert!(matches!(
+            op("stroke=2/butt,lin(0 0 1 1 repeat / 0 fg / 1 fg@0):M0 0h4"),
+            LayerOp::Stroke {
+                color: LayerColor::Gradient(_),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn gradient_errors_reject_the_payload() {
+        for colour in [
+            "lin(0 0 24 0 / 0 fg)",                         // one stop
+            "lin(0 0 24 / 0 fg / 1 fg)",                    // three coordinates
+            "lin(0 0 24 0 / 0 fg / 1 fg",                   // unclosed
+            "lin(0 0 24 0 / 0.6 fg / 0.4 fg)",              // offsets go back
+            "lin(0 0 24 0 / 0 fg / 1.5 fg)",                // offset past 1
+            "lin(0 0 24 0 / 0 fg / 1 red)",                 // named colour
+            "lin(0 0 24 0 / 0 fg / 1 lin(0 0 1 1 / 0 fg))", // gradient stop
+            "lin(0 0 24 0 / 0fg / 1 fg)",                   // no space
+            "lin(0 0 24 0 sideways / 0 fg / 1 fg)",         // unknown spread
+            "lin(0 0 24 0 m 1 0 0 1 0 / 0 fg / 1 fg)",      // short matrix
+            "lin(0 0 24 0 m 1 2 2 4 0 0 / 0 fg / 1 fg)",    // not invertible
+            "rad(0 0 -1 0 0 4 / 0 fg / 1 fg)",              // negative radius
+            "rad(0 0 0 0 0 4 0 / 0 fg / 1 fg)",             // extra coordinate
+            "con(0 0 24 0 / 0 fg / 1 fg)",                  // unknown kind
+        ] {
+            assert_eq!(
+                layer(&format!("fill=nonzero,{colour}:M0 0h4v4z")),
+                Err(VectorError::Malformed),
+                "{colour}"
+            );
+        }
+        let stops = |n: usize| {
+            (0..n)
+                .map(|i| format!(" / {} fg", i as f32 / (n - 1) as f32))
+                .collect::<String>()
+        };
+        let at_cap = format!("fill=nonzero,lin(0 0 24 0{}):M0 0h4v4z", stops(MAX_STOPS));
+        assert!(layer(&at_cap).is_ok());
+        let over = format!(
+            "fill=nonzero,lin(0 0 24 0{}):M0 0h4v4z",
+            stops(MAX_STOPS + 1)
+        );
+        assert_eq!(layer(&over), Err(VectorError::TooLarge));
+    }
+
+    #[test]
+    fn clip_layers_clip_the_next_layers() {
+        let glyph = parse(
+            b"clip=2,evenodd:M0 0h12v24H0Z|fill=nonzero,fg:M0 0h24v24H0Z|stroke=2,#ff0000:M0 12h24|fill=nonzero,fg:M0 0h1",
+            VB24,
+        )
+        .unwrap();
+        assert_eq!(
+            glyph.layers[0].op,
+            LayerOp::Clip {
+                rule: FillRule::EvenOdd,
+                count: 2
+            }
+        );
+        // A clip must have that many layers after it, none of them a
+        // clip: one level only.
+        for payload in [
+            "clip=1,nonzero:M0 0h4v4z",
+            "clip=3,nonzero:M0 0h4v4z|fill=nonzero,fg:M0 0h1|fill=nonzero,fg:M0 0h1",
+            "clip=2,nonzero:M0 0h4v4z|clip=1,nonzero:M0 0h1v1z|fill=nonzero,fg:M0 0h1",
+        ] {
+            assert_eq!(
+                parse(payload.as_bytes(), VB24),
+                Err(VectorError::Malformed),
+                "{payload}"
+            );
+        }
+        // After a clip's range ends, another clip may start.
+        assert!(parse(
+            b"clip=1,nonzero:M0 0h4v4z|fill=nonzero,fg:M0 0h1|clip=1,nonzero:M0 0h4v4z|fill=nonzero,fg:M0 0h1",
+            VB24
+        )
+        .is_ok());
+        // Clip paths count against the segment and length caps like a fill.
+        let long = format!(
+            "clip=1,nonzero:M0 0{}|fill=nonzero,fg:M0 0h1",
+            "h24h-24".repeat(33)
+        );
+        assert_eq!(layer_count_err(&long), Err(VectorError::TooLarge));
+    }
+
+    fn layer_count_err(payload: &str) -> Result<usize, VectorError> {
+        parse(payload.as_bytes(), VB24).map(|g| g.layers.len())
+    }
+
+    #[test]
+    fn foreground_gradients_keep_the_glyph_monochrome() {
+        let mono = parse(
+            b"fill=nonzero,lin(0 0 24 0 / 0 fg / 1 fg@0):M0 0h4v4z|clip=1,nonzero:M0 0h1v1z|fill=nonzero,fg@0.5:M0 0h1",
+            VB24,
+        )
+        .unwrap();
+        assert!(mono.is_monochrome());
+        assert!(mono.uses_foreground());
+        let mixed = parse(
+            b"fill=nonzero,lin(0 0 24 0 / 0 fg / 1 #ff0000):M0 0h4v4z",
+            VB24,
+        )
+        .unwrap();
+        assert!(!mixed.is_monochrome());
+        assert!(mixed.uses_foreground());
+        let fixed = parse(
+            b"fill=nonzero,rad(0 0 0 12 12 12 / 0 #000000 / 1 #ffffff):M0 0h4v4z",
+            VB24,
+        )
+        .unwrap();
+        assert!(!fixed.is_monochrome());
+        assert!(!fixed.uses_foreground());
+    }
+
     #[test]
     fn segment_and_layer_caps() {
-        // `n` linetos that go back and forth, staying in the box.
+        // `n` short linetos that go back and forth, staying in the box
+        // and well under the path length cap.
         let back_and_forth =
-            |n: usize| "h1h-1".repeat(n / 2) + if n % 2 == 1 { "h1" } else { "" };
+            |n: usize| "h.5h-.5".repeat(n / 2) + if n % 2 == 1 { "h.5" } else { "" };
         // The moveto is a segment too.
         let at_cap = format!("fill=nonzero,fg:M0 0{}", back_and_forth(MAX_SEGMENTS - 1));
         assert!(layer(&at_cap).is_ok());
-        let over = format!("{at_cap}h-1");
-        assert_eq!(layer(&over), Err(PathError::TooLarge));
+        let over = format!("{at_cap}h-.5");
+        assert_eq!(layer(&over), Err(VectorError::TooLarge));
         // The cap is per registration, across layers.
         let half = format!(
             "fill=nonzero,fg:M0 0{}",
@@ -1149,10 +1692,10 @@ mod tests {
                 format!("{half}|{half}|fill=nonzero,fg:M0 0h1").as_bytes(),
                 VB24
             ),
-            Err(PathError::TooLarge)
+            Err(VectorError::TooLarge)
         );
         let layers = vec!["fill=nonzero,fg:M0 0h1"; MAX_LAYERS + 1].join("|");
-        assert_eq!(parse(layers.as_bytes(), VB24), Err(PathError::TooLarge));
+        assert_eq!(parse(layers.as_bytes(), VB24), Err(VectorError::TooLarge));
     }
 
     #[test]
@@ -1163,13 +1706,15 @@ mod tests {
         let fits = format!("fill=nonzero,fg:M0 0h1{}", "M1 1Z".repeat(pairs));
         assert!(layer(&fits).is_ok());
         let flood = format!("fill=nonzero,fg:M0 0h1{}", "M1 1Z".repeat(pairs + 1));
-        assert_eq!(layer(&flood), Err(PathError::TooLarge));
+        assert_eq!(layer(&flood), Err(VectorError::TooLarge));
         // A run of bare movetos is no cheaper.
         let moves = format!("fill=nonzero,fg:M0 0h1{}", "M1 1".repeat(MAX_SEGMENTS));
-        assert_eq!(layer(&moves), Err(PathError::TooLarge));
-        // The implicit moveto after a close is charged as well.
-        let reopen = format!("fill=nonzero,fg:M0 0{}", "h1z".repeat(MAX_SEGMENTS / 2));
-        assert_eq!(layer(&reopen), Err(PathError::TooLarge));
+        assert_eq!(layer(&moves), Err(VectorError::TooLarge));
+        // The implicit moveto after a close is charged as well: three
+        // segments per `h.1z` after the first, short enough that the
+        // path length cap isn't what stops it.
+        let reopen = format!("fill=nonzero,fg:M0 0{}", "h.1z".repeat(MAX_SEGMENTS / 2));
+        assert_eq!(layer(&reopen), Err(VectorError::TooLarge));
     }
 
     #[test]
@@ -1190,7 +1735,7 @@ mod tests {
         // Nine segments, far under the segment cap and inside the
         // bounds: only the length is over.
         assert!(layer(&loops(7)).is_ok());
-        assert_eq!(layer(&loops(8)), Err(PathError::TooLarge));
+        assert_eq!(layer(&loops(8)), Err(VectorError::TooLarge));
 
         // A stroke costs its width per segment as well: 64 short
         // segments are nothing filled, too much at the widest stroke.
@@ -1199,14 +1744,14 @@ mod tests {
         assert!(layer(&format!("stroke=2,fg:M12 12{short}")).is_ok());
         assert_eq!(
             layer(&format!("stroke=24,fg:M12 12{short}")),
-            Err(PathError::TooLarge)
+            Err(VectorError::TooLarge)
         );
 
         // Closing counts the segment back to the start.
         let square = "M0 0h24v24h-24z"; // 96 units
         let squares = |n: usize| format!("fill=nonzero,fg:{}", square.repeat(n));
         assert!(layer(&squares(16)).is_ok());
-        assert_eq!(layer(&squares(17)), Err(PathError::TooLarge));
+        assert_eq!(layer(&squares(17)), Err(VectorError::TooLarge));
 
         // The budget is per registration, across layers.
         let half = format!("fill=nonzero,fg:{}", square.repeat(8));
@@ -1216,7 +1761,7 @@ mod tests {
                 format!("{half}|{half}|fill=nonzero,fg:M0 0h1").as_bytes(),
                 VB24
             ),
-            Err(PathError::TooLarge)
+            Err(VectorError::TooLarge)
         );
 
         // The cap scales with the viewBox.
@@ -1351,10 +1896,27 @@ mod tests {
         ] {
             assert_eq!(
                 layer(&format!("fill=nonzero,fg:{data}")),
-                Err(PathError::Malformed),
+                Err(VectorError::Malformed),
                 "{data}"
             );
         }
+    }
+
+    #[test]
+    fn paths_that_draw_nothing_are_valid() {
+        // SVG 2 allows path data that only moves or closes; it draws
+        // nothing. Emoji sets ship such shapes (Twemoji has a lone
+        // `M14 12z`), and rejecting them would drop the whole emoji.
+        for data in ["M0 0", "M1 1M3 3", "m0 0z", "M14 12zm0 0z"] {
+            let l = layer(&format!("fill=nonzero,fg:{data}")).expect(data);
+            assert!(l
+                .segments
+                .iter()
+                .all(|s| matches!(s, Segment::MoveTo(..) | Segment::Close)));
+        }
+        // They still count against the caps.
+        let many = format!("fill=nonzero,fg:{}", "M1 1".repeat(MAX_SEGMENTS + 1));
+        assert_eq!(layer(&many), Err(VectorError::TooLarge));
     }
 
     #[test]
@@ -1370,13 +1932,11 @@ mod tests {
             "M0 0 L4 4 Z 1 1",
             "M0 0L.",
             "M0 0L1e+ 4",
-            "M1 1M3 3",
-            "m0 0z",
             "  ",
         ] {
             assert_eq!(
                 layer(&format!("fill=nonzero,fg:{data}")),
-                Err(PathError::Malformed),
+                Err(VectorError::Malformed),
                 "{data:?}"
             );
         }

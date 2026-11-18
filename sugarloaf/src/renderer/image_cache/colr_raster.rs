@@ -92,7 +92,7 @@ pub fn rasterize_payload(
             layout,
             baseline_px,
         ),
-        StoredPayload::Path { glyph } => rasterize_path(
+        StoredPayload::Vector { glyph } => rasterize_vector(
             glyph,
             cell_width_px,
             cell_height_px,
@@ -291,21 +291,22 @@ fn rasterize_mono(
     })
 }
 
-/// Draw a `fmt=path` glyph. The viewBox is the declared extent, placed
-/// by the §8.5 keys like any other format. A glyph whose layers all use
-/// the foreground colour becomes an A8 mask (layer alphas composite
-/// into its coverage) so the grid tints it like `glyf`; any fixed
-/// colour makes it RGBA with the foreground resolved now.
-fn rasterize_path(
-    glyph: &rio_graphics::glyph_path::PathGlyph,
+/// Draw a `fmt=vg` glyph. The viewBox is the declared extent, placed by
+/// the §8.5 keys like any other format. A glyph whose colours are all
+/// the foreground, gradient stops included, becomes an A8 mask (layer
+/// alphas composite into its coverage) so the grid tints it like
+/// `glyf`; any fixed colour makes it RGBA with the foreground resolved
+/// now. A clip layer turns into a mask that the next layers draw
+/// through.
+fn rasterize_vector(
+    glyph: &rio_graphics::glyph_vector::VectorGlyph,
     cell_width_px: u16,
     cell_height_px: u16,
     foreground_rgba: [u8; 4],
     layout: &GlyphLayout,
     baseline_px: f32,
 ) -> Option<RasterizedPayload> {
-    use rio_graphics::glyph_path::{self, LayerColor, LayerPaint, Segment};
-    use tiny_skia::{LineCap, LineJoin, Stroke};
+    use rio_graphics::glyph_vector::{LayerOp, Segment};
 
     let vb = glyph.view_box;
     // Path data is Y-down; the placement works in Y-up design units, so
@@ -324,6 +325,8 @@ fn rasterize_path(
     let monochrome = glyph.is_monochrome();
     let (pix_w, pix_h) = (cell_width_px as u32, cell_height_px as u32);
     let mut pixmap = Pixmap::new(pix_w, pix_h)?;
+    // The clip in force and how many more layers it covers.
+    let mut clip: Option<(Mask, usize)> = None;
     for layer in &glyph.layers {
         let mut pb = PathBuilder::new();
         for segment in &layer.segments {
@@ -337,36 +340,53 @@ fn rasterize_path(
                 Segment::Close => pb.close(),
             }
         }
-        // A layer that is only a degenerate line has no area to draw.
-        let Some(path) = pb.finish() else { continue };
+        // A path that is only a degenerate line has no area: drawn, it
+        // shows nothing; as a clip, it hides everything it covers.
+        let path = pb.finish();
 
-        let [r, g, b, a] = match layer.color {
-            LayerColor::Foreground { alpha } if monochrome => [0xFF, 0xFF, 0xFF, alpha],
-            LayerColor::Foreground { alpha } => {
-                let [r, g, b, fg_a] = foreground_rgba;
-                [r, g, b, ((fg_a as u16 * alpha as u16 + 127) / 255) as u8]
+        if let LayerOp::Clip { rule, count } = &layer.op {
+            let mut mask = Mask::new(pix_w, pix_h)?;
+            if let Some(path) = &path {
+                mask.fill_path(path, fill_rule(*rule), true, ctm);
             }
-            LayerColor::Rgba(rgba) => rgba,
-        };
-        let mut paint = SkPaint::default();
-        paint.set_color_rgba8(r, g, b, a);
-        paint.anti_alias = true;
-        match layer.paint {
-            LayerPaint::Fill(rule) => {
-                let rule = match rule {
-                    glyph_path::FillRule::NonZero => FillRule::Winding,
-                    glyph_path::FillRule::EvenOdd => FillRule::EvenOdd,
-                };
-                pixmap.fill_path(&path, &paint, rule, ctm, None);
+            clip = Some((mask, *count));
+            continue;
+        }
+
+        if let Some(path) = &path {
+            let mask = clip.as_ref().map(|(mask, _)| mask);
+            match &layer.op {
+                LayerOp::Fill { rule, color } => {
+                    let paint = vector_paint(color, monochrome, foreground_rgba);
+                    pixmap.fill_path(path, &paint, fill_rule(*rule), ctm, mask);
+                }
+                LayerOp::Stroke { style, color } => {
+                    use rio_graphics::glyph_vector::{LineCap, LineJoin};
+                    let paint = vector_paint(color, monochrome, foreground_rgba);
+                    let stroke = tiny_skia::Stroke {
+                        width: style.width,
+                        line_cap: match style.cap {
+                            LineCap::Round => tiny_skia::LineCap::Round,
+                            LineCap::Butt => tiny_skia::LineCap::Butt,
+                            LineCap::Square => tiny_skia::LineCap::Square,
+                        },
+                        line_join: match style.join {
+                            LineJoin::Round => tiny_skia::LineJoin::Round,
+                            LineJoin::Bevel => tiny_skia::LineJoin::Bevel,
+                            LineJoin::Miter => tiny_skia::LineJoin::Miter,
+                        },
+                        miter_limit: style.miter_limit,
+                        ..tiny_skia::Stroke::default()
+                    };
+                    pixmap.stroke_path(path, &paint, &stroke, ctm, mask);
+                }
+                LayerOp::Clip { .. } => unreachable!("handled above"),
             }
-            LayerPaint::Stroke { width } => {
-                let stroke = Stroke {
-                    width,
-                    line_cap: LineCap::Round,
-                    line_join: LineJoin::Round,
-                    ..Stroke::default()
-                };
-                pixmap.stroke_path(&path, &paint, &stroke, ctm, None);
+        }
+        if let Some((_, left)) = &mut clip {
+            *left -= 1;
+            if *left == 0 {
+                clip = None;
             }
         }
     }
@@ -382,6 +402,105 @@ fn rasterize_path(
         height: pix_h as u16,
         is_color: !monochrome,
     })
+}
+
+fn fill_rule(rule: rio_graphics::glyph_vector::FillRule) -> FillRule {
+    match rule {
+        rio_graphics::glyph_vector::FillRule::NonZero => FillRule::Winding,
+        rio_graphics::glyph_vector::FillRule::EvenOdd => FillRule::EvenOdd,
+    }
+}
+
+/// A solid colour as drawn: for a monochrome glyph the foreground is
+/// white with its alpha, which becomes the mask's coverage; otherwise
+/// the foreground is resolved now.
+fn vector_solid(
+    solid: &rio_graphics::glyph_vector::Solid,
+    monochrome: bool,
+    foreground_rgba: [u8; 4],
+) -> [u8; 4] {
+    use rio_graphics::glyph_vector::Solid;
+    match *solid {
+        Solid::Foreground { alpha } if monochrome => [0xFF, 0xFF, 0xFF, alpha],
+        Solid::Foreground { alpha } => {
+            let [r, g, b, fg_a] = foreground_rgba;
+            [r, g, b, ((fg_a as u16 * alpha as u16 + 127) / 255) as u8]
+        }
+        Solid::Rgba(rgba) => rgba,
+    }
+}
+
+fn vector_paint(
+    color: &rio_graphics::glyph_vector::LayerColor,
+    monochrome: bool,
+    foreground_rgba: [u8; 4],
+) -> SkPaint<'static> {
+    use rio_graphics::glyph_vector::{GradientShape, LayerColor, Spread};
+    let rgba = |c: [u8; 4]| Color::from_rgba8(c[0], c[1], c[2], c[3]);
+    let mut paint = SkPaint {
+        anti_alias: true,
+        ..SkPaint::default()
+    };
+    match color {
+        LayerColor::Solid(solid) => {
+            let [r, g, b, a] = vector_solid(solid, monochrome, foreground_rgba);
+            paint.set_color_rgba8(r, g, b, a);
+        }
+        LayerColor::Gradient(gradient) => {
+            let stops: Vec<GradientStop> = gradient
+                .stops
+                .iter()
+                .map(|stop| {
+                    GradientStop::new(
+                        stop.offset,
+                        rgba(vector_solid(&stop.color, monochrome, foreground_rgba)),
+                    )
+                })
+                .collect();
+            let spread = match gradient.spread {
+                Spread::Pad => SpreadMode::Pad,
+                Spread::Reflect => SpreadMode::Reflect,
+                Spread::Repeat => SpreadMode::Repeat,
+            };
+            let [a, b, c, d, e, f] = gradient.transform;
+            let transform = Transform::from_row(a, b, c, d, e, f);
+            let last = gradient
+                .stops
+                .last()
+                .map(|stop| rgba(vector_solid(&stop.color, monochrome, foreground_rgba)));
+            let shader = match gradient.shape {
+                GradientShape::Linear { x1, y1, x2, y2 } => LinearGradient::new(
+                    Point::from_xy(x1, y1),
+                    Point::from_xy(x2, y2),
+                    stops,
+                    spread,
+                    transform,
+                ),
+                GradientShape::Radial {
+                    fx,
+                    fy,
+                    fr,
+                    cx,
+                    cy,
+                    r,
+                } => RadialGradient::new(
+                    Point::from_xy(fx, fy),
+                    fr,
+                    Point::from_xy(cx, cy),
+                    r,
+                    stops,
+                    spread,
+                    transform,
+                ),
+            };
+            // A gradient with no extent (both points or circles the
+            // same) paints its last stop, as SVG does.
+            paint.shader = shader
+                .or_else(|| last.map(Shader::SolidColor))
+                .unwrap_or(Shader::SolidColor(Color::TRANSPARENT));
+        }
+    }
+    paint
 }
 
 /// Parse a colour container's `COLR` table against its `CPAL`.
@@ -445,9 +564,9 @@ pub fn payload_uses_foreground(
     use crate::font::glyph_registry::StoredPayload;
     let (glyphs, colr, cpal) = match payload {
         StoredPayload::Glyf { .. } => return false,
-        // An all-foreground path glyph is an alpha mask tinted at draw
+        // An all-foreground vector glyph is an alpha mask tinted at draw
         // time; one with fixed colours bakes the foreground in.
-        StoredPayload::Path { glyph } => {
+        StoredPayload::Vector { glyph } => {
             return !glyph.is_monochrome() && glyph.uses_foreground()
         }
         StoredPayload::ColrV0 { glyphs, colr, cpal }
@@ -1088,10 +1207,10 @@ fn intersect_masks(dst: &mut Mask, src: &Mask) {
 mod tests {
     use super::*;
 
-    mod path_format {
+    mod vector_format {
         use super::*;
         use crate::font::glyph_registry::StoredPayload;
-        use rio_graphics::glyph_path::{parse, parse_view_box};
+        use rio_graphics::glyph_vector::{parse, parse_view_box};
 
         const FG: [u8; 4] = [10, 200, 30, 255];
 
@@ -1099,7 +1218,7 @@ mod tests {
             let glyph = parse(text.as_bytes(), parse_view_box(vb.as_bytes()).unwrap())
                 .expect("payload parses");
             rasterize_payload(
-                &StoredPayload::Path { glyph },
+                &StoredPayload::Vector { glyph },
                 1000,
                 w,
                 h,
@@ -1292,9 +1411,101 @@ mod tests {
             assert_eq!(quad.data, quad_short.data);
         }
 
+        fn rgba_at(r: &RasterizedPayload, x: usize, y: usize) -> [u8; 4] {
+            assert!(r.is_color);
+            let i = (y * r.width as usize + x) * 4;
+            [r.data[i], r.data[i + 1], r.data[i + 2], r.data[i + 3]]
+        }
+
+        #[test]
+        fn linear_gradient_runs_from_its_first_point() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 24 0 / 0 #ff0000 / 1 #0000ff):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            let left = rgba_at(&r, 1, 12);
+            let right = rgba_at(&r, 22, 12);
+            assert!(left[0] > 220 && left[2] < 35, "red on the left: {left:?}");
+            assert!(
+                right[2] > 220 && right[0] < 35,
+                "blue on the right: {right:?}"
+            );
+            // Same colour all the way down a column.
+            assert_eq!(rgba_at(&r, 12, 2), rgba_at(&r, 12, 21));
+        }
+
+        #[test]
+        fn radial_gradient_changes_from_the_centre_out() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,rad(12 12 0 12 12 12 / 0 #ffffff / 1 #000000):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            let centre = rgba_at(&r, 12, 12);
+            let edge = rgba_at(&r, 12, 1);
+            assert!(centre[0] > 220, "{centre:?}");
+            assert!(edge[0] < 40, "{edge:?}");
+            // Past the outer circle, pad keeps the last stop.
+            assert!(rgba_at(&r, 0, 0)[0] < 10);
+        }
+
+        #[test]
+        fn a_foreground_gradient_stays_an_alpha_mask() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 24 0 / 0 fg / 1 fg@0):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            assert!(!r.is_color);
+            let (left, right) = (alpha(&r, 1, 12), alpha(&r, 22, 12));
+            assert!(left > 220 && right < 35, "{left} {right}");
+        }
+
+        #[test]
+        fn stroke_caps_reach_past_the_end_only_when_asked() {
+            // A 4-unit line from x=6 to x=18; the cap would reach x=20.
+            let at_cap = |cap: &str| {
+                let r = draw("0,0,24,24", &format!("stroke=4/{cap},fg:M6 12h12"), 24, 24);
+                alpha(&r, 19, 12)
+            };
+            assert_eq!(at_cap("butt"), 0);
+            assert!(at_cap("round") > 0);
+            assert_eq!(at_cap("square"), 255);
+        }
+
+        #[test]
+        fn a_clip_limits_only_the_layers_it_covers() {
+            // Clip the next layer to the left half; the layer after it
+            // draws the bottom band unclipped.
+            let r = draw(
+                "0,0,24,24",
+                "clip=1,nonzero:M0 0h12v24H0Z|fill=nonzero,fg:M0 0h24v12H0Z|fill=nonzero,fg:M0 18h24v6H0Z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 4, 4), 255, "inside the clip");
+            assert_eq!(alpha(&r, 20, 4), 0, "outside the clip");
+            assert_eq!(alpha(&r, 20, 21), 255, "after the clip's range");
+        }
+
+        #[test]
+        fn a_clip_with_no_area_hides_what_it_covers() {
+            let r = draw(
+                "0,0,24,24",
+                "clip=1,nonzero:M0 0h24|fill=nonzero,fg:M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            assert!(r.data.iter().all(|&a| a == 0));
+        }
+
         #[test]
         fn foreground_tracking() {
-            let glyph = |text: &str| StoredPayload::Path {
+            let glyph = |text: &str| StoredPayload::Vector {
                 glyph: parse(text.as_bytes(), parse_view_box(b"0,0,24,24").unwrap())
                     .unwrap(),
             };

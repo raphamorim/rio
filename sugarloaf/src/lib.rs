@@ -23,8 +23,8 @@ pub mod glyph_protocol {
     pub use crate::renderer::image_cache::colr_raster::{
         payload_uses_foreground, rasterize_payload, RasterizedPayload,
     };
-    /// `fmt=path` payloads: parsing and validation.
-    pub use rio_graphics::glyph_path;
+    /// `fmt=vg` payloads: parsing and validation.
+    pub use rio_graphics::glyph_vector;
 }
 
 // Re-export upstream swash so call sites can use `sugarloaf::swash::*`.

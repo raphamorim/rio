@@ -1416,7 +1416,7 @@ mod custom_glyph_budget_tests {
     #[test]
     fn deferred_glyphs_fill_in_over_the_following_frames() {
         use rio_backend::sugarloaf::glyph_protocol::{
-            glyph_path::{parse, parse_view_box},
+            glyph_vector::{parse, parse_view_box},
             GlyphRegistry, StoredPayload,
         };
         use rio_backend::sugarloaf::grid::{cpu::CpuGridRenderer, GridRenderer};
@@ -1430,7 +1430,7 @@ mod custom_glyph_budget_tests {
             registry
                 .register(
                     *cp,
-                    StoredPayload::Path { glyph },
+                    StoredPayload::Vector { glyph },
                     1000,
                     1,
                     Default::default(),
