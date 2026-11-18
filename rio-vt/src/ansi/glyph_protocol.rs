@@ -48,9 +48,9 @@ pub fn is_glyph_protocol(body: &[u8]) -> bool {
 }
 
 /// Upper bound on a single registered payload, post-base64-decode.
-/// Matches the 64 KiB limit in the spec; anything larger is rejected
+/// Matches the 32 KiB limit in the spec (§6.1); anything larger is rejected
 /// with `payload_too_large`.
-pub const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
+pub const MAX_PAYLOAD_BYTES: usize = 32 * 1024;
 
 /// Payload formats this build supports, advertised in the reply to
 /// the `s` verb as a comma-separated list of names. An empty slice
@@ -99,7 +99,8 @@ pub enum GlyphCommand {
         layout: GlyphLayout,
     },
     /// Clear a single block codepoint (`Some`) or every slot (`None`).
-    Clear { cp: Option<u32> },
+    /// `reply` works as it does for `r` (§7.1).
+    Clear { cp: Option<u32>, reply: ReplyMode },
 }
 
 /// Upper bound on the number of glyph outlines carried in a single
@@ -268,8 +269,9 @@ pub enum ParseError {
         reason: RegisterError,
         reply: ReplyMode,
     },
-    /// `c;cp=<hex>` where the codepoint is outside the registration block.
-    ClearOutOfNamespace,
+    /// `c;cp=<hex>` where the codepoint is outside the registration
+    /// block. The reply echoes `cp`, unless `reply` suppresses it.
+    ClearOutOfNamespace { cp: u32, reply: ReplyMode },
     /// A `q` the terminal cannot read: neither or both of `cp` and
     /// `grapheme`, a bad hex value, a surrogate, or too many
     /// codepoints. Answered with `reason=malformed_query` (§5.4) so a
@@ -615,6 +617,10 @@ impl<'a> Cursor<'a> {
 
 fn parse_clear(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     let params = parse_params(rest);
+    let reply = params
+        .get("reply")
+        .map(|v| ReplyMode::from_wire(v))
+        .unwrap_or_default();
     match params.get("cp") {
         Some(cp_raw) => {
             if cp_raw.contains(&b',') {
@@ -623,11 +629,14 @@ fn parse_clear(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
             let cp = parse_hex_cp(cp_raw)
                 .ok_or(ParseError::Malformed("clear cp invalid hex"))?;
             if !in_registration_block(cp) {
-                return Err(ParseError::ClearOutOfNamespace);
+                return Err(ParseError::ClearOutOfNamespace { cp, reply });
             }
-            Ok(GlyphCommand::Clear { cp: Some(cp) })
+            Ok(GlyphCommand::Clear {
+                cp: Some(cp),
+                reply,
+            })
         }
-        None => Ok(GlyphCommand::Clear { cp: None }),
+        None => Ok(GlyphCommand::Clear { cp: None, reply }),
     }
 }
 
@@ -847,9 +856,10 @@ pub(crate) fn format_clear_ok(cp: Option<u32>) -> String {
     }
 }
 
-/// Format a clear error reply (currently only `out_of_namespace`).
-pub(crate) fn format_clear_error_out_of_namespace() -> String {
-    String::from("\x1b_25a1;c;status=1;reason=out_of_namespace\x1b\\")
+/// Format a clear error reply (currently only `out_of_namespace`),
+/// echoing the `cp` that was refused.
+pub(crate) fn format_clear_error_out_of_namespace(cp: u32) -> String {
+    format!("\x1b_25a1;c;cp={cp:x};status=1;reason=out_of_namespace\x1b\\")
 }
 
 #[cfg(test)]
@@ -1307,26 +1317,48 @@ mod tests {
         assert_eq!(
             got,
             GlyphCommand::Clear {
-                cp: Some(0x10_0000)
+                cp: Some(0x10_0000),
+                reply: ReplyMode::All
             }
         );
     }
 
     #[test]
+    fn clear_takes_a_reply_level() {
+        assert_eq!(
+            parse(b"25a1;c;cp=100000;reply=0").unwrap(),
+            GlyphCommand::Clear {
+                cp: Some(0x10_0000),
+                reply: ReplyMode::None
+            }
+        );
+        assert_eq!(
+            parse(b"25a1;c;reply=2").unwrap(),
+            GlyphCommand::Clear {
+                cp: None,
+                reply: ReplyMode::ErrorsOnly
+            }
+        );
+        assert_eq!(
+            parse(b"25a1;c;cp=61;reply=0"),
+            Err(ParseError::ClearOutOfNamespace {
+                cp: 0x61,
+                reply: ReplyMode::None
+            })
+        );
+    }
+
+    #[test]
     fn clear_rejects_cp_outside_the_block() {
-        assert_eq!(parse(b"25a1;c;cp=61"), Err(ParseError::ClearOutOfNamespace));
-        assert_eq!(
-            parse(b"25a1;c;cp=E0A0"),
-            Err(ParseError::ClearOutOfNamespace)
-        );
-        assert_eq!(
-            parse(b"25a1;c;cp=100400"),
-            Err(ParseError::ClearOutOfNamespace)
-        );
-        assert_eq!(
-            parse(b"25a1;c;cp=1F600"),
-            Err(ParseError::ClearOutOfNamespace)
-        );
+        for cp in [0x61, 0xE0A0, 0x10_0400, 0x1F600] {
+            assert_eq!(
+                parse(format!("25a1;c;cp={cp:X}").as_bytes()),
+                Err(ParseError::ClearOutOfNamespace {
+                    cp,
+                    reply: ReplyMode::All
+                })
+            );
+        }
     }
 
     #[test]
@@ -1340,7 +1372,13 @@ mod tests {
     #[test]
     fn clear_all() {
         let got = parse(b"25a1;c").unwrap();
-        assert_eq!(got, GlyphCommand::Clear { cp: None });
+        assert_eq!(
+            got,
+            GlyphCommand::Clear {
+                cp: None,
+                reply: ReplyMode::All
+            }
+        );
     }
 
     #[test]
@@ -1776,8 +1814,8 @@ mod tests {
         );
         assert_eq!(format_clear_ok(None), "\x1b_25a1;c;status=0\x1b\\");
         assert_eq!(
-            format_clear_error_out_of_namespace(),
-            "\x1b_25a1;c;status=1;reason=out_of_namespace\x1b\\"
+            format_clear_error_out_of_namespace(0x61),
+            "\x1b_25a1;c;cp=61;status=1;reason=out_of_namespace\x1b\\"
         );
     }
 

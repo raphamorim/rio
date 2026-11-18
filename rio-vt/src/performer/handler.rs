@@ -798,10 +798,12 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                     }
                 }
             },
-            Ok(glyph_protocol::GlyphCommand::Clear { cp }) => {
+            Ok(glyph_protocol::GlyphCommand::Clear { cp, reply }) => {
                 self.handler.glyph_clear(cp);
-                let resp = glyph_protocol::format_clear_ok(cp);
-                self.handler.glyph_protocol_response(resp);
+                if reply.emit_success() {
+                    let resp = glyph_protocol::format_clear_ok(cp);
+                    self.handler.glyph_protocol_response(resp);
+                }
             }
             Err(glyph_protocol::ParseError::NotGlyphProtocol) => {
                 // Shouldn't happen — the prefix check in process_apc_buffer
@@ -815,9 +817,11 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
                     self.handler.glyph_protocol_response(resp);
                 }
             }
-            Err(glyph_protocol::ParseError::ClearOutOfNamespace) => {
-                let resp = glyph_protocol::format_clear_error_out_of_namespace();
-                self.handler.glyph_protocol_response(resp);
+            Err(glyph_protocol::ParseError::ClearOutOfNamespace { cp, reply }) => {
+                if reply.emit_error() {
+                    let resp = glyph_protocol::format_clear_error_out_of_namespace(cp);
+                    self.handler.glyph_protocol_response(resp);
+                }
             }
             Err(glyph_protocol::ParseError::Malformed(why)) => {
                 warn!("[glyph_protocol] malformed APC: {why}");
