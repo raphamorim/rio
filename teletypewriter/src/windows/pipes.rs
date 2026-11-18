@@ -111,10 +111,18 @@ impl EventedAnonRead {
                     // Write from the temp buffer into the producer
                     let mut written = 0usize;
                     while written < nbytes {
-                        // Wait for buffer to clear if need be.
+                        // Wait for buffer to clear if need be. The ring
+                        // is looked at again under the lock, which the
+                        // other side takes before it notifies: a read
+                        // that lands after the look above is then either
+                        // seen here or notifies once this thread waits,
+                        // and is not lost between the two.
                         if producer.is_full() {
                             let mut wait_tag = inner.wait_tag.lock();
-                            inner.sig_buffer_not_full.wait(&mut wait_tag);
+                            while producer.is_full() && !inner.done.load(Ordering::SeqCst)
+                            {
+                                inner.sig_buffer_not_full.wait(&mut wait_tag);
+                            }
                             if inner.done.load(Ordering::SeqCst) {
                                 return;
                             }
@@ -175,6 +183,9 @@ impl io::Read for EventedAnonRead {
             }
         }
 
+        // Through the lock, so the worker is either yet to look at the
+        // ring or already waiting, and never between the two.
+        drop(self.inner.wait_tag.lock());
         self.inner.sig_buffer_not_full.notify_one();
         Ok(nbytes)
     }
@@ -210,6 +221,7 @@ impl Drop for EventedAnonRead {
     fn drop(&mut self) {
         self.inner.done.store(true, Ordering::SeqCst);
 
+        drop(self.inner.wait_tag.lock());
         self.inner.sig_buffer_not_full.notify_one();
 
         let thread = self.thread.take().unwrap();
@@ -289,10 +301,21 @@ impl EventedAnonWrite {
 
                     // Read into temp buffer while holding the lock
                     let nbytes = {
-                        // Wait for buffer to have contents
+                        // Wait for buffer to have contents. The ring is
+                        // looked at again under the lock, which the
+                        // other side takes before it notifies: a write
+                        // that lands after the look above is then either
+                        // seen here or notifies once this thread waits.
+                        // Without that its bytes stayed in the ring
+                        // until the next write, a key pressed and not
+                        // delivered until another one was.
                         if consumer.is_empty() {
                             let mut wait_tag = inner.wait_tag.lock();
-                            inner.sig_buffer_not_empty.wait(&mut wait_tag);
+                            while consumer.is_empty()
+                                && !inner.done.load(Ordering::SeqCst)
+                            {
+                                inner.sig_buffer_not_empty.wait(&mut wait_tag);
+                            }
                             if inner.done.load(Ordering::SeqCst) {
                                 return;
                             }
@@ -362,6 +385,9 @@ impl io::Write for EventedAnonWrite {
             }
         }
 
+        // Through the lock, so the worker is either yet to look at the
+        // ring or already waiting, and never between the two.
+        drop(self.inner.wait_tag.lock());
         self.inner.sig_buffer_not_empty.notify_one();
         Ok(nbytes)
     }
@@ -402,6 +428,7 @@ impl Drop for EventedAnonWrite {
         self.inner.done.store(true, Ordering::SeqCst);
 
         // Stop the writer thread waiting for contents
+        drop(self.inner.wait_tag.lock());
         self.inner.sig_buffer_not_empty.notify_one();
 
         self.thread
@@ -409,5 +436,47 @@ impl Drop for EventedAnonWrite {
             .unwrap()
             .join()
             .expect("Could not close EventedAnonWrite worker");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// Each write reaches the pipe on its own. The next one is made as
+    /// soon as the last arrived, when the worker is on its way to sleep
+    /// on an empty ring; a write whose wakeup is lost there would stay
+    /// in the ring, since no other write follows it.
+    #[test]
+    fn a_write_reaches_the_pipe_without_a_second_one() {
+        let (mut pipe, conin) = miow::pipe::anonymous(0).unwrap();
+        let mut writer = EventedAnonWrite::new(conin);
+
+        let (tx, rx) = mpsc::channel();
+        let reader = spawn(move || {
+            let mut byte = [0u8; 1];
+            while let Ok(1) = pipe.read(&mut byte) {
+                if tx.send(byte[0]).is_err() {
+                    return;
+                }
+            }
+        });
+
+        for i in 0..20_000u32 {
+            let byte = i as u8;
+            assert_eq!(writer.write(&[byte]).unwrap(), 1);
+            let got = rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the write was left in the ring");
+            assert_eq!(got, byte);
+        }
+
+        // Dropping the writer joins its worker and closes the pipe,
+        // which ends the reader.
+        drop(writer);
+        reader.join().unwrap();
     }
 }
