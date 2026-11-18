@@ -1223,6 +1223,16 @@ mod tests {
         const FG: [u8; 4] = [10, 200, 30, 255];
 
         fn draw(vb: &str, text: &str, w: u16, h: u16) -> RasterizedPayload {
+            draw_placed(vb, text, w, h, &GlyphLayout::default())
+        }
+
+        fn draw_placed(
+            vb: &str,
+            text: &str,
+            w: u16,
+            h: u16,
+            layout: &GlyphLayout,
+        ) -> RasterizedPayload {
             let glyph = parse(text.as_bytes(), parse_view_box(vb.as_bytes()).unwrap())
                 .expect("payload parses");
             rasterize_payload(
@@ -1231,10 +1241,80 @@ mod tests {
                 w,
                 h,
                 FG,
-                &GlyphLayout::default(),
+                layout,
                 0.0,
             )
             .expect("draws")
+        }
+
+        /// Rows of a 20x40 cell that have any ink.
+        fn inked_rows(r: &RasterizedPayload) -> std::ops::Range<usize> {
+            let rows: Vec<usize> = (0..r.height as usize)
+                .filter(|&y| (0..r.width as usize).any(|x| alpha(r, x, y) > 0))
+                .collect();
+            rows[0]..rows[rows.len() - 1] + 1
+        }
+
+        #[test]
+        fn fit_and_align_place_the_view_box_in_the_cell() {
+            use rio_graphics::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphSize};
+            // A 2:1 viewBox filled edge to edge, in a 1:2 cell.
+            let full = "fill=nonzero,fg:M0 0h24v12H0Z";
+            let at = |size, align_h, align_v| {
+                draw_placed(
+                    "0,0,24,12",
+                    full,
+                    20,
+                    40,
+                    &GlyphLayout {
+                        size,
+                        align_h,
+                        align_v,
+                        ..GlyphLayout::default()
+                    },
+                )
+            };
+            // contain: 20x10, centred by default.
+            let r = at(GlyphSize::Contain, GlyphAlignH::Center, GlyphAlignV::Center);
+            assert_eq!(inked_rows(&r), 15..25);
+            // The parser maps vg's Y-down `start` (top) to `End` and
+            // `end` (bottom) to `Start`; these are what they draw.
+            let top = at(GlyphSize::Contain, GlyphAlignH::Center, GlyphAlignV::End);
+            assert_eq!(inked_rows(&top), 0..10);
+            let bottom = at(GlyphSize::Contain, GlyphAlignH::Center, GlyphAlignV::Start);
+            assert_eq!(inked_rows(&bottom), 30..40);
+            // stretch fills the cell; cover overflows and is clipped to it.
+            let r = at(GlyphSize::Stretch, GlyphAlignH::Center, GlyphAlignV::Center);
+            assert_eq!(inked_rows(&r), 0..40);
+            assert!((0..20).all(|x| alpha(&r, x, 0) > 0 && alpha(&r, x, 39) > 0));
+            let r = at(GlyphSize::Cover, GlyphAlignH::Start, GlyphAlignV::Center);
+            assert_eq!(inked_rows(&r), 0..40);
+        }
+
+        #[test]
+        fn cover_with_horizontal_align_picks_the_visible_part() {
+            use rio_graphics::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphSize};
+            // Left half one colour, right half another: under cover in
+            // a narrow cell only one half shows, picked by `align`.
+            let halves =
+                "fill=nonzero,#ff0000:M0 0h12v12H0Z|fill=nonzero,#0000ff:M12 0h12v12H12Z";
+            let at = |align_h| {
+                draw_placed(
+                    "0,0,24,12",
+                    halves,
+                    20,
+                    40,
+                    &GlyphLayout {
+                        size: GlyphSize::Cover,
+                        align_h,
+                        align_v: GlyphAlignV::Center,
+                        ..GlyphLayout::default()
+                    },
+                )
+            };
+            let red = |r: &RasterizedPayload| rgba_at(r, 10, 20)[0] > 200;
+            assert!(red(&at(GlyphAlignH::Start)), "left half at the start");
+            assert!(!red(&at(GlyphAlignH::End)), "right half at the end");
         }
 
         fn alpha(r: &RasterizedPayload, x: usize, y: usize) -> u8 {

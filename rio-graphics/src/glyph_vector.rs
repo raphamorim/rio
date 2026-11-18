@@ -528,7 +528,7 @@ fn read_matrix(c: &mut Cursor<'_>) -> Result<[f32; 6], VectorError> {
         if i > 0 {
             c.skip_comma_wsp();
         }
-        *value = c.number().map_err(|_| VectorError::Malformed)?;
+        *value = c.number()?;
     }
     let (least, most) = stretch(m);
     if !(least >= 1.0 / MAX_MATRIX_STRETCH && most <= MAX_MATRIX_STRETCH) {
@@ -597,7 +597,7 @@ fn parse_gradient(body: &[u8], radial: bool) -> Result<LayerColor, VectorError> 
         if i > 0 {
             c.skip_comma_wsp();
         }
-        *value = c.number().map_err(|_| VectorError::Malformed)?;
+        *value = c.number()?;
     }
     let shape = if radial {
         let [fx, fy, fr, cx, cy, r] = geometry;
@@ -654,7 +654,7 @@ fn parse_gradient(body: &[u8], radial: bool) -> Result<LayerColor, VectorError> 
             s: raw_stop,
             pos: 0,
         };
-        let offset = c.number().map_err(|_| VectorError::Malformed)?;
+        let offset = c.number()?;
         if !(last..=1.0).contains(&offset) {
             return Err(VectorError::Malformed);
         }
@@ -2419,6 +2419,61 @@ mod tests {
         }
         // Enough survive mutation to exercise the checks above.
         assert!(accepted > 5_000, "only {accepted} parsed");
+    }
+
+    #[test]
+    fn repeated_closes_are_free() {
+        // A `Z` right after another closes nothing, so it isn't a
+        // segment (§8.9.5): thousands of them still fit.
+        let closes = format!("fill=nonzero,fg:M0 0h4v4{}", "z".repeat(MAX_SEGMENTS * 2));
+        assert_eq!(layer(&closes).unwrap().segments.len(), 4);
+    }
+
+    #[test]
+    fn path_length_is_measured_after_the_layer_matrix() {
+        // 96 units per square: 16 fit in 64 sizes of 24, 17 don't.
+        // Halved by a matrix each is 48, so 32 fit and 33 don't.
+        let square = "M0 0h24v24h-24z";
+        let at_half =
+            |n: usize| format!("fill=nonzero,fg,m .5 0 0 .5 0 0:{}", square.repeat(n));
+        assert!(layer(&at_half(32)).is_ok());
+        assert_eq!(layer(&at_half(33)), Err(VectorError::TooLarge));
+        // A stroke's per-segment width is charged through the matrix
+        // too: width 12 doubled costs as much as width 24 unscaled.
+        let short = "h.05h-.05".repeat(32);
+        assert_eq!(
+            layer(&format!("stroke=24,fg:M6 6{short}")),
+            Err(VectorError::TooLarge)
+        );
+        assert_eq!(
+            layer(&format!("stroke=12,fg,m 2 0 0 2 0 0:M6 6{short}")),
+            Err(VectorError::TooLarge)
+        );
+        assert!(layer(&format!("stroke=12,fg:M6 6{short}")).is_ok());
+    }
+
+    #[test]
+    fn numbers_too_big_for_f32_are_too_large_everywhere() {
+        // A number that doesn't fit is a limit (§8.9.5), wherever it
+        // appears; a number that's only out of range is malformed.
+        for payload in [
+            "fill=nonzero,fg:M0 0L1e39 0",
+            "fill=nonzero,lin(0 0 1e39 0 / 0 fg / 1 fg):M0 0h1",
+            "fill=nonzero,lin(0 0 1 0 / 0 fg / 1e39 fg):M0 0h1",
+            "fill=nonzero,fg,m 1e39 0 0 1 0 0:M0 0h1",
+            "stroke=1e39,fg:M0 0h1",
+            "fill=nonzero,fg@1e39:M0 0h1",
+        ] {
+            assert_eq!(layer(payload), Err(VectorError::TooLarge), "{payload}");
+        }
+        for payload in [
+            "fill=nonzero,lin(0 0 1 0 / 0 fg / 2 fg):M0 0h1",
+            "fill=nonzero,fg,m 1e30 0 0 1 0 0:M0 0h1",
+            "stroke=1e30,fg:M0 0h1",
+            "fill=nonzero,fg@2:M0 0h1",
+        ] {
+            assert_eq!(layer(payload), Err(VectorError::Malformed), "{payload}");
+        }
     }
 
     #[test]

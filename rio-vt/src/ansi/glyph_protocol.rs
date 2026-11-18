@@ -18,13 +18,13 @@
 //            (or a "foreground" sentinel) plus a `glyf` outline; layers
 //            composite in painter-order.
 //   colrv1 — same layer model as colrv0 but each layer carries a paint:
-//            solid, linear gradient, radial gradient, or foreground. No
-//            affine transforms and no sweep gradients in v1.
+//            solid, linear, radial or sweep gradient, or foreground,
+//            under affine transforms.
 //   vg     — SVG's path data and paint model sent as plain ASCII, not
 //            base64: layers of fills, strokes and clips, painted with
 //            the foreground, a fixed colour or a gradient, in the
 //            coordinate system of a `vb=x,y,w,h` key. Not an SVG
-//            document. Proof of concept, not in the spec yet; see
+//            document. The recommended format (spec §8.9); see
 //            `rio_graphics::glyph_vector`.
 //
 // `cp` is always a single codepoint. For `r` and `c`, `cp` MUST be in
@@ -256,6 +256,8 @@ pub enum RegisterError {
     MalformedPayload,
     PayloadTooLarge,
     OutlineTooLarge,
+    /// `fmt` names a format this terminal doesn't list in `s`.
+    UnsupportedFormat,
 }
 
 impl RegisterError {
@@ -267,6 +269,7 @@ impl RegisterError {
             RegisterError::MalformedPayload => "malformed_payload",
             RegisterError::PayloadTooLarge => "payload_too_large",
             RegisterError::OutlineTooLarge => "outline_too_large",
+            RegisterError::UnsupportedFormat => "unsupported_format",
         }
     }
 }
@@ -398,9 +401,17 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         });
     }
 
+    // No `fmt` means `glyf`, so registrations from before formats were
+    // negotiated keep working. A format this terminal doesn't list in
+    // `s` gets its own reason, so a client can tell it from a bad
+    // payload and fall back to a listed one.
     let fmt = params.get("fmt").copied().unwrap_or(b"glyf");
-    if fmt != b"glyf" && fmt != b"colrv0" && fmt != b"colrv1" && fmt != b"vg" {
-        return Err(ParseError::Malformed("register fmt unknown"));
+    if !SUPPORTED_FORMATS.iter().any(|name| name.as_bytes() == fmt) {
+        return Err(ParseError::RegisterFailed {
+            cp,
+            reason: RegisterError::UnsupportedFormat,
+            reply,
+        });
     }
 
     let malformed = || ParseError::RegisterFailed {
@@ -518,7 +529,7 @@ fn parse_vector_payload(
 /// `fmt=vg` placement: the viewBox is the extent, so the keys are the
 /// ones SVG's `preserveAspectRatio` has. `fit` is `contain` (default),
 /// `cover` or `stretch`; `align` is `<h>,<v>` with `start`, `center`
-/// or `end` on each axis. A viewBox is Y-down with no baseline, so
+/// or `end` on each axis, `start` being the left and the top. A viewBox is Y-down with no baseline, so
 /// `baseline` is invalid here. `size`, `pad` and the font-metric keys
 /// (`upm`, `aw`, `lh`, `ymin`) belong to the font formats and are
 /// ignored, like any key a format doesn't use.
@@ -545,8 +556,11 @@ fn parse_vector_layout(params: &Params<'_>) -> Option<GlyphLayout> {
         };
         layout.align_h =
             [GlyphAlignH::Start, GlyphAlignH::Center, GlyphAlignH::End][axis(h)?];
+        // The viewBox is Y-down, as in SVG, so a vertical `start` is
+        // the top (SVG's `yMin`). `GlyphAlignV` is Y-up like the font
+        // formats (§8.5.4), where `start` is the bottom: flip it here.
         layout.align_v =
-            [GlyphAlignV::Start, GlyphAlignV::Center, GlyphAlignV::End][axis(v)?];
+            [GlyphAlignV::End, GlyphAlignV::Center, GlyphAlignV::Start][axis(v)?];
     }
     Some(layout)
 }
@@ -1272,11 +1286,61 @@ mod tests {
     #[test]
     fn register_rejects_unknown_fmt() {
         let payload = b64(b"x");
-        let body = format!("25a1;r;cp=100000;fmt=svg;upm=1000;{}", payload);
+        // Not a format Rio lists in `s`: its own reason, not a parse
+        // error, and the reply level still applies.
+        for (fmt, reply) in [
+            ("svg", ReplyMode::All),
+            ("woff2", ReplyMode::All),
+            ("GLYF", ReplyMode::All),
+            ("", ReplyMode::None),
+        ] {
+            let level = if reply == ReplyMode::None {
+                "reply=0;"
+            } else {
+                ""
+            };
+            let body = format!("25a1;r;cp=100000;fmt={fmt};{level}upm=1000;{payload}");
+            assert_eq!(
+                parse(body.as_bytes()),
+                Err(ParseError::RegisterFailed {
+                    cp: 0x10_0000,
+                    reason: RegisterError::UnsupportedFormat,
+                    reply,
+                }),
+                "fmt={fmt}"
+            );
+        }
+        // The block check still comes first.
+        let body = format!("25a1;r;cp=E000;fmt=svg;{payload}");
         assert!(matches!(
             parse(body.as_bytes()),
-            Err(ParseError::Malformed(_))
+            Err(ParseError::RegisterFailed {
+                reason: RegisterError::OutOfNamespace,
+                ..
+            })
         ));
+        assert_eq!(
+            format_register_error(0x10_0000, RegisterError::UnsupportedFormat),
+            "\x1b_25a1;r;cp=100000;status=1;reason=unsupported_format\x1b\\"
+        );
+    }
+
+    #[test]
+    fn every_advertised_format_is_accepted_by_name() {
+        // `s` and `r` read the same list, so they can't drift apart.
+        for fmt in SUPPORTED_FORMATS {
+            let body = format!("25a1;r;cp=100000;fmt={fmt};x");
+            assert!(
+                !matches!(
+                    parse(body.as_bytes()),
+                    Err(ParseError::RegisterFailed {
+                        reason: RegisterError::UnsupportedFormat,
+                        ..
+                    })
+                ),
+                "{fmt}"
+            );
+        }
     }
 
     #[test]
@@ -1312,9 +1376,11 @@ stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A
         assert_eq!(layout("").unwrap(), GlyphLayout::default());
         let l = layout("fit=cover;align=end,start;").unwrap();
         assert_eq!(l.size, GlyphSize::Cover);
+        // Y-down: the top, which the Y-up enum calls `End`.
+        assert_eq!((l.align_h, l.align_v), (GlyphAlignH::End, GlyphAlignV::End));
         assert_eq!(
-            (l.align_h, l.align_v),
-            (GlyphAlignH::End, GlyphAlignV::Start)
+            layout("align=start,end;").unwrap().align_v,
+            GlyphAlignV::Start
         );
         assert_eq!(layout("fit=stretch;").unwrap().size, GlyphSize::Stretch);
         // The font formats' keys don't apply and are ignored.
@@ -1363,10 +1429,10 @@ stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A
             "l1 0 -1 0 ".repeat(3000)
         );
         assert_eq!(reason(&many), Some(RegisterError::OutlineTooLarge));
-        // Past 64 KiB of text.
+        // Past 32 KiB of text.
         let huge = format!(
             "25a1;r;cp=100000;fmt=vg;vb=0,0,24,24;fill=nonzero,fg:M0 0{}",
-            "l0 0".repeat(17_000)
+            "l0 0".repeat(MAX_PAYLOAD_BYTES / 4 + 1)
         );
         assert_eq!(reason(&huge), Some(RegisterError::PayloadTooLarge));
         // The block check still comes first.

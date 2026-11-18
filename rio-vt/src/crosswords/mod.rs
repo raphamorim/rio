@@ -7426,6 +7426,22 @@ mod tests {
 
     #[cfg(feature = "graphics")]
     #[test]
+    fn glyph_protocol_answers_an_unsupported_format() {
+        let (mut cw, events) = make_crosswords_with_events(2);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b_25a1;r;cp=100003;fmt=woff2;AAAA\x1b\\");
+        assert_eq!(
+            pty_writes(&events),
+            vec![
+                "\x1b_25a1;r;cp=100003;status=1;reason=unsupported_format\x1b\\"
+                    .to_string()
+            ]
+        );
+        assert!(cw.glyph_registry.is_none());
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
     fn glyph_protocol_registers_a_vector_glyph_from_the_wire() {
         let (mut cw, events) = make_crosswords_with_events(2);
         let mut parser = crate::performer::handler::Processor::default();
