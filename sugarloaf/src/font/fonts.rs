@@ -128,26 +128,6 @@ fn default_font_family() -> String {
     DEFAULT_FONT_FAMILY.to_string()
 }
 
-/// Where shaping breaks a row into separate runs beyond the breaks the
-/// content forces. A run is a stretch of text shaped together, which is
-/// how ligatures form; text on either side of a break is shaped apart,
-/// so a ligature cannot span it.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy)]
-pub struct ShapingBreak {
-    /// Break the run around the cursor cell, so a ligature under the
-    /// cursor shows its characters one by one while editing. On by
-    /// default. Off, the cursor never changes how a row is shaped and
-    /// a cursor move never rebuilds a row.
-    #[serde(default = "default_bool_true")]
-    pub cursor: bool,
-}
-
-impl Default for ShapingBreak {
-    fn default() -> Self {
-        Self { cursor: true }
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct SugarloafFonts {
     #[serde(default = "default_font_size")]
@@ -156,8 +136,14 @@ pub struct SugarloafFonts {
     pub hinting: bool,
     #[serde(default = "Option::default")]
     pub features: Option<Vec<String>>,
-    #[serde(default, rename = "shaping-break")]
-    pub shaping_break: ShapingBreak,
+    /// Break shaping runs around the cursor cell, so a ligature under
+    /// the cursor shows its characters one by one while editing. A run
+    /// is a stretch of text shaped together, which is how ligatures
+    /// form; text on either side of a break is shaped apart. On by
+    /// default. Off, the cursor never changes how a row is shaped and
+    /// a cursor move never rebuilds a row.
+    #[serde(default = "default_bool_true", rename = "cursor-shaping-break")]
+    pub cursor_shaping_break: bool,
     #[serde(default = "Option::default")]
     pub family: Option<String>,
     #[serde(default)]
@@ -192,7 +178,7 @@ impl Default for SugarloafFonts {
     fn default() -> SugarloafFonts {
         SugarloafFonts {
             features: None,
-            shaping_break: ShapingBreak::default(),
+            cursor_shaping_break: true,
             hinting: true,
             size: default_font_size(),
             family: None,

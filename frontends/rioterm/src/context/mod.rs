@@ -151,7 +151,7 @@ pub struct ContextManagerConfig {
     /// Where the renderer breaks shaping runs; the terminal needs to
     /// know about the break at the cursor to mark the rows a cursor
     /// move changes.
-    pub shaping_break: rio_backend::sugarloaf::font::fonts::ShapingBreak,
+    pub cursor_shaping_break: bool,
     /// The configured palette, handed to every terminal so it answers
     /// color queries itself.
     pub colors: rio_backend::config::colors::term::List,
@@ -322,7 +322,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             context
                 .terminal
                 .lock()
-                .set_cursor_shaping_break(config.shaping_break.cursor);
+                .set_cursor_shaping_break(config.cursor_shaping_break);
             return Ok(context);
         }
 
@@ -340,7 +340,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             config.scrollback_history_limit,
         );
         terminal.set_grapheme_clustering(config.grapheme_clustering);
-        terminal.set_cursor_shaping_break(config.shaping_break.cursor);
+        terminal.set_cursor_shaping_break(config.cursor_shaping_break);
         terminal.set_default_colors(config.colors);
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<TerminalLock<Crosswords<T>>> =
@@ -1556,7 +1556,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
-            shaping_break: config.fonts.shaping_break,
+            cursor_shaping_break: config.fonts.cursor_shaping_break,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
         };
 
@@ -1761,27 +1761,25 @@ pub mod test {
     // renderer breaks shaping at the cursor; the context passes the
     // configured answer on when it creates the terminal.
     #[test]
-    fn a_context_tells_its_terminal_about_the_shaping_break() {
-        use rio_backend::sugarloaf::font::fonts::ShapingBreak;
+    fn a_context_tells_its_terminal_about_the_cursor_shaping_break() {
         let dimension = ContextDimension::default();
-        let on = create_mock_context(VoidListener {}, WindowId::from(0), 0, dimension);
-        assert!(on.terminal.lock().cursor_shaping_break(), "on by default");
-
-        let config = ContextManagerConfig {
-            dead_pty: true,
-            shaping_break: ShapingBreak { cursor: false },
-            ..ContextManagerConfig::default()
-        };
-        let off = ContextManager::create_context(
-            (&Cursor::default(), false),
-            VoidListener {},
-            WindowId::from(0),
-            1,
-            dimension,
-            &config,
-        )
-        .unwrap();
-        assert!(!off.terminal.lock().cursor_shaping_break());
+        for enabled in [true, false] {
+            let config = ContextManagerConfig {
+                dead_pty: true,
+                cursor_shaping_break: enabled,
+                ..ContextManagerConfig::default()
+            };
+            let context = ContextManager::create_context(
+                (&Cursor::default(), false),
+                VoidListener {},
+                WindowId::from(0),
+                1,
+                dimension,
+                &config,
+            )
+            .unwrap();
+            assert_eq!(context.terminal.lock().cursor_shaping_break(), enabled);
+        }
     }
 
     #[test]

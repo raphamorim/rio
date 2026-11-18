@@ -266,7 +266,7 @@ impl Screen<'_> {
             keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
-            shaping_break: config.fonts.shaping_break,
+            cursor_shaping_break: config.fonts.cursor_shaping_break,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
         };
 
@@ -561,12 +561,13 @@ impl Screen<'_> {
         // them the new one.
         let colors = rio_backend::config::colors::term::List::from(&config.colors);
         self.context_manager.config.colors = colors;
-        self.context_manager.config.shaping_break = config.fonts.shaping_break;
+        self.context_manager.config.cursor_shaping_break =
+            config.fonts.cursor_shaping_break;
         for grid in self.context_manager.contexts_mut() {
             for item in grid.contexts_mut().values_mut() {
                 let mut terminal = item.val.terminal.lock();
                 terminal.set_default_colors(colors);
-                terminal.set_cursor_shaping_break(config.fonts.shaping_break.cursor);
+                terminal.set_cursor_shaping_break(config.fonts.cursor_shaping_break);
             }
         }
         if let Some(mut island) = old_island {
@@ -4410,7 +4411,7 @@ impl Screen<'_> {
                             preedit_row.as_ref(),
                             &mut bg_scratch,
                         );
-                        let cursor_col_for_row = if renderer_ref.shaping_break.cursor
+                        let cursor_col_for_row = if renderer_ref.cursor_shaping_break
                             && p.cursor_visible
                             && (y as u16) == p.cursor_row
                             && p.cursor_shape != rio_backend::ansi::CursorShape::Hidden

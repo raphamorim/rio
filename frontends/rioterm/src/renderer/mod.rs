@@ -177,7 +177,7 @@ pub struct Renderer {
     /// Where shaping breaks runs beyond what the content forces; the
     /// row builder gets the cursor column only when the break at the
     /// cursor is on.
-    pub shaping_break: rio_backend::sugarloaf::font::fonts::ShapingBreak,
+    pub cursor_shaping_break: bool,
     pub config_blinking_interval: u64,
     pub(crate) ignore_selection_fg_color: bool,
     pub search: search::SearchOverlay,
@@ -252,7 +252,7 @@ impl Renderer {
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
             config_has_blinking_enabled: config.cursor.blinking,
-            shaping_break: config.fonts.shaping_break,
+            cursor_shaping_break: config.fonts.cursor_shaping_break,
             is_window_focused: true,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
@@ -1393,11 +1393,11 @@ mod grid_cell_bg_tests {
     // The row builder is handed the cursor column only when the break
     // at the cursor is on, which the font config decides.
     #[test]
-    fn the_shaping_break_comes_from_the_font_config() {
-        assert!(Renderer::new(&Config::default()).shaping_break.cursor);
+    fn the_cursor_shaping_break_comes_from_the_font_config() {
+        assert!(Renderer::new(&Config::default()).cursor_shaping_break);
         let mut config = Config::default();
-        config.fonts.shaping_break.cursor = false;
-        assert!(!Renderer::new(&config).shaping_break.cursor);
+        config.fonts.cursor_shaping_break = false;
+        assert!(!Renderer::new(&config).cursor_shaping_break);
     }
 
     #[test]
