@@ -92,6 +92,14 @@ pub fn rasterize_payload(
             layout,
             baseline_px,
         ),
+        StoredPayload::Vector { glyph } => rasterize_vector(
+            glyph,
+            cell_width_px,
+            cell_height_px,
+            foreground_rgba,
+            layout,
+            baseline_px,
+        ),
     }
 }
 
@@ -131,7 +139,32 @@ impl SpanPlacement {
             let [x_min, y_min, x_max, y_max] = bounds()?;
             (x_min, x_max - x_min, y_min, y_max - y_min)
         };
-        if upm == 0 || aw <= 0.0 || lh <= 0.0 || span_w_px == 0 || cell_h_px == 0 {
+        if upm == 0 {
+            return None;
+        }
+        // Without a declared extent the em keeps a set in proportion.
+        let em_cap = (!declared).then_some(upm as f32);
+        Self::for_extent(
+            layout,
+            [x0, aw, y0, lh],
+            em_cap,
+            span_w_px,
+            cell_h_px,
+            baseline_px,
+        )
+    }
+
+    /// Place a known extent `[x0, aw, y0, lh]` (Y-up design units).
+    /// `em_cap`, when set, keeps `contain` from scaling past the em.
+    fn for_extent(
+        layout: &GlyphLayout,
+        [x0, aw, y0, lh]: [f32; 4],
+        em_cap: Option<f32>,
+        span_w_px: u16,
+        cell_h_px: u16,
+        baseline_px: f32,
+    ) -> Option<Self> {
+        if aw <= 0.0 || lh <= 0.0 || span_w_px == 0 || cell_h_px == 0 {
             return None;
         }
 
@@ -144,11 +177,9 @@ impl SpanPlacement {
 
         // §8.5.3: scale factors.
         let (fit_w, fit_h) = (w / aw, h / lh);
-        // Without a declared extent the em keeps a set in proportion.
-        let contain = if declared {
-            fit_w.min(fit_h)
-        } else {
-            fit_w.min(fit_h).min(w.min(h) / upm as f32)
+        let contain = match em_cap {
+            None => fit_w.min(fit_h),
+            Some(em) => fit_w.min(fit_h).min(w.min(h) / em),
         };
         let (sx, sy) = match layout.size {
             GlyphSize::Height => (fit_h, fit_h),
@@ -260,6 +291,226 @@ fn rasterize_mono(
     })
 }
 
+/// Draw a `fmt=vg` glyph. The viewBox is the extent, placed by `fit`
+/// and `align` (no baseline, so the baseline is unused). A glyph whose colours are all
+/// the foreground, gradient stops included, becomes an A8 mask (layer
+/// alphas composite into its coverage) so the grid tints it like
+/// `glyf`; any fixed colour makes it RGBA with the foreground resolved
+/// now. A clip layer turns into a mask that the next layers draw
+/// through.
+fn rasterize_vector(
+    glyph: &rio_graphics::glyph_vector::VectorGlyph,
+    cell_width_px: u16,
+    cell_height_px: u16,
+    foreground_rgba: [u8; 4],
+    layout: &GlyphLayout,
+    baseline_px: f32,
+) -> Option<RasterizedPayload> {
+    use rio_graphics::glyph_vector::{LayerOp, Segment};
+
+    let vb = glyph.view_box;
+    // Path data is Y-down; the placement works in Y-up design units, so
+    // the viewBox's vertical range [y, y + h] becomes [-(y + h), -y].
+    let span = SpanPlacement::for_extent(
+        layout,
+        [vb.x, vb.w, -(vb.y + vb.h), vb.h],
+        None,
+        cell_width_px,
+        cell_height_px,
+        baseline_px,
+    )?;
+    // A design point (x, -vy) lands on (tx + x * sx, ty + vy * sy).
+    let ctm = Transform::from_row(span.sx, 0.0, 0.0, span.sy, span.tx, span.ty);
+
+    let monochrome = glyph.is_monochrome();
+    let (pix_w, pix_h) = (cell_width_px as u32, cell_height_px as u32);
+    let mut pixmap = Pixmap::new(pix_w, pix_h)?;
+    // The clip in force and how many more layers it covers.
+    let mut clip: Option<(Mask, usize)> = None;
+    for layer in &glyph.layers {
+        let mut pb = PathBuilder::new();
+        for segment in &layer.segments {
+            match *segment {
+                Segment::MoveTo(x, y) => pb.move_to(x, y),
+                Segment::LineTo(x, y) => pb.line_to(x, y),
+                Segment::QuadTo(cx, cy, x, y) => pb.quad_to(cx, cy, x, y),
+                Segment::CubicTo(c1x, c1y, c2x, c2y, x, y) => {
+                    pb.cubic_to(c1x, c1y, c2x, c2y, x, y)
+                }
+                Segment::Close => pb.close(),
+            }
+        }
+        // A path that is only a degenerate line has no area: drawn, it
+        // shows nothing; as a clip, it hides everything it covers.
+        let path = pb.finish();
+        // The layer's own matrix, then the placement. A gradient on the
+        // layer is in the path's coordinates, so it follows too.
+        let ctm = match layer.transform {
+            Some([a, b, c, d, e, f]) => {
+                ctm.pre_concat(Transform::from_row(a, b, c, d, e, f))
+            }
+            None => ctm,
+        };
+
+        if let LayerOp::Clip { rule, count } = &layer.op {
+            let mut mask = Mask::new(pix_w, pix_h)?;
+            if let Some(path) = &path {
+                mask.fill_path(path, fill_rule(*rule), true, ctm);
+            }
+            clip = Some((mask, *count));
+            continue;
+        }
+
+        if let Some(path) = &path {
+            let mask = clip.as_ref().map(|(mask, _)| mask);
+            match &layer.op {
+                LayerOp::Fill { rule, color } => {
+                    let paint = vector_paint(color, monochrome, foreground_rgba);
+                    pixmap.fill_path(path, &paint, fill_rule(*rule), ctm, mask);
+                }
+                LayerOp::Stroke { style, color } => {
+                    use rio_graphics::glyph_vector::{LineCap, LineJoin};
+                    let paint = vector_paint(color, monochrome, foreground_rgba);
+                    let stroke = tiny_skia::Stroke {
+                        width: style.width,
+                        line_cap: match style.cap {
+                            LineCap::Round => tiny_skia::LineCap::Round,
+                            LineCap::Butt => tiny_skia::LineCap::Butt,
+                            LineCap::Square => tiny_skia::LineCap::Square,
+                        },
+                        line_join: match style.join {
+                            LineJoin::Round => tiny_skia::LineJoin::Round,
+                            LineJoin::Bevel => tiny_skia::LineJoin::Bevel,
+                            LineJoin::Miter => tiny_skia::LineJoin::Miter,
+                        },
+                        miter_limit: style.miter_limit,
+                        ..tiny_skia::Stroke::default()
+                    };
+                    pixmap.stroke_path(path, &paint, &stroke, ctm, mask);
+                }
+                LayerOp::Clip { .. } => unreachable!("handled above"),
+            }
+        }
+        if let Some((_, left)) = &mut clip {
+            *left -= 1;
+            if *left == 0 {
+                clip = None;
+            }
+        }
+    }
+
+    let data = if monochrome {
+        pixmap.pixels().iter().map(|p| p.alpha()).collect()
+    } else {
+        pixmap_to_rgba(&pixmap)
+    };
+    Some(RasterizedPayload {
+        data,
+        width: pix_w as u16,
+        height: pix_h as u16,
+        is_color: !monochrome,
+    })
+}
+
+fn fill_rule(rule: rio_graphics::glyph_vector::FillRule) -> FillRule {
+    match rule {
+        rio_graphics::glyph_vector::FillRule::NonZero => FillRule::Winding,
+        rio_graphics::glyph_vector::FillRule::EvenOdd => FillRule::EvenOdd,
+    }
+}
+
+/// A solid colour as drawn: for a monochrome glyph the foreground is
+/// white with its alpha, which becomes the mask's coverage; otherwise
+/// the foreground is resolved now.
+fn vector_solid(
+    solid: &rio_graphics::glyph_vector::Solid,
+    monochrome: bool,
+    foreground_rgba: [u8; 4],
+) -> [u8; 4] {
+    use rio_graphics::glyph_vector::Solid;
+    match *solid {
+        Solid::Foreground { alpha } if monochrome => [0xFF, 0xFF, 0xFF, alpha],
+        Solid::Foreground { alpha } => {
+            let [r, g, b, fg_a] = foreground_rgba;
+            [r, g, b, ((fg_a as u16 * alpha as u16 + 127) / 255) as u8]
+        }
+        Solid::Rgba(rgba) => rgba,
+    }
+}
+
+fn vector_paint(
+    color: &rio_graphics::glyph_vector::LayerColor,
+    monochrome: bool,
+    foreground_rgba: [u8; 4],
+) -> SkPaint<'static> {
+    use rio_graphics::glyph_vector::{GradientShape, LayerColor, Spread};
+    let rgba = |c: [u8; 4]| Color::from_rgba8(c[0], c[1], c[2], c[3]);
+    let mut paint = SkPaint {
+        anti_alias: true,
+        ..SkPaint::default()
+    };
+    match color {
+        LayerColor::Solid(solid) => {
+            let [r, g, b, a] = vector_solid(solid, monochrome, foreground_rgba);
+            paint.set_color_rgba8(r, g, b, a);
+        }
+        LayerColor::Gradient(gradient) => {
+            let stops: Vec<GradientStop> = gradient
+                .stops
+                .iter()
+                .map(|stop| {
+                    GradientStop::new(
+                        stop.offset,
+                        rgba(vector_solid(&stop.color, monochrome, foreground_rgba)),
+                    )
+                })
+                .collect();
+            let spread = match gradient.spread {
+                Spread::Pad => SpreadMode::Pad,
+                Spread::Reflect => SpreadMode::Reflect,
+                Spread::Repeat => SpreadMode::Repeat,
+            };
+            let [a, b, c, d, e, f] = gradient.transform;
+            let transform = Transform::from_row(a, b, c, d, e, f);
+            let last = gradient
+                .stops
+                .last()
+                .map(|stop| rgba(vector_solid(&stop.color, monochrome, foreground_rgba)));
+            let shader = match gradient.shape {
+                GradientShape::Linear { x1, y1, x2, y2 } => LinearGradient::new(
+                    Point::from_xy(x1, y1),
+                    Point::from_xy(x2, y2),
+                    stops,
+                    spread,
+                    transform,
+                ),
+                GradientShape::Radial {
+                    fx,
+                    fy,
+                    fr,
+                    cx,
+                    cy,
+                    r,
+                } => RadialGradient::new(
+                    Point::from_xy(fx, fy),
+                    fr,
+                    Point::from_xy(cx, cy),
+                    r,
+                    stops,
+                    spread,
+                    transform,
+                ),
+            };
+            // A gradient with no extent (both points or circles the
+            // same) paints its last stop, as SVG does.
+            paint.shader = shader
+                .or_else(|| last.map(Shader::SolidColor))
+                .unwrap_or(Shader::SolidColor(Color::TRANSPARENT));
+        }
+    }
+    paint
+}
+
 /// Parse a colour container's `COLR` table against its `CPAL`.
 ///
 /// A container may ship no CPAL (legal for v1 paints that only use
@@ -321,6 +572,11 @@ pub fn payload_uses_foreground(
     use crate::font::glyph_registry::StoredPayload;
     let (glyphs, colr, cpal) = match payload {
         StoredPayload::Glyf { .. } => return false,
+        // An all-foreground vector glyph is an alpha mask tinted at draw
+        // time; one with fixed colours bakes the foreground in.
+        StoredPayload::Vector { glyph } => {
+            return !glyph.is_monochrome() && glyph.uses_foreground()
+        }
         StoredPayload::ColrV0 { glyphs, colr, cpal }
         | StoredPayload::ColrV1 { glyphs, colr, cpal } => (glyphs, colr, cpal),
     };
@@ -958,6 +1214,425 @@ fn intersect_masks(dst: &mut Mask, src: &Mask) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod vector_format {
+        use super::*;
+        use crate::font::glyph_registry::StoredPayload;
+        use rio_graphics::glyph_vector::{parse, parse_view_box};
+
+        const FG: [u8; 4] = [10, 200, 30, 255];
+
+        fn draw(vb: &str, text: &str, w: u16, h: u16) -> RasterizedPayload {
+            draw_placed(vb, text, w, h, &GlyphLayout::default())
+        }
+
+        fn draw_placed(
+            vb: &str,
+            text: &str,
+            w: u16,
+            h: u16,
+            layout: &GlyphLayout,
+        ) -> RasterizedPayload {
+            let glyph = parse(text.as_bytes(), parse_view_box(vb.as_bytes()).unwrap())
+                .expect("payload parses");
+            rasterize_payload(
+                &StoredPayload::Vector { glyph },
+                1000,
+                w,
+                h,
+                FG,
+                layout,
+                0.0,
+            )
+            .expect("draws")
+        }
+
+        /// Rows of a 20x40 cell that have any ink.
+        fn inked_rows(r: &RasterizedPayload) -> std::ops::Range<usize> {
+            let rows: Vec<usize> = (0..r.height as usize)
+                .filter(|&y| (0..r.width as usize).any(|x| alpha(r, x, y) > 0))
+                .collect();
+            rows[0]..rows[rows.len() - 1] + 1
+        }
+
+        #[test]
+        fn fit_and_align_place_the_view_box_in_the_cell() {
+            use rio_graphics::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphSize};
+            // A 2:1 viewBox filled edge to edge, in a 1:2 cell.
+            let full = "fill=nonzero,fg:M0 0h24v12H0Z";
+            let at = |size, align_h, align_v| {
+                draw_placed(
+                    "0,0,24,12",
+                    full,
+                    20,
+                    40,
+                    &GlyphLayout {
+                        size,
+                        align_h,
+                        align_v,
+                        ..GlyphLayout::default()
+                    },
+                )
+            };
+            // contain: 20x10, centred by default.
+            let r = at(GlyphSize::Contain, GlyphAlignH::Center, GlyphAlignV::Center);
+            assert_eq!(inked_rows(&r), 15..25);
+            // The parser maps vg's Y-down `start` (top) to `End` and
+            // `end` (bottom) to `Start`; these are what they draw.
+            let top = at(GlyphSize::Contain, GlyphAlignH::Center, GlyphAlignV::End);
+            assert_eq!(inked_rows(&top), 0..10);
+            let bottom = at(GlyphSize::Contain, GlyphAlignH::Center, GlyphAlignV::Start);
+            assert_eq!(inked_rows(&bottom), 30..40);
+            // stretch fills the cell; cover overflows and is clipped to it.
+            let r = at(GlyphSize::Stretch, GlyphAlignH::Center, GlyphAlignV::Center);
+            assert_eq!(inked_rows(&r), 0..40);
+            assert!((0..20).all(|x| alpha(&r, x, 0) > 0 && alpha(&r, x, 39) > 0));
+            let r = at(GlyphSize::Cover, GlyphAlignH::Start, GlyphAlignV::Center);
+            assert_eq!(inked_rows(&r), 0..40);
+        }
+
+        #[test]
+        fn cover_with_horizontal_align_picks_the_visible_part() {
+            use rio_graphics::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphSize};
+            // Left half one colour, right half another: under cover in
+            // a narrow cell only one half shows, picked by `align`.
+            let halves =
+                "fill=nonzero,#ff0000:M0 0h12v12H0Z|fill=nonzero,#0000ff:M12 0h12v12H12Z";
+            let at = |align_h| {
+                draw_placed(
+                    "0,0,24,12",
+                    halves,
+                    20,
+                    40,
+                    &GlyphLayout {
+                        size: GlyphSize::Cover,
+                        align_h,
+                        align_v: GlyphAlignV::Center,
+                        ..GlyphLayout::default()
+                    },
+                )
+            };
+            let red = |r: &RasterizedPayload| rgba_at(r, 10, 20)[0] > 200;
+            assert!(red(&at(GlyphAlignH::Start)), "left half at the start");
+            assert!(!red(&at(GlyphAlignH::End)), "right half at the end");
+        }
+
+        fn alpha(r: &RasterizedPayload, x: usize, y: usize) -> u8 {
+            if r.is_color {
+                r.data[(y * r.width as usize + x) * 4 + 3]
+            } else {
+                r.data[y * r.width as usize + x]
+            }
+        }
+
+        #[test]
+        fn foreground_fill_is_an_alpha_mask() {
+            // A 24-unit box contained and centred in a 20x40 cell: 20 px
+            // square from y = 10 to 30.
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M0 0h24v24H0Z", 20, 40);
+            assert!(!r.is_color);
+            assert_eq!((r.width, r.height), (20, 40));
+            assert_eq!(alpha(&r, 10, 20), 255);
+            assert_eq!(alpha(&r, 10, 5), 0, "above the contained square");
+            assert_eq!(alpha(&r, 10, 35), 0, "below it");
+        }
+
+        #[test]
+        fn even_odd_cuts_a_hole_and_nonzero_does_not() {
+            let rings = "M0 0h24v24H0ZM6 6h12v12H6Z";
+            let evenodd = draw("0,0,24,24", &format!("fill=evenodd,fg:{rings}"), 24, 24);
+            let nonzero = draw("0,0,24,24", &format!("fill=nonzero,fg:{rings}"), 24, 24);
+            assert_eq!(alpha(&evenodd, 12, 12), 0);
+            assert_eq!(alpha(&nonzero, 12, 12), 255);
+            assert_eq!(alpha(&evenodd, 2, 2), 255);
+        }
+
+        #[test]
+        fn strokes_are_round_and_scale_with_the_glyph() {
+            // A 4-unit line across the middle of a 24-unit box at 1:1.
+            let r = draw("0,0,24,24", "stroke=4,fg:M6 12h12", 24, 24);
+            assert_eq!(alpha(&r, 12, 12), 255);
+            assert_eq!(alpha(&r, 12, 5), 0);
+            // The round cap reaches past the end point by half the width.
+            assert!(alpha(&r, 19, 12) > 0);
+            assert_eq!(alpha(&r, 12, 17), 0);
+        }
+
+        #[test]
+        fn foreground_alpha_composites_into_the_mask() {
+            let r = draw("0,0,24,24", "fill=nonzero,fg@0.2:M0 0h24v24H0Z", 24, 24);
+            assert!(!r.is_color);
+            assert_eq!(alpha(&r, 12, 12), 51);
+        }
+
+        #[test]
+        fn a_fixed_colour_makes_it_rgba_with_the_foreground_resolved() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M0 0h12v24H0Z|fill=nonzero,#ff000080:M12 0h12v24H12Z",
+                24,
+                24,
+            );
+            assert!(r.is_color);
+            let px = |x: usize, y: usize| {
+                let i = (y * 24 + x) * 4;
+                [r.data[i], r.data[i + 1], r.data[i + 2], r.data[i + 3]]
+            };
+            assert_eq!(px(6, 12), FG);
+            // Half-transparent red, premultiplied as the colour atlas
+            // takes it.
+            assert_eq!(px(18, 12)[3], 128);
+            assert!(px(18, 12)[0] >= 127 && px(18, 12)[1] == 0);
+        }
+
+        #[test]
+        fn a_negative_view_box_origin_is_honoured() {
+            // Material Symbols: y runs from -960 to 0.
+            let r = draw(
+                "0,-960,960,960",
+                "fill=nonzero,fg:M0-960h480v960H0Z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 6, 12), 255, "left half filled");
+            assert_eq!(alpha(&r, 18, 12), 0, "right half empty");
+        }
+
+        #[test]
+        fn y_points_down_as_in_svg() {
+            // Every other test is symmetric top to bottom; this one would
+            // catch a flipped glyph.
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M0 0h24v8H0Z", 24, 24);
+            assert_eq!(alpha(&r, 12, 3), 255, "top band filled");
+            assert_eq!(alpha(&r, 12, 20), 0, "bottom empty");
+            // Same with the box shifted, so the origin isn't at a corner.
+            let r = draw(
+                "100,-50,24,24",
+                "fill=nonzero,fg:M100 -50h24v8h-24Z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 12, 3), 255);
+            assert_eq!(alpha(&r, 12, 20), 0);
+        }
+
+        #[test]
+        fn implicit_linetos_draw_the_shape() {
+            // A triangle given as one moveto with extra pairs.
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M2 2 22 2 2 22Z", 24, 24);
+            assert_eq!(alpha(&r, 5, 5), 255);
+            assert_eq!(alpha(&r, 19, 19), 0);
+        }
+
+        #[test]
+        fn a_relative_move_after_close_starts_from_the_subpath() {
+            // After `z` the pen is back at (2, 2), so `m12 0` lands at
+            // (14, 2), not below the first square.
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 2h6v6h-6zm12 0h6v6h-6z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 5, 5), 255);
+            assert_eq!(alpha(&r, 17, 5), 255);
+            assert_eq!(alpha(&r, 17, 13), 0);
+        }
+
+        #[test]
+        fn drawing_after_close_reopens_the_subpath() {
+            // `z` then `l` with no moveto: a second triangle from (2, 2).
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M2 2h8v8zl0 20h20z", 24, 24);
+            assert_eq!(alpha(&r, 8, 4), 255, "first triangle");
+            assert_eq!(alpha(&r, 4, 18), 255, "second, from the start point");
+        }
+
+        #[test]
+        fn arc_sweep_picks_the_side() {
+            // Sweep 1 is the positive-angle direction: over the top in
+            // y-down coordinates. Packed flags draw the same arc.
+            let over = draw("0,0,24,24", "fill=nonzero,fg:M4 12a8 8 0 0116 0Z", 24, 24);
+            assert_eq!(alpha(&over, 12, 7), 255);
+            assert_eq!(alpha(&over, 12, 17), 0);
+            let under = draw("0,0,24,24", "fill=nonzero,fg:M4 12a8 8 0 0016 0Z", 24, 24);
+            assert_eq!(alpha(&under, 12, 7), 0);
+            assert_eq!(alpha(&under, 12, 17), 255);
+        }
+
+        #[test]
+        fn large_arc_takes_the_long_way() {
+            // Same endpoints and radius; the large arc covers the centre
+            // of the far circle, the small one doesn't reach it.
+            let large = draw("0,0,24,24", "fill=nonzero,fg:M6 6A8 8 0 1 0 18 6Z", 24, 24);
+            let small = draw("0,0,24,24", "fill=nonzero,fg:M6 6A8 8 0 0 0 18 6Z", 24, 24);
+            assert_eq!(alpha(&large, 12, 16), 255);
+            assert_eq!(alpha(&small, 12, 16), 0);
+        }
+
+        #[test]
+        fn shorthand_curves_draw_like_the_full_form() {
+            let full = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12C2 2 12 2 12 12C12 22 22 22 22 12Z",
+                24,
+                24,
+            );
+            let short = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12C2 2 12 2 12 12S22 22 22 12Z",
+                24,
+                24,
+            );
+            assert_eq!(full.data, short.data);
+            let quad = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12Q7 2 12 12Q17 22 22 12Z",
+                24,
+                24,
+            );
+            let quad_short = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12Q7 2 12 12T22 12Z",
+                24,
+                24,
+            );
+            assert_eq!(quad.data, quad_short.data);
+        }
+
+        fn rgba_at(r: &RasterizedPayload, x: usize, y: usize) -> [u8; 4] {
+            assert!(r.is_color);
+            let i = (y * r.width as usize + x) * 4;
+            [r.data[i], r.data[i + 1], r.data[i + 2], r.data[i + 3]]
+        }
+
+        #[test]
+        fn linear_gradient_runs_from_its_first_point() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 24 0 / 0 #ff0000 / 1 #0000ff):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            let left = rgba_at(&r, 1, 12);
+            let right = rgba_at(&r, 22, 12);
+            assert!(left[0] > 220 && left[2] < 35, "red on the left: {left:?}");
+            assert!(
+                right[2] > 220 && right[0] < 35,
+                "blue on the right: {right:?}"
+            );
+            // Same colour all the way down a column.
+            assert_eq!(rgba_at(&r, 12, 2), rgba_at(&r, 12, 21));
+        }
+
+        #[test]
+        fn radial_gradient_changes_from_the_centre_out() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,rad(12 12 0 12 12 12 / 0 #ffffff / 1 #000000):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            let centre = rgba_at(&r, 12, 12);
+            let edge = rgba_at(&r, 12, 1);
+            assert!(centre[0] > 220, "{centre:?}");
+            assert!(edge[0] < 40, "{edge:?}");
+            // Past the outer circle, pad keeps the last stop.
+            assert!(rgba_at(&r, 0, 0)[0] < 10);
+        }
+
+        #[test]
+        fn a_foreground_gradient_stays_an_alpha_mask() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 24 0 / 0 fg / 1 fg@0):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            assert!(!r.is_color);
+            let (left, right) = (alpha(&r, 1, 12), alpha(&r, 22, 12));
+            assert!(left > 220 && right < 35, "{left} {right}");
+        }
+
+        #[test]
+        fn stroke_caps_reach_past_the_end_only_when_asked() {
+            // A 4-unit line from x=6 to x=18; the cap would reach x=20.
+            let at_cap = |cap: &str| {
+                let r = draw("0,0,24,24", &format!("stroke=4/{cap},fg:M6 12h12"), 24, 24);
+                alpha(&r, 19, 12)
+            };
+            assert_eq!(at_cap("butt"), 0);
+            assert!(at_cap("round") > 0);
+            assert_eq!(at_cap("square"), 255);
+        }
+
+        #[test]
+        fn a_clip_limits_only_the_layers_it_covers() {
+            // Clip the next layer to the left half; the layer after it
+            // draws the bottom band unclipped.
+            let r = draw(
+                "0,0,24,24",
+                "clip=1,nonzero:M0 0h12v24H0Z|fill=nonzero,fg:M0 0h24v12H0Z|fill=nonzero,fg:M0 18h24v6H0Z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 4, 4), 255, "inside the clip");
+            assert_eq!(alpha(&r, 20, 4), 0, "outside the clip");
+            assert_eq!(alpha(&r, 20, 21), 255, "after the clip's range");
+        }
+
+        #[test]
+        fn a_layer_matrix_moves_the_path_and_its_gradient() {
+            // A left-half square with a red-to-blue gradient across it,
+            // moved 12 units right: the right half is filled, red at its
+            // left edge.
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 12 0 / 0 #ff0000 / 1 #0000ff),m 1 0 0 1 12 0:M0 0h12v24H0Z",
+                24,
+                24,
+            );
+            assert_eq!(rgba_at(&r, 4, 12)[3], 0, "left half empty");
+            let near = rgba_at(&r, 13, 12);
+            let far = rgba_at(&r, 22, 12);
+            assert!(
+                near[0] > 200 && near[2] < 60,
+                "red near the left edge: {near:?}"
+            );
+            assert!(
+                far[2] > 200 && far[0] < 60,
+                "blue near the right edge: {far:?}"
+            );
+        }
+
+        #[test]
+        fn a_clip_with_no_area_hides_what_it_covers() {
+            let r = draw(
+                "0,0,24,24",
+                "clip=1,nonzero:M0 0h24|fill=nonzero,fg:M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            assert!(r.data.iter().all(|&a| a == 0));
+        }
+
+        #[test]
+        fn foreground_tracking() {
+            let glyph = |text: &str| StoredPayload::Vector {
+                glyph: parse(text.as_bytes(), parse_view_box(b"0,0,24,24").unwrap())
+                    .unwrap(),
+            };
+            // Masks are tinted at draw time; only RGBA bakes it in.
+            assert!(!payload_uses_foreground(&glyph(
+                "fill=nonzero,fg:M0 0h4v4z"
+            )));
+            assert!(!payload_uses_foreground(&glyph(
+                "fill=nonzero,#ffffffff:M0 0h4v4z"
+            )));
+            assert!(payload_uses_foreground(&glyph(
+                "fill=nonzero,fg:M0 0h4v4z|fill=nonzero,#ffffffff:M8 8h4v4z"
+            )));
+        }
+    }
 
     /// Helper: vector dot product in 2D.
     fn dot(a: (f32, f32), b: (f32, f32)) -> f32 {

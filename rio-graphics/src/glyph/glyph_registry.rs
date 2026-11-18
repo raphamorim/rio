@@ -66,6 +66,12 @@ pub enum StoredPayload {
         colr: Vec<u8>,
         cpal: Vec<u8>,
     },
+    /// `fmt=vg`: layers of fills, strokes and clips over SVG path
+    /// data, validated at registration with arcs already expanded (see
+    /// [`crate::glyph_vector`]).
+    Vector {
+        glyph: crate::glyph_vector::VectorGlyph,
+    },
 }
 
 impl StoredPayload {

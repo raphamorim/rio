@@ -17,9 +17,10 @@
 ## Abstract
 
 Glyph Protocol is a terminal protocol that lets applications ship
-custom vector glyphs to the terminal at runtime (monochrome via
-OpenType `glyf`, or full-colour via OpenType `COLR` v0, flat layered
-colour, and `COLR` v1, a paint graph with gradients, transforms, and
+custom vector glyphs to the terminal at runtime (as `vg`, SVG path
+data with fills, strokes, gradients and clips; as OpenType `glyf`,
+monochrome; or as OpenType `COLR` v0, flat layered colour, and
+`COLR` v1, a paint graph with gradients, transforms, and
 composites) without requiring the user to install a patched font
 (Nerd Fonts, Powerline, etc.). Registrations are restricted to one
 reserved block of Supplementary Private Use Area-B, which no font or
@@ -27,9 +28,9 @@ convention assigns, so the protocol cannot be used to modify the
 appearance of real text or of icons from an installed font.
 
 The protocol is transported over APC (Application Program Command)
-sequences. The default payload is the OpenType `glyf` simple-glyph
-record for monochrome icons; colour icons ride OpenType `COLR` v0
-(layered flat colour) or `COLR` v1 (full paint graph). Four verbs
+sequences. Every payload format is optional, and a terminal lists
+the ones it accepts; `vg` is the recommended one, since applications
+can send the SVG path data their icon sets already ship. Four verbs
 are defined: support-negotiation (`s`), query (`q`), register
 (`r`), and clear (`c`).
 
@@ -62,14 +63,15 @@ it can render before it renders it.
 
 ## 2. Design goals
 
-- **Small surface.** Few verbs, three payload formats (one
-  required, two optional), no daemons, no caches, no cross-session
-  state.
-- **Zero new terminal dependencies.** Every terminal that renders
-  OpenType text already links a `glyf` rasterizer; terminals that
-  render Apple / Google colour emoji also already parse `COLR` +
-  `CPAL`. No new format support is required: the protocol reuses
-  the tables the font stack already decodes.
+- **Small surface.** Few verbs, four payload formats (all
+  optional, negotiated through `s`), no daemons, no caches, no
+  cross-session state.
+- **Few new terminal dependencies.** `vg` needs a path filler with
+  gradients, which any 2D graphics library has. Terminals that
+  render OpenType text already link a `glyf` rasterizer, and those
+  that render Apple / Google colour emoji already parse `COLR` +
+  `CPAL`, so they can offer those formats from the tables their font
+  stack already decodes.
 - **Resolution independent.** Glyphs are vector and scale to any
   cell size.
 - **Graceful degradation.** Applications detect support by sending
@@ -82,7 +84,7 @@ it can render before it renders it.
   cannot be changed by any program that writes to the terminal.
   See §9.
 - **Small on the wire.** Typical icons are 50–400 bytes of
-  `glyf`, 2–4× smaller than the equivalent SVG.
+  `glyf`, or a few hundred bytes of `vg` path text.
 
 ## 3. Transport
 
@@ -152,34 +154,36 @@ supported payload formats in the `fmt` key as a comma-separated
 list of lowercase ASCII names, with no surrounding whitespace:
 
 ```
-ESC _ 25a1 ; s ; fmt=glyf,colrv0,colrv1 ESC \
+ESC _ 25a1 ; s ; fmt=vg,glyf,colrv0,colrv1 ESC \
 ```
 
-Format names defined in v1.8:
+Format names defined in v1.17:
 
 | Name     | Format                                                   |
 |----------|----------------------------------------------------------|
-| `glyf`   | Monochrome simple-glyph (§8).                            |
+| `vg`     | SVG path data with fills, strokes, gradients and clips (§8.9). Recommended. |
+| `glyf`   | Monochrome simple-glyph (§8.1).                          |
 | `colrv0` | Layered flat colour, OpenType `COLR` v0 + `CPAL` (§8.6). |
 | `colrv1` | OpenType paint graph, `COLR` v1 (§8.7).                  |
 
-Order is not significant; clients MUST treat the value as a set.
-An empty `fmt=` value means the terminal recognises Glyph Protocol
-but currently advertises no payload formats, so every `r` will be
-rejected. Clients MUST ignore names they do not recognise rather
-than failing the reply, so future format names are forward-
-compatible. A terminal that advertises only `fmt=glyf` and
-receives an `r` with `fmt=colrv0` / `fmt=colrv1` MUST reject the
-registration (`reason=malformed_payload` is acceptable for
-parser-level rejection). Clients SHOULD check the `s` reply
-before emitting colour registrations so they can fall back to a
-monochrome `fmt=glyf` without making a doomed round-trip.
+Every format is optional. A terminal lists the formats it accepts,
+and SHOULD accept `vg`. Order is not significant; clients MUST treat
+the value as a set. An empty `fmt=` value means the terminal
+recognises Glyph Protocol but currently advertises no payload
+formats, so every `r` will be rejected. Clients MUST ignore names
+they do not recognise rather than failing the reply, so future
+format names are forward-compatible.
+
+A terminal MUST reject an `r` whose format it does not list with
+`reason=unsupported_format` (§6.2), so a client can tell a format it
+can't use from a payload that's wrong. Clients SHOULD pick a format
+from the `s` reply rather than learn it from that rejection.
 
 The reply also lists optional capabilities in the `cap` key, in the
 same form:
 
 ```
-ESC _ 25a1 ; s ; fmt=glyf,colrv0,colrv1 ; cap=grapheme ESC \
+ESC _ 25a1 ; s ; fmt=vg,glyf,colrv0,colrv1 ; cap=grapheme ESC \
 ```
 
 Capability names defined in v1.14:
@@ -417,9 +421,11 @@ Parameters:
 - `cp`: target codepoint in hex. MUST be in the registration block
   defined in §4. Otherwise the request is rejected with
   `reason=out_of_namespace`.
-- `fmt`: payload format. One of `glyf`, `colrv0`, `colrv1`.
-  Optional; `glyf` is the default. See §8 for each format's wire
-  layout.
+- `fmt`: payload format: `vg`, `glyf`, `colrv0` or `colrv1`.
+  Optional; a registration without it is `glyf`, as it was before
+  formats were negotiated. A format the terminal doesn't list in `s`
+  is rejected with `reason=unsupported_format`. See §8 for each
+  format's wire layout.
 - `reply`: reply-level control. Optional; default `1`.
   - `reply=0`: the terminal MUST NOT emit any reply for this
     registration (neither success nor failure). Intended for bulk
@@ -431,6 +437,9 @@ Parameters:
     still want to learn about the broken ones without a success
     ACK for every glyph.
   Unknown values fall back to `reply=1`.
+- `vb`, `fit`: `fmt=vg` only; see §8.9. `align` takes `vg`'s own
+  values there, and the keys from `upm` to `pad` below except
+  `width` don't apply to `vg`.
 - `upm`: units per em, the coordinate space the outline is
   authored in. Optional; default `1000`.
 - `aw`: authored advance width, in upm units. The intended
@@ -467,8 +476,9 @@ Parameters:
   fractions `<top>,<right>,<bottom>,<left>` (each `0.0`–`1.0`;
   top/bottom are fractions of cell height, left/right of render
   span width). Optional; default `0,0,0,0`. See §8.5.
-- payload: the payload for the declared `fmt`, base64 for the
-  binary formats, as the last field (§3.2). At most 32 KiB, decoded.
+- payload: the payload for the declared `fmt`, as the last field
+  (§3.2): base64 for the binary formats, at most 32 KiB decoded, or
+  the text itself for `vg`, at most 32 KiB.
 
 An invalid value for `upm`, `width`, `aw`, `lh`, `ymin`, `size`,
 `align`, or
@@ -502,9 +512,10 @@ Defined error codes:
 | `out_of_namespace`      | `cp` is not in the registration block. |
 | `composite_unsupported` | Payload contains composite glyphs. |
 | `hinting_unsupported`   | Payload contains hinting instructions. |
-| `malformed_payload`     | Payload failed to parse as `glyf`, or a sizing parameter has an invalid value. |
-| `payload_too_large`     | Payload exceeds 32 KiB post-base64-decode. |
-| `outline_too_large`     | An outline (or a colour container's outlines in aggregate) exceeds the 64 KiB decoded-size budget (§8.2). |
+| `unsupported_format`    | `fmt` names a format the terminal does not list in `s` (§3.3). |
+| `malformed_payload`     | Payload failed to parse as its format, or a sizing parameter has an invalid value. |
+| `payload_too_large`     | Payload exceeds 32 KiB: decoded for the base64 formats, as sent for `vg`. |
+| `outline_too_large`     | An outline (or a colour container's outlines in aggregate) exceeds the 64 KiB decoded-size budget (§8.2), or a `vg` payload exceeds one of its limits (§8.9.5). |
 | `no_space`              | The terminal's memory budget for registrations, across all its sessions, is used up (§9). The registration may succeed after others are cleared. |
 
 ### 6.3 Overwrite
@@ -575,9 +586,18 @@ terminal reset), the terminal MUST invalidate any rasterization cached
 for that codepoint. A subsequent `r` that reuses the codepoint
 MUST rasterize the new outline fresh, not serve stale pixels.
 
-## 8. Payload format: `glyf`
+## 8. Payload formats
 
-### 8.1 Scope
+A terminal accepts any of the formats below and lists them in `s`
+(§3.3); none is required. `vg` (§8.9) is the recommended format:
+applications send the SVG path data their icon sets and emoji
+already ship, and it needs only a 2D path renderer. `glyf` and the
+`COLR` formats suit terminals and applications that already work
+with font tables. The placement rules of §8.5 are written for the
+font formats; `vg` places its viewBox the same way with its own keys
+(§8.9.3), and every format is clipped as §8.5.7 says.
+
+### 8.1 Payload format: `glyf`
 
 Glyph Protocol reuses the OpenType `glyf` table's simple-glyph
 record as its wire format. Authoritative references:
@@ -587,8 +607,8 @@ record as its wire format. Authoritative references:
 
 ### 8.2 Constraints
 
-Terminals implementing Glyph Protocol MUST accept the following
-subset of `glyf` and MAY reject anything else with
+Terminals that accept `glyf` MUST accept the following
+subset of it and MAY reject anything else with
 `reason=composite_unsupported` or `reason=hinting_unsupported`:
 
 - **Simple glyphs only** (in v1). No composite glyphs, no references
@@ -910,7 +930,194 @@ Typical flows:
   with the referenced outlines into the container above.
 - **From SVG.** The Skia team publishes `nanoemoji` / `maximum-color`,
   which compiles a directory of SVGs into a `COLR` v1 font; feed
-  its output into the packer.
+  its output into the packer. Where the terminal lists `vg`, sending
+  the SVG as `vg` (§8.9) needs no font tooling at all.
+
+### 8.9 Payload format: `vg`
+
+`fmt=vg` carries SVG's path data and paint model as text: layers of
+fills, strokes and clips, painted with the foreground, a fixed colour
+or a gradient. It is not an SVG document; there is no XML, no styling
+and no references. A converter flattens an SVG into it (the example
+repository has one).
+
+```
+ESC _ 25a1 ; r ; cp=<hex> ; fmt=vg ; vb=<x>,<y>,<w>,<h> [ ; width=<1|2> ] [ ; fit=<mode> ] [ ; align=<h>,<v> ] [ ; reply=<0|1|2> ] ; <layers> ESC \
+```
+
+#### 8.9.1 Payload
+
+The payload is the text itself, not base64. It MUST consist of
+printable ASCII (0x20–0x7E) only, and so never contains `;`, which
+ends the field, or any whitespace but the space. It is at most
+32 KiB.
+
+A payload is one to 128 layers separated by `|`, drawn in order. Each
+layer is a header, `:`, and SVG 2 path data:
+
+```
+fill=<rule>,<colour>[,m <a> <b> <c> <d> <e> <f>]:<path data>
+stroke=<width>[/<cap>[/<join>]],<colour>[,m <a> <b> <c> <d> <e> <f>]:<path data>
+clip=<n>,<rule>[,m <a> <b> <c> <d> <e> <f>]:<path data>
+```
+
+- `<rule>` is `nonzero` or `evenodd`, as SVG's `fill-rule`.
+- `fill` fills the path with the colour.
+- `stroke` strokes it. The width is in the layer's units and MUST be
+  greater than zero; through the layer's matrix, it MUST NOT exceed
+  the larger of the viewBox's width and height. `<cap>` is `round`
+  (default), `butt` or `square`. `<join>` is `round` (default),
+  `bevel`, or `miter` followed by an optional limit from 1 to 1000
+  (`miter`, `miter4` and `miter10.5` are valid; the default limit is
+  4). Caps, joins and the miter limit mean what they mean in SVG.
+- `clip` makes the path a clip, using `<rule>`, for the next `n`
+  layers (1 to 127). Those layers draw only inside it. They MUST
+  exist and MUST NOT be clips themselves: there is one level of
+  clipping. A clip path that encloses no area hides what it covers.
+- `m <a> <b> <c> <d> <e> <f>`, optional on any layer, is an affine
+  matrix from the layer's coordinates to the viewBox, as SVG's
+  `matrix(a b c d e f)`. The path, the stroke and any gradient on the
+  layer go through it, so a non-uniform scale draws an elliptical pen
+  as SVG does. Without it the layer's coordinates are the viewBox's.
+
+A colour is one of:
+
+- `fg`: the cell's foreground colour when the glyph is drawn.
+- `fg@<alpha>`: the foreground with its alpha multiplied by `<alpha>`,
+  a number from 0 to 1.
+- `#rrggbb` or `#rrggbbaa`: a fixed sRGB colour, hex digits in either
+  case, alpha not premultiplied.
+- A gradient:
+
+```
+lin(<x1> <y1> <x2> <y2> [<spread>] [m <a> <b> <c> <d> <e> <f>] / <offset> <colour> / <offset> <colour> ...)
+rad(<fx> <fy> <fr> <cx> <cy> <r> [<spread>] [m <a> <b> <c> <d> <e> <f>] / <offset> <colour> ...)
+```
+
+`lin` runs from (`x1`, `y1`) to (`x2`, `y2`). `rad` is a two-point
+conical gradient from the focal circle (`fx`, `fy`, `fr`) to the
+circle (`cx`, `cy`, `r`), which covers SVG's `radialGradient` focal
+point and radius; `fr` and `r` MUST NOT be negative. `<spread>` is
+`pad` (default), `reflect` or `repeat`, as SVG's `spreadMethod`. The
+optional matrix maps gradient space to the layer's coordinates, as
+`gradientTransform`. A gradient has 2 to 16 stops, each an offset
+from 0 to 1, a space, and a colour that is not itself a gradient
+(`fg`, `fg@<alpha>`, `#rrggbb` or `#rrggbbaa`). Offsets MUST NOT
+decrease. A gradient with no extent (its two points, or two circles,
+the same) paints its last stop, as SVG does.
+
+Every matrix, a layer's or a gradient's, MUST stretch or shrink
+lengths by at most a factor of 4096: both of its singular values lie
+between 1/4096 and 4096. That keeps it invertible and keeps a layer's
+own numbers in a range rasterizers handle. Real SVGs need far less;
+the emoji sampled for this version use 0.29 to 59.
+
+Numbers in headers, colours and gradients, and the numbers of a
+matrix, are written and separated as in path data (§8.9.2). A header
+or colour that breaks these rules, a stroke too wide, or a matrix
+outside its bounds rejects the registration with
+`reason=malformed_payload`; the limits of §8.9.5 use
+`reason=outline_too_large`.
+
+#### 8.9.2 Path data
+
+Path data follows the SVG 2 path grammar: every command, absolute and
+relative; implicit repetition, a moveto's extra pairs being linetos;
+`S` and `T` reflecting the previous control point; drawing after `Z`
+starting at the subpath's start. Numbers are an optional sign, then
+digits, digits with a fraction, or a fraction alone, then an optional
+exponent; a `.` MUST be followed by a digit, so `1.` is not a number.
+Numbers are separated by spaces, at most one comma, or a sign or `.`
+that can't continue the previous number. Arc flags are `0` or `1` and
+need no separator. Path data MUST start with a moveto.
+
+Arcs follow SVG 2's implementation notes: a zero radius draws a
+straight line, identical endpoints draw nothing, and radii too small
+for the endpoints are scaled up. Terminals expand an arc into cubic
+Béziers, one for each quarter turn or part of one it sweeps (one to
+four), each with the standard `4/3·tan(θ/4)` control-point distance,
+so that the limits below count the same segments everywhere.
+
+SVG renders path data up to its first error. Here any error,
+anywhere in the payload, rejects the whole registration with
+`reason=malformed_payload`, since parsers disagree on what partial
+data draws and every terminal must draw the same thing. Path data
+that only moves or closes is valid and draws nothing.
+
+#### 8.9.3 Placement
+
+The viewBox `vb=<x>,<y>,<w>,<h>` is required: its values are
+separated by commas or spaces, `w` and `h` MUST be positive, and no
+value's magnitude may exceed 1,000,000. Its y axis points down, as in
+SVG. It is the glyph's extent, placed in the render span of §8.5.2
+the way SVG's `preserveAspectRatio` places a viewBox in a viewport:
+
+- `fit` is `contain` (default), `cover` or `stretch`, scaling as the
+  `size` modes of the same names in §8.5.3 with the viewBox's `w` and
+  `h` as `aw` and `lh` (and no cap by the em).
+- `align=<h>,<v>` is `start`, `center` or `end` on each axis, default
+  `center,center`. Horizontally, `start` is the left; vertically,
+  `start` is the top, as SVG's `xMin` and `yMin`. A viewBox has no
+  baseline, so `baseline` is an invalid value.
+
+An invalid `vb`, `fit` or `align` rejects the registration with
+`reason=malformed_payload`. `width` works as for every format
+(§6.1). The font keys, `upm`, `aw`, `lh`, `ymin`, `size` and `pad`,
+don't apply and are ignored like any unrecognised key. The glyph is
+clipped to its span (§8.5.7).
+
+#### 8.9.4 Rendering
+
+Layers are painted in order with `src-over` compositing, each path
+filled or stroked with its colour, through its clip when one covers
+it. Path coordinates go through the layer's matrix, then the
+placement of §8.9.3.
+
+`fg` and `fg@<alpha>` resolve to the cell's foreground colour when
+the glyph is rasterized. Terminals that cache rasterized glyphs MUST
+re-rasterize on foreground change for any glyph that uses the
+foreground, like `colrv1` (§8.7). A glyph whose every colour,
+gradient stops included, is the foreground MAY be kept as a coverage
+mask and tinted at draw time, as `glyf` is.
+
+#### 8.9.5 Limits
+
+What makes a glyph slow to draw is how much path crosses the cell,
+not its bytes, segments or layers, so the limits bound that. A
+payload over any of them is rejected with `reason=outline_too_large`:
+
+- Every point, control points included, after the layer's matrix,
+  lies within one viewBox size (the larger of `w` and `h`) of the
+  viewBox.
+- At most 2048 segments across all layers, clip paths included:
+  movetos, lines, curves (an arc counted as its cubics, §8.9.2) and
+  closes each count one. Drawing after `Z` starts a subpath with an
+  implied moveto, which counts; a `Z` right after another closes
+  nothing and doesn't.
+- At most 64 viewBox sizes of path in total, measured in viewBox
+  units after each layer's matrix: the length of every line and
+  close, and of every curve's control polygon (which bounds the
+  curve), plus, on a stroked layer, the stroke width for every
+  segment, moveto included, for the cap or join drawn at its end.
+- At most 128 layers and 16 stops per gradient.
+- Every number fits a 32-bit float.
+
+These numbers come from icon sets and emoji. Of 584 icons sampled
+from nine sets, the largest needs 226 segments and 14 viewBox sizes
+of path; of 600 emoji sampled from Twemoji, OpenMoji, Noto and Fluent
+Flat, the largest needs 83 layers, 955 segments and 41 sizes. Under
+these limits the most expensive payload found takes about 1.4 ms to
+draw into an 80×160 pixel cell with tiny-skia, and the cost grows
+with the cell's pixels. A converter can't save layers by merging
+same-colour fills: overlapping shapes drawn in opposite directions
+cancel under nonzero winding.
+
+#### 8.9.6 Not included
+
+Patterns, filters, masks, nested clips, dashes, blend modes, text,
+and group opacity, which a converter applies per layer. None of these
+come up in icon sets; among emoji, those that need blur filters
+(Fluent's Color style) are out of reach, as they are for `colrv1`.
 
 ## 9. Security considerations
 
@@ -956,7 +1163,9 @@ Other considerations:
   session holds 32 MiB of payload plus 64 MiB of decoded points.
   The decoded cap is load-bearing: the `glyf` wire form is
   compressed, so a crafted payload expands ~12× on decode and the
-  payload cap alone bounds nothing that matters. Those are per
+  payload cap alone bounds nothing that matters. A `vg`
+  registration is held parsed, at most 2048 segments, which is the
+  same order of memory. Those are per
   session, and a user with many tabs and splits multiplies them, so
   a terminal MAY also enforce a total budget across its sessions and
   reject registrations past it with `reason=no_space` (§6.2), rather
@@ -967,10 +1176,14 @@ Other considerations:
   fonts. That is the same information a program gets by printing a
   codepoint and asking where the cursor went, and terminals MAY
   rate-limit answers (§5.4).
+- **Bounded drawing cost.** A glyph is rasterized while a frame is
+  being built, so a payload must not be able to make that slow. The
+  `vg` limits (§8.9.5) bound the path that crosses the cell, which is
+  what drawing time follows, gradient overdraw included.
 - **No code execution.** The `glyf` subset defined in §8.2
   excludes hinting instructions, which is the only part of
-  TrueType that is executable. Glyph Protocol is purely
-  declarative.
+  TrueType that is executable. `vg` has no scripting, styling or
+  references. Glyph Protocol is purely declarative.
 - **No filesystem access.** Glyph Protocol messages do not
   reference files and MUST NOT be used to load data from disk.
 - **Session isolation.** Glossaries MUST NOT leak between terminal
@@ -1003,26 +1216,32 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
 1. Recognizes APC sequences whose body begins with `25a1;` (§3.1).
 2. Implements the `s`, `q`, `r`, and `c` verbs with the semantics
    defined in this specification, and lists every accepted payload
-   format by name in the `fmt=` value of the `s` reply.
+   format by name in the `fmt=` value of the `s` reply. Every format
+   is OPTIONAL and `vg` is RECOMMENDED (§8). An `r` whose format the
+   terminal doesn't list, including one without `fmt` (`glyf`) when
+   it doesn't list `glyf`, is rejected with
+   `reason=unsupported_format`.
 3. Restricts register/clear `cp` to the registration block
    `U+100000`–`U+1003FF`; rejects anything else with
    `reason=out_of_namespace`.
 4. Can hold a registration for every codepoint in the block at
    once, per session.
-5. Accepts the `glyf` simple-glyph subset defined in §8.2 and
-   enforces its 64 KiB decoded-size budget, per outline and per
-   registration, rejecting violations with
+5. For each format it accepts, accepts it as its section defines
+   and enforces its limits: for `glyf` and the outlines in a
+   `colrv0`/`colrv1` container, the 64 KiB decoded-size budget, per
+   outline and per registration, rejecting violations with
    `reason=outline_too_large` before allocating decoded-point
-   storage. The `colrv0` and `colrv1` formats are OPTIONAL;
-   terminals that accept them MUST list the corresponding name in
-   the `s` reply.
+   storage (§8.2); for `vg`, the limits of §8.9.5, with the same
+   reason.
 6. Renders registered `glyf` glyphs in the current foreground
    color; renders `colrv0`/`colrv1` glyphs using the COLR paint
    graph, resolving palette index `0xFFFF` to the current
-   foreground color.
+   foreground color; renders `vg` glyphs as §8.9.4 says, resolving
+   `fg` to the current foreground color.
 7. Scales and positions glyphs according to `upm`, `aw`, `lh`,
    `ymin`, `width`, `size`, `align`, and `pad` as specified in §8.5,
-   into the area the character occupies (§8.5.2), rendering a
+   or for `vg` according to `vb`, `fit`, `align` and `width`
+   (§8.9.3), into the area the character occupies (§8.5.2), rendering a
    `width=2` glyph across two cells of pixels where nothing else sizes
    the character while its logical cell width stays its system
    `wcwidth`, and clipping each glyph to its render span (§8.5.7).
@@ -1043,7 +1262,8 @@ A client (application) is Glyph Protocol v1 conformant if it:
 2. Treats a DA1 reply with no `s` reply before it as "terminal
    does not implement Glyph Protocol", and then sends no other
    Glyph Protocol message (§3.4).
-3. Emits only the `glyf` subset defined in §8.2.
+3. Sends only formats the `s` reply lists, each as its section in
+   §8 defines it.
 4. Handles all `reason=*` error codes without crashing.
 5. Leaves the cell after every `width=2` codepoint blank (emits a
    space), so the render-span overflow lands on empty space, when it
@@ -1056,8 +1276,8 @@ A client (application) is Glyph Protocol v1 conformant if it:
 The reference implementation ships in Rio terminal. The
 [glyph-protocol-examples](https://github.com/raphamorim/glyph-protocol-examples)
 repository has example applications and the scripts they use to
-extract `glyf`, `colrv0`, and `colrv1` payloads from existing fonts.
-There is no SVG converter yet.
+extract `glyf`, `colrv0`, and `colrv1` payloads from existing fonts,
+and to convert SVG icons and emoji into `vg`.
 
 ## Appendix A. Worked example: register an icon
 
@@ -1165,6 +1385,14 @@ cover up to 7×7 cells, many times the pixels of one cell.
 5. Compile to bytes; base64-encode; register at a block codepoint
    of the app's choosing.
 
+**Practical source of `vg` data.** Icon sets ship SVG, and most of
+it is already `vg` but for the framing: a converter reads the SVG,
+applies its transforms (or keeps them as layer matrices), resolves
+styles to a fill or stroke per path and gradients to `lin`/`rad`, and
+writes one layer per painted path. A path-only icon set such as
+Lucide becomes one `stroke` layer per path with the SVG's own `d`
+attribute as the path data.
+
 The source codepoint in the font is irrelevant to the protocol:
 applications pull outlines from a Nerd Font's codepoints (`U+E0A0`,
 `U+F07B`, …) and register them in the block (`U+100000`+), which is
@@ -1199,3 +1427,4 @@ fresh bytes rather than serving a stale bitmap.
 | 2026-11-15 | v1.14   | Added the grapheme query `q;grapheme=`: one grapheme cluster as up to 32 codepoints, answered for the cluster as a whole. `status` keeps its meaning as a set of sources but is empty unless the cluster renders correctly in the current mode, so a ZWJ emoji sequence the font does not join, or a cluster the terminal would split across cells, reports empty. Default-ignorable codepoints are never reported as missing. It is optional: the `s` reply gains a `cap` key listing optional capabilities, the first being `grapheme`, and a terminal without it replies `reason=unsupported`. `q` replies can now carry `reason=` (`unsupported`, `malformed_query`) and arrive in request order. Registration stays per codepoint. Raised by Jeff Quast in contour#2019, for tofu detection in blessed and ucs-detect. |
 | 2026-11-18 | v1.15   | Added a note to §3.1 on dispatch: to a terminal that dispatches control strings by intermediate and final bytes, as DEC structures them, a message is `APC 2` with the command string starting `5a1;`, and `2` is in the private-use final range; terminals now recognise a message by `25a1;`, not `25a1` alone. Corrected §3: ECMA-48 leaves an APC's content to the program that receives it and does not require a program that doesn't implement a command to ignore it, as the earlier wording claimed. Added §3.4: clients detect support with `s` followed by DA1, so a DA1 reply with no `s` reply before it means unsupported, as with kitty's graphics and keyboard protocols, and MUST NOT send `q`, `r`, or `c` to a terminal that has not answered `s`. GNU screen and tmux give APC their own meaning (the hardstatus line or window title, the pane title), so there the probe shows up as text, but it is never answered and nothing else is sent. Clients that use the multiplexer's passthrough wrap DA1 too, since the multiplexer answers an unwrapped DA1 itself. Clients that register without sending `s` first must add the probe. Wire format unchanged. |
 | 2026-11-18 | v1.16   | Review from Kovid Goyal for kitty. `width` is an optional hint: a glyph is drawn into the cells its character occupies (§8.5.2), so an explicit width such as kitty's text sizing protocol (OSC 66), or a terminal's own rule for a codepoint followed by a space, wins over it; clipping is to that area. The grapheme query answers for the cluster printed as plain text; explicit widths are the client's business. `status=system` means as the terminal would currently render it in the regular face, symbol maps included. `q` may answer the new `reason=unknown` instead of stalling input on a font lookup, and terminals may rate-limit it. The payload is the last field of `r`, found by position, and never contains `;` (§3.2). `c` takes `reply=` and its reply echoes `cp`. The payload cap drops from 64 KiB to 32 KiB, and terminals may enforce a budget across sessions with the new `reason=no_space`. A full reset (RIS) MUST clear the glossary. A `colrv1` paint the terminal can't render rejects the registration instead of drawing a substitute, and §8.7 no longer claims the COLR parser adds no attack surface. §9 reasons from anything printed to the terminal being able to register and use block codepoints, and notes font fingerprinting through `q`. Appendix C has notes on lazy rasterization and cache keys. A client that sent payloads over 32 KiB, or relied on a `c` reply without `cp`, must adjust. |
+| 2026-11-18 | v1.17   | Added the `vg` payload format (§8.9) and made it the recommended one: SVG path data as text, in layers of fills, strokes and one level of clips, painted with the foreground, a fixed colour, or a linear or two-point conical gradient, with an optional matrix per layer, placed by `vb`, `fit` and `align` like SVG's `preserveAspectRatio`, and bounded by how much path crosses the cell rather than by bytes. It started from Mitchell Hashimoto's and Kovid Goyal's suggestions to accept SVG. Every payload format is now optional, `glyf` included: a terminal lists the ones it accepts in `s`, and rejects an `r` for any other with the new `reason=unsupported_format`. A registration without `fmt` is still `glyf`, so existing clients keep working where `glyf` is listed. Clients send only listed formats. §8 is now "Payload formats", and `glyf`'s scope is §8.1. |

@@ -5894,6 +5894,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     upm,
                 )
             }
+            // Parsed and bounded by the wire parser. The viewBox is the
+            // glyph's extent, so `upm` only has to be non-zero.
+            GlyphPayload::Vector { glyph } => (StoredPayload::Vector { glyph }, 1000),
         };
 
         // Lazily allocate the registry — idle terminals that never see
@@ -6691,7 +6694,7 @@ mod tests {
         assert_eq!(
             pty_writes(&events),
             vec![
-                "\x1b_25a1;s;fmt=glyf,colrv0,colrv1\x1b\\".to_string(),
+                "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,vg\x1b\\".to_string(),
                 "\x1b_25a1;q;grapheme=1f468,200d,1f469;reason=unsupported\x1b\\"
                     .to_string(),
             ]
@@ -6710,7 +6713,7 @@ mod tests {
         parser.advance(&mut cw, b"\x1b_25a1;s\x1b\\");
         assert_eq!(
             pty_writes(&events),
-            vec!["\x1b_25a1;s;fmt=glyf,colrv0,colrv1;cap=grapheme\x1b\\".to_string()]
+            vec!["\x1b_25a1;s;fmt=glyf,colrv0,colrv1,vg;cap=grapheme\x1b\\".to_string()]
         );
 
         let family = b"\x1b_25a1;q;grapheme=1f468,200d,1f469\x1b\\";
@@ -7419,6 +7422,45 @@ mod tests {
         assert!(res.is_ok());
         assert!(cw.glyph_registry.is_some());
         assert!(registry_contains(&cw, 0x10_0000));
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_answers_an_unsupported_format() {
+        let (mut cw, events) = make_crosswords_with_events(2);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b_25a1;r;cp=100003;fmt=woff2;AAAA\x1b\\");
+        assert_eq!(
+            pty_writes(&events),
+            vec![
+                "\x1b_25a1;r;cp=100003;status=1;reason=unsupported_format\x1b\\"
+                    .to_string()
+            ]
+        );
+        assert!(cw.glyph_registry.is_none());
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_registers_a_vector_glyph_from_the_wire() {
+        let (mut cw, events) = make_crosswords_with_events(2);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(
+            &mut cw,
+            // A clip, a gradient fill and a butt/miter stroke: everything
+            // in the grammar survives the APC framing (no `;` inside).
+            b"\x1b_25a1;r;cp=100002;fmt=vg;vb=0,0,24,24;clip=1,nonzero:M0 0h12v24H0Z|fill=nonzero,rad(9 9 0 12 12 10 m 1 0 0 1 0 0 / 0 fg / 1 #e5534b80):M4 4h16v16H4Z|stroke=2/butt/miter,#e5534bff:M6 12h12\x1b\\",
+        );
+        assert_eq!(
+            pty_writes(&events),
+            vec!["\x1b_25a1;r;cp=100002;status=0\x1b\\".to_string()]
+        );
+        let stored = cw.glyph_registry.as_ref().unwrap().get(0x10_0002).unwrap();
+        assert!(matches!(
+            &*stored.payload,
+            rio_graphics::glyph::glyph_registry::StoredPayload::Vector { glyph }
+                if glyph.layers.len() == 3
+        ));
     }
 
     #[cfg(feature = "graphics")]
