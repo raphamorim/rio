@@ -2474,7 +2474,6 @@ impl<U: EventListener> Crosswords<U> {
         dst: &mut Vec<Row<Square>>,
         row_styles: &mut Vec<Vec<crate::crosswords::style::Style>>,
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
-        pending: &mut crate::crosswords::style::PendingStyles,
     ) {
         use crate::event::TerminalDamage;
         let (start, end) = self.visible_line_bounds();
@@ -2487,8 +2486,6 @@ impl<U: EventListener> Crosswords<U> {
         // Styles are resolved to values per copied row, so the snapshot
         // holds no style ids at all: sweeps reusing ids, table growth,
         // and grid swaps can't affect rows copied on earlier frames.
-        // The lookup happens here, one per run; the per-cell fan-out
-        // waits for the lock to drop.
         if needs_full {
             // Every full-screen scroll lands here, so a flood of output
             // takes this path on every frame. The rows already in `dst`
@@ -2505,7 +2502,7 @@ impl<U: EventListener> Crosswords<U> {
                     None => dst.push(src.clone()),
                 }
                 dst[i].dirty = true;
-                self.grid.record_row_styles(src, i, pending);
+                self.grid.resolve_row_styles(src, &mut row_styles[i]);
                 self.refresh_row_extras(src, extras);
             }
             for row_idx in start..end {
@@ -2534,7 +2531,7 @@ impl<U: EventListener> Crosswords<U> {
             let src = &self.grid[Line(row_idx)];
             dst[y].copy_from(src);
             dst[y].dirty = true;
-            self.grid.record_row_styles(src, y, pending);
+            self.grid.resolve_row_styles(src, &mut row_styles[y]);
             self.refresh_row_extras(src, extras);
         }
         for row_idx in start..end {
@@ -6354,8 +6351,7 @@ mod tests {
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
     }
 
-    /// A snapshot as a frontend takes it: the copy under the lock and
-    /// the style fill after it, back to back.
+    /// A snapshot as a frontend takes it.
     fn snap<T: EventListener>(
         cw: &mut Crosswords<T>,
         damage: &crate::event::TerminalDamage,
@@ -6363,9 +6359,7 @@ mod tests {
         row_styles: &mut Vec<Vec<crate::crosswords::style::Style>>,
         extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
     ) {
-        let mut pending = crate::crosswords::style::PendingStyles::default();
-        cw.snapshot_visible(damage, rows, row_styles, extras, &mut pending);
-        pending.fill(row_styles);
+        cw.snapshot_visible(damage, rows, row_styles, extras);
     }
 
     /// A 20x4 terminal on `route_id` that records the events it sends.
@@ -6837,13 +6831,12 @@ mod tests {
         assert_eq!(row_styles[0][0].bg, blue);
     }
 
-    // The copy under the lock records style runs; the per-cell values
-    // land only when the caller fills them after the lock. A frontend
-    // that reads the styles in between sees the previous frame's.
+    // The copy resolves the styles of the rows it copies into values,
+    // so a frontend reads them as soon as the copy returns.
     #[test]
-    fn snapshot_styles_are_filled_after_the_copy() {
+    fn snapshot_styles_are_resolved_by_the_copy() {
         use crate::config::colors::{AnsiColor, ColorRgb};
-        use crate::crosswords::style::{PendingStyles, Style};
+        use crate::crosswords::style::Style;
         use crate::event::TerminalDamage;
         let mut cw = make_crosswords();
         let mut rows = Vec::new();
@@ -6859,23 +6852,11 @@ mod tests {
         let red = AnsiColor::Spec(ColorRgb { r: 250, g: 0, b: 0 });
         cw.terminal_attribute(Attr::Background(red));
         cw.input_str("xy");
-        let before = row_styles.clone();
-        let mut pending = PendingStyles::default();
         let damage = cw.peek_damage_event().unwrap();
-        cw.snapshot_visible(
-            &damage,
-            &mut rows,
-            &mut row_styles,
-            &mut extras,
-            &mut pending,
-        );
-        assert_eq!(row_styles, before, "nothing is written under the lock");
-        assert!(!pending.is_empty());
-        pending.fill(&mut row_styles);
+        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
         assert_eq!(row_styles[0][0].bg, red);
         assert_eq!(row_styles[0][1].bg, red);
         assert_eq!(row_styles[0][2], Style::default());
-        assert!(pending.is_empty());
     }
 
     // DECTCEM alone is a change the renderer has to see: the cursor
@@ -7487,7 +7468,6 @@ mod tests {
             let mut rows = Vec::new();
             let mut row_styles = Vec::new();
             let mut extras = rustc_hash::FxHashMap::default();
-            let mut pending = crate::crosswords::style::PendingStyles::default();
             let mut history: std::collections::VecDeque<String> =
                 std::collections::VecDeque::new();
             let mut previous: Vec<Vec<Square>> = Vec::new();
@@ -7504,18 +7484,11 @@ mod tests {
                 let dirty_before: Vec<bool> = (0..cw.grid.screen_lines() as i32)
                     .map(|y| cw.grid[Line(y - offset)].dirty)
                     .collect();
-                // The frontends' order: peek, consume, copy, fill.
+                // The frontends' order: peek, consume, copy.
                 let peeked = cw.peek_damage_event();
                 let damage = peeked.unwrap_or(TerminalDamage::Noop);
                 cw.reset_damage();
-                cw.snapshot_visible(
-                    &damage,
-                    &mut rows,
-                    &mut row_styles,
-                    &mut extras,
-                    &mut pending,
-                );
-                pending.fill(&mut row_styles);
+                cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
 
                 let mut fresh_rows = Vec::new();
                 let mut fresh_styles = Vec::new();

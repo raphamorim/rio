@@ -525,8 +525,6 @@ impl Renderer {
                 if let (true, Some(new_matches)) = (snapshotted, new_matches) {
                     context.renderable_content.hint_matches = new_matches;
                 }
-                drop(terminal);
-                context.renderable_content.finish_update();
             }
 
             // Recalculate image overlay positions every frame when placements

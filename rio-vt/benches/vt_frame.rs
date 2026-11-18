@@ -1,5 +1,5 @@
 // The frame path a frontend runs per redraw: consume the damage, copy
-// the rows it names into a persistent snapshot, fill their styles.
+// the rows it names into a persistent snapshot, styles resolved.
 // Each scenario is one kind of change per frame on a styled 120 by 40
 // screen. The timed region is the frame work; the input that caused it
 // is parsed outside the timer. Rows copied per frame is printed once
@@ -13,7 +13,7 @@ use rio_vt::ansi::CursorShape;
 use rio_vt::crosswords::grid::row::Row;
 use rio_vt::crosswords::pos::{Column, Line, Pos};
 use rio_vt::crosswords::square::{Extras, Square};
-use rio_vt::crosswords::style::{PendingStyles, Style};
+use rio_vt::crosswords::style::Style;
 use rio_vt::crosswords::{Crosswords, CrosswordsSize};
 use rio_vt::event::{TerminalDamage, VoidListener, WindowId};
 use rio_vt::performer::handler::Processor;
@@ -29,7 +29,6 @@ struct Snapshot {
     rows: Vec<Row<Square>>,
     row_styles: Vec<Vec<Style>>,
     extras: rustc_hash::FxHashMap<u16, Extras>,
-    pending: PendingStyles,
 }
 
 impl Snapshot {
@@ -42,14 +41,8 @@ impl Snapshot {
             &mut self.rows,
             &mut self.row_styles,
             &mut self.extras,
-            &mut self.pending,
         );
         damage
-    }
-
-    /// After the lock: fill the copied rows' styles.
-    fn fill(&mut self) {
-        self.pending.fill(&mut self.row_styles);
     }
 
     /// What a renderer does once it has drawn: count and clear the
@@ -189,7 +182,6 @@ fn bench(c: &mut Criterion) {
         let (mut cw, mut parser) = term();
         let mut snap = Snapshot::default();
         snap.copy(&mut cw);
-        snap.fill();
         snap.take_copied();
 
         // Rows copied per frame, over a hundred frames.
@@ -200,7 +192,6 @@ fn bench(c: &mut Criterion) {
             if matches!(snap.copy(&mut cw), TerminalDamage::Full) {
                 full += 1;
             }
-            snap.fill();
             copied += snap.take_copied();
         }
         eprintln!(
@@ -209,8 +200,7 @@ fn bench(c: &mut Criterion) {
             copied as f64 / 100.0
         );
 
-        let mut group = c.benchmark_group(scenario.name);
-        group.bench_function("under the lock", |b| {
+        c.bench_function(scenario.name, |b| {
             b.iter_custom(|iters| {
                 let mut total = Duration::ZERO;
                 for i in 0..iters as usize {
@@ -218,27 +208,11 @@ fn bench(c: &mut Criterion) {
                     let start = Instant::now();
                     snap.copy(&mut cw);
                     total += start.elapsed();
-                    snap.fill();
                     snap.take_copied();
                 }
                 total
             })
         });
-        group.bench_function("whole frame", |b| {
-            b.iter_custom(|iters| {
-                let mut total = Duration::ZERO;
-                for i in 0..iters as usize {
-                    (scenario.prepare)(&mut cw, &mut parser, i);
-                    let start = Instant::now();
-                    snap.copy(&mut cw);
-                    snap.fill();
-                    total += start.elapsed();
-                    snap.take_copied();
-                }
-                total
-            })
-        });
-        group.finish();
     }
 }
 

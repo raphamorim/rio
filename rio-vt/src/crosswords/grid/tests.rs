@@ -605,11 +605,8 @@ fn resolver_fast_path_matches_slow_path() {
     let mut styled: Row<Square> = Row::new(3);
     styled[Column(1)].set_style_id(id);
     styled.has_styles = true;
-    let mut pending = crate::crosswords::style::PendingStyles::default();
-    let mut rows = Vec::new();
-    grid.record_row_styles(&styled, 0, &mut pending);
-    pending.fill(&mut rows);
-    let out = &rows[0];
+    let mut out = Vec::new();
+    grid.resolve_row_styles(&styled, &mut out);
     assert_eq!(out.len(), 3);
     assert_eq!(out[0], Style::default());
     assert_eq!(out[1].fg, AnsiColor::Named(NamedColor::Blue));
@@ -617,10 +614,9 @@ fn resolver_fast_path_matches_slow_path() {
 
     // Unstyled row: the fast path must be indistinguishable.
     let plain: Row<Square> = Row::new(3);
-    grid.record_row_styles(&plain, 1, &mut pending);
-    pending.fill(&mut rows);
-    assert_eq!(rows[1], vec![Style::default(); 3]);
-    assert!(pending.is_empty(), "a fill forgets what it wrote");
+    let mut fast = Vec::new();
+    grid.resolve_row_styles(&plain, &mut fast);
+    assert_eq!(fast, vec![Style::default(); 3]);
 }
 
 // `lines_evicted` is the absolute index of the oldest row still in the

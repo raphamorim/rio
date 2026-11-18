@@ -15,7 +15,7 @@ use rio_vt::crosswords::grid::row::Row;
 use rio_vt::crosswords::grid::Dimensions;
 use rio_vt::crosswords::pos::Column;
 use rio_vt::crosswords::square::{ContentTag, Extras, Square};
-use rio_vt::crosswords::style::{PendingStyles, Style};
+use rio_vt::crosswords::style::Style;
 use rio_vt::crosswords::Crosswords;
 use rio_vt::event::sync::TerminalLock;
 use rio_vt::event::TerminalDamage;
@@ -205,9 +205,6 @@ pub struct RenderState {
     rows: Vec<Row<Square>>,
     /// Per-row resolved cell styles, index-parallel to `rows`.
     row_styles: Vec<Vec<Style>>,
-    /// Style runs recorded under the terminal lock by the last update,
-    /// filled into `row_styles` once the lock is released.
-    pending_styles: PendingStyles,
     extras: FxHashMap<u16, Extras>,
     columns: usize,
     cursor_line: usize,
@@ -258,7 +255,6 @@ impl RenderState {
             terminal,
             rows: Vec::new(),
             row_styles: Vec::new(),
-            pending_styles: PendingStyles::default(),
             extras: FxHashMap::default(),
             columns,
             cursor_line: 0,
@@ -305,7 +301,6 @@ impl RenderState {
             &mut self.rows,
             &mut self.row_styles,
             &mut self.extras,
-            &mut self.pending_styles,
         );
         term.damage_event_in_flight = false;
         self.columns = term.grid.columns();
@@ -413,11 +408,10 @@ impl RenderState {
                     is_block: range.is_block,
                 })
             });
-        // Everything above needed the terminal; the style fan-out and
-        // the image list do not, so they run with the lock released and
-        // the reader free.
+        // Everything above needed the terminal; the image list does
+        // not, so it is built with the lock released and the reader
+        // free.
         drop(term);
-        self.pending_styles.fill(&mut self.row_styles);
         if let Some(inputs) = &virtual_inputs {
             self.collect_virtual_runs(inputs, &mut images);
         }
