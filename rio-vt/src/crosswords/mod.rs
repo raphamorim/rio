@@ -1324,14 +1324,13 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.damage_line(line);
     }
 
-    /// DECTCEM showed or hid the cursor. Its row shapes differently
-    /// with the cursor on it, the cursor cell being a run of its own,
-    /// so the row is copied again; and a burst that does nothing else
+    /// DECTCEM showed or hid the cursor. A burst that does nothing else
     /// has to wake the renderer like any other, which the line damage
-    /// does.
+    /// does. The cursor row shapes differently with the cursor on it,
+    /// but it did not change: a renderer that shapes the cursor cell as
+    /// a run of its own rebuilds it from the row it already holds, as
+    /// for a cursor move, so no row is copied.
     fn damage_cursor_visibility(&mut self) {
-        let row = self.grid.cursor.pos.row;
-        self.grid[row].dirty = true;
         self.damage_cursor_line();
     }
 
@@ -6818,10 +6817,9 @@ mod tests {
         assert_eq!(row_styles[0][2], Style::default());
     }
 
-    // DECTCEM alone is a change the renderer has to see: the cursor
-    // row is copied again (its shaping depends on the cursor being on
-    // it) and the frame is a partial one. Repeating the state it is
-    // already in is not news.
+    // DECTCEM alone is a change the renderer has to see: the frame is
+    // a partial one, and like a cursor move it copies no row, since no
+    // row changed. Repeating the state it is already in is not news.
     #[test]
     fn hiding_or_showing_the_cursor_is_damage() {
         use crate::event::TerminalDamage;
@@ -6833,37 +6831,42 @@ mod tests {
         for row in 0..cw.grid.screen_lines() {
             cw.grid[Line(row as i32)].dirty = false;
         }
+        let dirty = |cw: &Crosswords<VoidListener>| -> Vec<i32> {
+            (0..cw.grid.screen_lines() as i32)
+                .filter(|&row| cw.grid[Line(row)].dirty)
+                .collect()
+        };
 
         parser.advance(&mut cw, b"\x1b[?25l");
         assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
-        assert!(cw.grid[Line(2)].dirty, "the cursor row is copied again");
-        assert!(!cw.grid[Line(0)].dirty);
+        assert!(dirty(&cw).is_empty(), "no row changed, none is copied");
         cw.reset_damage();
-        cw.grid[Line(2)].dirty = false;
 
         parser.advance(&mut cw, b"\x1b[?25l");
         assert_eq!(cw.peek_damage_event(), None, "already hidden");
 
         parser.advance(&mut cw, b"\x1b[?25h");
         assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
-        assert!(cw.grid[Line(2)].dirty);
+        assert!(dirty(&cw).is_empty());
     }
 
     // A cursor move is a frame, for the cursor itself, and copies no
     // row: the row it left and the row it is on did not change. A
     // renderer that breaks runs at the cursor rebuilds both from the
-    // rows it already holds.
+    // rows it already holds. Every way of moving the cursor behaves so.
     #[test]
     fn a_cursor_move_is_a_frame_that_copies_no_row() {
         use crate::event::TerminalDamage;
         let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
         cw.input_str("ab");
         cw.goto(Line(2), Column(0));
         cw.input_str("cd");
+        cw.goto(Line(2), Column(1));
+        cw.reset_damage();
         let mut rows = Vec::new();
         let mut row_styles = Vec::new();
         let mut extras = rustc_hash::FxHashMap::default();
-        cw.reset_damage();
         snap(
             &mut cw,
             &TerminalDamage::Full,
@@ -6875,18 +6878,38 @@ mod tests {
             row.dirty = false;
         }
 
-        cw.goto(Line(0), Column(1));
-        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
-        cw.reset_damage();
-        snap(
-            &mut cw,
-            &TerminalDamage::Partial,
-            &mut rows,
-            &mut row_styles,
-            &mut extras,
-        );
-        assert!(rows.iter().all(|row| !row.dirty), "no row copied");
-        assert_eq!(cw.peek_damage_event(), None, "the move was consumed");
+        // A tab is not among them: it writes into the cell it crosses.
+        let moves: [(&str, &[u8]); 9] = [
+            ("CUP", b"\x1b[1;2H"),
+            ("CUD", b"\x1b[B"),
+            ("CUU", b"\x1b[A"),
+            ("CUF", b"\x1b[C"),
+            ("CUB", b"\x1b[D"),
+            ("CHA", b"\x1b[3G"),
+            ("VPA", b"\x1b[3d"),
+            ("CR", b"\r"),
+            ("BS", b"\x1b[5G\x08"),
+        ];
+        for (name, bytes) in moves {
+            let before = cw.grid.cursor.pos;
+            parser.advance(&mut cw, bytes);
+            assert_ne!(cw.grid.cursor.pos, before, "{name} moved the cursor");
+            assert_eq!(
+                cw.peek_damage_event(),
+                Some(TerminalDamage::Partial),
+                "{name} is a frame"
+            );
+            cw.reset_damage();
+            snap(
+                &mut cw,
+                &TerminalDamage::Partial,
+                &mut rows,
+                &mut row_styles,
+                &mut extras,
+            );
+            assert!(rows.iter().all(|row| !row.dirty), "{name} copied a row");
+            assert_eq!(cw.peek_damage_event(), None, "{name} was consumed");
+        }
     }
 
     // A reverse scroll moves the vi cursor down with the region's rows.
