@@ -50,6 +50,13 @@ pub struct Mouse {
     /// its release) and follows the link only when the release lands
     /// on the same hint.
     pub hint_click_latched: Option<crate::hints::HintMatch>,
+    /// The buttons held now have made or changed the selection: a
+    /// click that started one, a drag that extended it. The release
+    /// copies the selection only then. A release that follows no such
+    /// gesture (a right click, a click on a tab) finds whatever was
+    /// selected earlier, and copying that would replace what another
+    /// application has put in the primary selection since.
+    pub selection_gesture: bool,
 }
 
 impl Default for Mouse {
@@ -72,6 +79,7 @@ impl Default for Mouse {
             raw_y: 0.0,
             last_cell: None,
             hint_click_latched: None,
+            selection_gesture: false,
         }
     }
 }

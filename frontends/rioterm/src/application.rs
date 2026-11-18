@@ -1706,10 +1706,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             if let MouseButton::Left = button {
                                 let pos =
                                     route.window.screen.mouse_position(display_offset);
-                                route
-                                    .window
-                                    .screen
-                                    .on_left_click(pos, &mut self.router.clipboard);
+                                route.window.screen.on_left_click(pos);
+                                // The click made or changed the selection;
+                                // its release copies it. Set here and not
+                                // in `on_left_click`, which touch input
+                                // calls too and never follows with a mouse
+                                // release.
+                                route.window.screen.mouse.selection_gesture = true;
                             }
 
                             route.request_redraw();
@@ -1720,6 +1723,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .process_mouse_bindings(button, &mut self.router.clipboard);
                     }
                     ElementState::Released => {
+                        // Whether the buttons now released made or changed
+                        // the selection; taken on every such release, so
+                        // one that returns early below leaves nothing for
+                        // the next.
+                        let selection_gesture =
+                            matches!(button, MouseButton::Left | MouseButton::Right)
+                                && std::mem::take(
+                                    &mut route.window.screen.mouse.selection_gesture,
+                                );
+
                         // Stop selection auto-scroll on button release.
                         if let MouseButton::Left | MouseButton::Right = button {
                             let scroll_timer_id =
@@ -1787,10 +1800,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
 
-                        // Releasing a drag selection copies it (with
-                        // copy-on-select) and must not activate a hint
-                        // sitting under the release point; hints fire on
-                        // plain clicks only, when no selection exists.
+                        // Releasing a drag selection copies it and must
+                        // not activate a hint sitting under the release
+                        // point; hints fire on plain clicks only, when no
+                        // selection exists.
                         if route.window.screen.selection_is_empty() {
                             if button == MouseButton::Left {
                                 // Only a latched press opens a link, and only
@@ -1830,13 +1843,24 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                     }
                                 }
                             }
-                        } else if matches!(button, MouseButton::Left | MouseButton::Right)
-                            && self.config.copy_on_select
-                        {
+                        } else if selection_gesture {
+                            // The selection this click or drag made becomes
+                            // the primary selection, the one a middle click
+                            // pastes, whatever copy-on-select says: that
+                            // option is about the clipboard. It is written
+                            // here and not while dragging, which would send
+                            // the display server a copy per motion.
+                            #[cfg(not(any(target_os = "macos", windows)))]
                             route.window.screen.copy_selection(
-                                ClipboardType::Clipboard,
+                                ClipboardType::Selection,
                                 &mut self.router.clipboard,
                             );
+                            if self.config.copy_on_select {
+                                route.window.screen.copy_selection(
+                                    ClipboardType::Clipboard,
+                                    &mut self.router.clipboard,
+                                );
+                            }
                         }
                     }
                 }
@@ -2132,6 +2156,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.mouse.square_side = square_side;
 
                 if is_selecting {
+                    route.window.screen.mouse.selection_gesture = true;
                     route.window.screen.update_selection(point, square_side);
                     route.window.screen.context_manager.request_render();
                 } else if cell_changed && route.window.screen.has_mouse_motion_and_drag()
@@ -2317,7 +2342,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             WindowEvent::Touch(touch) => {
-                on_touch(route, touch, &mut self.router.clipboard);
+                on_touch(route, touch);
             }
 
             WindowEvent::Focused(focused) => {
