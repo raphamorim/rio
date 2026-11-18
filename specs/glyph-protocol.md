@@ -73,9 +73,9 @@ it can render before it renders it.
 - **Resolution independent.** Glyphs are vector and scale to any
   cell size.
 - **Graceful degradation.** Applications detect support by sending
-  a query and watching for a reply, and send nothing else unless the
+  `s` and watching for a reply, and send nothing else unless the
   terminal answered. Most terminals that do not implement the
-  protocol discard the query; §3.4 covers the programs that don't.
+  protocol discard `s`; §3.4 covers the programs that don't.
 - **No override of user text.** Registrations are confined to a
   reserved block that nothing else assigns. The rendered appearance
   of `a`, `ssh`, any URL, or a Nerd Fonts icon in the user's prompt
@@ -94,7 +94,7 @@ defined by this specification. ECMA-48 does not require a program
 that doesn't implement a command to ignore it. Most terminal
 emulators discard an APC they don't recognise, but some programs
 give APC a meaning of their own; §3.4 says how clients detect
-support without sending messages to them.
+support so that such programs receive the probe and nothing else.
 
 ### 3.1 Identifier
 
