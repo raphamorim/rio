@@ -442,8 +442,6 @@ mod pipeline_tests {
     struct Frame {
         content: RenderableContent,
         painted: Vec<String>,
-        /// Rows rebuilt by the last consumed frame.
-        rebuilt: usize,
     }
 
     impl Frame {
@@ -451,7 +449,6 @@ mod pipeline_tests {
             Self {
                 content: RenderableContent::new(Default::default()),
                 painted: vec![String::new(); ROWS],
-                rebuilt: 0,
             }
         }
 
@@ -468,7 +465,6 @@ mod pipeline_tests {
                 self.content.pending_update.set_terminal_damage(ui);
             }
             let snapshot_rows = self.content.visible_rows.len();
-            self.rebuilt = 0;
             if !self.content.update_from_terminal(term, false, true) {
                 return;
             }
@@ -486,7 +482,6 @@ mod pipeline_tests {
                 for (painted, row) in self.painted.iter_mut().zip(visible_rows) {
                     *painted = row_text(row, cols);
                     row.dirty = false;
-                    self.rebuilt += 1;
                 }
                 return;
             }
@@ -499,7 +494,6 @@ mod pipeline_tests {
                         }
                         *painted = row_text(row, cols);
                         row.dirty = false;
-                        self.rebuilt += 1;
                     }
                 }
                 TerminalDamage::CursorOnly | TerminalDamage::Noop => {}
@@ -507,9 +501,9 @@ mod pipeline_tests {
         }
     }
 
-    // A full frame rebuilds every row and leaves them clean, so the
-    // partial frame after it, here a cursor move over plain text,
-    // rebuilds nothing instead of the whole screen again.
+    // A full frame rebuilds every row and leaves none marked, so the
+    // partial frame after it rebuilds only the rows it names: none for
+    // a cursor move over plain text, one for a line of output.
     #[test]
     fn the_frame_after_a_full_one_rebuilds_only_what_changed() {
         let mut term = new_term();
@@ -520,16 +514,28 @@ mod pipeline_tests {
             parser.advance(&mut term, format!("line {i}\r\n").as_bytes());
         }
         frame.consume(&mut term, &mut None);
-        assert_eq!(frame.rebuilt, ROWS, "the first frame is full");
+        assert_eq!(frame.painted, grid_text(&term), "the first frame is full");
+        assert!(
+            frame.content.visible_rows.iter().all(|row| !row.dirty),
+            "a full rebuild leaves no row marked"
+        );
 
         parser.advance(&mut term, b"\x1b[1;1H");
         assert_eq!(term.peek_damage_event(), Some(TerminalDamage::Partial));
         frame.consume(&mut term, &mut None);
-        assert_eq!(frame.rebuilt, 0, "a cursor move over plain text");
+        assert!(
+            frame.content.visible_rows.iter().all(|row| !row.dirty),
+            "a cursor move over plain text copies no row"
+        );
 
+        let before = frame.painted.clone();
         parser.advance(&mut term, b"\x1b[3;1Hchanged");
         frame.consume(&mut term, &mut None);
-        assert_eq!(frame.rebuilt, 1, "one row of output");
+        let repainted: Vec<usize> = (0..ROWS)
+            .filter(|&y| frame.painted[y] != before[y])
+            .collect();
+        assert_eq!(repainted, vec![2], "one row of output");
+        assert_eq!(frame.painted, grid_text(&term));
     }
 
     fn event_would_fire(term: &Crosswords<VoidListener>) -> bool {
