@@ -14,7 +14,11 @@
 //! **run-level shaping** so ligatures (`=>`, `!=`, `fi`) form
 //! correctly — a contiguous run of cells sharing `(font_id,
 //! style_flags)` is shaped in one call, and one `CellText` is emitted
-//! per resulting glyph (not per input cell).
+//! per resulting glyph (not per input cell). A run also ends at a
+//! word boundary, where a space meets a non-space: nothing a monospace
+//! font shapes crosses a space, and a keystroke then reshapes the
+//! word it lands in instead of the whole line, every other word on
+//! the row coming from the run cache.
 //!
 //! Shape + rasterize backends split by platform:
 //! - **macOS**: CoreText via `font::macos::shape_text` /
@@ -1645,6 +1649,21 @@ fn is_skipped_spacer(sq: Square) -> bool {
     matches!(sq.wide(), Wide::Spacer | Wide::LeadingSpacer)
 }
 
+/// Whether a shaping run ends between `prev` and `next`: one is a
+/// space and the other is not. Ligatures, contextual alternates and
+/// joining scripts never cross a space, and glyphs sit on their own
+/// cells, so there is no kerning to lose. Ending runs here bounds what
+/// a keystroke reshapes to the word it is in; the rest of the row hits
+/// the run cache. A cell carrying a grapheme cluster never starts a
+/// boundary, so marks stay with their base.
+#[inline(always)]
+fn is_word_boundary(prev: Square, next: Square) -> bool {
+    if next.has_grapheme() {
+        return false;
+    }
+    (prev.c() == ' ') != (next.c() == ' ')
+}
+
 /// Lookup. Hash → bucket; scan from most-recent; rotate on hit. No
 /// secondary comparison — we trust the 64-bit rapidhash to be
 /// collision-free across realistic workloads. Matches
@@ -2215,6 +2234,13 @@ pub fn build_row_fg<P: GridPalette>(
             if let Some(sel) = row_sel {
                 let end_u16 = end as u16;
                 if end_u16 == sel.lo || end_u16 == sel.hi.saturating_add(1) {
+                    break;
+                }
+            }
+            // Word boundary: the previous cell of the run is the last
+            // one appended, which skips wide-char spacers.
+            if let Some(&prev_col) = rasterizer.run_cell_columns.last() {
+                if is_word_boundary(row[Column(prev_col as usize)], sq2) {
                     break;
                 }
             }
@@ -3391,6 +3417,37 @@ fn rasterize_glyph_native(
         is_color,
         bytes: image.data,
     })
+}
+
+#[cfg(test)]
+mod word_boundary_tests {
+    use super::*;
+
+    fn cell(c: char) -> Square {
+        Square::from_char(c)
+    }
+
+    // A run ends where a space meets a non-space, either way round,
+    // and nowhere else: letters stay together and so do spaces.
+    #[test]
+    fn a_run_ends_where_a_space_meets_a_letter() {
+        assert!(is_word_boundary(cell('d'), cell(' ')));
+        assert!(is_word_boundary(cell(' '), cell('w')));
+        assert!(!is_word_boundary(cell('w'), cell('o')));
+        assert!(!is_word_boundary(cell(' '), cell(' ')));
+        assert!(!is_word_boundary(cell('='), cell('>')));
+    }
+
+    // A cell with a grapheme cluster keeps its marks with the run it
+    // follows, even after a space.
+    #[test]
+    fn a_grapheme_cell_never_starts_a_boundary() {
+        let mut marked = cell('e');
+        marked.insert_cell_flag(rio_backend::crosswords::square::CellFlags::GRAPHEME);
+        assert!(marked.has_grapheme());
+        assert!(!is_word_boundary(cell(' '), marked));
+        assert!(is_word_boundary(marked, cell(' ')));
+    }
 }
 
 #[cfg(test)]
