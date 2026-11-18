@@ -6666,6 +6666,21 @@ mod tests {
     }
 
     #[test]
+    fn only_25a1_followed_by_a_semicolon_is_glyph_protocol() {
+        // As DEC structures control strings these are all `APC 2`;
+        // only a command string starting `5a1;` is ours (§3.1), so the
+        // others get no Glyph Protocol reply.
+        let (mut cw, events) = make_crosswords_with_events(3);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b_25a1s\x1b\\");
+        parser.advance(&mut cw, b"\x1b_25a1\x1b\\");
+        parser.advance(&mut cw, b"\x1b_25a10;s\x1b\\");
+        assert!(pty_writes(&events).is_empty());
+        parser.advance(&mut cw, b"\x1b_25a1;s\x1b\\");
+        assert_eq!(pty_writes(&events).len(), 1);
+    }
+
+    #[test]
     fn grapheme_query_is_unsupported_until_the_host_opts_in() {
         let (mut cw, events) = make_crosswords_with_events(3);
         let mut parser = crate::performer::handler::Processor::default();

@@ -36,6 +36,17 @@ use rio_graphics::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphLayout, GlyphSiz
 /// messages whose body does not begin with this identifier.
 pub const GLYPH_PROTOCOL_PREFIX: &[u8] = b"25a1";
 
+/// Whether an APC body (without `ESC _` and the terminator) is a
+/// Glyph Protocol message: the identifier followed by `;` (§3.1).
+/// A dispatcher that reads control strings the way DEC structures
+/// them sees `APC 2` with a command string starting `5a1;`; anything
+/// else after `25a1` is some other `APC 2` and not ours, so it falls
+/// through to the other APC handlers instead of being rejected here.
+pub fn is_glyph_protocol(body: &[u8]) -> bool {
+    body.strip_prefix(GLYPH_PROTOCOL_PREFIX)
+        .is_some_and(|rest| rest.first() == Some(&b';'))
+}
+
 /// Upper bound on a single registered payload, post-base64-decode.
 /// Matches the 64 KiB limit in the spec; anything larger is rejected
 /// with `payload_too_large`.
@@ -243,7 +254,7 @@ impl RegisterError {
 /// it reaches the handler.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
-    /// Body does not start with `25a1` — not our protocol; caller
+    /// Body does not start with `25a1;` — not our protocol; caller
     /// should fall through to other APC dispatchers.
     NotGlyphProtocol,
     /// Framing was recognised but malformed.
@@ -269,13 +280,11 @@ pub enum ParseError {
 /// Parse a raw APC body (minus the `ESC _` introducer and `ESC \`
 /// terminator) into a [`GlyphCommand`].
 pub fn parse(body: &[u8]) -> Result<GlyphCommand, ParseError> {
-    if !body.starts_with(GLYPH_PROTOCOL_PREFIX) {
+    if !is_glyph_protocol(body) {
         return Err(ParseError::NotGlyphProtocol);
     }
-    let rest = &body[GLYPH_PROTOCOL_PREFIX.len()..];
-    let rest = rest
-        .strip_prefix(b";")
-        .ok_or(ParseError::Malformed("missing verb separator"))?;
+    // The identifier and its `;`.
+    let rest = &body[GLYPH_PROTOCOL_PREFIX.len() + 1..];
 
     let (verb, rest) = split_once(rest, b';');
     let verb = trim(verb);
@@ -856,6 +865,24 @@ mod tests {
     fn rejects_non_glyph_protocol_bodies() {
         assert_eq!(parse(b"G,a=T;payload"), Err(ParseError::NotGlyphProtocol));
         assert_eq!(parse(b""), Err(ParseError::NotGlyphProtocol));
+    }
+
+    #[test]
+    fn identifier_is_25a1_followed_by_a_semicolon() {
+        // Read as DEC structures control strings, these are all `APC 2`.
+        // Only a command string starting `5a1;` is Glyph Protocol; the
+        // rest belong to someone else and fall through (§3.1).
+        assert!(is_glyph_protocol(b"25a1;s"));
+        assert_eq!(parse(b"25a1;s"), Ok(GlyphCommand::Support));
+        for other in [&b"25a1"[..], b"25a1s", b"25a1 ;s", b"25a10;s", b"2", b"25a"] {
+            assert!(!is_glyph_protocol(other), "{:?}", other);
+            assert_eq!(
+                parse(other),
+                Err(ParseError::NotGlyphProtocol),
+                "{:?}",
+                other
+            );
+        }
     }
 
     #[test]

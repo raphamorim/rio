@@ -623,10 +623,10 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
             String::from_utf8_lossy(&data[..data.len().min(50)])
         );
 
-        // Check if this is a Glyph Protocol APC (starts with "25a1").
+        // Check if this is a Glyph Protocol APC (starts with "25a1;").
         // Glyph Protocol is checked before Kitty so its fixed-string
         // prefix short-circuits quickly; the two prefixes are disjoint.
-        if data.starts_with(glyph_protocol::GLYPH_PROTOCOL_PREFIX) {
+        if glyph_protocol::is_glyph_protocol(data) {
             // Copy the body off the shared apc_state buffer so that
             // dispatch_glyph_protocol can take `&mut self` (the handler
             // trait methods need it). Glyph Protocol payloads are
