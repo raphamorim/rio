@@ -224,7 +224,11 @@ impl Drop for EventedAnonRead {
         drop(self.inner.wait_tag.lock());
         self.inner.sig_buffer_not_full.notify_one();
 
-        let thread = self.thread.take().unwrap();
+        // A read that returned the worker's error has already joined
+        // it: the pipe ended, as it does when the child exits.
+        let Some(thread) = self.thread.take() else {
+            return;
+        };
 
         // Stop reader thread waiting for pipe contents
         unsafe {
@@ -431,9 +435,13 @@ impl Drop for EventedAnonWrite {
         drop(self.inner.wait_tag.lock());
         self.inner.sig_buffer_not_empty.notify_one();
 
-        self.thread
-            .take()
-            .unwrap()
+        // A write that returned the worker's error has already joined
+        // it.
+        let Some(thread) = self.thread.take() else {
+            return;
+        };
+
+        thread
             .join()
             .expect("Could not close EventedAnonWrite worker");
     }
@@ -478,5 +486,53 @@ mod tests {
         // which ends the reader.
         drop(writer);
         reader.join().unwrap();
+    }
+
+    /// A reader whose pipe ended, and that said so from `read`, has
+    /// joined its worker by then, and is dropped without a panic.
+    #[test]
+    fn a_reader_is_dropped_after_its_pipe_ended() {
+        let (conout, host) = miow::pipe::anonymous(0).unwrap();
+        let mut reader = EventedAnonRead::new(conout);
+        drop(host);
+
+        let mut buf = [0u8; 16];
+        let mut tries = 0;
+        let err = loop {
+            match reader.read(&mut buf) {
+                Ok(_nbytes) => {
+                    tries += 1;
+                    assert!(tries < 10_000, "the end of the pipe was not reported");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Err(err) => break err,
+            }
+        };
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+
+        drop(reader);
+    }
+
+    /// The same for a writer whose pipe has no reader any more.
+    #[test]
+    fn a_writer_is_dropped_after_its_pipe_ended() {
+        let (host, conin) = miow::pipe::anonymous(0).unwrap();
+        let mut writer = EventedAnonWrite::new(conin);
+        drop(host);
+
+        let mut tries = 0;
+        let err = loop {
+            match writer.write(&[0]) {
+                Ok(_nbytes) => {
+                    tries += 1;
+                    assert!(tries < 10_000, "the end of the pipe was not reported");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Err(err) => break err,
+            }
+        };
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+
+        drop(writer);
     }
 }
