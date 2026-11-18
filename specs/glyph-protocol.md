@@ -131,6 +131,13 @@ for lists). The `status` field's shape is verb-specific: `r` and
 `q` returns a comma-separated coverage list (§5.2), or no `status`
 and a `reason=` when it cannot answer (§5.4).
 
+A message that carries a payload (`r`) carries it as its last
+`;`-separated field, after every key; no key follows it. Terminals
+MUST take the last field as the payload by position, not by its
+content, since a payload can itself contain `=` (base64 padding, for
+one). A payload never contains `;`: base64 has none, and a format
+whose payload is text MUST exclude it.
+
 ### 3.3 Verbs
 
 | Verb | Meaning |
@@ -294,7 +301,7 @@ significant; clients MUST treat the value as a set.
 | `status=` value     | Meaning |
 |---------------------|---------|
 | (empty)             | No font in the fallback chain renders `cp`, and the glossary has no registration for it. The cell will render as tofu. |
-| `system`            | Some font in the fallback chain renders `cp`. No glossary registration (or `cp` is outside the registration block). |
+| `system`            | A font renders `cp`, as the terminal would currently render it in the regular face, user-configured font mappings (such as symbol maps) included. No glossary registration (or `cp` is outside the registration block). |
 | `glossary`          | `cp` is in the registration block and has a live registration in this session. No system font covers it. |
 | `system,glossary`   | `cp` is in the registration block, has a live registration, AND a system font also covers it. The registration takes precedence at render time. |
 
@@ -354,10 +361,14 @@ registration-block codepoint. A registered glyph is a single
 codepoint and never joins with its neighbours (§10), so a cluster
 that pairs one with another visible codepoint answers empty.
 
-The answer is for the regular face. It does not report widths: a
-cluster's cell width is the business of the terminal's width tables
-and mode 2027, and a registered glyph's render span is set by its
-`width` (§8.5).
+The answer is for the regular face, and for the cluster printed as
+plain text in the current mode. A client that places the cluster with
+explicit cell widths, such as kitty's text sizing protocol (OSC 66),
+decides its cells itself; the parts of the answer about coverage and
+joining still apply. The answer does not report widths: a cluster's
+cell width is the business of the terminal's width tables, mode 2027
+and any explicit width, and a registered glyph is drawn into the
+cells its character occupies (§8.5.2).
 
 ### 5.4 Errors
 
@@ -373,6 +384,15 @@ ESC _ 25a1 ; q ; grapheme=1f468,200d,1f469 ; reason=unsupported ESC \
 |-------------------|---------|
 | `unsupported`     | `grapheme` was sent but the terminal does not list `grapheme` in `cap`. |
 | `malformed_query` | Neither or both of `cp` and `grapheme`, an invalid hex value, a surrogate, or more than 32 codepoints in `grapheme`. |
+| `unknown`         | The terminal can't answer without a slow lookup, or is limiting how many queries it answers. |
+
+Answering can mean running font fallback, and for `grapheme`
+shaping, which can take milliseconds through fontconfig and similar.
+A terminal MUST NOT let queries stall its input handling: it MAY
+answer `reason=unknown` instead of looking a font up, and MAY limit
+the rate at which it answers, answering the rest `reason=unknown`. A
+client that gets `unknown` can ask again later, or treat the
+codepoint as not covered.
 
 Terminals written for v1.13 and earlier may ignore a `q` without
 `cp` and send nothing, which is why clients check `cap` first.
@@ -422,16 +442,21 @@ Parameters:
 - `ymin`: bottom of the authored extent, in upm units: the
   descender, so `0` or negative for most glyphs. Optional; default
   `0` when the extent is declared (§8.5.1).
-- `width`: the glyph's render span in cells. One of `1` (one
-  cell) or `2` (two cells). Optional; default `1`. Render-level
-  only: the codepoint's logical cell width stays its system
-  `wcwidth` (`1` for every PUA codepoint), so cursor advance,
-  wrapping, and selection never desync from applications that
-  compute column counts with their own `wcwidth` (shells, line
-  editors, multiplexers). A `width=2` glyph paints across its own
-  cell plus the following cell in pixels; the client MUST leave
-  that following cell blank (emit a space after the codepoint) so
-  the overflow lands on empty space. See §8.5.2.
+- `width`: OPTIONAL hint for terminals that can't size the
+  character any other way: `1` (one cell) or `2` (two cells),
+  default `1`. A glyph is drawn into the cells its character
+  occupies (§8.5.2); where the terminal sizes the character itself,
+  through an explicit width such as kitty's text sizing protocol
+  (OSC 66) or its own rule for a codepoint followed by a space,
+  that wins and `width` is ignored. Where it doesn't, `width=2`
+  draws the glyph across its own cell plus the following one in
+  pixels, while the codepoint's logical cell width stays its system
+  `wcwidth`, so cursor advance, wrapping and selection don't change.
+  The client MUST leave that following cell blank (emit a space
+  after the codepoint) so the overflow lands on empty space.
+  Clients that want larger glyphs SHOULD prefer explicit widths
+  where the terminal supports them: they belong to each place the
+  character is printed, not to the registration.
 - `size`: scale policy. One of `height`, `advance`, `contain`,
   `cover`, `stretch`. Optional; default `contain`. See §8.5.
 - `align`: placement of the scaled outline within the render span,
@@ -442,7 +467,8 @@ Parameters:
   fractions `<top>,<right>,<bottom>,<left>` (each `0.0`–`1.0`;
   top/bottom are fractions of cell height, left/right of render
   span width). Optional; default `0,0,0,0`. See §8.5.
-- payload: base64-encoded payload for the declared `fmt`.
+- payload: the payload for the declared `fmt`, base64 for the
+  binary formats, as the last field (§3.2). At most 32 KiB, decoded.
 
 An invalid value for `upm`, `width`, `aw`, `lh`, `ymin`, `size`,
 `align`, or
@@ -477,8 +503,9 @@ Defined error codes:
 | `composite_unsupported` | Payload contains composite glyphs. |
 | `hinting_unsupported`   | Payload contains hinting instructions. |
 | `malformed_payload`     | Payload failed to parse as `glyf`, or a sizing parameter has an invalid value. |
-| `payload_too_large`     | Payload exceeds 64 KiB post-base64-decode. |
+| `payload_too_large`     | Payload exceeds 32 KiB post-base64-decode. |
 | `outline_too_large`     | An outline (or a colour container's outlines in aggregate) exceeds the 64 KiB decoded-size budget (§8.2). |
+| `no_space`              | The terminal's memory budget for registrations, across all its sessions, is used up (§9). The registration may succeed after others are cleared. |
 
 ### 6.3 Overwrite
 
@@ -493,7 +520,8 @@ ends.
 ### 6.4 Lifetime
 
 Registrations live for the duration of the terminal session. A
-terminal reset (e.g. `ESC c`) MAY clear the entire glossary.
+full terminal reset (RIS, `ESC c`) MUST clear the entire glossary, so
+`reset` reliably returns the user to a known state.
 Registrations MUST NOT persist across terminal restarts.
 
 A registration can outlive the program that made it. A later
@@ -510,28 +538,34 @@ using the block, never text or an installed font's icons.
 ### 7.1 Request
 
 ```
-ESC _ 25a1 ; c [ ; cp=<hex> ] ESC \
+ESC _ 25a1 ; c [ ; cp=<hex> ] [ ; reply=<0|1|2> ] ESC \
 ```
 
 If `cp` is omitted, every slot in the session's glossary is
 cleared. Otherwise the slot corresponding to `cp` is cleared. `cp`
 MUST be in the registration block; otherwise the request is
-rejected with `reason=out_of_namespace`.
+rejected with `reason=out_of_namespace`. `reply` works as it does
+for `r` (§6.1): `0` sends nothing, `2` only failures, `1` (the
+default) both.
 
 ### 7.2 Response
 
 Success:
 
 ```
+ESC _ 25a1 ; c ; cp=<hex> ; status=0 ESC \
 ESC _ 25a1 ; c ; status=0 ESC \
 ```
 
-Clearing an empty slot is a no-op and MUST return `status=0`.
+The reply echoes `cp` when the request had one, so a client that
+clears several slots can tell the replies apart; clearing everything
+replies without `cp`. Clearing an empty slot is a no-op and MUST
+return `status=0`.
 
 Failure:
 
 ```
-ESC _ 25a1 ; c ; status=1 ; reason=out_of_namespace ESC \
+ESC _ 25a1 ; c ; cp=<hex> ; status=1 ; reason=out_of_namespace ESC \
 ```
 
 ### 7.3 Cache invalidation
@@ -587,9 +621,11 @@ subset of `glyf` and MAY reject anything else with
 The 64 KiB budget comes from Mitchell Hashimoto's survey of real
 symbol fonts for Ghostty's implementation: across Apple Symbols,
 Noto, and the Nerd Fonts collection, the largest glyph decodes to
-roughly 40 KiB, so every observed real glyph fits with headroom. Without the cap, a crafted 64 KiB wire payload
-(maximally repeat-compressed flags, omitted deltas) expands to
-~768 KiB of decoded points per monochrome slot, and a colour
+roughly 40 KiB, so every observed real glyph fits with headroom.
+Without the cap, a crafted payload at the wire cap (maximally
+repeat-compressed flags, omitted deltas) expands about 12×: a
+64 KiB payload, the wire cap before v1.16, to ~768 KiB of decoded
+points per monochrome slot, and a colour
 container to many times that, turning the 1024-slot glossary
 into a memory-exhaustion vector measured in hundreds of MiB per
 session.
@@ -651,20 +687,30 @@ same transform and clipped by §8.5.7.
 #### 8.5.2 Render span and padding
 
 The render span is the rectangle of pixels the outline is scaled
-into. Before scaling, the span is:
+into: the area the terminal renders that character into. That is,
+in order:
+
+1. the cells an explicit width gives the character where the
+   terminal supports one, such as kitty's text sizing protocol
+   (OSC 66), whose `w` and `s` keys can make it several cells wide
+   and tall;
+2. otherwise the terminal's own rule for the codepoint, such as
+   kitty drawing a Private Use Area codepoint followed by a space
+   across two cells;
+3. otherwise `width` (§6.1) cells wide and one cell tall:
 
 ```
 W = width × cell_width_px      (cell_width_px from the terminal)
 H = cell_height_px
 ```
 
-The span is a pixel-space quantity. `width=2` widens the pixels
-the outline scales into, not the codepoint's logical cell width
-(§6.1): the cursor still advances one cell and the glyph overflows
-rightward into the following cell, which the client keeps blank.
-If the glyph is in the grid's last column, or the following cell is
-not blank, there is nowhere for the overflow to land: the terminal
-MUST render it with a one-cell span.
+The span is a pixel-space quantity. In the third case `width=2`
+widens the pixels the outline scales into, not the codepoint's
+logical cell width (§6.1): the cursor still advances one cell and
+the glyph overflows rightward into the following cell, which the
+client keeps blank. If the glyph is in the grid's last column, or
+the following cell is not blank, there is nowhere for the overflow
+to land: the terminal MUST render it with a one-cell span.
 
 `pad=<t>,<r>,<b>,<l>` shrinks the span:
 
@@ -759,10 +805,12 @@ the author, not the protocol.
 #### 8.5.7 Clipping
 
 Terminals MUST clip a registered glyph's pixels to its render span
-`W × H` (before padding). The application owns the grid and cannot
-see or repair ink that lands in a neighbouring cell, so a glyph MUST
-NOT paint outside its span. A glyph that needs more room asks for it
-with `width=2`.
+`W × H` (before padding): the area its character occupies, every
+cell of it when an explicit width makes it several cells (§8.5.2).
+The application owns the grid and cannot see or repair ink that
+lands in a neighbouring cell, so a glyph MUST NOT paint outside its
+span. A glyph that needs more room asks for it with an explicit
+width where the terminal supports one, or `width=2`.
 
 ### 8.6 Payload format: `colrv0`
 
@@ -830,10 +878,11 @@ conforming subset for low-overhead implementations is:
 - Affine transforms on paint subtrees.
 - `src-over` layer composite.
 
-Terminals MAY render unsupported paint nodes (sweep gradients,
-blend modes beyond `src-over`, variations) using a reasonable
-fallback (typically the paint subtree's first solid colour)
-rather than rejecting the registration.
+A terminal that can't render a paint node in a payload (a sweep
+gradient, a blend mode beyond `src-over`, variations) MUST reject the
+registration with `reason=malformed_payload` rather than draw a
+substitute: the same payload must draw the same in every terminal
+that accepts it, so a client can rely on what it registered.
 
 **Foreground inheritance.** CPAL palette index `0xFFFF` and
 v1's `PaintSolid` with the foreground sentinel MUST resolve to
@@ -842,12 +891,14 @@ Terminals that cache rasterised colour glyphs MUST re-rasterise
 on foreground change for any glyph whose paint graph references
 `0xFFFF`.
 
-**Security.** The colour formats add no new attack surface beyond
-§9: `cp` is still confined to the registration block, the cell
-buffer is still authoritative for copy/selection, and registrations
-are still session-scoped. A malformed `COLR` is a rendering error,
-not an injection vector: the rendered pixels can only affect cells
-holding a block codepoint.
+**Security.** `cp` is still confined to the registration block,
+the cell buffer is still authoritative for copy and selection, and
+whatever a payload draws stays inside its character's cells. The
+`COLR` parser itself is new attack surface, though: a v1 paint graph
+can be deeply nested or cyclic through `PaintColrLayers` and
+`PaintColrGlyph`, and parsers for it have needed hardening against
+fuzzed input. Terminals MUST bound recursion depth and detect cycles,
+and SHOULD use a parser that has been fuzzed.
 
 ### 8.8 Authoring
 
@@ -870,11 +921,13 @@ font draws, looks**. Enforcement is structural:
 - Register accepts a `cp` parameter, but `cp` MUST be in the
   registration block (§4). Any other codepoint is rejected with
   `reason=out_of_namespace`.
-- Nothing else assigns the block. Users don't type its codepoints,
-  no pre-existing text contains them, and no font in use puts an
-  icon there. A block codepoint only shows up in output from a
-  program that uses Glyph Protocol, so it only ever stands for a
-  glyph some program registered.
+- No font in use puts an icon in the block, so the only glyph a
+  block codepoint can show is one registered in the session. That
+  doesn't mean only cooperating programs emit them: block codepoints
+  can appear in file names, file contents or commit messages, and
+  `cat` on a file can both register a glyph (the APC is part of the
+  file) and print it. Anything printed to the terminal can register
+  and use these codepoints, and the protocol is designed for that.
 - The rest of the Private Use Areas stays out of reach. A Nerd
   Fonts codepoint such as `U+E0A0` (the git branch icon) is drawn
   by the user's font, in their prompt and in every program, for
@@ -889,19 +942,31 @@ font draws, looks**. Enforcement is structural:
 Without these properties, a program writing to the PTY could
 register a glyph for `a` that looks like `o`, or swap the git
 branch icon in the user's prompt, and mislead the reader. With
-them, the worst a program can do is draw something unexpected at a
-block codepoint, which only other Glyph Protocol programs emit and
-which the cell buffer honestly reports.
+them, the worst anything printed to the terminal can do is draw
+something unexpected at a block codepoint, confined to that
+character's cells (§8.5.7), which copies and pastes as the Private
+Use Area character it is. An untrusted file can already show
+arbitrary pictures through image protocols.
 
 Other considerations:
 
 - **Resource bounds.** Three caps bound the glossary: 1024 slots
-  per session, 64 KiB of wire payload per registration, and 64 KiB
-  of decoded outline data per registration (§8.2). Worst case, a
-  session holds 64 MiB of wire bytes plus 64 MiB of decoded
-  points. The decoded cap is load-bearing: the `glyf` wire form is
+  per session, 32 KiB of payload per registration, and 64 KiB of
+  decoded outline data per registration (§8.2). Worst case, a
+  session holds 32 MiB of payload plus 64 MiB of decoded points.
+  The decoded cap is load-bearing: the `glyf` wire form is
   compressed, so a crafted payload expands ~12× on decode and the
-  wire cap alone bounds nothing that matters.
+  payload cap alone bounds nothing that matters. Those are per
+  session, and a user with many tabs and splits multiplies them, so
+  a terminal MAY also enforce a total budget across its sessions and
+  reject registrations past it with `reason=no_space` (§6.2), rather
+  than being able to hold 1024 maximal glyphs in every session.
+- **Font fingerprinting.** `q` with a `cp` outside the block tells a
+  program, one codepoint at a time, whether an installed font covers
+  it, so a remote program can learn something about the installed
+  fonts. That is the same information a program gets by printing a
+  codepoint and asking where the cursor went, and terminals MAY
+  rate-limit answers (§5.4).
 - **No code execution.** The `glyf` subset defined in §8.2
   excludes hinting instructions, which is the only part of
   TrueType that is executable. Glyph Protocol is purely
@@ -957,16 +1022,19 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
    foreground color.
 7. Scales and positions glyphs according to `upm`, `aw`, `lh`,
    `ymin`, `width`, `size`, `align`, and `pad` as specified in §8.5,
-   rendering a `width=2` glyph across two cells of pixels while
-   the codepoint's logical cell width stays its system `wcwidth`,
-   and clipping each glyph to its render span (§8.5.7).
+   into the area the character occupies (§8.5.2), rendering a
+   `width=2` glyph across two cells of pixels where nothing else sizes
+   the character while its logical cell width stays its system
+   `wcwidth`, and clipping each glyph to its render span (§8.5.7).
 8. Enforces the cell-buffer authority invariant in §9: selection,
    copy, and search return the raw codepoint.
 9. Ignores unrecognized parameters rather than failing the
    request.
-10. Answers `q` requests in order (§5.5). If it lists `grapheme` in the
-    `s` reply's `cap`, answers grapheme queries per §5.3; otherwise
+10. Answers `q` requests in order (§5.5), without letting them stall
+    its input handling (§5.4). If it lists `grapheme` in the `s`
+    reply's `cap`, answers grapheme queries per §5.3; otherwise
     replies to them with `reason=unsupported` (§5.4).
+11. Clears the glossary on a full reset (RIS, §6.4).
 
 A client (application) is Glyph Protocol v1 conformant if it:
 
@@ -978,7 +1046,8 @@ A client (application) is Glyph Protocol v1 conformant if it:
 3. Emits only the `glyf` subset defined in §8.2.
 4. Handles all `reason=*` error codes without crashing.
 5. Leaves the cell after every `width=2` codepoint blank (emits a
-   space), so the render-span overflow lands on empty space.
+   space), so the render-span overflow lands on empty space, when it
+   relies on `width` rather than an explicit width (§8.5.2).
 6. Sends `q` with `grapheme` only when the `s` reply lists `grapheme` in
    `cap`, and falls back to `cp` otherwise.
 
@@ -1058,9 +1127,9 @@ implementations.
 on the PTY. Client applications that register at startup and do not
 care about the reply have three options, in order of preference:
 
-1. Use `reply=0` on the register request (§6.1). The terminal emits
+1. Use `reply=0` on the request (§6.1, §7.1). The terminal emits
    nothing, so there's nothing to drain and nothing to leak. Best
-   for bulk startup registrations.
+   for bulk startup registrations, and for a `c` on exit.
 2. Use `reply=2` to keep failure replies but drop success ACKs.
    Retains debuggability (you still learn about malformed payloads)
    without the success-reply noise of a 100-glyph registration.
@@ -1072,8 +1141,19 @@ AFTER the framework has torn down its input reader, typically on
 exit, at which point the reply arrives in the PTY but nobody reads
 it, and the shell that takes over the PTY after the app exits emits
 the queued bytes as visible text (`.25a1;c;status=0` or
-`.25a1;r;cp=…;status=0`). For exit-time cleanup, prefer skipping
-the `c` altogether (registrations expire with the session anyway).
+`.25a1;r;cp=…;status=0`). For exit-time cleanup, send `c` with
+`reply=0`, or skip it (registrations expire with the session anyway).
+
+**Register cheaply, rasterize lazily.** Parsing and validating is all
+a registration should cost. Rasterize when a glyph is first drawn,
+not when it is registered, and cache the result keyed on the
+registration, the size of the area it is drawn into, and the
+foreground colour when the glyph's colours reference it. A
+multi-colour glyph that uses the foreground can't be one alpha mask
+tinted at draw time the way text is, so a glyph shown in many
+foreground colours makes many cache entries. Drawing cost grows with
+the area as well as the outline: with explicit widths a glyph can
+cover up to 7×7 cells, many times the pixels of one cell.
 
 **Practical source of `glyf` data.** Most apps will not hand-author
 `glyf` bytes. The typical pipeline is:
@@ -1118,3 +1198,4 @@ fresh bytes rather than serving a stale bitmap.
 | 2026-11-15 | v1.13   | Restricted registration to one reserved block, `U+100000`–`U+1003FF` (the first 1024 codepoints of Supplementary PUA-B); `r` and `c` reject every other codepoint, including the rest of the Private Use Areas, with `reason=out_of_namespace`. Allowing all of PUA let a program redefine a Nerd Fonts icon such as the git branch glyph and exit, leaving the user's prompt drawing it for the rest of the session. Raised by Kovid Goyal in kitty#10872; Nerd Fonts confirmed it will not use the block (nerd-fonts#2105). The block is the size of the glossary, so FIFO eviction is removed. Clients MUST register every block codepoint they emit, since registrations outlive the program that made them. Clients registering in the Basic PUA, PUA-A, or elsewhere in PUA-B must move into the block. Removed the claim that an `svg2glyf` helper ships with the reference implementation; it was never published. |
 | 2026-11-15 | v1.14   | Added the grapheme query `q;grapheme=`: one grapheme cluster as up to 32 codepoints, answered for the cluster as a whole. `status` keeps its meaning as a set of sources but is empty unless the cluster renders correctly in the current mode, so a ZWJ emoji sequence the font does not join, or a cluster the terminal would split across cells, reports empty. Default-ignorable codepoints are never reported as missing. It is optional: the `s` reply gains a `cap` key listing optional capabilities, the first being `grapheme`, and a terminal without it replies `reason=unsupported`. `q` replies can now carry `reason=` (`unsupported`, `malformed_query`) and arrive in request order. Registration stays per codepoint. Raised by Jeff Quast in contour#2019, for tofu detection in blessed and ucs-detect. |
 | 2026-11-18 | v1.15   | Added a note to §3.1 on dispatch: to a terminal that dispatches control strings by intermediate and final bytes, as DEC structures them, a message is `APC 2` with the command string starting `5a1;`, and `2` is in the private-use final range; terminals now recognise a message by `25a1;`, not `25a1` alone. Corrected §3: ECMA-48 leaves an APC's content to the program that receives it and does not require a program that doesn't implement a command to ignore it, as the earlier wording claimed. Added §3.4: clients detect support with `s` followed by DA1, so a DA1 reply with no `s` reply before it means unsupported, as with kitty's graphics and keyboard protocols, and MUST NOT send `q`, `r`, or `c` to a terminal that has not answered `s`. GNU screen and tmux give APC their own meaning (the hardstatus line or window title, the pane title), so there the probe shows up as text, but it is never answered and nothing else is sent. Clients that use the multiplexer's passthrough wrap DA1 too, since the multiplexer answers an unwrapped DA1 itself. Clients that register without sending `s` first must add the probe. Wire format unchanged. |
+| 2026-11-18 | v1.16   | Review from Kovid Goyal for kitty. `width` is an optional hint: a glyph is drawn into the cells its character occupies (§8.5.2), so an explicit width such as kitty's text sizing protocol (OSC 66), or a terminal's own rule for a codepoint followed by a space, wins over it; clipping is to that area. The grapheme query answers for the cluster printed as plain text; explicit widths are the client's business. `status=system` means as the terminal would currently render it in the regular face, symbol maps included. `q` may answer the new `reason=unknown` instead of stalling input on a font lookup, and terminals may rate-limit it. The payload is the last field of `r`, found by position, and never contains `;` (§3.2). `c` takes `reply=` and its reply echoes `cp`. The payload cap drops from 64 KiB to 32 KiB, and terminals may enforce a budget across sessions with the new `reason=no_space`. A full reset (RIS) MUST clear the glossary. A `colrv1` paint the terminal can't render rejects the registration instead of drawing a substitute, and §8.7 no longer claims the COLR parser adds no attack surface. §9 reasons from anything printed to the terminal being able to register and use block codepoints, and notes font fingerprinting through `q`. Appendix C has notes on lazy rasterization and cache keys. A client that sent payloads over 32 KiB, or relied on a `c` reply without `cp`, must adjust. |

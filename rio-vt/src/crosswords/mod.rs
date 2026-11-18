@@ -3742,6 +3742,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // sixel/iTerm2) and dispatch the queued texture removals.
         self.graphics.clear_all_kitty_state();
         self.send_graphics_updates();
+        // Glyph Protocol §6.4: a full reset clears every registration.
+        self.glyph_clear(None);
 
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
@@ -7420,6 +7422,24 @@ mod tests {
     }
 
     #[cfg(feature = "graphics")]
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn full_reset_clears_glyph_registrations() {
+        let mut cw = make_crosswords();
+        Handler::glyph_register(
+            &mut cw,
+            0x10_0000,
+            glyf_payload(minimal_glyf_bytes(), 1000),
+            1,
+            Default::default(),
+        )
+        .unwrap();
+        assert!(registry_contains(&cw, 0x10_0000));
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1bc");
+        assert!(!registry_contains(&cw, 0x10_0000));
+    }
+
     #[cfg(feature = "graphics")]
     #[test]
     fn glyph_protocol_register_rejects_outside_the_block() {

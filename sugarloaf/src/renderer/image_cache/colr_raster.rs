@@ -10,7 +10,9 @@
 //   * Linear + radial gradients are handled correctly, including the
 //     3-point → 2-point projection COLR v1 requires (porting the
 //     math from skrifa/color/traversal.rs).
-//   * Sweep gradients degrade to the first stop's solid colour.
+//   * Sweep gradients use tiny-skia's sweep shader. Glyph Protocol
+//     v1.16 says a terminal must reject a paint it can't draw rather
+//     than substitute one, so there is no fallback colour here.
 //   * Variable-font coordinates render at the default instance.
 //   * Composite modes beyond the painter's-algorithm `SrcOver` map
 //     through `CompositeMode → BlendMode`; tiny-skia implements the
@@ -23,14 +25,14 @@
 
 use ttf_parser::colr::{
     ClipBox, CompositeMode, GradientExtend, LinearGradient as TtfLinear, Paint, Painter,
-    RadialGradient as TtfRadial,
+    RadialGradient as TtfRadial, SweepGradient as TtfSweep,
 };
 use ttf_parser::{GlyphId, RgbaColor, Transform as TtfTransform};
 
 use tiny_skia::{
     BlendMode, Color, FillRule, GradientStop, LinearGradient, Mask, Paint as SkPaint,
     Path, PathBuilder, Pixmap, PixmapPaint, Point, RadialGradient, Rect, Shader,
-    SpreadMode, Transform,
+    SpreadMode, SweepGradient, Transform,
 };
 
 use crate::font::glyf_decode;
@@ -505,13 +507,9 @@ impl<'a> Painter<'a> for ColorRaster<'a> {
                 }
             }
             Paint::SweepGradient(sg) => {
-                // Sweep gradients don't map to tiny-skia (no sweep
-                // shader). Degrade to the first stop's solid colour.
-                // Nabla doesn't use sweeps; extending later means
-                // writing a custom per-pixel shader.
-                if let Some(first) = sg.stops(0, &[]).next() {
+                if let Some(shader) = sweep_gradient_shader(&sg) {
                     let p = SkPaint {
-                        shader: Shader::SolidColor(rgba_to_color(first.color)),
+                        shader,
                         anti_alias: true,
                         ..SkPaint::default()
                     };
@@ -864,6 +862,45 @@ fn radial_gradient_shader(rg: &TtfRadial<'_>) -> Option<Shader<'static>> {
         rg.r1.max(0.1),
         stops_to_tiny_skia(&stops),
         extend_to_spread(rg.extend),
+        Transform::identity(),
+    )
+}
+
+/// COLR v1 angles are F2DOT14 with 1.0 meaning 180°, counter-clockwise
+/// in the glyph's Y-up space; tiny-skia takes degrees, and with the
+/// Y flip in the CTM its angles run the same way. tiny-skia wants
+/// start ≤ end, so a sweep that runs backwards swaps its angles and
+/// mirrors its stops, which paints the same colour at every angle.
+fn sweep_gradient_shader(sg: &TtfSweep<'_>) -> Option<Shader<'static>> {
+    let mut stops = collect_stops(sg.stops(0, &[]));
+    if stops.len() < 2 {
+        return stops.into_iter().next().map(|(_, c)| Shader::SolidColor(c));
+    }
+    let (mut start, mut end) = (sg.start_angle * 180.0, sg.end_angle * 180.0);
+    if start > end {
+        std::mem::swap(&mut start, &mut end);
+        for stop in &mut stops {
+            stop.0 = 1.0 - stop.0;
+        }
+        stops.reverse();
+    }
+    // tiny-skia 0.12 applies the angle scale and offset only when both
+    // are non-trivial (`scale != 1.0 && bias != 0.0`), so a sweep that
+    // starts at exactly 0° ignores its end angle, and one spanning
+    // exactly 360° ignores its start. Nudging the angle by a thousandth
+    // of a degree makes it apply them; the error can't be seen.
+    const NUDGE: f32 = 1e-3;
+    if start == 0.0 && end != 360.0 {
+        start = NUDGE;
+    } else if start != 0.0 && end - start == 360.0 {
+        end += NUDGE;
+    }
+    SweepGradient::new(
+        Point::from_xy(sg.center_x, sg.center_y),
+        start,
+        end,
+        stops_to_tiny_skia(&stops),
+        extend_to_spread(sg.extend),
         Transform::identity(),
     )
 }
@@ -1281,6 +1318,46 @@ mod tests {
         colr.extend_from_slice(&[10, 0, 0, 6, 0, 0]); // PaintGlyph(gid 0)
         colr.extend_from_slice(&[2, 0xFF, 0xFF, 0x40, 0x00]); // PaintSolid(fg)
         colr
+    }
+
+    #[test]
+    fn colr_v1_sweep_gradient_is_drawn() {
+        // PaintGlyph(gid 0) over a PaintSweepGradient centred on a
+        // 350-unit square, from 0° to 180° (F2DOT14 1.0) counter-
+        // clockwise, the foreground fading from opaque to transparent.
+        let mut colr = build_colr_v1(&[0]);
+        colr[40..44].copy_from_slice(&10u32.to_be_bytes());
+        colr.extend_from_slice(&[10, 0, 0, 6, 0, 0]); // PaintGlyph(gid 0)
+        colr.extend_from_slice(&[8, 0, 0, 12]); // PaintSweepGradient, ColorLine at +12
+        colr.extend_from_slice(&175i16.to_be_bytes()); // centre x
+        colr.extend_from_slice(&175i16.to_be_bytes()); // centre y
+        colr.extend_from_slice(&0u16.to_be_bytes()); // start 0°
+        colr.extend_from_slice(&0x4000u16.to_be_bytes()); // end 180°
+        colr.extend_from_slice(&[0, 0, 2]); // ColorLine: pad, 2 stops
+        colr.extend_from_slice(&[0x00, 0x00, 0xFF, 0xFF, 0x40, 0x00]); // 0: fg, alpha 1
+        colr.extend_from_slice(&[0x40, 0x00, 0xFF, 0xFF, 0x00, 0x00]); // 1: fg, alpha 0
+        let r = rasterize(
+            &[glyf_box(0, 0, 350, 350)],
+            &colr,
+            &[],
+            350,
+            70,
+            70,
+            [255, 255, 255, 255],
+            &GlyphLayout::default(),
+            0.0,
+        )
+        .expect("draws");
+        // The square fills the 70 px cell, its centre at (35, 35), y down.
+        let alpha = |x: usize, y: usize| r.data[(y * 70 + x) * 4 + 3];
+        // Just above the centre on the right is near 0°: opaque.
+        assert!(alpha(60, 31) > 200, "{}", alpha(60, 31));
+        // Straight up is 90°: half way.
+        assert!((90..170).contains(&alpha(35, 5)), "{}", alpha(35, 5));
+        // Just above the centre on the left is near 180°: transparent.
+        assert!(alpha(10, 31) < 50, "{}", alpha(10, 31));
+        // Below the centre is past 180°, padded with the last stop.
+        assert_eq!(alpha(35, 60), 0);
     }
 
     fn rasterize_foreground(layout: &GlyphLayout) -> Option<RasterizedPayload> {
