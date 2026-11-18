@@ -351,15 +351,7 @@ impl Screen<'_> {
             last_chrome_press: None,
             last_close_press: None,
             grids: rustc_hash::FxHashMap::default(),
-            grid_rasterizer: {
-                let mut rasterizer = rio_grid::GridGlyphRasterizer::new();
-                // A quarter to half of a 120 to 60 Hz frame; glyphs past
-                // it draw on the following frames (see `render`).
-                rasterizer.set_custom_glyph_frame_budget(Some(
-                    std::time::Duration::from_millis(4),
-                ));
-                rasterizer
-            },
+            grid_rasterizer: rio_grid::GridGlyphRasterizer::new(),
         })
     }
 
@@ -4223,13 +4215,11 @@ impl Screen<'_> {
             )> = Vec::with_capacity(panels.len());
 
             let rasterizer = &mut self.grid_rasterizer;
-            rasterizer.begin_frame();
             let renderer_ref = &self.renderer;
             for (route_id, grid) in self.grids.iter_mut() {
                 let Some(p) = panels.iter_mut().find(|p| p.route_id == *route_id) else {
                     continue;
                 };
-                let deferred_before = rasterizer.custom_glyphs_deferred();
 
                 // Decide which rows to rebuild.
                 //
@@ -4589,15 +4579,6 @@ impl Screen<'_> {
                     input_colorspace,
                 };
 
-                // Glyph Protocol glyphs past this frame's raster budget
-                // drew as empty cells. Rebuild the panel next frame so
-                // they fill in; the ones already drawn hit the atlas.
-                // After the atlas-full recovery above, so it doesn't
-                // re-run in this frame with the budget spent.
-                if rasterizer.custom_glyphs_deferred() > deferred_before {
-                    grid.request_full_rebuild();
-                }
-
                 frame_grids.push((grid, uniforms));
             }
 
@@ -4621,13 +4602,6 @@ impl Screen<'_> {
                 // them so the next presented frame doesn't
                 // composite them on top of their re-pushed selves.
                 self.sugarloaf.discard_frame();
-            }
-
-            // Deferred custom glyphs need another frame even when the
-            // terminal stays idle.
-            if self.grid_rasterizer.custom_glyphs_deferred() > 0 {
-                self.mark_dirty();
-                self.context_manager.request_render();
             }
 
             // Return each panel's snapshot buffers to the matching

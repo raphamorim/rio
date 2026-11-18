@@ -495,8 +495,7 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
 }
 
 /// `fmt=vg`: the payload is the text itself, read against the `vb`
-/// key. `upm`, `aw`, `lh` and `ymin` don't apply; the viewBox is the
-/// declared extent that `size`, `align` and `pad` place.
+/// key. Placement is [`parse_vector_layout`]'s.
 fn parse_vector_payload(
     params: &Params<'_>,
     text: &[u8],
@@ -516,9 +515,6 @@ fn parse_vector_payload(
     Ok(GlyphPayload::Vector { glyph })
 }
 
-/// Read the §8.5 sizing keys; each absent key takes the protocol's
-/// default (`size=contain`, `align=center,center`, no padding). `None`
-/// when a value is invalid.
 /// `fmt=vg` placement: the viewBox is the extent, so the keys are the
 /// ones SVG's `preserveAspectRatio` has. `fit` is `contain` (default),
 /// `cover` or `stretch`; `align` is `<h>,<v>` with `start`, `center`
@@ -555,6 +551,9 @@ fn parse_vector_layout(params: &Params<'_>) -> Option<GlyphLayout> {
     Some(layout)
 }
 
+/// Read the §8.5 sizing keys; each absent key takes the protocol's
+/// default (`size=contain`, `align=center,center`, no padding). `None`
+/// when a value is invalid.
 fn parse_layout(params: &Params<'_>) -> Option<GlyphLayout> {
     let extent = |key: &str| match params.get(key) {
         Some(raw) => parse_decimal_u16(raw).filter(|value| *value > 0).map(Some),
@@ -1282,7 +1281,7 @@ mod tests {
 
     #[test]
     fn parses_register_with_fmt_vg() {
-        let body = b"25a1;r;cp=100001;fmt=vg;vb=0,0,24,24;size=contain;\
+        let body = b"25a1;r;cp=100001;fmt=vg;vb=0,0,24,24;fit=contain;\
 stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z";
         match parse(body) {
             Ok(GlyphCommand::Register {

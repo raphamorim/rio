@@ -291,8 +291,8 @@ fn rasterize_mono(
     })
 }
 
-/// Draw a `fmt=vg` glyph. The viewBox is the declared extent, placed by
-/// the §8.5 keys like any other format. A glyph whose colours are all
+/// Draw a `fmt=vg` glyph. The viewBox is the extent, placed by `fit`
+/// and `align` (no baseline, so the baseline is unused). A glyph whose colours are all
 /// the foreground, gradient stops included, becomes an A8 mask (layer
 /// alphas composite into its coverage) so the grid tints it like
 /// `glyf`; any fixed colour makes it RGBA with the foreground resolved

@@ -380,11 +380,15 @@ fn check_clips(layers: &[VectorLayer]) -> Result<(), VectorError> {
     Ok(())
 }
 
-/// The largest factor a matrix stretches a length by, roughly: used to
-/// charge and cap a stroke width in viewBox units.
+/// The most a matrix stretches a length by (its largest singular
+/// value): a stroke width is capped and charged in viewBox units with
+/// it, so no rotation or shear draws a wider pen than the cap allows.
 fn scale_of(transform: Option<[f32; 6]>) -> f64 {
-    transform.map_or(1.0, |[a, b, c, d, ..]| {
-        (a as f64).hypot(b as f64).max((c as f64).hypot(d as f64))
+    transform.map_or(1.0, |m| {
+        let [a, b, c, d] = [m[0], m[1], m[2], m[3]].map(f64::from);
+        let sum = a * a + b * b + c * c + d * d;
+        let det = a * d - b * c;
+        ((sum + (sum * sum - 4.0 * det * det).max(0.0).sqrt()) / 2.0).sqrt()
     })
 }
 
@@ -1759,8 +1763,15 @@ mod tests {
             layer(&format!("fill=nonzero,fg,m 4 0 0 4 0 0:M0 0{lines}")),
             Err(VectorError::TooLarge)
         );
-        // A stroke width is capped in viewBox units.
+        // A stroke width is capped in viewBox units, by the matrix's
+        // largest stretch: a shear stretches more than either column
+        // (1.618 here, where the longer column is 1.414).
         assert!(layer("stroke=12,fg,m 2 0 0 2 0 0:M0 0h1").is_ok());
+        assert!(layer("stroke=14,fg,m 1 0 1 1 0 0:M0 0h1").is_ok());
+        assert_eq!(
+            layer("stroke=16,fg,m 1 0 1 1 0 0:M0 0h1"),
+            Err(VectorError::Malformed)
+        );
         assert_eq!(
             layer("stroke=13,fg,m 2 0 0 2 0 0:M0 0h1"),
             Err(VectorError::Malformed)
