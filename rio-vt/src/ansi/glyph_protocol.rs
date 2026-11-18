@@ -32,8 +32,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rio_graphics::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphLayout, GlyphSize};
 
 /// Protocol identifier — the literal ASCII string `"25a1"` that
-/// prefixes every Glyph Protocol APC body. Terminals MUST drop APC
-/// messages whose body does not begin with this identifier.
+/// prefixes every Glyph Protocol APC body, always followed by `;`.
+/// Use [`is_glyph_protocol`] to recognise a message.
 pub const GLYPH_PROTOCOL_PREFIX: &[u8] = b"25a1";
 
 /// Whether an APC body (without `ESC _` and the terminator) is a
