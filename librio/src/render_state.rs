@@ -211,6 +211,13 @@ pub struct RenderState {
     cursor_column: usize,
     cursor_visible: bool,
     cursor_shape: CursorShape,
+    /// The surface's answer to whether the host breaks runs at the
+    /// cursor cell.
+    cursor_shaping_break: Arc<std::sync::atomic::AtomicBool>,
+    /// The cursor cell the rows were last shaped around, (line, column),
+    /// or `None` when no row was. A change marks the row it left and
+    /// the row it is on dirty; neither changed, so neither is copied.
+    shaped_cursor: Option<(usize, usize)>,
     /// Terminal palette (OSC-set / dynamic colors), snapshotted under
     /// the same lock as the grid so the GPU emit path resolves indexed
     /// and named colors against the exact frame it draws.
@@ -247,6 +254,7 @@ impl RenderState {
     pub fn new(surface: &Surface) -> Self {
         let terminal = surface.terminal();
         let inline_images = surface.inline_images();
+        let cursor_shaping_break = surface.cursor_shaping_break();
         let (columns, term_colors) = {
             let term = terminal.lock();
             (term.grid.columns(), *term.colors())
@@ -260,6 +268,8 @@ impl RenderState {
             cursor_line: 0,
             cursor_column: 0,
             cursor_visible: true,
+            cursor_shaping_break,
+            shaped_cursor: None,
             cursor_shape: CursorShape::Block,
             term_colors,
             display_offset: 0,
@@ -285,16 +295,13 @@ impl RenderState {
             }
             term.end_sync_update();
         }
+        // An update with nothing reported copies nothing: the snapshot
+        // still picks up any row marked since the last report.
         let damage = if self.rows.is_empty() {
             TerminalDamage::Full
         } else {
-            match term.peek_damage_event() {
-                Some(damage) => damage,
-                None => TerminalDamage::Full,
-            }
+            term.peek_damage_event().unwrap_or(TerminalDamage::Noop)
         };
-        // Consuming the damage first: it marks the rows the cursor left
-        // and entered, which the snapshot then copies.
         term.reset_damage();
         term.snapshot_visible(
             &damage,
@@ -378,6 +385,19 @@ impl RenderState {
         // Hidden covers both DECTCEM (CSI ?25l) and a scrolled viewport;
         // renderers must not paint a cursor in either case.
         self.cursor_visible = cursor.content != CursorShape::Hidden;
+        let shaped_cursor = (self
+            .cursor_shaping_break
+            .load(std::sync::atomic::Ordering::Relaxed)
+            && self.cursor_visible)
+            .then_some((self.cursor_line, self.cursor_column));
+        if shaped_cursor != self.shaped_cursor {
+            for (line, _) in self.shaped_cursor.into_iter().chain(shaped_cursor) {
+                if let Some(row) = self.rows.get_mut(line) {
+                    row.dirty = true;
+                }
+            }
+            self.shaped_cursor = shaped_cursor;
+        }
         self.selection = term
             .selection
             .as_ref()

@@ -601,16 +601,19 @@ fn resolver_fast_path_matches_slow_path() {
     grid.sync_template_style();
     let id = grid.template_style_id();
 
-    // Styled row: full resolution.
-    let mut styled: Row<Square> = Row::new(3);
+    // Styled row: a run of two styled cells between default ones.
+    let mut styled: Row<Square> = Row::new(5);
     styled[Column(1)].set_style_id(id);
+    styled[Column(2)].set_style_id(id);
     styled.has_styles = true;
     let mut out = Vec::new();
     grid.resolve_row_styles(&styled, &mut out);
-    assert_eq!(out.len(), 3);
+    assert_eq!(out.len(), 5);
     assert_eq!(out[0], Style::default());
     assert_eq!(out[1].fg, AnsiColor::Named(NamedColor::Blue));
-    assert_eq!(out[2], Style::default());
+    assert_eq!(out[2].fg, AnsiColor::Named(NamedColor::Blue));
+    assert_eq!(out[3], Style::default());
+    assert_eq!(out[4], Style::default());
 
     // Unstyled row: the fast path must be indistinguishable.
     let plain: Row<Square> = Row::new(3);

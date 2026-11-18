@@ -266,7 +266,6 @@ impl Screen<'_> {
             keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
-            cursor_shaping_break: config.fonts.cursor_shaping_break,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
         };
 
@@ -561,13 +560,9 @@ impl Screen<'_> {
         // them the new one.
         let colors = rio_backend::config::colors::term::List::from(&config.colors);
         self.context_manager.config.colors = colors;
-        self.context_manager.config.cursor_shaping_break =
-            config.fonts.cursor_shaping_break;
         for grid in self.context_manager.contexts_mut() {
             for item in grid.contexts_mut().values_mut() {
-                let mut terminal = item.val.terminal.lock();
-                terminal.set_default_colors(colors);
-                terminal.set_cursor_shaping_break(config.fonts.cursor_shaping_break);
+                item.val.terminal.lock().set_default_colors(colors);
             }
         }
         if let Some(mut island) = old_island {
@@ -4142,6 +4137,19 @@ impl Screen<'_> {
                 // and put them back at the end of the render pass so
                 // the next frame's `Renderer::run` resumes the same
                 // allocations.
+                // The row the cursor left and the row it is on shape
+                // differently when the cursor cell is a run of its own.
+                // Neither changed, so they are marked here from the
+                // rows already held instead of copied again, and a
+                // frame that was only a cursor move becomes a partial
+                // one so the emit loop rebuilds them.
+                let cursor = &ctx.renderable_content.cursor.state;
+                let shaped_cursor = (self.renderer.cursor_shaping_break
+                    && cursor.is_visible()
+                    && cursor.content != rio_backend::ansi::CursorShape::Hidden)
+                    .then_some((cursor.pos.row.0 as u16, cursor.pos.col.0 as u16));
+                let cursor_rows_marked =
+                    ctx.renderable_content.mark_cursor_rows(shaped_cursor);
                 let visible_rows =
                     std::mem::take(&mut ctx.renderable_content.visible_rows);
                 let row_styles = std::mem::take(&mut ctx.renderable_content.row_styles);
@@ -4156,6 +4164,16 @@ impl Screen<'_> {
                     &mut ctx.renderable_content.frame_damage,
                     rio_backend::event::TerminalDamage::Noop,
                 );
+                let damage = if cursor_rows_marked
+                    && matches!(
+                        damage,
+                        rio_backend::event::TerminalDamage::Noop
+                            | rio_backend::event::TerminalDamage::CursorOnly
+                    ) {
+                    rio_backend::event::TerminalDamage::Partial
+                } else {
+                    damage
+                };
                 let hint_matches = ctx.renderable_content.hint_matches.clone();
                 let is_active = *key == active_key;
                 // `focused_match` lives on `Screen::search_state` — it's

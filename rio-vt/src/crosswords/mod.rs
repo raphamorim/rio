@@ -533,9 +533,6 @@ where
     /// consumers flip it
     /// via [`set_grapheme_clustering`](Self::set_grapheme_clustering).
     grapheme_clustering_default: bool,
-    /// Whether the renderer breaks shaping runs around the cursor cell.
-    /// A cursor move then rebuilds the rows where that changes glyphs.
-    cursor_shaping_break: bool,
 
     // The stack for the keyboard modes.
     modify_other_keys: u8,
@@ -597,7 +594,6 @@ impl<U: EventListener> Crosswords<U> {
                 | Mode::URGENCY_HINTS
                 | Mode::GRAPHEME_CLUSTER,
             grapheme_clustering_default: true,
-            cursor_shaping_break: true,
             damage: TermDamageState::new(rows),
             graphics: Graphics::new(&dimensions),
             #[cfg(feature = "graphics")]
@@ -637,19 +633,6 @@ impl<U: EventListener> Crosswords<U> {
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
         self.grapheme_clustering_default = enabled;
         self.mode.set(Mode::GRAPHEME_CLUSTER, enabled);
-    }
-
-    /// Tell the terminal whether the renderer breaks shaping runs around
-    /// the cursor cell. When it does, a cursor move rebuilds the row it
-    /// left and the row it is on, so a ligature under the cursor is
-    /// split while the cursor is there and joined again once it leaves.
-    /// When it does not, a cursor move rebuilds no row. On by default.
-    pub fn set_cursor_shaping_break(&mut self, enabled: bool) {
-        self.cursor_shaping_break = enabled;
-    }
-
-    pub fn cursor_shaping_break(&self) -> bool {
-        self.cursor_shaping_break
     }
 
     /// Everything on screen changed. No event goes out from here: the
@@ -724,9 +707,9 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     /// Peek damage event based on current damage state. A cursor move
-    /// is partial damage, not cursor-only: the cursor cell is a run of
-    /// its own, so the row it left and the row it is on shape
-    /// differently, and `reset_damage` marks both for the snapshot.
+    /// is partial damage, not cursor-only: a renderer that shapes the
+    /// cursor cell as a run of its own rebuilds the row it left and the
+    /// row it is on, from the rows it already holds.
     pub fn peek_damage_event(&self) -> Option<TerminalDamage> {
         if self.damage.full {
             Some(TerminalDamage::Full)
@@ -743,27 +726,13 @@ impl<U: EventListener> Crosswords<U> {
     /// that draws it. The consumer snapshots the cursor along with the
     /// rows, so the position is painted once this frame is consumed;
     /// without recording it `peek_damage_event` would report the move
-    /// forever. When the cursor moved, the row it left and the row it
-    /// is on are marked for the snapshot: the cursor cell is a run of
-    /// its own, so both shape differently now.
+    /// forever. A cursor move marks no row: the row it left and the row
+    /// it is on did not change, and a renderer that shapes the cursor
+    /// cell as a run of its own rebuilds both from the rows it holds.
     #[inline]
     pub fn reset_damage(&mut self) {
         self.damage.reset();
-        let cursor = self.rendered_cursor_pos();
-        if self.cursor_shaping_break && self.damage.last_cursor != cursor {
-            // A renderer shapes the cursor cell as its own run, so a
-            // ligature under the cursor is split while it is there and
-            // joined again once it leaves. The row the cursor left and
-            // the row it is on are rebuilt for that.
-            let oldest = -(self.history_size() as i32);
-            let lines = self.grid.screen_lines() as i32;
-            for row in [self.damage.last_cursor.row, cursor.row] {
-                if (oldest..lines).contains(&row.0) {
-                    self.grid[row].dirty = true;
-                }
-            }
-        }
-        self.damage.last_cursor = cursor;
+        self.damage.last_cursor = self.rendered_cursor_pos();
     }
 
     /// Whether a synchronized update (mode 2026) is active, during which
@@ -2504,24 +2473,16 @@ impl<U: EventListener> Crosswords<U> {
                 dst[i].dirty = true;
                 self.grid.resolve_row_styles(src, &mut row_styles[i]);
                 self.refresh_row_extras(src, extras);
-            }
-            for row_idx in start..end {
                 self.grid[Line(row_idx)].dirty = false;
             }
             return;
         }
 
-        // A Noop/CursorOnly frame normally has nothing to copy, but rows
-        // written after the damage event was consumed (e.g. a graphics
-        // insert racing a redraw) still carry their dirty bit. Fall
-        // through when any row is dirty so the snapshot can't go stale.
-        if matches!(damage, TerminalDamage::Noop | TerminalDamage::CursorOnly) {
-            let any_dirty = (0..count as i32).any(|y| self.grid[Line(start + y)].dirty);
-            if !any_dirty {
-                return;
-            }
-        }
-
+        // One walk over the viewport: a dirty row is copied and its bit
+        // cleared as it is passed. A Noop/CursorOnly frame normally has
+        // nothing to copy, but rows written after the damage event was
+        // consumed (e.g. a graphics insert racing a redraw) still carry
+        // their bit and are copied here, so the snapshot can't go stale.
         #[allow(clippy::needless_range_loop)]
         for y in 0..count {
             let row_idx = start + y as i32;
@@ -2533,8 +2494,6 @@ impl<U: EventListener> Crosswords<U> {
             dst[y].dirty = true;
             self.grid.resolve_row_styles(src, &mut row_styles[y]);
             self.refresh_row_extras(src, extras);
-        }
-        for row_idx in start..end {
             self.grid[Line(row_idx)].dirty = false;
         }
     }
@@ -6890,102 +6849,17 @@ mod tests {
         assert!(cw.grid[Line(2)].dirty);
     }
 
-    // The cursor cell is a run of its own, so a cursor move reshapes
-    // the row it left and the row it is on. Consuming a frame after a
-    // move marks both for the snapshot; a move within a row marks that
-    // row; a frame without a move marks nothing.
+    // A cursor move is a frame, for the cursor itself, and copies no
+    // row: the row it left and the row it is on did not change. A
+    // renderer that breaks runs at the cursor rebuilds both from the
+    // rows it already holds.
     #[test]
-    fn a_cursor_move_marks_the_row_it_left_and_the_row_it_is_on() {
+    fn a_cursor_move_is_a_frame_that_copies_no_row() {
         use crate::event::TerminalDamage;
         let mut cw = make_crosswords();
-        let clear = |cw: &mut Crosswords<VoidListener>| {
-            for row in 0..cw.grid.screen_lines() as i32 {
-                cw.grid[Line(row)].dirty = false;
-            }
-        };
-        let dirty = |cw: &Crosswords<VoidListener>| -> Vec<i32> {
-            (0..cw.grid.screen_lines() as i32)
-                .filter(|&row| cw.grid[Line(row)].dirty)
-                .collect()
-        };
-        // Words on rows 0 and 2; the cursor sits inside the second.
         cw.input_str("ab");
         cw.goto(Line(2), Column(0));
         cw.input_str("cd");
-        cw.goto(Line(2), Column(1));
-        cw.reset_damage();
-        clear(&mut cw);
-
-        cw.goto(Line(0), Column(1));
-        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
-        cw.reset_damage();
-        assert_eq!(dirty(&cw), vec![0, 2], "the row left and the row entered");
-
-        // Within the row: the row is rebuilt once more.
-        clear(&mut cw);
-        cw.goto(Line(0), Column(3));
-        cw.reset_damage();
-        assert_eq!(dirty(&cw), vec![0], "a move within the row");
-
-        clear(&mut cw);
-        assert_eq!(cw.peek_damage_event(), None);
-        cw.reset_damage();
-        assert!(dirty(&cw).is_empty(), "no move, nothing marked");
-    }
-
-    // With the break at the cursor turned off the renderer shapes rows
-    // the same wherever the cursor is, so a move rebuilds no row. It is
-    // still a frame for the cursor itself.
-    #[test]
-    fn with_the_cursor_shaping_break_off_a_move_marks_no_row() {
-        use crate::event::TerminalDamage;
-        let mut cw = make_crosswords();
-        assert!(cw.cursor_shaping_break(), "on by default");
-        cw.input_str("ab");
-        cw.goto(Line(2), Column(0));
-        cw.input_str("cd");
-        cw.goto(Line(2), Column(1));
-        cw.reset_damage();
-        for row in 0..cw.grid.screen_lines() as i32 {
-            cw.grid[Line(row)].dirty = false;
-        }
-
-        cw.set_cursor_shaping_break(false);
-        cw.goto(Line(0), Column(1));
-        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
-        cw.reset_damage();
-        let dirty: Vec<i32> = (0..cw.grid.screen_lines() as i32)
-            .filter(|&row| cw.grid[Line(row)].dirty)
-            .collect();
-        assert!(dirty.is_empty(), "inside words, nothing marked: {dirty:?}");
-        assert_eq!(cw.peek_damage_event(), None, "the move was consumed");
-
-        // Back on, the same move marks both rows.
-        cw.set_cursor_shaping_break(true);
-        cw.goto(Line(2), Column(1));
-        cw.reset_damage();
-        let dirty: Vec<i32> = (0..cw.grid.screen_lines() as i32)
-            .filter(|&row| cw.grid[Line(row)].dirty)
-            .collect();
-        assert_eq!(dirty, vec![0, 2]);
-    }
-
-    // In vi mode the vi cursor is the cursor a renderer draws, and it
-    // can stand on a scrollback row while the viewport is scrolled.
-    // Consuming a frame marks that row, and the snapshot copies it as
-    // the viewport row it is shown on.
-    #[test]
-    fn a_vi_cursor_move_in_scrollback_marks_the_row_shown() {
-        use crate::event::TerminalDamage;
-        let mut cw = make_crosswords();
-        let mut parser = crate::performer::handler::Processor::default();
-        for line in 0..8 {
-            parser.advance(&mut cw, format!("{line}{line}\r\n").as_bytes());
-        }
-        assert!(cw.history_size() >= 2);
-        cw.toggle_vi_mode();
-        cw.scroll_display(Scroll::Delta(2));
-        assert_eq!(cw.display_offset(), 2);
         let mut rows = Vec::new();
         let mut row_styles = Vec::new();
         let mut extras = rustc_hash::FxHashMap::default();
@@ -6997,25 +6871,13 @@ mod tests {
             &mut row_styles,
             &mut extras,
         );
-        for row in -2..cw.grid.screen_lines() as i32 {
-            cw.grid[Line(row)].dirty = false;
-        }
-        // A renderer clears the copied rows' bits once it has drawn them.
         for row in &mut rows {
             row.dirty = false;
         }
 
-        // The vi cursor moves onto the first row shown, two lines into
-        // scrollback.
-        cw.vi_goto_pos(Pos::new(Line(-2), Column(1)));
-        assert_eq!(cw.display_offset(), 2, "the viewport did not move");
+        cw.goto(Line(0), Column(1));
         assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
         cw.reset_damage();
-        assert!(
-            cw.grid[Line(-2)].dirty,
-            "the scrollback row the cursor is on"
-        );
-        assert!(!cw.grid[Line(0)].dirty);
         snap(
             &mut cw,
             &TerminalDamage::Partial,
@@ -7023,8 +6885,8 @@ mod tests {
             &mut row_styles,
             &mut extras,
         );
-        assert!(rows[0].dirty, "copied as the top row of the viewport");
-        assert!(!rows[2].dirty);
+        assert!(rows.iter().all(|row| !row.dirty), "no row copied");
+        assert_eq!(cw.peek_damage_event(), None, "the move was consumed");
     }
 
     // A reverse scroll moves the vi cursor down with the region's rows.
@@ -7477,8 +7339,7 @@ mod tests {
                 if history.len() > 4 {
                     history.pop_front();
                 }
-                // What the burst itself marked, before consuming the
-                // frame adds the cursor rows.
+                // What the burst itself marked.
                 let full_before = cw.is_fully_damaged();
                 let offset = cw.display_offset() as i32;
                 let dirty_before: Vec<bool> = (0..cw.grid.screen_lines() as i32)
@@ -7521,9 +7382,7 @@ mod tests {
                     );
                 }
                 // Every row that changed carried its own mark, or the
-                // frame was full. Consuming the frame marks the cursor
-                // rows as well, which would otherwise hide a missing
-                // mark on the row the cursor writes.
+                // frame was full.
                 for (y, fresh) in fresh_cells.iter().enumerate() {
                     if previous.get(y) != Some(fresh) {
                         assert!(

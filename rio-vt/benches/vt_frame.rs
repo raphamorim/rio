@@ -116,15 +116,6 @@ fn scenarios() -> Vec<Scenario> {
             }),
         },
         Scenario {
-            // The same move with the break at the cursor turned off.
-            name: "cursor move, break off",
-            prepare: Box::new(|cw, parser, i| {
-                cw.set_cursor_shaping_break(false);
-                let row = 1 + (i * 7) % ROWS;
-                parser.advance(cw, format!("\x1b[{row};2H").as_bytes());
-            }),
-        },
-        Scenario {
             // A character written at the cursor, which moves the cursor
             // along the same row. A shell line that is cleared once it
             // has filled up.

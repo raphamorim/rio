@@ -79,6 +79,12 @@ pub struct RenderableContent {
     /// Values, not ids: rows copied on earlier frames can't be
     /// retinted by later style-table mutations.
     pub row_styles: Vec<Vec<rio_backend::crosswords::style::Style>>,
+    /// The cursor cell the rows were last shaped around, as (row,
+    /// column) in the viewport, or `None` when no row was. A change
+    /// marks the row it left and the row it is on for a rebuild. The
+    /// rows themselves did not change, so nothing is copied from the
+    /// terminal for it.
+    pub shaped_cursor: Option<(u16, u16)>,
     /// Per-frame snapshot of extras (zero-width chars, hyperlinks,
     /// sixel/iterm graphics) actually referenced by visible cells —
     /// keyed by the cell's `extras_id`. Refreshed per-dirty-row by
@@ -132,6 +138,7 @@ impl RenderableContent {
             frame_damage: TerminalDamage::Full,
             visible_rows: Vec::new(),
             row_styles: Vec::new(),
+            shaped_cursor: None,
             extras: rustc_hash::FxHashMap::default(),
             term_colors: TermColors::default(),
             display_offset: 0,
@@ -237,6 +244,25 @@ impl RenderableContent {
         }
         self.frame_damage = damage;
         true
+    }
+
+    /// Mark the rows a change of the cursor cell reshapes: the row the
+    /// cursor left and the row it is on. `cursor` is the cell the rows
+    /// are shaped around this frame, `None` when none. Returns whether a
+    /// row was marked.
+    pub fn mark_cursor_rows(&mut self, cursor: Option<(u16, u16)>) -> bool {
+        if cursor == self.shaped_cursor {
+            return false;
+        }
+        let mut marked = false;
+        for (row, _) in self.shaped_cursor.into_iter().chain(cursor) {
+            if let Some(visible) = self.visible_rows.get_mut(row as usize) {
+                visible.dirty = true;
+                marked = true;
+            }
+        }
+        self.shaped_cursor = cursor;
+        marked
     }
 
     pub fn from_cursor_config(config_cursor: &CursorConfig) -> Self {
@@ -388,6 +414,12 @@ mod pipeline_tests {
     struct Frame {
         content: RenderableContent,
         painted: Vec<String>,
+        /// `fonts.cursor-shaping-break`.
+        cursor_shaping_break: bool,
+        /// Rows the last consume copied from the terminal.
+        copied: usize,
+        /// Rows the last consume rebuilt.
+        rebuilt: Vec<usize>,
     }
 
     impl Frame {
@@ -395,6 +427,9 @@ mod pipeline_tests {
             Self {
                 content: RenderableContent::new(Default::default()),
                 painted: vec![String::new(); ROWS],
+                cursor_shaping_break: true,
+                copied: 0,
+                rebuilt: Vec::new(),
             }
         }
 
@@ -411,11 +446,33 @@ mod pipeline_tests {
                 self.content.pending_update.set_terminal_damage(ui);
             }
             let snapshot_rows = self.content.visible_rows.len();
+            self.rebuilt.clear();
             if !self.content.update_from_terminal(term, false) {
                 return;
             }
+            self.copied = self
+                .content
+                .visible_rows
+                .iter()
+                .filter(|row| row.dirty)
+                .count();
+            // The rows the cursor cell reshapes, as screen::render
+            // marks them before it takes the rows.
+            let cursor = &self.content.cursor.state;
+            let shaped_cursor = (self.cursor_shaping_break
+                && cursor.is_visible()
+                && cursor.content != rio_backend::ansi::CursorShape::Hidden)
+                .then_some((cursor.pos.row.0 as u16, cursor.pos.col.0 as u16));
+            let cursor_rows_marked = self.content.mark_cursor_rows(shaped_cursor);
             let damage =
                 std::mem::replace(&mut self.content.frame_damage, TerminalDamage::Noop);
+            let damage = if cursor_rows_marked
+                && matches!(damage, TerminalDamage::Noop | TerminalDamage::CursorOnly)
+            {
+                TerminalDamage::Partial
+            } else {
+                damage
+            };
             let needs_full =
                 matches!(damage, TerminalDamage::Full) || snapshot_rows != rows;
             let visible_rows = &mut self.content.visible_rows;
@@ -424,21 +481,27 @@ mod pipeline_tests {
                 // RowsToRebuild::All: rebuild everything and clear the
                 // bits, as screen::render does, so the next partial
                 // frame rebuilds only what it names.
-                for (painted, row) in self.painted.iter_mut().zip(visible_rows) {
+                for (y, (painted, row)) in
+                    self.painted.iter_mut().zip(visible_rows).enumerate()
+                {
                     *painted = row_text(row, cols);
                     row.dirty = false;
+                    self.rebuilt.push(y);
                 }
                 return;
             }
             match damage {
                 TerminalDamage::Full => unreachable!(),
                 TerminalDamage::Partial => {
-                    for (painted, row) in self.painted.iter_mut().zip(visible_rows) {
+                    for (y, (painted, row)) in
+                        self.painted.iter_mut().zip(visible_rows).enumerate()
+                    {
                         if !row.dirty {
                             continue;
                         }
                         *painted = row_text(row, cols);
                         row.dirty = false;
+                        self.rebuilt.push(y);
                     }
                 }
                 TerminalDamage::CursorOnly | TerminalDamage::Noop => {}
@@ -448,13 +511,13 @@ mod pipeline_tests {
 
     // A full frame rebuilds every row and leaves none marked, so the
     // partial frame after it rebuilds only the rows it names: none for
-    // a cursor move with the terminal's cursor marking off, one for a
-    // line of output.
+    // a cursor move with the break at the cursor off, one for a line
+    // of output.
     #[test]
     fn the_frame_after_a_full_one_rebuilds_only_what_changed() {
         let mut term = new_term();
-        term.set_cursor_shaping_break(false);
         let mut frame = Frame::new();
+        frame.cursor_shaping_break = false;
         let mut parser = Processor::default();
         for i in 0..ROWS {
             parser.advance(&mut term, format!("line {i}\r\n").as_bytes());
@@ -469,9 +532,10 @@ mod pipeline_tests {
         parser.advance(&mut term, b"\x1b[1;1H");
         assert_eq!(term.peek_damage_event(), Some(TerminalDamage::Partial));
         frame.consume(&mut term, &mut None);
+        assert_eq!(frame.copied, 0, "a cursor move copies no row");
         assert!(
-            frame.content.visible_rows.iter().all(|row| !row.dirty),
-            "a cursor move copies no row with the marking off"
+            frame.rebuilt.is_empty(),
+            "and rebuilds none with the break off"
         );
 
         let before = frame.painted.clone();
@@ -482,6 +546,64 @@ mod pipeline_tests {
             .collect();
         assert_eq!(repainted, vec![2], "one row of output");
         assert_eq!(frame.painted, grid_text(&term));
+    }
+
+    // With the break at the cursor on, a cursor move rebuilds the row
+    // it left and the row it is on from the rows already held: the
+    // terminal copies none of them. A move within a row rebuilds that
+    // row once; hiding the cursor rebuilds its row; turning the break
+    // off rebuilds the row that was shaped around the cursor.
+    #[test]
+    fn a_cursor_move_rebuilds_two_rows_and_copies_none() {
+        let mut term = new_term();
+        let mut frame = Frame::new();
+        let mut parser = Processor::default();
+        for i in 0..ROWS {
+            parser.advance(&mut term, format!("line {i}\r\n").as_bytes());
+        }
+        parser.advance(&mut term, b"\x1b[4;2H");
+        frame.consume(&mut term, &mut None);
+        assert_eq!(frame.content.shaped_cursor, Some((3, 1)));
+
+        parser.advance(&mut term, b"\x1b[1;2H");
+        frame.consume(&mut term, &mut None);
+        assert_eq!(frame.copied, 0, "the rows did not change");
+        assert_eq!(
+            frame.rebuilt,
+            vec![0, 3],
+            "the row entered and the row left"
+        );
+
+        parser.advance(&mut term, b"\x1b[1;5H");
+        frame.consume(&mut term, &mut None);
+        assert_eq!(frame.copied, 0);
+        assert_eq!(frame.rebuilt, vec![0], "a move within the row");
+
+        frame.consume(&mut term, &mut None);
+        assert!(frame.rebuilt.is_empty(), "no move, no rebuild");
+
+        parser.advance(&mut term, b"\x1b[?25l");
+        frame.consume(&mut term, &mut None);
+        assert_eq!(frame.content.shaped_cursor, None);
+        assert_eq!(
+            frame.rebuilt,
+            vec![0],
+            "the cursor row, shaped without a cursor"
+        );
+
+        parser.advance(&mut term, b"\x1b[?25h");
+        frame.consume(&mut term, &mut None);
+        assert_eq!(frame.rebuilt, vec![0]);
+
+        frame.cursor_shaping_break = false;
+        frame.consume(&mut term, &mut None);
+        assert_eq!(frame.rebuilt, vec![0], "the break goes, the row reshapes");
+        parser.advance(&mut term, b"\x1b[4;2H");
+        frame.consume(&mut term, &mut None);
+        assert!(
+            frame.rebuilt.is_empty(),
+            "with the break off a move rebuilds nothing"
+        );
     }
 
     fn event_would_fire(term: &Crosswords<VoidListener>) -> bool {
