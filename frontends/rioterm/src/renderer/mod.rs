@@ -519,9 +519,11 @@ impl Renderer {
                         }
                     }
                 }
-                let snapshotted = context
-                    .renderable_content
-                    .update_from_terminal(&mut terminal, force_full_damage);
+                let snapshotted = context.renderable_content.update_from_terminal(
+                    &mut terminal,
+                    force_full_damage,
+                    self.shaping_break.cursor,
+                );
                 if let (true, Some(new_matches)) = (snapshotted, new_matches) {
                     context.renderable_content.hint_matches = new_matches;
                 }

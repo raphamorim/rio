@@ -4,7 +4,7 @@ use rio_backend::ansi::graphics::{
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::CursorConfig;
 use rio_backend::crosswords::grid::row::Row;
-use rio_backend::crosswords::pos::CursorState;
+use rio_backend::crosswords::pos::{CursorState, Pos};
 use rio_backend::crosswords::square::Square;
 use rio_backend::crosswords::{Crosswords, Mode};
 use rio_backend::event::{EventListener, TerminalDamage};
@@ -82,6 +82,12 @@ pub struct RenderableContent {
     /// Style runs the snapshot recorded under the terminal lock, filled
     /// into `row_styles` by `finish_update` once the lock is released.
     pub pending_styles: rio_backend::crosswords::style::PendingStyles,
+    /// Per viewport row, the cells drawn by a ligature glyph, as the
+    /// row builder recorded them the last time the row was built. A
+    /// cursor move rebuilds a row only when the cursor was, or is, on
+    /// one of these cells; everywhere else the row's glyphs do not
+    /// depend on the cursor.
+    pub row_ligatures: Vec<rio_grid::RowLigatures>,
     /// Per-frame snapshot of extras (zero-width chars, hyperlinks,
     /// sixel/iterm graphics) actually referenced by visible cells —
     /// keyed by the cell's `extras_id`. Refreshed per-dirty-row by
@@ -134,6 +140,7 @@ impl RenderableContent {
             background: None,
             frame_damage: TerminalDamage::Full,
             visible_rows: Vec::new(),
+            row_ligatures: Vec::new(),
             row_styles: Vec::new(),
             pending_styles: Default::default(),
             extras: rustc_hash::FxHashMap::default(),
@@ -160,6 +167,7 @@ impl RenderableContent {
         &mut self,
         terminal: &mut Crosswords<U>,
         force_full_damage: bool,
+        cursor_shaping_break: bool,
     ) -> bool {
         // Clear in-flight flag so PTY thread can notify again
         terminal.damage_event_in_flight = false;
@@ -197,6 +205,21 @@ impl RenderableContent {
                 (None, None) => TerminalDamage::Noop,
             }
         };
+
+        // The row builder shapes the cursor cell as its own run when the
+        // cursor sits on a ligature, so the rows the cursor left and
+        // entered are rebuilt when their recorded ligature cells say
+        // the cursor was, or is, on one. The terminal's own marking is
+        // off for this frontend: it cannot know the font.
+        if cursor_shaping_break {
+            if let Some((from, to)) = terminal.cursor_move() {
+                let offset = terminal.display_offset() as i32;
+                for pos in cursor_rows_on_ligatures(from, to, offset, &self.row_ligatures)
+                {
+                    terminal.damage_range_rows(&SelectionRange::new(pos, pos, false));
+                }
+            }
+        }
 
         terminal.reset_damage();
 
@@ -326,6 +349,24 @@ impl PendingUpdate {
     }
 }
 
+/// Of the positions the cursor left and entered, those on a cell the
+/// row's last build drew as part of a ligature. `offset` is the
+/// display offset that turns a grid row into a viewport row; a position
+/// off screen or on a row never built is not on a ligature.
+pub fn cursor_rows_on_ligatures(
+    from: Pos,
+    to: Pos,
+    offset: i32,
+    ligatures: &[rio_grid::RowLigatures],
+) -> impl Iterator<Item = Pos> + '_ {
+    [from, to].into_iter().filter(move |pos| {
+        usize::try_from(pos.row.0 + offset)
+            .ok()
+            .and_then(|row| ligatures.get(row))
+            .is_some_and(|cells| cells.get(pos.col.0))
+    })
+}
+
 #[cfg(test)]
 mod pipeline_tests {
     //! End-to-end damage pipeline harness: replicates the renderer's
@@ -423,7 +464,7 @@ mod pipeline_tests {
                 self.content.pending_update.set_terminal_damage(ui);
             }
             let snapshot_rows = self.content.visible_rows.len();
-            if !self.content.update_from_terminal(term, false) {
+            if !self.content.update_from_terminal(term, false, true) {
                 return;
             }
             self.content.finish_update();
@@ -717,5 +758,117 @@ mod pipeline_tests {
                 &format!("seed {seed} end"),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod cursor_ligature_tests {
+    use super::{cursor_rows_on_ligatures, Cursor, RenderableContent};
+    use rio_backend::ansi::CursorShape;
+    use rio_backend::crosswords::pos::{Column, Line, Pos};
+    use rio_backend::crosswords::{Crosswords, CrosswordsSize};
+    use rio_backend::event::{VoidListener, WindowId};
+    use rio_backend::performer::handler::Handler;
+
+    // Only a cursor that was, or is, on a cell a ligature glyph draws
+    // changes a row's glyphs; positions off the ligature cells, off
+    // screen, or on rows never built do not.
+    #[test]
+    fn cursor_rows_on_ligatures_picks_the_positions_on_ligature_cells() {
+        let at = |row: i32, col: usize| Pos::new(Line(row), Column(col));
+        let mut ligatures = vec![rio_grid::RowLigatures::default(); 3];
+        ligatures[1].set(3);
+        ligatures[1].set(4);
+        let rows = |from: Pos, to: Pos, offset: i32| -> Vec<Pos> {
+            cursor_rows_on_ligatures(from, to, offset, &ligatures).collect()
+        };
+        assert_eq!(
+            rows(at(1, 3), at(2, 0), 0),
+            vec![at(1, 3)],
+            "left a ligature"
+        );
+        assert_eq!(rows(at(0, 0), at(1, 4), 0), vec![at(1, 4)], "entered one");
+        assert_eq!(rows(at(1, 3), at(1, 4), 0), vec![at(1, 3), at(1, 4)]);
+        assert!(rows(at(0, 0), at(2, 5), 0).is_empty(), "plain cells");
+        assert!(
+            rows(at(1, 2), at(1, 5), 0).is_empty(),
+            "next to the ligature"
+        );
+        // Scrolled back two rows: grid row -1 is viewport row 1.
+        assert_eq!(rows(at(0, 0), at(-1, 3), 2), vec![at(-1, 3)]);
+        assert!(
+            rows(at(0, 0), at(1, 3), 2).is_empty(),
+            "viewport row 3 was never built"
+        );
+        assert!(
+            rows(at(-5, 3), at(0, 0), 2).is_empty(),
+            "above the viewport"
+        );
+    }
+
+    // A frame consumed through the frontend marks the rows the cursor
+    // left and entered only where its recorded ligature cells say so,
+    // with the terminal's own marking off as a context sets it.
+    #[test]
+    fn a_cursor_move_rebuilds_rows_only_across_ligature_cells() {
+        let mut term = Crosswords::new(
+            CrosswordsSize::new(8, 4),
+            CursorShape::Block,
+            VoidListener,
+            WindowId::from(0),
+            0,
+            10,
+        );
+        term.set_cursor_shaping_break(false);
+        let mut content = RenderableContent::new(Cursor::default());
+        // Words on rows 0 and 2; the font ligates columns 1 and 2 of
+        // row 0, as the row builder would have recorded.
+        term.input_str("a=>b");
+        term.goto(Line(2), Column(0));
+        term.input_str("cd");
+        term.goto(Line(2), Column(1));
+        assert!(content.update_from_terminal(&mut term, false, true));
+        content.finish_update();
+        content.row_ligatures = vec![rio_grid::RowLigatures::default(); 4];
+        content.row_ligatures[0].set(1);
+        content.row_ligatures[0].set(2);
+        let clear = |content: &mut RenderableContent| {
+            for row in &mut content.visible_rows {
+                row.dirty = false;
+            }
+        };
+        let dirty = |content: &RenderableContent| -> Vec<usize> {
+            (0..content.visible_rows.len())
+                .filter(|&y| content.visible_rows[y].dirty)
+                .collect()
+        };
+        clear(&mut content);
+
+        // From inside "cd" to "b": plain cells at both ends.
+        term.goto(Line(0), Column(3));
+        assert!(content.update_from_terminal(&mut term, false, true));
+        assert!(
+            dirty(&content).is_empty(),
+            "no ligature at either end: {:?}",
+            dirty(&content)
+        );
+
+        // Onto "=": the ligature splits, row 0 is rebuilt.
+        term.goto(Line(0), Column(1));
+        assert!(content.update_from_terminal(&mut term, false, true));
+        assert_eq!(dirty(&content), vec![0]);
+        clear(&mut content);
+
+        // Off it onto "d": the ligature joins again, so row 0 is
+        // rebuilt and row 2 is not.
+        term.goto(Line(2), Column(1));
+        assert!(content.update_from_terminal(&mut term, false, true));
+        assert_eq!(dirty(&content), vec![0]);
+        clear(&mut content);
+
+        // With the break turned off nothing is marked, even onto "=".
+        term.goto(Line(0), Column(1));
+        assert!(content.update_from_terminal(&mut term, false, false));
+        assert!(dirty(&content).is_empty());
     }
 }

@@ -641,8 +641,12 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Tell the terminal whether the renderer breaks shaping runs around
     /// the cursor cell. When it does, a cursor move rebuilds the row it
-    /// left and the row it is on where the break changes glyphs. When it
-    /// does not, a cursor move rebuilds no row. On by default.
+    /// left and the row it is on where the break could change glyphs:
+    /// where the cursor cell shapes with a neighbor, since the terminal
+    /// does not know the font. When it does not, a cursor move rebuilds
+    /// no row. On by default. A frontend that knows its font's ligature
+    /// cells turns this off and marks the rows itself from
+    /// `cursor_move`.
     pub fn set_cursor_shaping_break(&mut self, enabled: bool) {
         self.cursor_shaping_break = enabled;
     }
@@ -709,6 +713,17 @@ impl<U: EventListener> Crosswords<U> {
         // scrolling) is handled via full damage.
         let display_offset = self.grid.display_offset();
         TermDamage::Partial(TermDamageIterator::new(&self.damage.lines, display_offset))
+    }
+
+    /// Where the rendered cursor was when the last frame was consumed
+    /// and where it is now, if it moved. Grid positions; the row may be
+    /// in scrollback in vi mode. A frontend that knows which cells its
+    /// font ligates reads this before `reset_damage` to mark the rows a
+    /// cursor move changes, with the terminal's own marking turned off
+    /// through `set_cursor_shaping_break`.
+    pub fn cursor_move(&self) -> Option<(Pos, Pos)> {
+        let now = self.rendered_cursor_pos();
+        (self.damage.last_cursor != now).then_some((self.damage.last_cursor, now))
     }
 
     /// The grid position of the cursor a renderer draws: the vi cursor
@@ -7046,6 +7061,24 @@ mod tests {
         cw.goto(Line(2), Column(1));
         cw.reset_damage();
         assert_eq!(dirty(&cw), vec![2]);
+    }
+
+    // A frontend that marks cursor rows itself reads where the cursor
+    // was at the last consumed frame and where it is now.
+    #[test]
+    fn cursor_move_reports_the_last_consumed_position_and_the_current_one() {
+        let mut cw = make_crosswords();
+        cw.goto(Line(1), Column(2));
+        cw.reset_damage();
+        assert_eq!(cw.cursor_move(), None, "consumed, no move since");
+        cw.goto(Line(3), Column(0));
+        assert_eq!(
+            cw.cursor_move(),
+            Some((Pos::new(Line(1), Column(2)), Pos::new(Line(3), Column(0))))
+        );
+        cw.toggle_vi_mode();
+        let (_, now) = cw.cursor_move().expect("the vi cursor is the rendered one");
+        assert_eq!(now, cw.vi_mode_cursor.pos);
     }
 
     // With the break at the cursor turned off the renderer shapes rows
