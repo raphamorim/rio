@@ -616,6 +616,9 @@ impl Config {
             if let Some(macos_unified) = window_overwrite.macos_use_unified_titlebar {
                 self.window.macos_use_unified_titlebar = macos_unified;
             }
+            if let Some(unified) = window_overwrite.wayland_use_unified_titlebar {
+                self.window.wayland_use_unified_titlebar = unified;
+            }
             if let Some(macos_shadow) = window_overwrite.macos_use_shadow {
                 self.window.macos_use_shadow = macos_shadow;
             }
@@ -1502,6 +1505,24 @@ mod tests {
         // describes how
         // input color bytes are *interpreted*, not the surface gamut.
         assert_eq!(result.window.colorspace, window::Colorspace::Srgb);
+    }
+
+    #[test]
+    fn test_window_wayland_use_unified_titlebar() {
+        let mut result = create_temporary_config(
+            "window-wayland-unified-titlebar",
+            r#"
+            [platform]
+            linux.window.wayland-use-unified-titlebar = true
+        "#,
+        );
+        assert!(!result.window.wayland_use_unified_titlebar);
+
+        result.overwrite_based_on_platform();
+        assert_eq!(
+            result.window.wayland_use_unified_titlebar,
+            cfg!(target_os = "linux")
+        );
     }
 
     #[test]

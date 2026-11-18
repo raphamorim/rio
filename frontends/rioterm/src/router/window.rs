@@ -80,7 +80,9 @@ pub fn create_window_builder(
     {
         use rio_window::platform::wayland::WindowAttributesExtWayland;
         let app_name = app_id.unwrap_or(APPLICATION_ID);
-        window_builder = window_builder.with_name(app_name.to_lowercase(), app_name);
+        window_builder = window_builder
+            .with_name(app_name.to_lowercase(), app_name)
+            .with_unified_titlebar(config.window.wayland_use_unified_titlebar);
     }
 
     #[cfg(target_os = "windows")]
@@ -173,6 +175,23 @@ pub fn create_window_builder(
     }
 
     window_builder
+}
+
+/// Whether the compositor draws only the window control buttons, over the
+/// tab strip: `window.wayland-use-unified-titlebar` on a compositor that has
+/// such a title bar.
+#[allow(unused_variables)]
+pub fn unified_titlebar(winit_window: &Window) -> bool {
+    #[cfg(all(feature = "wayland", not(any(target_os = "macos", windows))))]
+    {
+        use rio_window::platform::wayland::WindowExtWayland;
+        winit_window.unified_titlebar()
+    }
+
+    #[cfg(not(all(feature = "wayland", not(any(target_os = "macos", windows)))))]
+    {
+        false
+    }
 }
 
 pub fn configure_window(winit_window: &Window, config: &Config) {

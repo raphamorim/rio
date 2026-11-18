@@ -888,6 +888,7 @@ impl<'a> RouteWindow<'a> {
             raw_window_handle: winit_window.window_handle().unwrap().into(),
             raw_display_handle: winit_window.display_handle().unwrap().into(),
             window_id: winit_window.id(),
+            unified_titlebar: window::unified_titlebar(&winit_window),
         };
 
         let mut screen =

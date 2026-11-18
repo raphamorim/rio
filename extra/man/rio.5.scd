@@ -104,6 +104,16 @@ This section documents the *[window]* table of the configuration file.
 
 	Default: _"Enabled"_
 
+*wayland-use-unified-titlebar* = _true_ | _false_
+
+	On Wayland, let the compositor draw only the window control buttons,
+	over the tab strip, which then serves as the title bar: it is always
+	drawn, moves the window, and shows the current title when there are no
+	tabs to show. Compositors without a unified title bar keep their
+	regular decorations, as does _decorations = "Disabled"_.
+
+	Default: _false_
+
 *background-image* = { path = _"<string>"_, opacity = _<float>_ }
 
 	Window background image. The image is uploaded once into a dedicated GPU

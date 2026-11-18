@@ -131,6 +131,15 @@ impl Window {
         // Set the decorations hint.
         window_state.set_decorate(attributes.decorations);
 
+        if attributes.platform_specific.unified_titlebar && attributes.decorations {
+            static WARNED: AtomicBool = AtomicBool::new(false);
+            if !WARNED.swap(true, Ordering::Relaxed) {
+                warn!(
+                    "the compositor has no unified title bar, using regular decorations"
+                );
+            }
+        }
+
         // Set the app_id.
         if let Some(name) = attributes.platform_specific.name.map(|name| name.general) {
             window.set_app_id(name);
@@ -444,6 +453,11 @@ impl Window {
     #[inline]
     pub fn is_decorated(&self) -> bool {
         self.window_state.lock().unwrap().is_decorated()
+    }
+
+    #[inline]
+    pub fn unified_titlebar(&self) -> bool {
+        false
     }
 
     #[inline]
