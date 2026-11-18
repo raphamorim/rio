@@ -1338,10 +1338,6 @@ pub struct GridGlyphRasterizer {
     /// convention.
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
     run_cache: Vec<Vec<RunCacheEntry>>,
-    /// The character map's glyph per `(font_id, char)`, what a cell
-    /// shapes to when no lookup touches it. A shaped glyph that differs
-    /// tells a ligature or alternate apart from plain text.
-    nominal_glyphs: FxHashMap<(u32, char), Option<u16>>,
 
     /// Per-run hasher rebuilt at every run-start. Hashed incrementally
     /// across the run-extension loop with `(codepoint, cluster)` pairs
@@ -1430,7 +1426,6 @@ impl GridGlyphRasterizer {
             run_str_scratch: String::new(),
             #[cfg(target_os = "macos")]
             handle_cache: FxHashMap::default(),
-            nominal_glyphs: FxHashMap::default(),
             lib_settings: None,
             #[cfg(not(target_os = "macos"))]
             wght_cache: FxHashMap::default(),
@@ -1454,7 +1449,6 @@ impl GridGlyphRasterizer {
             bucket.clear();
         }
         self.lib_settings = None;
-        self.nominal_glyphs.clear();
         #[cfg(target_os = "macos")]
         self.handle_cache.clear();
         #[cfg(not(target_os = "macos"))]
@@ -1519,45 +1513,6 @@ impl GridGlyphRasterizer {
                     font_library.resolve_font_for_char(ch, &span_style, Some(route_id));
                 (id as u32, emoji)
             })
-    }
-
-    /// The glyph `ch` maps to in `font_id` before shaping, cached.
-    fn nominal_glyph(
-        &mut self,
-        font_id: u32,
-        ch: char,
-        font_library: &FontLibrary,
-    ) -> Option<u16> {
-        if let Some(&known) = self.nominal_glyphs.get(&(font_id, ch)) {
-            return known;
-        }
-        #[cfg(target_os = "macos")]
-        let found = {
-            let handle = match self.handle_cache.get(&font_id) {
-                Some(handle) => Some(handle.clone()),
-                None => font_library.ct_font(font_id as usize),
-            };
-            handle.and_then(|handle| {
-                rio_backend::sugarloaf::font::macos::nominal_glyph(&handle, ch)
-            })
-        };
-        #[cfg(not(target_os = "macos"))]
-        let found = {
-            use rio_backend::sugarloaf::swash::FontRef;
-            let lib = font_library.inner.read();
-            lib.get_data(&(font_id as usize))
-                .and_then(|(data, offset, key)| {
-                    let font_ref = FontRef {
-                        data: data.as_ref(),
-                        offset,
-                        key,
-                    };
-                    let id = font_ref.charmap().map(ch);
-                    (id != 0).then_some(id)
-                })
-        };
-        self.nominal_glyphs.insert((font_id, ch), found);
-        found
     }
 
     #[inline]
@@ -1899,157 +1854,6 @@ fn shape_cached(
     Some((ascent_px, advance))
 }
 
-/// The cells of a row drawn by a glyph that covers more than one cell
-/// of text: a ligature, one bit per column. The row builder records it
-/// from the shaping of the row without a break at the cursor, and a
-/// frontend reads it to tell whether a cursor move changes the row's
-/// glyphs: only when the cursor was, or is, on one of these cells.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct RowLigatures {
-    words: SmallVec<[u64; 4]>,
-}
-
-impl RowLigatures {
-    pub fn clear(&mut self) {
-        self.words.clear();
-    }
-
-    pub fn set(&mut self, col: usize) {
-        let word = col / 64;
-        if self.words.len() <= word {
-            self.words.resize(word + 1, 0);
-        }
-        self.words[word] |= 1 << (col % 64);
-    }
-
-    pub fn get(&self, col: usize) -> bool {
-        self.words
-            .get(col / 64)
-            .is_some_and(|word| word & (1 << (col % 64)) != 0)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.words.iter().all(|&word| word == 0)
-    }
-
-    /// Whether a cursor on `col` changes the row's glyphs: the break
-    /// around the cursor cell separates it from the cell before it, so
-    /// a ligature on either of those two cells is affected.
-    pub fn at_or_before(&self, col: usize) -> bool {
-        self.get(col) || (col > 0 && self.get(col - 1))
-    }
-}
-
-/// Records the ligature cells of one shaped run into `out`. Fonts build
-/// ligatures two ways, and both are caught. `glyph_cells` gives, per
-/// shaped glyph in order, the index of the run cell the glyph came
-/// from: a run cell no glyph came from is drawn by the glyph of the
-/// nearest earlier cell that has one, so both belong to a ligature.
-/// `substituted[idx]` says the cell's single glyph is not the one the
-/// character map gives its character: a ligature component or a
-/// contextual alternate, which most coding fonts use so that every
-/// cell keeps a glyph of its own. `columns` maps a run cell index to
-/// its grid column.
-pub fn mark_ligature_cells(
-    glyph_cells: impl IntoIterator<Item = u16>,
-    substituted: &[bool],
-    columns: &[u16],
-    out: &mut RowLigatures,
-) {
-    let mut has_glyph: SmallVec<[u64; 2]> = SmallVec::new();
-    for cell in glyph_cells {
-        let word = cell as usize / 64;
-        if has_glyph.len() <= word {
-            has_glyph.resize(word + 1, 0);
-        }
-        has_glyph[word] |= 1 << (cell % 64);
-    }
-    let mut drawn_by: Option<usize> = None;
-    for (idx, &col) in columns.iter().enumerate() {
-        let own = has_glyph
-            .get(idx / 64)
-            .is_some_and(|word| word & (1 << (idx % 64)) != 0);
-        if own {
-            drawn_by = Some(idx);
-            if substituted.get(idx).copied().unwrap_or(false) {
-                out.set(col as usize);
-            }
-        } else if let Some(start) = drawn_by {
-            out.set(columns[start] as usize);
-            out.set(col as usize);
-        }
-    }
-}
-
-/// Walks shaped glyphs back to the run cells they came from: per
-/// glyph, in order, the index of its cell. `cell_starts[i]` is where
-/// cell `i` begins in the shaping buffer, in the shaper's own units.
-fn glyph_cells(
-    glyphs: &[ShapedGlyph],
-    cell_starts: &[u32],
-) -> SmallVec<[(u16, u16); 64]> {
-    let mut out: SmallVec<[(u16, u16); 64]> = SmallVec::new();
-    let mut cell_idx_in_run: u16 = 0;
-    for g in glyphs {
-        while (cell_idx_in_run as usize + 1) < cell_starts.len()
-            && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
-        {
-            cell_idx_in_run = cell_idx_in_run.saturating_add(1);
-        }
-        out.push((g.id, cell_idx_in_run));
-    }
-    out
-}
-
-/// Records into `ligatures` the cells of the run just shaped that a
-/// ligature draws, from the glyph to cell mapping in `emits` and the
-/// rasterizer's run tables. A cell with one glyph that is not its
-/// character's nominal glyph was substituted; cells with attached
-/// marks shape to composed forms by design and are not compared.
-fn record_run_ligatures(
-    rasterizer: &mut GridGlyphRasterizer,
-    row: &Row<Square>,
-    font_id: u32,
-    emits: &[(u16, u16)],
-    font_library: &FontLibrary,
-    ligatures: &mut RowLigatures,
-) {
-    let cells = rasterizer.run_cell_columns.len();
-    let mut substituted: SmallVec<[bool; 64]> = SmallVec::from_elem(false, cells);
-    let mut i = 0;
-    while i < emits.len() {
-        let (glyph_id, idx) = emits[i];
-        let mut j = i + 1;
-        while j < emits.len() && emits[j].1 == idx {
-            j += 1;
-        }
-        if j == i + 1 {
-            if let Some(&col) = rasterizer.run_cell_columns.get(idx as usize) {
-                let sq = row[Column(col as usize)];
-                if !sq.has_grapheme() {
-                    let ch = if sq.c() == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
-                        ' '
-                    } else {
-                        sq.c()
-                    };
-                    if let Some(nominal) =
-                        rasterizer.nominal_glyph(font_id, ch, font_library)
-                    {
-                        substituted[idx as usize] = nominal != glyph_id;
-                    }
-                }
-            }
-        }
-        i = j;
-    }
-    mark_ligature_cells(
-        emits.iter().map(|&(_, cell)| cell),
-        &substituted,
-        &rasterizer.run_cell_columns,
-        ligatures,
-    );
-}
-
 /// Run-level fg emission. Shapes once per run, emits one CellText per
 /// shaped glyph. Works on both macOS (CoreText) and non-macOS (swash).
 ///
@@ -2076,20 +1880,15 @@ pub fn build_row_fg<P: GridPalette>(
     font_library: &FontLibrary,
     route_id: usize,
     // Column of the cursor on this row, or `None` if the cursor isn't
-    // on this row (different row, or hidden). When `Some` and the
-    // cursor sits on a ligature, the run-extension loop breaks the run
-    // around the cursor cell so the cell shows its own character, and
-    // so partial ligature lookahead (e.g. `grap` waiting for `h` to
-    // form `graph`) can't make pre-cursor cells visually disappear
-    // while the user is mid-typing.
+    // on this row (different row, or hidden). When `Some`, the
+    // run-extension loop breaks the run around the cursor cell so
+    // partial ligature lookahead (e.g. `grap` waiting for `h` to form
+    // `graph`) can't make pre-cursor cells visually disappear while
+    // the user is mid-typing.
     cursor_col_for_row: Option<u16>,
     fg_scratch: &mut Vec<CellText>,
-    // Out: the row's ligature cells, from its shaping without the
-    // cursor break.
-    ligatures: &mut RowLigatures,
 ) {
     fg_scratch.clear();
-    ligatures.clear();
 
     let size_bucket = (size_px * 4.0).round().clamp(0.0, u16::MAX as f32) as u16;
     let size_u16 = size_px.round().clamp(1.0, u16::MAX as f32) as u16;
@@ -2146,544 +1945,522 @@ pub fn build_row_fg<P: GridPalette>(
         .map(|i| i + 1)
         .unwrap_or(0);
 
-    // The cursor break is applied only where it changes glyphs. The
-    // first pass shapes the row as it is without a cursor, which is how
-    // it was shaped before the cursor arrived and so a cache hit, and
-    // records the ligature cells. If the cursor is on one, the pass
-    // runs again with the break; on any other cell the row is drawn
-    // exactly as without the cursor, and nothing was shaped twice.
-    let glyph_pass_start = fg_scratch.len();
-    let mut cursor_break: Option<usize> = None;
-    loop {
-        let mut x: usize = 0;
-        while x < max {
-            let sq = row[Column(x)];
-            // Composition cells emit in their own pass below (shaped per
-            // grapheme cluster so they can't ligate with terminal text),
-            // and a wide glyph half-covered by the block is dropped whole.
-            if preedit.is_some_and(|p| p.suppresses(sq, x)) {
+    let mut x: usize = 0;
+    while x < max {
+        let sq = row[Column(x)];
+        // Composition cells emit in their own pass below (shaped per
+        // grapheme cluster so they can't ligate with terminal text),
+        // and a wide glyph half-covered by the block is dropped whole.
+        if preedit.is_some_and(|p| p.suppresses(sq, x)) {
+            x += 1;
+            continue;
+        }
+        if is_run_breaker(sq) {
+            x += 1;
+            continue;
+        }
+        // Wide-char spacers shouldn't be a run-start either — the
+        // wide glyph lives in the preceding `Wide` cell, this cell is
+        // pure padding. Advance past it.
+        if is_skipped_spacer(sq) {
+            x += 1;
+            continue;
+        }
+
+        // Open a run at x.
+        let ch = sq.c();
+        let run_start_style_id = sq.style_id();
+        let run_style_flags =
+            (resolve_style(row_styles, x).flags.bits() & SHAPING_FLAG_MASK) as u8;
+        let (font_id, is_emoji) =
+            rasterizer.resolve_font(ch, run_style_flags, font_library, route_id);
+
+        // Glyph Protocol short-circuit: registered codepoints render
+        // directly from the registry without shaping, run-extension,
+        // or per-platform shaper plumbing. Each registered cell is
+        // its own one-cell run.
+        if font_id == CUSTOM_GLYPH_FONT_ID_U32 {
+            // The font cascade reported a custom glyph but the row
+            // already cloned `glyph_registry` as None — registry was
+            // detached between font resolution and this branch (rare,
+            // but harmless: render nothing).
+            let Some(registry) = glyph_registry.as_ref() else {
                 x += 1;
                 continue;
-            }
-            if is_run_breaker(sq) {
-                x += 1;
-                continue;
-            }
-            // Wide-char spacers shouldn't be a run-start either — the
-            // wide glyph lives in the preceding `Wide` cell, this cell is
-            // pure padding. Advance past it.
-            if is_skipped_spacer(sq) {
-                x += 1;
-                continue;
-            }
-
-            // Open a run at x.
-            let ch = sq.c();
-            let run_start_style_id = sq.style_id();
-            let run_style_flags =
-                (resolve_style(row_styles, x).flags.bits() & SHAPING_FLAG_MASK) as u8;
-            let (font_id, is_emoji) =
-                rasterizer.resolve_font(ch, run_style_flags, font_library, route_id);
-
-            // Glyph Protocol short-circuit: registered codepoints render
-            // directly from the registry without shaping, run-extension,
-            // or per-platform shaper plumbing. Each registered cell is
-            // its own one-cell run.
-            if font_id == CUSTOM_GLYPH_FONT_ID_U32 {
-                // The font cascade reported a custom glyph but the row
-                // already cloned `glyph_registry` as None — registry was
-                // detached between font resolution and this branch (rare,
-                // but harmless: render nothing).
-                let Some(registry) = glyph_registry.as_ref() else {
-                    x += 1;
-                    continue;
-                };
-
-                // fg colour, mirroring the regular emit loop's
-                // selection / hint precedence.
-                let style = resolve_style(row_styles, x);
-                let color = if !needs_per_cell_check {
-                    cell_fg(sq, style, palette, term_colors)
-                } else {
-                    let is_sel = cell_in_row_sel(row_sel, x as u16);
-                    let hint_tag = if is_sel {
-                        None
-                    } else {
-                        cell_in_row_hints(row_hints, x as u16)
-                    };
-                    if is_sel {
-                        cell_fg_selected(sq, style, palette, term_colors)
-                    } else if let Some(tag) = hint_tag {
-                        cell_fg_hinted(tag, palette)
-                    } else {
-                        cell_fg(sq, style, palette, term_colors)
-                    }
-                };
-
-                // The render span comes from the registration's declared
-                // `width` (a render hint), NOT the cell layout: a width=2
-                // glyph overflows rightward into the following cell(s) in
-                // pixels while the grid still treats this codepoint as one
-                // logical column. The author is expected to leave that next
-                // cell blank (a trailing space) so the overflow lands on
-                // empty space rather than real content; when it didn't, or
-                // at the grid's edge, the span drops to one cell (§8.5.2).
-                if let Some((_, slot, is_color, span)) = ensure_custom_glyph_by_codepoint(
-                    grid,
-                    rasterizer,
-                    registry,
-                    ch as u32,
-                    cell_w_u32,
-                    cell_h,
-                    color,
-                    custom_glyph_room(row, x, cols),
-                    |rasterizer| {
-                        primary_ascent_px(rasterizer, font_library, size_u16, size_bucket)
-                    },
-                ) {
-                    // A registered glyph's render span can overflow into
-                    // the next cell: like a wide glyph, drop it while the
-                    // composition block covers any cell its ink spans.
-                    if preedit.is_some_and(|p| p.covers_ink(x, span as usize)) {
-                        x += 1;
-                        continue;
-                    }
-                    if slot.w != 0 && slot.h != 0 {
-                        // The bitmap is exactly the render span by the cell
-                        // height, so its top-left is the cell's. `bearings.y`
-                        // is measured from the cell *bottom* (the shader
-                        // flips it).
-                        let cell_h_i16 =
-                            cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
-                        let (bearing_x, bearing_y) = (0, cell_h_i16);
-
-                        // Colour atlas entries are pre-painted (palette
-                        // applied during COLR rasterisation), so the
-                        // shader multiplies by white. Mono entries take
-                        // the per-cell fg colour the run loop computed
-                        // above.
-                        let (atlas, color) = if is_color {
-                            (CellText::ATLAS_COLOR, [255, 255, 255, 255])
-                        } else {
-                            (CellText::ATLAS_GRAYSCALE, color)
-                        };
-                        fg_scratch.push(CellText {
-                            glyph_pos: [slot.x as u32, slot.y as u32],
-                            glyph_size: [slot.w as u32, slot.h as u32],
-                            bearings: [bearing_x, bearing_y],
-                            grid_pos: [x as u16, y],
-                            color,
-                            atlas,
-                            bools: 0,
-                            page: slot.page,
-                            _pad: 0,
-                        });
-                    }
-                }
-                x += 1;
-                continue;
-            }
-
-            // Built-in drawable sprite short-circuit: box-drawing and other
-            // procedurally-rendered codepoints render as a one-cell atlas
-            // sprite (crisp + seamless in any font) instead of the font
-            // glyph. Glyph-protocol customs (handled above) still win. If the
-            // sprite can't be produced we fall through to normal shaping.
-            if use_drawable_chars
-                && rio_backend::sugarloaf::sprite::is_drawable(ch as u32)
-            {
-                if let Some(slot) =
-                    ensure_drawable_sprite(grid, ch as u32, cell_w_u32, cell_h_u32)
-                {
-                    if slot.w != 0 && slot.h != 0 {
-                        // fg colour, mirroring the regular emit loop's
-                        // selection / hint precedence.
-                        let style = resolve_style(row_styles, x);
-                        let color = if !needs_per_cell_check {
-                            cell_fg(sq, style, palette, term_colors)
-                        } else {
-                            let is_sel = cell_in_row_sel(row_sel, x as u16);
-                            let hint_tag = if is_sel {
-                                None
-                            } else {
-                                cell_in_row_hints(row_hints, x as u16)
-                            };
-                            if is_sel {
-                                cell_fg_selected(sq, style, palette, term_colors)
-                            } else if let Some(tag) = hint_tag {
-                                cell_fg_hinted(tag, palette)
-                            } else {
-                                cell_fg(sq, style, palette, term_colors)
-                            }
-                        };
-                        fg_scratch.push(CellText {
-                            glyph_pos: [slot.x as u32, slot.y as u32],
-                            glyph_size: [slot.w as u32, slot.h as u32],
-                            bearings: [slot.bearing_x, slot.bearing_y],
-                            grid_pos: [x as u16, y],
-                            color,
-                            atlas: CellText::ATLAS_GRAYSCALE,
-                            bools: 0,
-                            page: slot.page,
-                            _pad: 0,
-                        });
-                    }
-                    x += 1;
-                    continue;
-                }
-            }
-
-            let run_start = x;
-            // Sticky style_id: equal ids imply equal resolved styles (the
-            // per-row styles are resolved from these very ids, and overlay
-            // label cells carry the reserved HINT_LABEL_STYLE_ID), so the
-            // flags comparison only runs on id changes.
-            let mut prev_style_id = run_start_style_id;
-
-            // Kitty Unicode placeholder shapes as a space — the cell
-            // joins the run, the shaper emits an invisible space glyph
-            // (no notdef tofu), and the kitty image overlay is drawn on
-            // top to fill the cell.
-            let shape_ch = if ch == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
-                ' '
-            } else {
-                ch
             };
 
+            // fg colour, mirroring the regular emit loop's
+            // selection / hint precedence.
+            let style = resolve_style(row_styles, x);
+            let color = if !needs_per_cell_check {
+                cell_fg(sq, style, palette, term_colors)
+            } else {
+                let is_sel = cell_in_row_sel(row_sel, x as u16);
+                let hint_tag = if is_sel {
+                    None
+                } else {
+                    cell_in_row_hints(row_hints, x as u16)
+                };
+                if is_sel {
+                    cell_fg_selected(sq, style, palette, term_colors)
+                } else if let Some(tag) = hint_tag {
+                    cell_fg_hinted(tag, palette)
+                } else {
+                    cell_fg(sq, style, palette, term_colors)
+                }
+            };
+
+            // The render span comes from the registration's declared
+            // `width` (a render hint), NOT the cell layout: a width=2
+            // glyph overflows rightward into the following cell(s) in
+            // pixels while the grid still treats this codepoint as one
+            // logical column. The author is expected to leave that next
+            // cell blank (a trailing space) so the overflow lands on
+            // empty space rather than real content; when it didn't, or
+            // at the grid's edge, the span drops to one cell (§8.5.2).
+            if let Some((_, slot, is_color, span)) = ensure_custom_glyph_by_codepoint(
+                grid,
+                rasterizer,
+                registry,
+                ch as u32,
+                cell_w_u32,
+                cell_h,
+                color,
+                custom_glyph_room(row, x, cols),
+                |rasterizer| {
+                    primary_ascent_px(rasterizer, font_library, size_u16, size_bucket)
+                },
+            ) {
+                // A registered glyph's render span can overflow into
+                // the next cell: like a wide glyph, drop it while the
+                // composition block covers any cell its ink spans.
+                if preedit.is_some_and(|p| p.covers_ink(x, span as usize)) {
+                    x += 1;
+                    continue;
+                }
+                if slot.w != 0 && slot.h != 0 {
+                    // The bitmap is exactly the render span by the cell
+                    // height, so its top-left is the cell's. `bearings.y`
+                    // is measured from the cell *bottom* (the shader
+                    // flips it).
+                    let cell_h_i16 = cell_h.round().clamp(0.0, i16::MAX as f32) as i16;
+                    let (bearing_x, bearing_y) = (0, cell_h_i16);
+
+                    // Colour atlas entries are pre-painted (palette
+                    // applied during COLR rasterisation), so the
+                    // shader multiplies by white. Mono entries take
+                    // the per-cell fg colour the run loop computed
+                    // above.
+                    let (atlas, color) = if is_color {
+                        (CellText::ATLAS_COLOR, [255, 255, 255, 255])
+                    } else {
+                        (CellText::ATLAS_GRAYSCALE, color)
+                    };
+                    fg_scratch.push(CellText {
+                        glyph_pos: [slot.x as u32, slot.y as u32],
+                        glyph_size: [slot.w as u32, slot.h as u32],
+                        bearings: [bearing_x, bearing_y],
+                        grid_pos: [x as u16, y],
+                        color,
+                        atlas,
+                        bools: 0,
+                        page: slot.page,
+                        _pad: 0,
+                    });
+                }
+            }
+            x += 1;
+            continue;
+        }
+
+        // Built-in drawable sprite short-circuit: box-drawing and other
+        // procedurally-rendered codepoints render as a one-cell atlas
+        // sprite (crisp + seamless in any font) instead of the font
+        // glyph. Glyph-protocol customs (handled above) still win. If the
+        // sprite can't be produced we fall through to normal shaping.
+        if use_drawable_chars && rio_backend::sugarloaf::sprite::is_drawable(ch as u32) {
+            if let Some(slot) =
+                ensure_drawable_sprite(grid, ch as u32, cell_w_u32, cell_h_u32)
+            {
+                if slot.w != 0 && slot.h != 0 {
+                    // fg colour, mirroring the regular emit loop's
+                    // selection / hint precedence.
+                    let style = resolve_style(row_styles, x);
+                    let color = if !needs_per_cell_check {
+                        cell_fg(sq, style, palette, term_colors)
+                    } else {
+                        let is_sel = cell_in_row_sel(row_sel, x as u16);
+                        let hint_tag = if is_sel {
+                            None
+                        } else {
+                            cell_in_row_hints(row_hints, x as u16)
+                        };
+                        if is_sel {
+                            cell_fg_selected(sq, style, palette, term_colors)
+                        } else if let Some(tag) = hint_tag {
+                            cell_fg_hinted(tag, palette)
+                        } else {
+                            cell_fg(sq, style, palette, term_colors)
+                        }
+                    };
+                    fg_scratch.push(CellText {
+                        glyph_pos: [slot.x as u32, slot.y as u32],
+                        glyph_size: [slot.w as u32, slot.h as u32],
+                        bearings: [slot.bearing_x, slot.bearing_y],
+                        grid_pos: [x as u16, y],
+                        color,
+                        atlas: CellText::ATLAS_GRAYSCALE,
+                        bools: 0,
+                        page: slot.page,
+                        _pad: 0,
+                    });
+                }
+                x += 1;
+                continue;
+            }
+        }
+
+        let run_start = x;
+        // Sticky style_id: equal ids imply equal resolved styles (the
+        // per-row styles are resolved from these very ids, and overlay
+        // label cells carry the reserved HINT_LABEL_STYLE_ID), so the
+        // flags comparison only runs on id changes.
+        let mut prev_style_id = run_start_style_id;
+
+        // Kitty Unicode placeholder shapes as a space — the cell
+        // joins the run, the shaper emits an invisible space glyph
+        // (no notdef tofu), and the kitty image overlay is drawn on
+        // top to fill the cell.
+        let shape_ch = if ch == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+            ' '
+        } else {
+            ch
+        };
+
+        #[cfg(target_os = "macos")]
+        {
+            rasterizer.run_utf16_scratch.clear();
+            rasterizer.run_cell_starts.clear();
+            rasterizer
+                .run_cell_starts
+                .push(rasterizer.run_utf16_scratch.len() as u32);
+            let mut buf = [0u16; 2];
+            rasterizer
+                .run_utf16_scratch
+                .extend_from_slice(shape_ch.encode_utf16(&mut buf));
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            rasterizer.run_str_scratch.clear();
+            rasterizer.run_cell_starts.clear();
+            rasterizer.run_cell_starts.push(0);
+            rasterizer.run_str_scratch.push(shape_ch);
+        }
+        // Attached combining marks shape together with their base so
+        // `e` + U+0301 composes; kitty placeholder cells are excluded —
+        // their `zerowidth` encodes image-slice coordinates, not text.
+        if ch != rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+            push_cluster_text(rasterizer, extras_table, sq);
+        }
+        rasterizer.run_cell_columns.clear();
+        rasterizer.run_cell_columns.push(x as u16);
+        // Reset the per-run hasher and stamp the run-start cell as
+        // `(codepoint, cluster=0)`. Subsequent cells append themselves
+        // in the run-extension loop below.
+        rasterizer.run_hasher = rapidhash::fast::RapidHasher::default();
+        rasterizer.run_hasher.write_u32(shape_ch as u32);
+        rasterizer.run_hasher.write_u32(0);
+        // Hash the cell's zero-width combining codepoints too — without
+        // this, `(e, U+0301)` and `(e, U+0302)` would alias in the run
+        // cache. Variation Selectors (VS-15 / VS-16) don't change the
+        // glyph identity, so skip them.
+        hash_combining(rasterizer, extras_table, sq, 0);
+
+        // Extend the run while (font_id, style_flags) match.
+        let mut end = x + 1;
+        while end < cols {
+            let sq2 = row[Column(end)];
+            // Stop before composition cells (taken over by the preedit
+            // pass) and before a wide glyph the block half-covers,
+            // whose shaping would bleed into it (see the run-start
+            // guard).
+            if preedit.is_some_and(|p| p.suppresses(sq2, end)) {
+                break;
+            }
+            if is_run_breaker(sq2) {
+                break;
+            }
+            // Wide-char spacer: advance past without appending to scratch
+            // / hash / column array. The shaper treated the preceding
+            // `Wide` cell as the glyph; this cell is just padding.
+            if is_skipped_spacer(sq2) {
+                end += 1;
+                continue;
+            }
+            // Built-in drawable sprites are emitted one cell at a time by
+            // the per-cell hook above; they must not be swallowed into a
+            // shaped font run, or only the run's first cell would get a
+            // sprite and the rest would fall back to the font. Break so the
+            // next outer-loop iteration handles this cell as a sprite.
+            if use_drawable_chars
+                && rio_backend::sugarloaf::sprite::is_drawable(sq2.c() as u32)
+            {
+                break;
+            }
+            // Selection-boundary break: keep selection start / end
+            // exactly aligned to a run boundary so per-cell selection
+            // re-coloring never lands mid-ligature glyph. `lo` is the
+            // first selected column and `hi` is the last (inclusive),
+            // so we break when stepping onto `lo` or one past `hi`.
+            if let Some(sel) = row_sel {
+                let end_u16 = end as u16;
+                if end_u16 == sel.lo || end_u16 == sel.hi.saturating_add(1) {
+                    break;
+                }
+            }
+            // Hard-break before known-bad Latin ligatures (`fl`, `fi`,
+            // `st`). In monospace these typically render with a single
+            // ligature glyph that visually breaks the cell grid even
+            // when the per-cell font otherwise lines up.
+            if !sq2.has_grapheme() {
+                let prev = row[Column(end - 1)];
+                if !prev.has_grapheme() {
+                    let prev_cp = prev.c();
+                    let cp = sq2.c();
+                    if (prev_cp == 'f' && (cp == 'l' || cp == 'i'))
+                        || (prev_cp == 's' && cp == 't')
+                    {
+                        break;
+                    }
+                }
+            }
+            // Cursor break: keep the cursor cell in its own one-cell
+            // run so OpenType lookahead can't leave a pre-cursor span
+            // visually empty while waiting for substitution candidates
+            // to resolve (e.g. typing `paragraph` mid-row used to make
+            // `grap` blank until `h` arrived). Skipped on grapheme
+            // cells so emoji-ZWJ / combining-mark clusters stay whole
+            // when the cursor lands on them.
+            if !sq2.has_grapheme() {
+                if let Some(cursor_x) = cursor_col_for_row {
+                    let cursor_x = cursor_x as usize;
+                    if run_start == cursor_x && end == run_start + 1 {
+                        break;
+                    }
+                    if run_start < cursor_x && end == cursor_x {
+                        break;
+                    }
+                }
+            }
+            let style2_id = sq2.style_id();
+            if style2_id != prev_style_id {
+                let f = (resolve_style(row_styles, end).flags.bits() & SHAPING_FLAG_MASK)
+                    as u8;
+                if f != run_style_flags {
+                    break;
+                }
+                prev_style_id = style2_id;
+            }
+            let ch2 = sq2.c();
+            let (font_id2, _) =
+                rasterizer.resolve_font(ch2, run_style_flags, font_library, route_id);
+            if font_id2 != font_id {
+                break;
+            }
+            // Same placeholder→space substitution as the run-start
+            // path above.
+            let shape_ch2 = if ch2 == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+                ' '
+            } else {
+                ch2
+            };
             #[cfg(target_os = "macos")]
             {
-                rasterizer.run_utf16_scratch.clear();
-                rasterizer.run_cell_starts.clear();
                 rasterizer
                     .run_cell_starts
                     .push(rasterizer.run_utf16_scratch.len() as u32);
                 let mut buf = [0u16; 2];
                 rasterizer
                     .run_utf16_scratch
-                    .extend_from_slice(shape_ch.encode_utf16(&mut buf));
+                    .extend_from_slice(shape_ch2.encode_utf16(&mut buf));
             }
             #[cfg(not(target_os = "macos"))]
             {
-                rasterizer.run_str_scratch.clear();
-                rasterizer.run_cell_starts.clear();
-                rasterizer.run_cell_starts.push(0);
-                rasterizer.run_str_scratch.push(shape_ch);
+                rasterizer
+                    .run_cell_starts
+                    .push(rasterizer.run_str_scratch.len() as u32);
+                rasterizer.run_str_scratch.push(shape_ch2);
             }
-            // Attached combining marks shape together with their base so
-            // `e` + U+0301 composes; kitty placeholder cells are excluded —
-            // their `zerowidth` encodes image-slice coordinates, not text.
-            if ch != rio_backend::ansi::kitty_virtual::PLACEHOLDER {
-                push_cluster_text(rasterizer, extras_table, sq);
+            if ch2 != rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+                push_cluster_text(rasterizer, extras_table, sq2);
             }
-            rasterizer.run_cell_columns.clear();
-            rasterizer.run_cell_columns.push(x as u16);
-            // Reset the per-run hasher and stamp the run-start cell as
-            // `(codepoint, cluster=0)`. Subsequent cells append themselves
-            // in the run-extension loop below.
-            rasterizer.run_hasher = rapidhash::fast::RapidHasher::default();
-            rasterizer.run_hasher.write_u32(shape_ch as u32);
-            rasterizer.run_hasher.write_u32(0);
-            // Hash the cell's zero-width combining codepoints too — without
-            // this, `(e, U+0301)` and `(e, U+0302)` would alias in the run
-            // cache. Variation Selectors (VS-15 / VS-16) don't change the
-            // glyph identity, so skip them.
-            hash_combining(rasterizer, extras_table, sq, 0);
+            // Stamp the cell into the per-run hasher with its relative
+            // cluster offset (`end - run_start`, captured *before* the
+            // increment below).
+            let cluster = (end - run_start) as u32;
+            rasterizer.run_hasher.write_u32(shape_ch2 as u32);
+            rasterizer.run_hasher.write_u32(cluster);
+            hash_combining(rasterizer, extras_table, sq2, cluster);
+            rasterizer.run_cell_columns.push(end as u16);
+            end += 1;
+        }
 
-            // Extend the run while (font_id, style_flags) match.
-            let mut end = x + 1;
-            while end < cols {
-                let sq2 = row[Column(end)];
-                // Stop before composition cells (taken over by the preedit
-                // pass) and before a wide glyph the block half-covers,
-                // whose shaping would bleed into it (see the run-start
-                // guard).
-                if preedit.is_some_and(|p| p.suppresses(sq2, end)) {
-                    break;
-                }
-                if is_run_breaker(sq2) {
-                    break;
-                }
-                // Wide-char spacer: advance past without appending to scratch
-                // / hash / column array. The shaper treated the preceding
-                // `Wide` cell as the glyph; this cell is just padding.
-                if is_skipped_spacer(sq2) {
-                    end += 1;
-                    continue;
-                }
-                // Built-in drawable sprites are emitted one cell at a time by
-                // the per-cell hook above; they must not be swallowed into a
-                // shaped font run, or only the run's first cell would get a
-                // sprite and the rest would fall back to the font. Break so the
-                // next outer-loop iteration handles this cell as a sprite.
-                if use_drawable_chars
-                    && rio_backend::sugarloaf::sprite::is_drawable(sq2.c() as u32)
-                {
-                    break;
-                }
-                // Selection-boundary break: keep selection start / end
-                // exactly aligned to a run boundary so per-cell selection
-                // re-coloring never lands mid-ligature glyph. `lo` is the
-                // first selected column and `hi` is the last (inclusive),
-                // so we break when stepping onto `lo` or one past `hi`.
-                if let Some(sel) = row_sel {
-                    let end_u16 = end as u16;
-                    if end_u16 == sel.lo || end_u16 == sel.hi.saturating_add(1) {
-                        break;
-                    }
-                }
-                // Hard-break before known-bad Latin ligatures (`fl`, `fi`,
-                // `st`). In monospace these typically render with a single
-                // ligature glyph that visually breaks the cell grid even
-                // when the per-cell font otherwise lines up.
-                if !sq2.has_grapheme() {
-                    let prev = row[Column(end - 1)];
-                    if !prev.has_grapheme() {
-                        let prev_cp = prev.c();
-                        let cp = sq2.c();
-                        if (prev_cp == 'f' && (cp == 'l' || cp == 'i'))
-                            || (prev_cp == 's' && cp == 't')
-                        {
-                            break;
-                        }
-                    }
-                }
-                // Cursor break: keep the cursor cell in its own one-cell
-                // run so OpenType lookahead can't leave a pre-cursor span
-                // visually empty while waiting for substitution candidates
-                // to resolve (e.g. typing `paragraph` mid-row used to make
-                // `grap` blank until `h` arrived). Skipped on grapheme
-                // cells so emoji-ZWJ / combining-mark clusters stay whole
-                // when the cursor lands on them.
-                if !sq2.has_grapheme() {
-                    if let Some(cursor_x) = cursor_break {
-                        if run_start == cursor_x && end == run_start + 1 {
-                            break;
-                        }
-                        if run_start < cursor_x && end == cursor_x {
-                            break;
-                        }
-                    }
-                }
-                let style2_id = sq2.style_id();
-                if style2_id != prev_style_id {
-                    let f = (resolve_style(row_styles, end).flags.bits()
-                        & SHAPING_FLAG_MASK) as u8;
-                    if f != run_style_flags {
-                        break;
-                    }
-                    prev_style_id = style2_id;
-                }
-                let ch2 = sq2.c();
-                let (font_id2, _) =
-                    rasterizer.resolve_font(ch2, run_style_flags, font_library, route_id);
-                if font_id2 != font_id {
-                    break;
-                }
-                // Same placeholder→space substitution as the run-start
-                // path above.
-                let shape_ch2 = if ch2 == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
-                    ' '
-                } else {
-                    ch2
-                };
-                #[cfg(target_os = "macos")]
-                {
-                    rasterizer
-                        .run_cell_starts
-                        .push(rasterizer.run_utf16_scratch.len() as u32);
-                    let mut buf = [0u16; 2];
-                    rasterizer
-                        .run_utf16_scratch
-                        .extend_from_slice(shape_ch2.encode_utf16(&mut buf));
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    rasterizer
-                        .run_cell_starts
-                        .push(rasterizer.run_str_scratch.len() as u32);
-                    rasterizer.run_str_scratch.push(shape_ch2);
-                }
-                if ch2 != rio_backend::ansi::kitty_virtual::PLACEHOLDER {
-                    push_cluster_text(rasterizer, extras_table, sq2);
-                }
-                // Stamp the cell into the per-run hasher with its relative
-                // cluster offset (`end - run_start`, captured *before* the
-                // increment below).
-                let cluster = (end - run_start) as u32;
-                rasterizer.run_hasher.write_u32(shape_ch2 as u32);
-                rasterizer.run_hasher.write_u32(cluster);
-                hash_combining(rasterizer, extras_table, sq2, cluster);
-                rasterizer.run_cell_columns.push(end as u16);
-                end += 1;
-            }
+        // Finalize the per-run hash: append `(cell_count, font_id,
+        // size_bucket)`. `style_flags` are not included separately
+        // because `font_id` already varies with style (`resolve_font`
+        // factors style_flags into the resolution key); adding them
+        // a second time would just be redundant work.
+        let cell_count = (end - run_start) as u32;
+        rasterizer.run_hasher.write_u32(cell_count);
+        rasterizer.run_hasher.write_u32(font_id);
+        rasterizer.run_hasher.write_u16(size_bucket);
+        let hash = rasterizer.run_hasher.finish();
 
-            // Finalize the per-run hash: append `(cell_count, font_id,
-            // size_bucket)`. `style_flags` are not included separately
-            // because `font_id` already varies with style (`resolve_font`
-            // factors style_flags into the resolution key); adding them
-            // a second time would just be redundant work.
-            let cell_count = (end - run_start) as u32;
-            rasterizer.run_hasher.write_u32(cell_count);
-            rasterizer.run_hasher.write_u32(font_id);
-            rasterizer.run_hasher.write_u16(size_bucket);
-            let hash = rasterizer.run_hasher.finish();
+        // Shape (cached) and capture ascent for this (font_id, size).
+        let Some((ascent_px, _)) = shape_cached(
+            rasterizer,
+            hash,
+            font_id,
+            size_u16,
+            size_bucket,
+            font_library,
+        ) else {
+            x = end;
+            continue;
+        };
 
-            // Shape (cached) and capture ascent for this (font_id, size).
-            let Some((ascent_px, _)) = shape_cached(
-                rasterizer,
-                hash,
-                font_id,
-                size_u16,
-                size_bucket,
-                font_library,
-            ) else {
-                x = end;
-                continue;
-            };
+        let (synthetic_bold, synthetic_italic) =
+            rasterizer.get_synthesis(font_id, font_library);
 
-            let (synthetic_bold, synthetic_italic) =
-                rasterizer.get_synthesis(font_id, font_library);
-
-            // Collect (glyph_id, cell_offset) pairs by walking the shape
-            // result alongside a monotonic cluster → cell-offset cursor.
-            // Done up-front so we can release borrows on `rasterizer`
-            // before the emit loop (which takes `&mut rasterizer` for the
-            // rasterize + atlas-insert step).
-            //
-            // Cluster space differs by platform: macOS CoreText reports
-            // UTF-16 code-unit offsets, swash reports UTF-8 byte offsets.
-            // Each backend walks its own cell-position table.
-            //
-            // SmallVec inline capacity 64 covers terminal-typical runs
-            // (ASCII identifiers, short bursts of non-ligature text)
-            // entirely on the stack — no heap touch. Ligature-heavy or
-            // shaped emoji runs that outgrow 64 slots spill to heap once.
+        // Collect (glyph_id, cell_offset) pairs by walking the shape
+        // result alongside a monotonic cluster → cell-offset cursor.
+        // Done up-front so we can release borrows on `rasterizer`
+        // before the emit loop (which takes `&mut rasterizer` for the
+        // rasterize + atlas-insert step).
+        //
+        // Cluster space differs by platform: macOS CoreText reports
+        // UTF-16 code-unit offsets, swash reports UTF-8 byte offsets.
+        // Each backend walks its own cell-position table.
+        //
+        // SmallVec inline capacity 64 covers terminal-typical runs
+        // (ASCII identifiers, short bursts of non-ligature text)
+        // entirely on the stack — no heap touch. Ligature-heavy or
+        // shaped emoji runs that outgrow 64 slots spill to heap once.
+        let mut glyph_emits: SmallVec<[(u16, u16); 64]> = SmallVec::new();
+        {
+            let glyphs = &run_cache_get(&mut rasterizer.run_cache, hash)
+                .expect("just inserted")
+                .glyphs;
+            let mut cell_idx_in_run: u16 = 0;
             // Both platforms record explicit per-cell starts into the
             // shaping buffer (UTF-16 units on macOS, UTF-8 bytes on
             // swash), so one walk serves both. A per-char cursor would
             // miscount: cells with combining marks contribute several
             // chars each.
-            let glyph_emits = {
-                let glyphs = &run_cache_get(&mut rasterizer.run_cache, hash)
-                    .expect("just inserted")
-                    .glyphs;
-                glyph_cells(glyphs, &rasterizer.run_cell_starts)
-            };
-            if cursor_break.is_none() {
-                record_run_ligatures(
-                    rasterizer,
-                    row,
-                    font_id,
-                    &glyph_emits,
-                    font_library,
-                    ligatures,
-                );
+            let cell_starts = &rasterizer.run_cell_starts;
+            for g in glyphs {
+                while (cell_idx_in_run as usize + 1) < cell_starts.len()
+                    && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
+                {
+                    cell_idx_in_run = cell_idx_in_run.saturating_add(1);
+                }
+                glyph_emits.push((g.id, cell_idx_in_run));
+            }
+        }
+
+        for &(glyph_id, cell_idx_in_run) in &glyph_emits {
+            // Map the appended-cell index back to its actual grid
+            // column. Spacer cells were skipped from the run text so
+            // `cell_idx_in_run` no longer equals `column - run_start`;
+            // the parallel `run_cell_columns` table records the source
+            // column for each appended cell.
+            let grid_col = rasterizer
+                .run_cell_columns
+                .get(cell_idx_in_run as usize)
+                .copied()
+                .unwrap_or((run_start as u16).saturating_add(cell_idx_in_run));
+            if (grid_col as usize) >= cols {
+                continue;
             }
 
-            for &(glyph_id, cell_idx_in_run) in &glyph_emits {
-                // Map the appended-cell index back to its actual grid
-                // column. Spacer cells were skipped from the run text so
-                // `cell_idx_in_run` no longer equals `column - run_start`;
-                // the parallel `run_cell_columns` table records the source
-                // column for each appended cell.
-                let grid_col = rasterizer
-                    .run_cell_columns
-                    .get(cell_idx_in_run as usize)
-                    .copied()
-                    .unwrap_or((run_start as u16).saturating_add(cell_idx_in_run));
-                if (grid_col as usize) >= cols {
-                    continue;
-                }
+            let Some((_, slot, is_color)) = ensure_glyph_by_id(
+                rasterizer,
+                grid,
+                font_id,
+                glyph_id,
+                size_bucket,
+                size_u16,
+                cell_h,
+                ascent_px,
+                is_emoji,
+                synthetic_italic,
+                synthetic_bold,
+            ) else {
+                continue;
+            };
+            if slot.w == 0 || slot.h == 0 {
+                continue;
+            }
 
-                let Some((_, slot, is_color)) = ensure_glyph_by_id(
-                    rasterizer,
-                    grid,
-                    font_id,
-                    glyph_id,
-                    size_bucket,
-                    size_u16,
-                    cell_h,
-                    ascent_px,
-                    is_emoji,
-                    synthetic_italic,
-                    synthetic_bold,
-                ) else {
-                    continue;
+            // Pull fg from the cluster's first cell. Non-ligature runs
+            // end up with one cluster per cell (per-cell colour);
+            // ligatures take the first cluster cell's colour. Mapped
+            // through `run_cell_columns` for the same reason as
+            // `grid_col` above.
+            let src_col = (grid_col as usize).min(cols.saturating_sub(1));
+            let src_sq = row[Column(src_col)];
+            let src_style = resolve_style(row_styles, src_col);
+            let (atlas, color) = if is_color {
+                // Colour glyphs (emoji) don't take the selection-fg /
+                // hint-fg swap — behaviour for
+                // bitmap/COLR atlas entries.
+                (CellText::ATLAS_COLOR, [255, 255, 255, 255])
+            } else if !needs_per_cell_check {
+                // Fast path — no selection / color-changing hints on
+                // this row.
+                (
+                    CellText::ATLAS_GRAYSCALE,
+                    cell_fg(src_sq, src_style, palette, term_colors),
+                )
+            } else {
+                let is_sel = cell_in_row_sel(row_sel, src_col as u16);
+                let hint_tag = if is_sel {
+                    None
+                } else {
+                    cell_in_row_hints(row_hints, src_col as u16)
                 };
-                if slot.w == 0 || slot.h == 0 {
-                    continue;
-                }
-
-                // Pull fg from the cluster's first cell. Non-ligature runs
-                // end up with one cluster per cell (per-cell colour);
-                // ligatures take the first cluster cell's colour. Mapped
-                // through `run_cell_columns` for the same reason as
-                // `grid_col` above.
-                let src_col = (grid_col as usize).min(cols.saturating_sub(1));
-                let src_sq = row[Column(src_col)];
-                let src_style = resolve_style(row_styles, src_col);
-                let (atlas, color) = if is_color {
-                    // Colour glyphs (emoji) don't take the selection-fg /
-                    // hint-fg swap — behaviour for
-                    // bitmap/COLR atlas entries.
-                    (CellText::ATLAS_COLOR, [255, 255, 255, 255])
-                } else if !needs_per_cell_check {
-                    // Fast path — no selection / color-changing hints on
-                    // this row.
+                if is_sel {
+                    (
+                        CellText::ATLAS_GRAYSCALE,
+                        cell_fg_selected(src_sq, src_style, palette, term_colors),
+                    )
+                } else if let Some(tag) = hint_tag {
+                    // Hint-fg wins over the cell's own fg, matching
+                    // `.search` / `.search_selected` branches at
+                    // `generic.zig:2829-2833` (the fg picker mirrors bg).
+                    (CellText::ATLAS_GRAYSCALE, cell_fg_hinted(tag, palette))
+                } else {
                     (
                         CellText::ATLAS_GRAYSCALE,
                         cell_fg(src_sq, src_style, palette, term_colors),
                     )
-                } else {
-                    let is_sel = cell_in_row_sel(row_sel, src_col as u16);
-                    let hint_tag = if is_sel {
-                        None
-                    } else {
-                        cell_in_row_hints(row_hints, src_col as u16)
-                    };
-                    if is_sel {
-                        (
-                            CellText::ATLAS_GRAYSCALE,
-                            cell_fg_selected(src_sq, src_style, palette, term_colors),
-                        )
-                    } else if let Some(tag) = hint_tag {
-                        // Hint-fg wins over the cell's own fg, matching
-                        // `.search` / `.search_selected` branches at
-                        // `generic.zig:2829-2833` (the fg picker mirrors bg).
-                        (CellText::ATLAS_GRAYSCALE, cell_fg_hinted(tag, palette))
-                    } else {
-                        (
-                            CellText::ATLAS_GRAYSCALE,
-                            cell_fg(src_sq, src_style, palette, term_colors),
-                        )
-                    }
-                };
-
-                fg_scratch.push(CellText {
-                    glyph_pos: [slot.x as u32, slot.y as u32],
-                    glyph_size: [slot.w as u32, slot.h as u32],
-                    bearings: [slot.bearing_x, slot.bearing_y],
-                    grid_pos: [grid_col, y],
-                    color,
-                    atlas,
-                    bools: 0,
-                    page: slot.page,
-                    _pad: 0,
-                });
-            }
-
-            x = end;
-        }
-        if cursor_break.is_none() {
-            if let Some(cursor_x) = cursor_col_for_row {
-                if ligatures.at_or_before(cursor_x as usize) {
-                    cursor_break = Some(cursor_x as usize);
-                    fg_scratch.truncate(glyph_pass_start);
-                    continue;
                 }
-            }
+            };
+
+            fg_scratch.push(CellText {
+                glyph_pos: [slot.x as u32, slot.y as u32],
+                glyph_size: [slot.w as u32, slot.h as u32],
+                bearings: [slot.bearing_x, slot.bearing_y],
+                grid_pos: [grid_col, y],
+                color,
+                atlas,
+                bools: 0,
+                page: slot.page,
+                _pad: 0,
+            });
         }
-        break;
+
+        x = end;
     }
 
     // Phase 2.5: composition pass. Every grapheme cluster shapes as
@@ -4122,138 +3899,5 @@ mod custom_glyph_tests {
         marked.insert_cell_flag(CellFlags::GRAPHEME);
         row[Column(1)] = marked;
         assert_eq!(custom_glyph_room(&row, 0, 3), 1, "a space with a mark");
-    }
-}
-
-#[cfg(test)]
-mod ligature_cells_tests {
-    use super::*;
-
-    fn cells(glyph_cells: &[u16], columns: &[u16]) -> Vec<usize> {
-        let none = vec![false; columns.len()];
-        cells_with(glyph_cells, &none, columns)
-    }
-
-    fn cells_with(
-        glyph_cells: &[u16],
-        substituted: &[bool],
-        columns: &[u16],
-    ) -> Vec<usize> {
-        let mut out = RowLigatures::default();
-        mark_ligature_cells(glyph_cells.iter().copied(), substituted, columns, &mut out);
-        (0..256).filter(|&c| out.get(c)).collect()
-    }
-
-    // Most coding fonts keep one glyph per cell and substitute the
-    // components: "a=>b" shapes to four glyphs where the two in the
-    // middle are not the nominal "=" and ">".
-    #[test]
-    fn a_substituted_glyph_marks_its_cell() {
-        assert_eq!(
-            cells_with(&[0, 1, 2, 3], &[false, true, true, false], &[0, 1, 2, 3]),
-            vec![1, 2]
-        );
-        // Both signals at once: a substituted lead glyph followed by
-        // a cell without a glyph of its own.
-        assert_eq!(
-            cells_with(&[0, 1, 3], &[false, true, false, false], &[0, 1, 2, 3]),
-            vec![1, 2]
-        );
-    }
-
-    // A cursor changes the glyphs when it is on a ligature cell or
-    // right after one, since the break separates the cursor cell from
-    // the cell before it.
-    #[test]
-    fn a_cursor_on_or_right_after_a_ligature_changes_glyphs() {
-        let mut bits = RowLigatures::default();
-        bits.set(1);
-        bits.set(2);
-        assert!(!bits.at_or_before(0));
-        assert!(bits.at_or_before(1));
-        assert!(bits.at_or_before(2));
-        assert!(bits.at_or_before(3), "right after the ligature");
-        assert!(!bits.at_or_before(4));
-    }
-
-    // One glyph per cell: nothing ligates.
-    #[test]
-    fn a_run_with_a_glyph_per_cell_has_no_ligature_cells() {
-        assert!(cells(&[0, 1, 2, 3], &[0, 1, 2, 3]).is_empty());
-        // A cell with combining marks can shape to several glyphs.
-        assert!(cells(&[0, 0, 1, 2], &[0, 1, 2]).is_empty());
-    }
-
-    // "a=>b": the glyph of "=" draws ">" too, so both cells are the
-    // ligature; "a" and "b" are not.
-    #[test]
-    fn a_cell_without_its_own_glyph_ligates_with_the_cell_drawn_before_it() {
-        assert_eq!(cells(&[0, 1, 3], &[0, 1, 2, 3]), vec![1, 2]);
-        // A three cell ligature.
-        assert_eq!(cells(&[0, 1], &[0, 1, 2, 3]), vec![1, 2, 3]);
-    }
-
-    // Spacer cells are not appended to a run, so the column table maps
-    // run cells to their grid columns; the bits land on grid columns.
-    #[test]
-    fn ligature_cells_are_grid_columns_not_run_indices() {
-        // Wide at 4, spacer at 5 skipped, then "=>" at 6 and 7 where
-        // only "=" shapes to a glyph.
-        assert_eq!(cells(&[0, 1], &[4, 6, 7]), vec![6, 7]);
-    }
-
-    /// Shape `text` as one run through the production shaper, the way
-    /// the run loop stages it, and return the ligature cells it records.
-    #[cfg(target_os = "macos")]
-    fn ligature_cells_of(text: &str) -> Vec<usize> {
-        let font_library = FontLibrary::default();
-        let mut r = GridGlyphRasterizer::new();
-        let (font_id, _) =
-            r.resolve_font(text.chars().next().unwrap(), 0, &font_library, 0);
-        r.run_utf16_scratch.clear();
-        r.run_cell_starts.clear();
-        r.run_cell_columns.clear();
-        let mut row: Row<Square> = Row::new(text.chars().count());
-        for (col, ch) in text.chars().enumerate() {
-            r.run_cell_starts.push(r.run_utf16_scratch.len() as u32);
-            let mut buf = [0u16; 2];
-            r.run_utf16_scratch
-                .extend_from_slice(ch.encode_utf16(&mut buf));
-            r.run_cell_columns.push(col as u16);
-            row[Column(col)] = Square::from_char(ch);
-        }
-        let Some((glyphs, _)) = shape_run_ct(&mut r, font_id, 14, 56, &font_library)
-        else {
-            return Vec::new();
-        };
-        let emits = glyph_cells(&glyphs, &r.run_cell_starts);
-        let mut out = RowLigatures::default();
-        record_run_ligatures(&mut r, &row, font_id, &emits, &font_library, &mut out);
-        (0..text.chars().count()).filter(|&c| out.get(c)).collect()
-    }
-
-    // The bundled font ligates "=>" and "->" with one substituted glyph
-    // per cell, and leaves plain words alone.
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn the_bundled_font_s_ligatures_are_recorded_from_real_shaping() {
-        assert_eq!(ligature_cells_of("a=>b"), vec![1, 2]);
-        assert_eq!(ligature_cells_of("x->y"), vec![1, 2]);
-        assert_eq!(ligature_cells_of("abcd"), Vec::<usize>::new());
-        assert_eq!(ligature_cells_of("a b c"), Vec::<usize>::new());
-    }
-
-    #[test]
-    fn row_ligatures_hold_any_column() {
-        let mut bits = RowLigatures::default();
-        assert!(bits.is_empty());
-        bits.set(3);
-        bits.set(64);
-        bits.set(200);
-        assert!(bits.get(3) && bits.get(64) && bits.get(200));
-        assert!(!bits.get(2) && !bits.get(63) && !bits.get(65) && !bits.get(201));
-        assert!(!bits.is_empty());
-        bits.clear();
-        assert!(bits.is_empty() && !bits.get(3));
     }
 }

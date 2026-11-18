@@ -1222,26 +1222,6 @@ pub fn discover_fallback(primary: &FontHandle, ch: char) -> Option<FontHandle> {
 /// Astral codepoints (`ch as u32 > 0xFFFF`) encode as a UTF-16 surrogate
 /// pair; CoreText maps both units to one glyph (first index holds it,
 /// second is `0xFFFF`). We want the first index.
-/// The glyph the font's character map gives `ch` before any shaping,
-/// or `None` when the font has none. A shaped glyph that differs from
-/// it was substituted by a lookup: a ligature component, a contextual
-/// alternate.
-pub fn nominal_glyph(handle: &FontHandle, ch: char) -> Option<u16> {
-    use core_foundation::base::CFIndex;
-    let mut utf16 = [0u16; 2];
-    let encoded = ch.encode_utf16(&mut utf16);
-    let count = encoded.len();
-    let mut glyphs = [0 as CGGlyph; 2];
-    let ok = unsafe {
-        handle.base_font.get_glyphs_for_characters(
-            utf16.as_ptr(),
-            glyphs.as_mut_ptr(),
-            count as CFIndex,
-        )
-    };
-    (ok && glyphs[0] != 0).then_some(glyphs[0])
-}
-
 pub fn font_has_char(handle: &FontHandle, ch: char) -> bool {
     use core_foundation::base::CFIndex;
     let mut utf16 = [0u16; 2];

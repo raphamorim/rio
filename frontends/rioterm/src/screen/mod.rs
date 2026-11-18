@@ -266,6 +266,7 @@ impl Screen<'_> {
             keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
+            shaping_break: config.fonts.shaping_break,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
         };
 
@@ -560,9 +561,12 @@ impl Screen<'_> {
         // them the new one.
         let colors = rio_backend::config::colors::term::List::from(&config.colors);
         self.context_manager.config.colors = colors;
+        self.context_manager.config.shaping_break = config.fonts.shaping_break;
         for grid in self.context_manager.contexts_mut() {
             for item in grid.contexts_mut().values_mut() {
-                item.val.terminal.lock().set_default_colors(colors);
+                let mut terminal = item.val.terminal.lock();
+                terminal.set_default_colors(colors);
+                terminal.set_cursor_shaping_break(config.fonts.shaping_break.cursor);
             }
         }
         if let Some(mut island) = old_island {
@@ -4023,11 +4027,6 @@ impl Screen<'_> {
                     >,
                 >,
                 row_styles: Vec<Vec<rio_backend::crosswords::style::Style>>,
-                /// Per row, the cells a ligature glyph draws, recorded
-                /// by the row builder on each rebuild and read on the
-                /// next cursor move. Behind a `RefCell` because the
-                /// rebuild closure borrows the frame shared.
-                row_ligatures: std::cell::RefCell<Vec<rio_grid::RowLigatures>>,
                 /// Snapshot of the grid's extras table — needed to hash
                 /// per-cell zero-width combining codepoints into the run
                 /// shape key so cells with the same base codepoint but
@@ -4145,8 +4144,6 @@ impl Screen<'_> {
                 let visible_rows =
                     std::mem::take(&mut ctx.renderable_content.visible_rows);
                 let row_styles = std::mem::take(&mut ctx.renderable_content.row_styles);
-                let row_ligatures =
-                    std::mem::take(&mut ctx.renderable_content.row_ligatures);
                 let extras = std::mem::take(&mut ctx.renderable_content.extras);
                 let term_colors = ctx.renderable_content.term_colors;
                 let display_offset = ctx.renderable_content.display_offset as i32;
@@ -4224,7 +4221,6 @@ impl Screen<'_> {
                     font_px,
                     visible_rows,
                     row_styles,
-                    row_ligatures: std::cell::RefCell::new(row_ligatures),
                     extras,
                     term_colors,
                     cursor_col: cursor.state.pos.col.0 as u16,
@@ -4423,10 +4419,6 @@ impl Screen<'_> {
                         } else {
                             None
                         };
-                        let mut row_ligatures = p.row_ligatures.borrow_mut();
-                        if row_ligatures.len() <= y {
-                            row_ligatures.resize_with(y + 1, Default::default);
-                        }
                         rio_grid::build_row_fg(
                             row,
                             cols,
@@ -4447,9 +4439,7 @@ impl Screen<'_> {
                             p.route_id,
                             cursor_col_for_row,
                             &mut fg_scratch,
-                            &mut row_ligatures[y],
                         );
-                        drop(row_ligatures);
                         grid.write_row(y as u32, &bg_scratch, &fg_scratch);
                     };
 
@@ -4686,8 +4676,6 @@ impl Screen<'_> {
                     let p = panels.swap_remove(idx);
                     item.val.renderable_content.visible_rows = p.visible_rows;
                     item.val.renderable_content.row_styles = p.row_styles;
-                    item.val.renderable_content.row_ligatures =
-                        p.row_ligatures.into_inner();
                     item.val.renderable_content.extras = p.extras;
                     item.val.renderable_content.hint_labels = p.hint_labels;
                 }

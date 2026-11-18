@@ -148,6 +148,10 @@ pub struct ContextManagerConfig {
     pub keyboard: rio_backend::config::keyboard::Keyboard,
     pub scrollback_history_limit: usize,
     pub grapheme_clustering: bool,
+    /// Where the renderer breaks shaping runs; the terminal needs to
+    /// know about the break at the cursor to mark the rows a cursor
+    /// move changes.
+    pub shaping_break: rio_backend::sugarloaf::font::fonts::ShapingBreak,
     /// The configured palette, handed to every terminal so it answers
     /// color queries itself.
     pub colors: rio_backend::config::colors::term::List,
@@ -315,7 +319,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 rich_text_id,
                 dimension,
             );
-            context.terminal.lock().set_cursor_shaping_break(false);
+            context
+                .terminal
+                .lock()
+                .set_cursor_shaping_break(config.shaping_break.cursor);
             return Ok(context);
         }
 
@@ -333,9 +340,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             config.scrollback_history_limit,
         );
         terminal.set_grapheme_clustering(config.grapheme_clustering);
-        // This frontend knows which cells its font ligates and marks the
-        // rows a cursor move changes itself, from `cursor_move`.
-        terminal.set_cursor_shaping_break(false);
+        terminal.set_cursor_shaping_break(config.shaping_break.cursor);
         terminal.set_default_colors(config.colors);
         terminal.blinking_cursor = cursor_state.1;
         let terminal: Arc<TerminalLock<Crosswords<T>>> =
@@ -1551,6 +1556,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
+            shaping_break: config.fonts.shaping_break,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
         };
 
@@ -1751,18 +1757,31 @@ pub mod test {
     // marks the rows of the old one and the new one for the next
     // snapshot and makes the frame a partial one, where it used to
     // rebuild the whole screen; setting what is already set is not news.
-    // This frontend marks the rows a cursor move changes itself, from
-    // the ligature cells its row builder recorded, so the terminal's
-    // own marking, which cannot know the font, is off.
+    // A terminal marks the rows a cursor move changes only if the
+    // renderer breaks shaping at the cursor; the context passes the
+    // configured answer on when it creates the terminal.
     #[test]
-    fn a_context_leaves_cursor_row_marking_to_the_frontend() {
-        let ctx = create_mock_context(
+    fn a_context_tells_its_terminal_about_the_shaping_break() {
+        use rio_backend::sugarloaf::font::fonts::ShapingBreak;
+        let dimension = ContextDimension::default();
+        let on = create_mock_context(VoidListener {}, WindowId::from(0), 0, dimension);
+        assert!(on.terminal.lock().cursor_shaping_break(), "on by default");
+
+        let config = ContextManagerConfig {
+            dead_pty: true,
+            shaping_break: ShapingBreak { cursor: false },
+            ..ContextManagerConfig::default()
+        };
+        let off = ContextManager::create_context(
+            (&Cursor::default(), false),
             VoidListener {},
             WindowId::from(0),
-            0,
-            ContextDimension::default(),
-        );
-        assert!(!ctx.terminal.lock().cursor_shaping_break());
+            1,
+            dimension,
+            &config,
+        )
+        .unwrap();
+        assert!(!off.terminal.lock().cursor_shaping_break());
     }
 
     #[test]

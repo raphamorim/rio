@@ -641,12 +641,9 @@ impl<U: EventListener> Crosswords<U> {
 
     /// Tell the terminal whether the renderer breaks shaping runs around
     /// the cursor cell. When it does, a cursor move rebuilds the row it
-    /// left and the row it is on where the break could change glyphs:
-    /// where the cursor cell shapes with a neighbor, since the terminal
-    /// does not know the font. When it does not, a cursor move rebuilds
-    /// no row. On by default. A frontend that knows its font's ligature
-    /// cells turns this off and marks the rows itself from
-    /// `cursor_move`.
+    /// left and the row it is on, so a ligature under the cursor is
+    /// split while the cursor is there and joined again once it leaves.
+    /// When it does not, a cursor move rebuilds no row. On by default.
     pub fn set_cursor_shaping_break(&mut self, enabled: bool) {
         self.cursor_shaping_break = enabled;
     }
@@ -715,31 +712,6 @@ impl<U: EventListener> Crosswords<U> {
         TermDamage::Partial(TermDamageIterator::new(&self.damage.lines, display_offset))
     }
 
-    /// Where the rendered cursor was when the last frame was consumed
-    /// and where it is now, if it moved. Grid positions; the row may be
-    /// in scrollback in vi mode. A frontend that knows which cells its
-    /// font ligates reads this before `reset_damage` to mark the rows a
-    /// cursor move changes, with the terminal's own marking turned off
-    /// through `set_cursor_shaping_break`.
-    pub fn cursor_move(&self) -> Option<(Pos, Pos)> {
-        let now = self.rendered_cursor_pos();
-        if self.damage.last_cursor == now {
-            return None;
-        }
-        // A cursor on a wide character's spacer is drawn on the
-        // character, as `cursor()` reports it, so it is judged there.
-        let on_lead = |mut pos: Pos| {
-            let oldest = -(self.history_size() as i32);
-            let in_grid = (oldest..self.grid.screen_lines() as i32).contains(&pos.row.0)
-                && pos.col.0 < self.grid.columns();
-            if in_grid && pos.col.0 > 0 && matches!(self.grid[pos].wide(), Wide::Spacer) {
-                pos.col -= 1;
-            }
-            pos
-        };
-        Some((on_lead(self.damage.last_cursor), on_lead(now)))
-    }
-
     /// The grid position of the cursor a renderer draws: the vi cursor
     /// in vi mode, the terminal cursor otherwise. The row may be in
     /// scrollback in vi mode.
@@ -781,61 +753,17 @@ impl<U: EventListener> Crosswords<U> {
         if self.cursor_shaping_break && self.damage.last_cursor != cursor {
             // A renderer shapes the cursor cell as its own run, so a
             // ligature under the cursor is split while it is there and
-            // joined again once it leaves. The rows the cursor left and
-            // entered are rebuilt for that, but only where the split
-            // changes the glyphs: a cursor cell that shapes together
-            // with a neighbor. On a blank, or on a character standing
-            // alone, the row's glyphs are the same either way and the
-            // move costs no row work.
+            // joined again once it leaves. The row the cursor left and
+            // the row it is on are rebuilt for that.
             let oldest = -(self.history_size() as i32);
             let lines = self.grid.screen_lines() as i32;
-            for pos in [self.damage.last_cursor, cursor] {
-                if (oldest..lines).contains(&pos.row.0)
-                    && self.cursor_cell_shapes_with_a_neighbor(pos)
-                {
-                    self.grid[pos.row].dirty = true;
+            for row in [self.damage.last_cursor.row, cursor.row] {
+                if (oldest..lines).contains(&row.0) {
+                    self.grid[row].dirty = true;
                 }
             }
         }
         self.damage.last_cursor = cursor;
-    }
-
-    /// Whether the cell at `pos` is shaped together with the cell on
-    /// either side of it, so that a run split at that cell changes the
-    /// row's glyphs. This follows the renderer's run model: a cell with
-    /// no character or with only a background ends a run, a wide
-    /// character's spacer is skipped over, and a typed space is part of
-    /// the run. Two spaces never shape together. A cursor on a spacer
-    /// is drawn on the wide character, so it is judged there. `pos.row`
-    /// must be in the grid.
-    fn cursor_cell_shapes_with_a_neighbor(&self, pos: Pos) -> bool {
-        let row = &self.grid[pos.row];
-        let len = row.len();
-        let spacer = |col: usize| {
-            matches!(row[Column(col)].wide(), Wide::Spacer | Wide::LeadingSpacer)
-        };
-        let in_run = |col: usize| -> bool {
-            let sq = row[Column(col)];
-            !sq.is_bg_only() && sq.c() != '\0'
-        };
-        let mut col = pos.col.0;
-        if col >= len {
-            return false;
-        }
-        if col > 0 && matches!(row[Column(col)].wide(), Wide::Spacer) {
-            col -= 1;
-        }
-        if !in_run(col) {
-            return false;
-        }
-        let shapes_with = |neighbor: Option<usize>| -> bool {
-            neighbor.is_some_and(|n| {
-                in_run(n) && !(row[Column(col)].c() == ' ' && row[Column(n)].c() == ' ')
-            })
-        };
-        let left = (0..col).rev().find(|&c| !spacer(c));
-        let right = (col + 1..len).find(|&c| !spacer(c));
-        shapes_with(left) || shapes_with(right)
     }
 
     /// Whether a synchronized update (mode 2026) is active, during which
@@ -7012,8 +6940,7 @@ mod tests {
         cw.reset_damage();
         assert_eq!(dirty(&cw), vec![0, 2], "the row left and the row entered");
 
-        // Off the word onto a blank of the same row: the word is
-        // joined again, so the row is rebuilt once more.
+        // Within the row: the row is rebuilt once more.
         clear(&mut cw);
         cw.goto(Line(0), Column(3));
         cw.reset_damage();
@@ -7023,86 +6950,6 @@ mod tests {
         assert_eq!(cw.peek_damage_event(), None);
         cw.reset_damage();
         assert!(dirty(&cw).is_empty(), "no move, nothing marked");
-    }
-
-    // The split at the cursor only changes glyphs where the cursor cell
-    // shapes with a neighbor. After the end of a line, among blanks, or
-    // on a character standing alone, a move is still a frame for the
-    // cursor itself but copies no row.
-    #[test]
-    fn a_cursor_move_over_blanks_or_lone_characters_marks_no_row() {
-        use crate::event::TerminalDamage;
-        let mut cw = make_crosswords();
-        let clear = |cw: &mut Crosswords<VoidListener>| {
-            for row in 0..cw.grid.screen_lines() as i32 {
-                cw.grid[Line(row)].dirty = false;
-            }
-        };
-        let dirty = |cw: &Crosswords<VoidListener>| -> Vec<i32> {
-            (0..cw.grid.screen_lines() as i32)
-                .filter(|&row| cw.grid[Line(row)].dirty)
-                .collect()
-        };
-        // A prompt with the cursor after it, blanks on row 1, and a
-        // lone character on row 2.
-        cw.input_str("$ ");
-        cw.goto(Line(2), Column(1));
-        cw.input_str("x");
-        cw.goto(Line(0), Column(2));
-        cw.reset_damage();
-        clear(&mut cw);
-
-        cw.goto(Line(1), Column(0));
-        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
-        cw.reset_damage();
-        assert!(dirty(&cw).is_empty(), "blank to blank: {:?}", dirty(&cw));
-
-        cw.goto(Line(2), Column(1));
-        cw.reset_damage();
-        assert!(dirty(&cw).is_empty(), "onto a lone character");
-
-        cw.goto(Line(1), Column(3));
-        cw.reset_damage();
-        assert!(dirty(&cw).is_empty(), "off a lone character");
-
-        // Grow the lone character into a word: now the cell shapes
-        // with a neighbor and a move onto it is row work.
-        cw.goto(Line(2), Column(2));
-        cw.input_str("y");
-        cw.goto(Line(1), Column(3));
-        cw.reset_damage();
-        clear(&mut cw);
-        cw.goto(Line(2), Column(1));
-        cw.reset_damage();
-        assert_eq!(dirty(&cw), vec![2]);
-    }
-
-    // A frontend that marks cursor rows itself reads where the cursor
-    // was at the last consumed frame and where it is now.
-    #[test]
-    fn cursor_move_reports_the_last_consumed_position_and_the_current_one() {
-        let mut cw = make_crosswords();
-        cw.goto(Line(1), Column(2));
-        cw.reset_damage();
-        assert_eq!(cw.cursor_move(), None, "consumed, no move since");
-        cw.goto(Line(3), Column(0));
-        assert_eq!(
-            cw.cursor_move(),
-            Some((Pos::new(Line(1), Column(2)), Pos::new(Line(3), Column(0))))
-        );
-        cw.toggle_vi_mode();
-        let (_, now) = cw.cursor_move().expect("the vi cursor is the rendered one");
-        assert_eq!(now, cw.vi_mode_cursor.pos);
-
-        // On a wide character's spacer the cursor is judged at the lead.
-        cw.toggle_vi_mode();
-        cw.reset_damage();
-        cw.goto(Line(0), Column(0));
-        cw.input_str("中");
-        cw.goto(Line(0), Column(1));
-        assert!(matches!(cw.grid[Line(0)][Column(1)].wide(), Wide::Spacer));
-        let (_, now) = cw.cursor_move().expect("moved");
-        assert_eq!(now, Pos::new(Line(0), Column(0)));
     }
 
     // With the break at the cursor turned off the renderer shapes rows
@@ -7140,81 +6987,6 @@ mod tests {
             .filter(|&row| cw.grid[Line(row)].dirty)
             .collect();
         assert_eq!(dirty, vec![0, 2]);
-    }
-
-    // The renderer shapes a typed space inside its run and skips a
-    // wide character's spacer, so the gate does the same: a space next
-    // to text marks, spaces among spaces do not, and a letter after a
-    // wide character shapes with it through the spacer.
-    #[test]
-    fn a_cursor_move_follows_the_renderers_run_model_for_spaces_and_wide_cells() {
-        let mut cw = Crosswords::new(
-            CrosswordsSize::new(8, 4),
-            CursorShape::Block,
-            VoidListener {},
-            crate::event::WindowId::from(0),
-            0,
-            10,
-        );
-        let clear = |cw: &mut Crosswords<VoidListener>| {
-            for row in 0..cw.grid.screen_lines() as i32 {
-                cw.grid[Line(row)].dirty = false;
-            }
-        };
-        let dirty = |cw: &Crosswords<VoidListener>| -> Vec<i32> {
-            (0..cw.grid.screen_lines() as i32)
-                .filter(|&row| cw.grid[Line(row)].dirty)
-                .collect()
-        };
-        let moves_to = |cw: &mut Crosswords<VoidListener>, pos: Pos| -> Vec<i32> {
-            // Park the cursor on a cell that never shapes, consume, then
-            // move: only the destination decides.
-            cw.goto(Line(3), Column(7));
-            cw.reset_damage();
-            clear(cw);
-            cw.goto(pos.row, pos.col);
-            cw.reset_damage();
-            dirty(cw)
-        };
-        cw.input_str("a b    ");
-        cw.goto(Line(1), Column(0));
-        cw.input_str("中x");
-        cw.goto(Line(2), Column(0));
-        cw.input_str("b中");
-        cw.goto(Line(3), Column(0));
-        cw.input_str("中");
-        let none: Vec<i32> = Vec::new();
-
-        let at = |row: i32, col: usize| Pos::new(Line(row), Column(col));
-        assert_eq!(
-            moves_to(&mut cw, at(0, 1)),
-            vec![0],
-            "a space between words"
-        );
-        assert_eq!(moves_to(&mut cw, at(0, 3)), vec![0], "a space after a word");
-        assert_eq!(moves_to(&mut cw, at(0, 4)), none, "a space among spaces");
-        assert_eq!(
-            moves_to(&mut cw, at(1, 2)),
-            vec![1],
-            "a letter after a wide character"
-        );
-        assert_eq!(
-            moves_to(&mut cw, at(1, 1)),
-            vec![1],
-            "on the spacer, judged at the wide character"
-        );
-        assert_eq!(
-            moves_to(&mut cw, at(2, 1)),
-            vec![2],
-            "a wide character after a letter"
-        );
-        assert_eq!(moves_to(&mut cw, at(2, 2)), vec![2], "on that spacer");
-        assert_eq!(
-            moves_to(&mut cw, at(3, 0)),
-            none,
-            "a wide character standing alone"
-        );
-        assert_eq!(moves_to(&mut cw, at(3, 1)), none, "and its spacer");
     }
 
     // In vi mode the vi cursor is the cursor a renderer draws, and it
