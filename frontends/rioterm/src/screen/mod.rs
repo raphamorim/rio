@@ -4444,6 +4444,10 @@ impl Screen<'_> {
                         grid.write_row(y as u32, &bg_scratch, &fg_scratch);
                     };
 
+                let trace_frame =
+                    tracing::enabled!(target: "rio::frame", tracing::Level::TRACE);
+                let rebuild_started = trace_frame.then(std::time::Instant::now);
+                let mut rows_rebuilt = 0usize;
                 match rows_to_rebuild {
                     RowsToRebuild::None => {
                         // Nothing to rebuild — previous frame's
@@ -4464,6 +4468,7 @@ impl Screen<'_> {
                             rebuild_row(p, y, grid, rasterizer);
                             p.visible_rows[y].dirty = false;
                         }
+                        rows_rebuilt = p.visible_rows.len();
                     }
                     RowsToRebuild::Dirty => {
                         // Walk the snapshot rows; rebuild + clear the
@@ -4477,8 +4482,18 @@ impl Screen<'_> {
                             }
                             rebuild_row(p, y, grid, rasterizer);
                             p.visible_rows[y].dirty = false;
+                            rows_rebuilt += 1;
                         }
                     }
+                }
+                if let Some(started) = rebuild_started {
+                    tracing::trace!(
+                        target: "rio::frame",
+                        route = p.route_id,
+                        rows_rebuilt,
+                        rebuild_us = started.elapsed().as_micros() as u64,
+                        "rows rebuilt"
+                    );
                 }
 
                 // The composition is painted into the row's CPU

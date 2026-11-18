@@ -125,6 +125,30 @@ fn scenarios() -> Vec<Scenario> {
             }),
         },
         Scenario {
+            // A character written at the cursor, which moves the cursor
+            // along the same row. A shell line that is cleared once it
+            // has filled up.
+            name: "typing one character",
+            prepare: Box::new(|cw, parser, i| {
+                if i % 100 == 0 {
+                    parser.advance(cw, b"\x1b[20;1H\x1b[K");
+                }
+                parser.advance(cw, b"a");
+            }),
+        },
+        Scenario {
+            // An editor moving its cursor to another row and rewriting
+            // its status line for the new line number.
+            name: "cursor move with a status line",
+            prepare: Box::new(|cw, parser, i| {
+                let row = 1 + (i * 7) % (ROWS - 1);
+                parser.advance(
+                    cw,
+                    format!("\x1b[{ROWS};1H\x1b[Kline {row}\x1b[{row};2H").as_bytes(),
+                );
+            }),
+        },
+        Scenario {
             name: "selection drag one row",
             prepare: Box::new(|cw, _, i| {
                 let anchor = Pos::new(Line(5), Column(0));
