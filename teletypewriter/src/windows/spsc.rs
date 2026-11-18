@@ -68,6 +68,12 @@ impl SpscBufferReader {
     }
 
     /// Read data from the buffer. Returns number of bytes read.
+    ///
+    /// Contents that wrap around the end of the ring are returned by the
+    /// same call: a read that stopped there would hand the caller a
+    /// message in two pieces, and the PTY input pipe then gets it in two
+    /// writes, which the in-box ConPTY turns into a lost escape sequence
+    /// head and a tail typed as text.
     pub fn read_to_slice(&mut self, buf: &mut [u8]) -> usize {
         use std::cmp::min;
 
@@ -77,12 +83,12 @@ impl SpscBufferReader {
         let ringbuf_capacity = ringbuf.len();
         let ringbuf_len = self.buffer.len.load(Ordering::SeqCst);
 
-        // Max number of bytes we might read
-        let max_read_size = min(buf.len(), ringbuf_len);
-        let contents_until_end = ringbuf_capacity - self.start;
-        let read_size = min(max_read_size, contents_until_end);
+        let read_size = min(buf.len(), ringbuf_len);
+        let until_end = min(read_size, ringbuf_capacity - self.start);
+        let wrapped = read_size - until_end;
 
-        buf[..read_size].copy_from_slice(&ringbuf[self.start..self.start + read_size]);
+        buf[..until_end].copy_from_slice(&ringbuf[self.start..self.start + until_end]);
+        buf[until_end..read_size].copy_from_slice(&ringbuf[..wrapped]);
         self.start = (self.start + read_size) % ringbuf_capacity;
         self.buffer.len.fetch_sub(read_size, Ordering::SeqCst);
 
@@ -130,6 +136,11 @@ impl SpscBufferWriter {
     }
 
     /// Write data to the buffer. Returns number of bytes written.
+    ///
+    /// The write is short only when the ring is full. Space that wraps
+    /// around the end of the ring is filled by the same call, and the
+    /// length is published once, after both parts are in place, so the
+    /// consumer never sees the part before the wrap on its own.
     pub fn write_from_slice(&mut self, buf: &[u8]) -> usize {
         use std::cmp::min;
 
@@ -139,12 +150,12 @@ impl SpscBufferWriter {
         let ringbuf_capacity = ringbuf.len();
         let ringbuf_len = self.buffer.len.load(Ordering::SeqCst);
 
-        // Max number of bytes we might read
-        let max_write_size = min(buf.len(), ringbuf_capacity - ringbuf_len);
-        let space_until_end = ringbuf_capacity - self.end;
-        let write_size = min(max_write_size, space_until_end);
+        let write_size = min(buf.len(), ringbuf_capacity - ringbuf_len);
+        let until_end = min(write_size, ringbuf_capacity - self.end);
+        let wrapped = write_size - until_end;
 
-        ringbuf[self.end..self.end + write_size].copy_from_slice(&buf[..write_size]);
+        ringbuf[self.end..self.end + until_end].copy_from_slice(&buf[..until_end]);
+        ringbuf[..wrapped].copy_from_slice(&buf[until_end..write_size]);
         self.end = (self.end + write_size) % ringbuf_capacity;
         self.buffer.len.fetch_add(write_size, Ordering::SeqCst);
 
@@ -226,5 +237,47 @@ mod test {
         assert_eq!(consumer.len(), 0);
 
         assert_eq!(&buf[..], &out_buf[..]);
+    }
+
+    /// A message that straddles the end of the ring is written by one
+    /// call and read back by one call, in order.
+    #[test]
+    fn test_spsc_buffer_wrap_is_one_write_and_one_read() {
+        let (mut producer, mut consumer) = spsc_buffer(16);
+        let mut out_buf = [0u8; 16];
+
+        // Move both ends to 12, four bytes short of the wrap.
+        assert_eq!(producer.write_from_slice(&[0u8; 12]), 12);
+        assert_eq!(consumer.read_to_slice(&mut out_buf), 12);
+        assert!(consumer.is_empty());
+
+        let report = b"\x1b[<35;4;6M";
+        assert_eq!(producer.write_from_slice(report), report.len());
+        assert_eq!(consumer.len(), report.len());
+
+        assert_eq!(consumer.read_to_slice(&mut out_buf), report.len());
+        assert_eq!(&out_buf[..report.len()], report);
+        assert!(consumer.is_empty());
+    }
+
+    /// A full ring takes what fits, across the wrap, and no more.
+    #[test]
+    fn test_spsc_buffer_wrap_stops_when_full() {
+        let (mut producer, mut consumer) = spsc_buffer(16);
+        let mut out_buf = [0u8; 16];
+
+        assert_eq!(producer.write_from_slice(&[0u8; 12]), 12);
+        assert_eq!(consumer.read_to_slice(&mut out_buf[..10]), 10);
+
+        // Two bytes are unread; 14 are free, four of them before the wrap.
+        let data: Vec<u8> = (1..=20).collect();
+        assert_eq!(producer.write_from_slice(&data), 14);
+        assert!(producer.is_full());
+        assert_eq!(producer.write_from_slice(&data[14..]), 0);
+
+        assert_eq!(consumer.read_to_slice(&mut out_buf), 16);
+        assert_eq!(&out_buf[..2], &[0, 0]);
+        assert_eq!(&out_buf[2..], &data[..14]);
+        assert!(consumer.is_empty());
     }
 }
