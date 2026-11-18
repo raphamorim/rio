@@ -275,8 +275,9 @@ impl EventedAnonWrite {
             let inner = inner.clone();
             spawn(move || {
                 use std::io::Write;
-                // As large as the ring, so one read takes all of it and
-                // the pipe gets no message in two writes.
+                // As large as the ring, so one read takes all of it: a
+                // smaller buffer would leave the end of a full ring for
+                // a second write to the pipe.
                 let mut tmp_buf = [0u8; 65536];
 
                 try_or_send!(
