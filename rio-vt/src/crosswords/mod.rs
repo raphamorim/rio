@@ -723,7 +723,21 @@ impl<U: EventListener> Crosswords<U> {
     /// through `set_cursor_shaping_break`.
     pub fn cursor_move(&self) -> Option<(Pos, Pos)> {
         let now = self.rendered_cursor_pos();
-        (self.damage.last_cursor != now).then_some((self.damage.last_cursor, now))
+        if self.damage.last_cursor == now {
+            return None;
+        }
+        // A cursor on a wide character's spacer is drawn on the
+        // character, as `cursor()` reports it, so it is judged there.
+        let on_lead = |mut pos: Pos| {
+            let oldest = -(self.history_size() as i32);
+            let in_grid = (oldest..self.grid.screen_lines() as i32).contains(&pos.row.0)
+                && pos.col.0 < self.grid.columns();
+            if in_grid && pos.col.0 > 0 && matches!(self.grid[pos].wide(), Wide::Spacer) {
+                pos.col -= 1;
+            }
+            pos
+        };
+        Some((on_lead(self.damage.last_cursor), on_lead(now)))
     }
 
     /// The grid position of the cursor a renderer draws: the vi cursor
@@ -7079,6 +7093,16 @@ mod tests {
         cw.toggle_vi_mode();
         let (_, now) = cw.cursor_move().expect("the vi cursor is the rendered one");
         assert_eq!(now, cw.vi_mode_cursor.pos);
+
+        // On a wide character's spacer the cursor is judged at the lead.
+        cw.toggle_vi_mode();
+        cw.reset_damage();
+        cw.goto(Line(0), Column(0));
+        cw.input_str("中");
+        cw.goto(Line(0), Column(1));
+        assert!(matches!(cw.grid[Line(0)][Column(1)].wide(), Wide::Spacer));
+        let (_, now) = cw.cursor_move().expect("moved");
+        assert_eq!(now, Pos::new(Line(0), Column(0)));
     }
 
     // With the break at the cursor turned off the renderer shapes rows

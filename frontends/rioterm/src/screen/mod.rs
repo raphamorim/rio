@@ -4465,9 +4465,13 @@ impl Screen<'_> {
                         // atlas-full clear inside `rebuild_row` can
                         // re-set it for the recovery pass below.
                         grid.mark_full_rebuild_done();
+                        // The snapshot's full copy marked every row; clear
+                        // the bits here or the next partial frame rebuilds
+                        // the whole screen again.
                         #[allow(clippy::needless_range_loop)]
                         for y in 0..p.visible_rows.len() {
                             rebuild_row(p, y, grid, rasterizer);
+                            p.visible_rows[y].dirty = false;
                         }
                     }
                     RowsToRebuild::Dirty => {

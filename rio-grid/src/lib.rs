@@ -1338,6 +1338,10 @@ pub struct GridGlyphRasterizer {
     /// convention.
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
     run_cache: Vec<Vec<RunCacheEntry>>,
+    /// The character map's glyph per `(font_id, char)`, what a cell
+    /// shapes to when no lookup touches it. A shaped glyph that differs
+    /// tells a ligature or alternate apart from plain text.
+    nominal_glyphs: FxHashMap<(u32, char), Option<u16>>,
 
     /// Per-run hasher rebuilt at every run-start. Hashed incrementally
     /// across the run-extension loop with `(codepoint, cluster)` pairs
@@ -1426,6 +1430,7 @@ impl GridGlyphRasterizer {
             run_str_scratch: String::new(),
             #[cfg(target_os = "macos")]
             handle_cache: FxHashMap::default(),
+            nominal_glyphs: FxHashMap::default(),
             lib_settings: None,
             #[cfg(not(target_os = "macos"))]
             wght_cache: FxHashMap::default(),
@@ -1449,6 +1454,7 @@ impl GridGlyphRasterizer {
             bucket.clear();
         }
         self.lib_settings = None;
+        self.nominal_glyphs.clear();
         #[cfg(target_os = "macos")]
         self.handle_cache.clear();
         #[cfg(not(target_os = "macos"))]
@@ -1513,6 +1519,45 @@ impl GridGlyphRasterizer {
                     font_library.resolve_font_for_char(ch, &span_style, Some(route_id));
                 (id as u32, emoji)
             })
+    }
+
+    /// The glyph `ch` maps to in `font_id` before shaping, cached.
+    fn nominal_glyph(
+        &mut self,
+        font_id: u32,
+        ch: char,
+        font_library: &FontLibrary,
+    ) -> Option<u16> {
+        if let Some(&known) = self.nominal_glyphs.get(&(font_id, ch)) {
+            return known;
+        }
+        #[cfg(target_os = "macos")]
+        let found = {
+            let handle = match self.handle_cache.get(&font_id) {
+                Some(handle) => Some(handle.clone()),
+                None => font_library.ct_font(font_id as usize),
+            };
+            handle.and_then(|handle| {
+                rio_backend::sugarloaf::font::macos::nominal_glyph(&handle, ch)
+            })
+        };
+        #[cfg(not(target_os = "macos"))]
+        let found = {
+            use rio_backend::sugarloaf::swash::FontRef;
+            let lib = font_library.inner.read();
+            lib.get_data(&(font_id as usize))
+                .and_then(|(data, offset, key)| {
+                    let font_ref = FontRef {
+                        data: data.as_ref(),
+                        offset,
+                        key,
+                    };
+                    let id = font_ref.charmap().map(ch);
+                    (id != 0).then_some(id)
+                })
+        };
+        self.nominal_glyphs.insert((font_id, ch), found);
+        found
     }
 
     #[inline]
@@ -1886,15 +1931,28 @@ impl RowLigatures {
     pub fn is_empty(&self) -> bool {
         self.words.iter().all(|&word| word == 0)
     }
+
+    /// Whether a cursor on `col` changes the row's glyphs: the break
+    /// around the cursor cell separates it from the cell before it, so
+    /// a ligature on either of those two cells is affected.
+    pub fn at_or_before(&self, col: usize) -> bool {
+        self.get(col) || (col > 0 && self.get(col - 1))
+    }
 }
 
-/// Records the ligature cells of one shaped run into `out`.
-/// `glyph_cells` gives, per shaped glyph in order, the index of the run
-/// cell the glyph came from; `columns` maps a run cell index to its
-/// grid column. A run cell no glyph came from is drawn by the glyph of
-/// the nearest earlier cell that has one, so both belong to a ligature.
+/// Records the ligature cells of one shaped run into `out`. Fonts build
+/// ligatures two ways, and both are caught. `glyph_cells` gives, per
+/// shaped glyph in order, the index of the run cell the glyph came
+/// from: a run cell no glyph came from is drawn by the glyph of the
+/// nearest earlier cell that has one, so both belong to a ligature.
+/// `substituted[idx]` says the cell's single glyph is not the one the
+/// character map gives its character: a ligature component or a
+/// contextual alternate, which most coding fonts use so that every
+/// cell keeps a glyph of its own. `columns` maps a run cell index to
+/// its grid column.
 pub fn mark_ligature_cells(
     glyph_cells: impl IntoIterator<Item = u16>,
+    substituted: &[bool],
     columns: &[u16],
     out: &mut RowLigatures,
 ) {
@@ -1913,11 +1971,83 @@ pub fn mark_ligature_cells(
             .is_some_and(|word| word & (1 << (idx % 64)) != 0);
         if own {
             drawn_by = Some(idx);
+            if substituted.get(idx).copied().unwrap_or(false) {
+                out.set(col as usize);
+            }
         } else if let Some(start) = drawn_by {
             out.set(columns[start] as usize);
             out.set(col as usize);
         }
     }
+}
+
+/// Walks shaped glyphs back to the run cells they came from: per
+/// glyph, in order, the index of its cell. `cell_starts[i]` is where
+/// cell `i` begins in the shaping buffer, in the shaper's own units.
+fn glyph_cells(
+    glyphs: &[ShapedGlyph],
+    cell_starts: &[u32],
+) -> SmallVec<[(u16, u16); 64]> {
+    let mut out: SmallVec<[(u16, u16); 64]> = SmallVec::new();
+    let mut cell_idx_in_run: u16 = 0;
+    for g in glyphs {
+        while (cell_idx_in_run as usize + 1) < cell_starts.len()
+            && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
+        {
+            cell_idx_in_run = cell_idx_in_run.saturating_add(1);
+        }
+        out.push((g.id, cell_idx_in_run));
+    }
+    out
+}
+
+/// Records into `ligatures` the cells of the run just shaped that a
+/// ligature draws, from the glyph to cell mapping in `emits` and the
+/// rasterizer's run tables. A cell with one glyph that is not its
+/// character's nominal glyph was substituted; cells with attached
+/// marks shape to composed forms by design and are not compared.
+fn record_run_ligatures(
+    rasterizer: &mut GridGlyphRasterizer,
+    row: &Row<Square>,
+    font_id: u32,
+    emits: &[(u16, u16)],
+    font_library: &FontLibrary,
+    ligatures: &mut RowLigatures,
+) {
+    let cells = rasterizer.run_cell_columns.len();
+    let mut substituted: SmallVec<[bool; 64]> = SmallVec::from_elem(false, cells);
+    let mut i = 0;
+    while i < emits.len() {
+        let (glyph_id, idx) = emits[i];
+        let mut j = i + 1;
+        while j < emits.len() && emits[j].1 == idx {
+            j += 1;
+        }
+        if j == i + 1 {
+            if let Some(&col) = rasterizer.run_cell_columns.get(idx as usize) {
+                let sq = row[Column(col as usize)];
+                if !sq.has_grapheme() {
+                    let ch = if sq.c() == rio_backend::ansi::kitty_virtual::PLACEHOLDER {
+                        ' '
+                    } else {
+                        sq.c()
+                    };
+                    if let Some(nominal) =
+                        rasterizer.nominal_glyph(font_id, ch, font_library)
+                    {
+                        substituted[idx as usize] = nominal != glyph_id;
+                    }
+                }
+            }
+        }
+        i = j;
+    }
+    mark_ligature_cells(
+        emits.iter().map(|&(_, cell)| cell),
+        &substituted,
+        &rasterizer.run_cell_columns,
+        ligatures,
+    );
 }
 
 /// Run-level fg emission. Shapes once per run, emits one CellText per
@@ -2428,31 +2558,24 @@ pub fn build_row_fg<P: GridPalette>(
             // (ASCII identifiers, short bursts of non-ligature text)
             // entirely on the stack — no heap touch. Ligature-heavy or
             // shaped emoji runs that outgrow 64 slots spill to heap once.
-            let mut glyph_emits: SmallVec<[(u16, u16); 64]> = SmallVec::new();
-            {
+            // Both platforms record explicit per-cell starts into the
+            // shaping buffer (UTF-16 units on macOS, UTF-8 bytes on
+            // swash), so one walk serves both. A per-char cursor would
+            // miscount: cells with combining marks contribute several
+            // chars each.
+            let glyph_emits = {
                 let glyphs = &run_cache_get(&mut rasterizer.run_cache, hash)
                     .expect("just inserted")
                     .glyphs;
-                let mut cell_idx_in_run: u16 = 0;
-                // Both platforms record explicit per-cell starts into the
-                // shaping buffer (UTF-16 units on macOS, UTF-8 bytes on
-                // swash), so one walk serves both. A per-char cursor would
-                // miscount: cells with combining marks contribute several
-                // chars each.
-                let cell_starts = &rasterizer.run_cell_starts;
-                for g in glyphs {
-                    while (cell_idx_in_run as usize + 1) < cell_starts.len()
-                        && cell_starts[cell_idx_in_run as usize + 1] <= g.cluster
-                    {
-                        cell_idx_in_run = cell_idx_in_run.saturating_add(1);
-                    }
-                    glyph_emits.push((g.id, cell_idx_in_run));
-                }
-            }
+                glyph_cells(glyphs, &rasterizer.run_cell_starts)
+            };
             if cursor_break.is_none() {
-                mark_ligature_cells(
-                    glyph_emits.iter().map(|&(_, cell)| cell),
-                    &rasterizer.run_cell_columns,
+                record_run_ligatures(
+                    rasterizer,
+                    row,
+                    font_id,
+                    &glyph_emits,
+                    font_library,
                     ligatures,
                 );
             }
@@ -2553,7 +2676,7 @@ pub fn build_row_fg<P: GridPalette>(
         }
         if cursor_break.is_none() {
             if let Some(cursor_x) = cursor_col_for_row {
-                if ligatures.get(cursor_x as usize) {
+                if ligatures.at_or_before(cursor_x as usize) {
                     cursor_break = Some(cursor_x as usize);
                     fg_scratch.truncate(glyph_pass_start);
                     continue;
@@ -4007,9 +4130,50 @@ mod ligature_cells_tests {
     use super::*;
 
     fn cells(glyph_cells: &[u16], columns: &[u16]) -> Vec<usize> {
+        let none = vec![false; columns.len()];
+        cells_with(glyph_cells, &none, columns)
+    }
+
+    fn cells_with(
+        glyph_cells: &[u16],
+        substituted: &[bool],
+        columns: &[u16],
+    ) -> Vec<usize> {
         let mut out = RowLigatures::default();
-        mark_ligature_cells(glyph_cells.iter().copied(), columns, &mut out);
+        mark_ligature_cells(glyph_cells.iter().copied(), substituted, columns, &mut out);
         (0..256).filter(|&c| out.get(c)).collect()
+    }
+
+    // Most coding fonts keep one glyph per cell and substitute the
+    // components: "a=>b" shapes to four glyphs where the two in the
+    // middle are not the nominal "=" and ">".
+    #[test]
+    fn a_substituted_glyph_marks_its_cell() {
+        assert_eq!(
+            cells_with(&[0, 1, 2, 3], &[false, true, true, false], &[0, 1, 2, 3]),
+            vec![1, 2]
+        );
+        // Both signals at once: a substituted lead glyph followed by
+        // a cell without a glyph of its own.
+        assert_eq!(
+            cells_with(&[0, 1, 3], &[false, true, false, false], &[0, 1, 2, 3]),
+            vec![1, 2]
+        );
+    }
+
+    // A cursor changes the glyphs when it is on a ligature cell or
+    // right after one, since the break separates the cursor cell from
+    // the cell before it.
+    #[test]
+    fn a_cursor_on_or_right_after_a_ligature_changes_glyphs() {
+        let mut bits = RowLigatures::default();
+        bits.set(1);
+        bits.set(2);
+        assert!(!bits.at_or_before(0));
+        assert!(bits.at_or_before(1));
+        assert!(bits.at_or_before(2));
+        assert!(bits.at_or_before(3), "right after the ligature");
+        assert!(!bits.at_or_before(4));
     }
 
     // One glyph per cell: nothing ligates.
@@ -4036,6 +4200,47 @@ mod ligature_cells_tests {
         // Wide at 4, spacer at 5 skipped, then "=>" at 6 and 7 where
         // only "=" shapes to a glyph.
         assert_eq!(cells(&[0, 1], &[4, 6, 7]), vec![6, 7]);
+    }
+
+    /// Shape `text` as one run through the production shaper, the way
+    /// the run loop stages it, and return the ligature cells it records.
+    #[cfg(target_os = "macos")]
+    fn ligature_cells_of(text: &str) -> Vec<usize> {
+        let font_library = FontLibrary::default();
+        let mut r = GridGlyphRasterizer::new();
+        let (font_id, _) =
+            r.resolve_font(text.chars().next().unwrap(), 0, &font_library, 0);
+        r.run_utf16_scratch.clear();
+        r.run_cell_starts.clear();
+        r.run_cell_columns.clear();
+        let mut row: Row<Square> = Row::new(text.chars().count());
+        for (col, ch) in text.chars().enumerate() {
+            r.run_cell_starts.push(r.run_utf16_scratch.len() as u32);
+            let mut buf = [0u16; 2];
+            r.run_utf16_scratch
+                .extend_from_slice(ch.encode_utf16(&mut buf));
+            r.run_cell_columns.push(col as u16);
+            row[Column(col)] = Square::from_char(ch);
+        }
+        let Some((glyphs, _)) = shape_run_ct(&mut r, font_id, 14, 56, &font_library)
+        else {
+            return Vec::new();
+        };
+        let emits = glyph_cells(&glyphs, &r.run_cell_starts);
+        let mut out = RowLigatures::default();
+        record_run_ligatures(&mut r, &row, font_id, &emits, &font_library, &mut out);
+        (0..text.chars().count()).filter(|&c| out.get(c)).collect()
+    }
+
+    // The bundled font ligates "=>" and "->" with one substituted glyph
+    // per cell, and leaves plain words alone.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_bundled_font_s_ligatures_are_recorded_from_real_shaping() {
+        assert_eq!(ligature_cells_of("a=>b"), vec![1, 2]);
+        assert_eq!(ligature_cells_of("x->y"), vec![1, 2]);
+        assert_eq!(ligature_cells_of("abcd"), Vec::<usize>::new());
+        assert_eq!(ligature_cells_of("a b c"), Vec::<usize>::new());
     }
 
     #[test]

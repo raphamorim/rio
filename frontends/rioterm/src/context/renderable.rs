@@ -349,10 +349,11 @@ impl PendingUpdate {
     }
 }
 
-/// Of the positions the cursor left and entered, those on a cell the
-/// row's last build drew as part of a ligature. `offset` is the
-/// display offset that turns a grid row into a viewport row; a position
-/// off screen or on a row never built is not on a ligature.
+/// Of the positions the cursor left and entered, those where the break
+/// around the cursor cell changes the row's glyphs: on a cell the row's
+/// last build drew as part of a ligature, or right after one. `offset`
+/// is the display offset that turns a grid row into a viewport row; a
+/// position off screen or on a row never built is not on a ligature.
 pub fn cursor_rows_on_ligatures(
     from: Pos,
     to: Pos,
@@ -363,7 +364,7 @@ pub fn cursor_rows_on_ligatures(
         usize::try_from(pos.row.0 + offset)
             .ok()
             .and_then(|row| ligatures.get(row))
-            .is_some_and(|cells| cells.get(pos.col.0))
+            .is_some_and(|cells| cells.at_or_before(pos.col.0))
     })
 }
 
@@ -441,6 +442,8 @@ mod pipeline_tests {
     struct Frame {
         content: RenderableContent,
         painted: Vec<String>,
+        /// Rows rebuilt by the last consumed frame.
+        rebuilt: usize,
     }
 
     impl Frame {
@@ -448,6 +451,7 @@ mod pipeline_tests {
             Self {
                 content: RenderableContent::new(Default::default()),
                 painted: vec![String::new(); ROWS],
+                rebuilt: 0,
             }
         }
 
@@ -464,6 +468,7 @@ mod pipeline_tests {
                 self.content.pending_update.set_terminal_damage(ui);
             }
             let snapshot_rows = self.content.visible_rows.len();
+            self.rebuilt = 0;
             if !self.content.update_from_terminal(term, false, true) {
                 return;
             }
@@ -475,10 +480,13 @@ mod pipeline_tests {
             let visible_rows = &mut self.content.visible_rows;
             self.painted.resize(rows, String::new());
             if needs_full {
-                // RowsToRebuild::All: rebuild everything, bits not
-                // cleared (matches screen::render).
+                // RowsToRebuild::All: rebuild everything and clear the
+                // bits, as screen::render does, so the next partial
+                // frame rebuilds only what it names.
                 for (painted, row) in self.painted.iter_mut().zip(visible_rows) {
                     *painted = row_text(row, cols);
+                    row.dirty = false;
+                    self.rebuilt += 1;
                 }
                 return;
             }
@@ -491,11 +499,37 @@ mod pipeline_tests {
                         }
                         *painted = row_text(row, cols);
                         row.dirty = false;
+                        self.rebuilt += 1;
                     }
                 }
                 TerminalDamage::CursorOnly | TerminalDamage::Noop => {}
             }
         }
+    }
+
+    // A full frame rebuilds every row and leaves them clean, so the
+    // partial frame after it, here a cursor move over plain text,
+    // rebuilds nothing instead of the whole screen again.
+    #[test]
+    fn the_frame_after_a_full_one_rebuilds_only_what_changed() {
+        let mut term = new_term();
+        term.set_cursor_shaping_break(false);
+        let mut frame = Frame::new();
+        let mut parser = Processor::default();
+        for i in 0..ROWS {
+            parser.advance(&mut term, format!("line {i}\r\n").as_bytes());
+        }
+        frame.consume(&mut term, &mut None);
+        assert_eq!(frame.rebuilt, ROWS, "the first frame is full");
+
+        parser.advance(&mut term, b"\x1b[1;1H");
+        assert_eq!(term.peek_damage_event(), Some(TerminalDamage::Partial));
+        frame.consume(&mut term, &mut None);
+        assert_eq!(frame.rebuilt, 0, "a cursor move over plain text");
+
+        parser.advance(&mut term, b"\x1b[3;1Hchanged");
+        frame.consume(&mut term, &mut None);
+        assert_eq!(frame.rebuilt, 1, "one row of output");
     }
 
     fn event_would_fire(term: &Crosswords<VoidListener>) -> bool {
@@ -790,10 +824,12 @@ mod cursor_ligature_tests {
         assert_eq!(rows(at(0, 0), at(1, 4), 0), vec![at(1, 4)], "entered one");
         assert_eq!(rows(at(1, 3), at(1, 4), 0), vec![at(1, 3), at(1, 4)]);
         assert!(rows(at(0, 0), at(2, 5), 0).is_empty(), "plain cells");
-        assert!(
-            rows(at(1, 2), at(1, 5), 0).is_empty(),
-            "next to the ligature"
+        assert_eq!(
+            rows(at(1, 2), at(1, 5), 0),
+            vec![at(1, 5)],
+            "right after it counts, before it does not"
         );
+        assert!(rows(at(1, 2), at(1, 6), 0).is_empty(), "further away");
         // Scrolled back two rows: grid row -1 is viewport row 1.
         assert_eq!(rows(at(0, 0), at(-1, 3), 2), vec![at(-1, 3)]);
         assert!(
@@ -844,8 +880,8 @@ mod cursor_ligature_tests {
         };
         clear(&mut content);
 
-        // From inside "cd" to "b": plain cells at both ends.
-        term.goto(Line(0), Column(3));
+        // From inside "cd" to "a": plain cells at both ends.
+        term.goto(Line(0), Column(0));
         assert!(content.update_from_terminal(&mut term, false, true));
         assert!(
             dirty(&content).is_empty(),
@@ -857,6 +893,16 @@ mod cursor_ligature_tests {
         term.goto(Line(0), Column(1));
         assert!(content.update_from_terminal(&mut term, false, true));
         assert_eq!(dirty(&content), vec![0]);
+        clear(&mut content);
+
+        // Onto "b", right after the ligature: the break before the
+        // cursor cell separates it from the ligature, so row 0 again.
+        term.goto(Line(0), Column(3));
+        assert!(content.update_from_terminal(&mut term, false, true));
+        assert_eq!(dirty(&content), vec![0]);
+        clear(&mut content);
+        term.goto(Line(0), Column(1));
+        assert!(content.update_from_terminal(&mut term, false, true));
         clear(&mut content);
 
         // Off it onto "d": the ligature joins again, so row 0 is
