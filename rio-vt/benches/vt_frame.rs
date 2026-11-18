@@ -116,10 +116,19 @@ struct Scenario {
 fn scenarios() -> Vec<Scenario> {
     vec![
         Scenario {
-            name: "cursor move",
+            // Column 7 is the blank after the first word of every row.
+            name: "cursor move over blanks",
             prepare: Box::new(|cw, parser, i| {
                 let row = 1 + (i * 7) % ROWS;
-                parser.advance(cw, format!("\x1b[{row};5H").as_bytes());
+                parser.advance(cw, format!("\x1b[{row};7H").as_bytes());
+            }),
+        },
+        Scenario {
+            // Column 2 is inside the first word of every row.
+            name: "cursor move inside words",
+            prepare: Box::new(|cw, parser, i| {
+                let row = 1 + (i * 7) % ROWS;
+                parser.advance(cw, format!("\x1b[{row};2H").as_bytes());
             }),
         },
         Scenario {

@@ -734,15 +734,43 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.reset();
         let cursor = self.rendered_cursor_pos();
         if self.damage.last_cursor != cursor {
+            // A renderer shapes the cursor cell as its own run, so a
+            // ligature under the cursor is split while it is there and
+            // joined again once it leaves. The rows the cursor left and
+            // entered are rebuilt for that, but only where the split
+            // changes the glyphs: a cursor cell that shapes together
+            // with a neighbor. On a blank, or on a character standing
+            // alone, the row's glyphs are the same either way and the
+            // move costs no row work.
             let oldest = -(self.history_size() as i32);
             let lines = self.grid.screen_lines() as i32;
-            for row in [self.damage.last_cursor.row, cursor.row] {
-                if (oldest..lines).contains(&row.0) {
-                    self.grid[row].dirty = true;
+            for pos in [self.damage.last_cursor, cursor] {
+                if (oldest..lines).contains(&pos.row.0)
+                    && self.cursor_cell_shapes_with_a_neighbor(pos)
+                {
+                    self.grid[pos.row].dirty = true;
                 }
             }
         }
         self.damage.last_cursor = cursor;
+    }
+
+    /// Whether the cell at `pos` is shaped together with the cell on
+    /// either side of it, so that a run split at that cell changes the
+    /// row's glyphs. A space, a cell with no character or a cell with
+    /// only a background does not take part in a ligature, so a cursor
+    /// on or next to one leaves the glyphs as they are. `pos.row` must
+    /// be in the grid.
+    fn cursor_cell_shapes_with_a_neighbor(&self, pos: Pos) -> bool {
+        let row = &self.grid[pos.row];
+        let in_run = |col: usize| -> bool {
+            col < row.len() && {
+                let sq = row[Column(col)];
+                !sq.is_bg_only() && !matches!(sq.c(), '\0' | ' ')
+            }
+        };
+        let col = pos.col.0;
+        in_run(col) && ((col > 0 && in_run(col - 1)) || in_run(col + 1))
     }
 
     /// Whether a synchronized update (mode 2026) is active, during which
@@ -6906,7 +6934,10 @@ mod tests {
                 .filter(|&row| cw.grid[Line(row)].dirty)
                 .collect()
         };
+        // Words on rows 0 and 2; the cursor sits inside the second.
         cw.input_str("ab");
+        cw.goto(Line(2), Column(0));
+        cw.input_str("cd");
         cw.goto(Line(2), Column(1));
         cw.reset_damage();
         clear(&mut cw);
@@ -6916,6 +6947,8 @@ mod tests {
         cw.reset_damage();
         assert_eq!(dirty(&cw), vec![0, 2], "the row left and the row entered");
 
+        // Off the word onto a blank of the same row: the word is
+        // joined again, so the row is rebuilt once more.
         clear(&mut cw);
         cw.goto(Line(0), Column(3));
         cw.reset_damage();
@@ -6925,6 +6958,61 @@ mod tests {
         assert_eq!(cw.peek_damage_event(), None);
         cw.reset_damage();
         assert!(dirty(&cw).is_empty(), "no move, nothing marked");
+    }
+
+    // The split at the cursor only changes glyphs where the cursor cell
+    // shapes with a neighbor. Between blanks, after the end of a line,
+    // or on a character standing alone, a move is still a frame for
+    // the cursor itself but copies no row.
+    #[test]
+    fn a_cursor_move_over_blanks_or_lone_characters_marks_no_row() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let clear = |cw: &mut Crosswords<VoidListener>| {
+            for row in 0..cw.grid.screen_lines() as i32 {
+                cw.grid[Line(row)].dirty = false;
+            }
+        };
+        let dirty = |cw: &Crosswords<VoidListener>| -> Vec<i32> {
+            (0..cw.grid.screen_lines() as i32)
+                .filter(|&row| cw.grid[Line(row)].dirty)
+                .collect()
+        };
+        // A prompt-like row: "$ " with the cursor after it, a lone
+        // character on row 2.
+        cw.input_str("$ ");
+        cw.goto(Line(2), Column(1));
+        cw.input_str("x");
+        cw.goto(Line(0), Column(2));
+        cw.reset_damage();
+        clear(&mut cw);
+
+        cw.goto(Line(1), Column(0));
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        cw.reset_damage();
+        assert!(dirty(&cw).is_empty(), "blank to blank: {:?}", dirty(&cw));
+
+        cw.goto(Line(2), Column(1));
+        cw.reset_damage();
+        assert!(dirty(&cw).is_empty(), "onto a lone character");
+
+        cw.goto(Line(0), Column(0));
+        cw.reset_damage();
+        assert!(
+            dirty(&cw).is_empty(),
+            "the dollar sign has a blank on its right"
+        );
+
+        // Grow the lone character into a word: now the cell shapes
+        // with a neighbor and a move onto it is row work.
+        cw.goto(Line(2), Column(2));
+        cw.input_str("y");
+        cw.goto(Line(0), Column(0));
+        cw.reset_damage();
+        clear(&mut cw);
+        cw.goto(Line(2), Column(1));
+        cw.reset_damage();
+        assert_eq!(dirty(&cw), vec![2]);
     }
 
     // In vi mode the vi cursor is the cursor a renderer draws, and it
@@ -6937,7 +7025,7 @@ mod tests {
         let mut cw = make_crosswords();
         let mut parser = crate::performer::handler::Processor::default();
         for line in 0..8 {
-            parser.advance(&mut cw, format!("{line}\r\n").as_bytes());
+            parser.advance(&mut cw, format!("{line}{line}\r\n").as_bytes());
         }
         assert!(cw.history_size() >= 2);
         cw.toggle_vi_mode();
