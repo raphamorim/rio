@@ -29,7 +29,7 @@
 
 use parking_lot::RwLock;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 pub use crate::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphLayout, GlyphSize};
@@ -146,6 +146,22 @@ struct Inner {
     next_version: u32,
 }
 
+impl RegisteredGlyph {
+    /// Registering this again changes nothing.
+    fn is_same(
+        &self,
+        payload: &StoredPayload,
+        upm: u16,
+        width: u8,
+        layout: &GlyphLayout,
+    ) -> bool {
+        self.upm == upm
+            && self.width == width
+            && self.layout == *layout
+            && *self.payload == *payload
+    }
+}
+
 impl Inner {
     /// `version` is no longer current: keep it while text may show it,
     /// drop it if no text ever did.
@@ -169,9 +185,23 @@ impl Inner {
 pub const MAX_RETIRED: usize = GLOSSARY_CAPACITY;
 
 /// The public registry handle. Cloned cheaply via `Arc`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GlyphRegistry {
     inner: Arc<RwLock<Inner>>,
+    /// Unique for every registry and never reused. Versions are only
+    /// unique within one registry, so a cache shared by several
+    /// sessions keys on this too.
+    id: u64,
+}
+
+impl Default for GlyphRegistry {
+    fn default() -> Self {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        Self {
+            inner: Arc::default(),
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+        }
+    }
 }
 
 /// Reasons a register call is rejected by the registry itself (as
@@ -197,6 +227,12 @@ impl GlyphRegistry {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 
+    /// This registry's identity, shared by its clones. See the field.
+    #[inline]
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
     /// Register a glyph at a codepoint in the registration block, with
     /// its declared render span and §8.5 layout. If the codepoint is
     /// already registered, the new registration applies to text printed
@@ -214,18 +250,13 @@ impl GlyphRegistry {
             return Err(RegisterRejection::OutOfNamespace);
         }
         let mut inner = self.inner.write();
-        if let Some(existing) = inner
+        if inner
             .current
             .get(&cp)
             .and_then(|version| inner.by_version.get(version))
+            .is_some_and(|existing| existing.is_same(&payload, upm, width, &layout))
         {
-            if existing.upm == upm
-                && existing.width == width
-                && existing.layout == layout
-                && *existing.payload == payload
-            {
-                return Ok(());
-            }
+            return Ok(());
         }
 
         // A fresh `version` for every registration that changes
@@ -249,6 +280,29 @@ impl GlyphRegistry {
             inner.retire(old);
         }
         Ok(())
+    }
+
+    /// Whether this registration would replace one that text still
+    /// shows, which then has to be kept as retired. False for a new
+    /// codepoint, for one identical to the current registration, and
+    /// for replacing one no text was printed with.
+    pub fn retires_shown(
+        &self,
+        cp: u32,
+        payload: &StoredPayload,
+        upm: u16,
+        width: u8,
+        layout: &GlyphLayout,
+    ) -> bool {
+        let inner = self.inner.read();
+        inner
+            .current
+            .get(&cp)
+            .and_then(|version| inner.by_version.get(version))
+            .is_some_and(|existing| {
+                existing.bound.load(Ordering::Relaxed)
+                    && !existing.is_same(payload, upm, width, layout)
+            })
     }
 
     /// Clear one codepoint for text printed from now on. No-op if

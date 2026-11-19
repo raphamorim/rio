@@ -158,6 +158,27 @@ pub struct ExtrasTable {
     /// new hyperlinks silently drop. (Images no longer live here;
     /// placements own them with deterministic cleanup.)
     allocs_since_reclaim: usize,
+    /// Glyph Protocol print cache, kitty's `bound_idx_plus_1`: for each
+    /// registration block codepoint, the version last bound and the
+    /// slot holding extras with only that binding. Printing a block
+    /// codepoint with no other extras then skips building and hashing
+    /// `Extras`. A changed registration is a different version, so a
+    /// miss; ids only change hands in `sweep_unmarked`, which empties
+    /// it. Allocated on the first binding.
+    #[cfg(feature = "graphics")]
+    glyph_only: GlyphOnlyCache,
+}
+
+/// A cache, so not part of what makes two tables equal.
+#[cfg(feature = "graphics")]
+#[derive(Clone, Debug, Default)]
+struct GlyphOnlyCache(Vec<(u32, crate::crosswords::square::ExtrasId)>);
+
+#[cfg(feature = "graphics")]
+impl PartialEq for GlyphOnlyCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 /// One `reclaim_extras` mark-and-sweep per this many allocations. The
@@ -175,7 +196,51 @@ impl ExtrasTable {
             free: Vec::new(),
             lookup: rustc_hash::FxHashMap::default(),
             allocs_since_reclaim: 0,
+            #[cfg(feature = "graphics")]
+            glyph_only: GlyphOnlyCache::default(),
         }
+    }
+
+    /// The slot of extras holding only a binding of block codepoint
+    /// `cp` to `version`, if the print cache has it.
+    #[cfg(feature = "graphics")]
+    #[inline]
+    pub fn glyph_only(
+        &self,
+        cp: u32,
+        version: u32,
+    ) -> Option<crate::crosswords::square::ExtrasId> {
+        let slot =
+            cp.checked_sub(rio_graphics::glyph_namespace::REGISTRATION_BLOCK_START)?;
+        match self.glyph_only.0.get(slot as usize) {
+            Some(&(v, id)) if id != 0 && v == version => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Remember `id` as the slot of extras holding only a binding of
+    /// block codepoint `cp` to `version`.
+    #[cfg(feature = "graphics")]
+    pub fn set_glyph_only(
+        &mut self,
+        cp: u32,
+        version: u32,
+        id: crate::crosswords::square::ExtrasId,
+    ) {
+        use rio_graphics::glyph_namespace::{
+            GLOSSARY_CAPACITY, REGISTRATION_BLOCK_START,
+        };
+        let Some(slot) = cp.checked_sub(REGISTRATION_BLOCK_START) else {
+            return;
+        };
+        if slot as usize >= GLOSSARY_CAPACITY {
+            return;
+        }
+        let cache = &mut self.glyph_only.0;
+        if cache.is_empty() {
+            *cache = vec![(0, 0); GLOSSARY_CAPACITY];
+        }
+        cache[slot as usize] = (version, id);
     }
 
     pub fn get(
@@ -231,6 +296,9 @@ impl ExtrasTable {
     /// Resets the reclaim cadence, matching `StyleSet::sweep_unmarked`.
     pub fn sweep_unmarked(&mut self, live: &[u64]) {
         self.allocs_since_reclaim = 0;
+        // Freed ids are reused for other extras.
+        #[cfg(feature = "graphics")]
+        self.glyph_only.0.fill((0, 0));
         for id in 1..self.slots.len() {
             let marked = live[id / 64] & (1 << (id % 64)) != 0;
             if !marked && self.slots[id].is_some() {

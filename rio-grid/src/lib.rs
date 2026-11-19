@@ -1340,11 +1340,13 @@ pub struct GridGlyphRasterizer {
     /// Cache of `(char, style_flags) → (font_id, is_emoji)`
     /// resolutions. The same in every pane: Glyph Protocol glyphs don't
     /// resolve through fonts, a cell printed with a registration says so
-    /// itself (see `bound_glyph`).
+    /// itself (see `bound_glyph_version`).
     font_resolve: FxHashMap<(char, u8), (u32, bool)>,
     ascent_cache: FxHashMap<(u32, u16), i16>,
     /// Atlas ids for Glyph Protocol rasterisations.
     custom_glyph_ids: CustomGlyphIds,
+    /// What the atlas key needs from each Glyph Protocol registration.
+    custom_glyph_meta: CustomGlyphMetas,
     /// `(should_embolden, should_italicize)` per font_id. Read from
     /// `FontData` synthesis flags; matches the rich-text rasterizer's
     /// convention.
@@ -1427,6 +1429,7 @@ impl GridGlyphRasterizer {
             font_resolve: FxHashMap::default(),
             ascent_cache: FxHashMap::default(),
             custom_glyph_ids: CustomGlyphIds::default(),
+            custom_glyph_meta: CustomGlyphMetas::default(),
             synthesis_cache: FxHashMap::default(),
             run_cache: new_run_cache(),
             run_hasher: rapidhash::fast::RapidHasher::default(),
@@ -3300,26 +3303,94 @@ struct CustomGlyphRaster {
 
 fn custom_glyph_raster(
     codepoint: u32,
-    entry: &rio_backend::sugarloaf::font::glyph_registry::RegisteredGlyph,
+    version: u32,
+    meta: CustomGlyphMeta,
     span_w_px: u16,
     cell_h_px: u16,
     baseline_px: i16,
     foreground_rgba: [u8; 4],
 ) -> CustomGlyphRaster {
-    let uses_foreground = *entry.render_state.uses_foreground.get_or_init(|| {
-        rio_backend::sugarloaf::glyph_protocol::payload_uses_foreground(&entry.payload)
-    });
     CustomGlyphRaster {
         codepoint,
-        registration: entry.version,
+        registration: version,
         span_w: span_w_px,
         cell_h: cell_h_px,
         baseline: baseline_px,
-        foreground: if uses_foreground {
+        foreground: if meta.uses_foreground {
             foreground_rgba
         } else {
             [0; 4]
         },
+    }
+}
+
+/// What drawing a registration needs before it reaches the atlas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CustomGlyphMeta {
+    /// Declared render span, 1 or 2.
+    width: u8,
+    /// `align=_,baseline`: placed against the primary font's ascent.
+    baseline: bool,
+    /// The bitmap depends on the foreground colour.
+    uses_foreground: bool,
+    /// Rasterising it failed, so it draws nothing.
+    unrenderable: bool,
+}
+
+impl CustomGlyphMeta {
+    fn of(entry: &rio_backend::sugarloaf::font::glyph_registry::RegisteredGlyph) -> Self {
+        use rio_backend::sugarloaf::font::glyph_registry::GlyphAlignV;
+        use std::sync::atomic::Ordering;
+        Self {
+            width: entry.width,
+            baseline: entry.layout.align_v == GlyphAlignV::Baseline,
+            uses_foreground: *entry.render_state.uses_foreground.get_or_init(|| {
+                rio_backend::sugarloaf::glyph_protocol::payload_uses_foreground(
+                    &entry.payload,
+                )
+            }),
+            unrenderable: entry.render_state.unrenderable.load(Ordering::Relaxed),
+        }
+    }
+}
+
+/// [`CustomGlyphMeta`] by registry and version, so a frame that finds
+/// its glyphs in the atlas never reads the registry: no lock, no lookup,
+/// no clone of the entry. A registration never changes, so an entry is
+/// never stale; versions are only unique within one registry and panes
+/// share this, hence the registry id.
+#[derive(Default)]
+struct CustomGlyphMetas(FxHashMap<(u64, u32), CustomGlyphMeta>);
+
+impl CustomGlyphMetas {
+    fn get(
+        &mut self,
+        registry: &rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry,
+        version: u32,
+    ) -> Option<CustomGlyphMeta> {
+        let key = (registry.id(), version);
+        if let Some(meta) = self.0.get(&key) {
+            return Some(*meta);
+        }
+        // Gone only if the sweep found no cell using it.
+        let meta = CustomGlyphMeta::of(&registry.get_version(version)?);
+        // Forgetting is always safe, it only costs a lookup. Bounded the
+        // same way as the atlas ids, for a program re-registering forever.
+        if self.0.len() >= MAX_CUSTOM_GLYPH_IDS {
+            self.0.clear();
+        }
+        self.0.insert(key, meta);
+        Some(meta)
+    }
+
+    fn set_unrenderable(
+        &mut self,
+        registry: &rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry,
+        version: u32,
+    ) {
+        if let Some(meta) = self.0.get_mut(&(registry.id(), version)) {
+            meta.unrenderable = true;
+        }
     }
 }
 
@@ -3392,15 +3463,12 @@ fn ensure_custom_glyph_by_codepoint(
     max_span: u16,
     primary_ascent: impl FnOnce(&mut GridGlyphRasterizer) -> Option<i16>,
 ) -> Option<(GlyphKey, AtlasSlot, bool, u16)> {
-    use rio_backend::sugarloaf::font::glyph_registry::GlyphAlignV;
     use std::sync::atomic::Ordering;
 
-    // The registration the cell was printed with, for its declared
-    // width and layout. The lookup happens under the registry's RwLock
-    // read; the entry's payload is cloned out so the lock drops before
-    // tiny-skia. Gone only if the sweep found no cell using it.
-    let entry = registry.get_version(version)?;
-    if entry.render_state.unrenderable.load(Ordering::Relaxed) {
+    // What the registration the cell was printed with says about its
+    // width and placement; the registry is only read on a miss.
+    let meta = rasterizer.custom_glyph_meta.get(registry, version)?;
+    if meta.unrenderable {
         return None;
     }
 
@@ -3408,19 +3476,21 @@ fn ensure_custom_glyph_by_codepoint(
     // `span × cell_w` box and overflows rightward in pixels. The grid
     // still treats the codepoint as one logical column (no cell was
     // reserved), so this is purely visual. Clamp to the protocol's 1..=2.
-    let span = custom_glyph_span(entry.width, max_span);
+    let span = custom_glyph_span(meta.width, max_span);
     let span_w_px = (cell_w_u32 * span as u32).min(u16::MAX as u32) as u16;
     let cell_h_px = cell_h.round().clamp(0.0, u16::MAX as f32) as u16;
     if span_w_px == 0 || cell_h_px == 0 {
         return None;
     }
-    let baseline_px = match entry.layout.align_v {
-        GlyphAlignV::Baseline => primary_ascent(rasterizer)?,
-        _ => 0,
+    let baseline_px = if meta.baseline {
+        primary_ascent(rasterizer)?
+    } else {
+        0
     };
     let key = rasterizer.custom_glyph_ids.key(custom_glyph_raster(
         codepoint,
-        &entry,
+        version,
+        meta,
         span_w_px,
         cell_h_px,
         baseline_px,
@@ -3433,6 +3503,9 @@ fn ensure_custom_glyph_by_codepoint(
         return Some((key, slot, true, span));
     }
 
+    // Not in the atlas: rasterise it from the registration, cloned out
+    // of the registry so its lock drops before tiny-skia.
+    let entry = registry.get_version(version)?;
     let Some(raster) = rio_backend::sugarloaf::glyph_protocol::rasterize_payload(
         &entry.payload,
         entry.upm,
@@ -3447,6 +3520,9 @@ fn ensure_custom_glyph_by_codepoint(
             .render_state
             .unrenderable
             .store(true, Ordering::Relaxed);
+        rasterizer
+            .custom_glyph_meta
+            .set_unrenderable(registry, version);
         return None;
     };
 
@@ -3973,7 +4049,9 @@ mod custom_glyph_tests {
     }
 
     fn key(registry: &GlyphRegistry, foreground: [u8; 4]) -> CustomGlyphRaster {
-        custom_glyph_raster(CP, &registry.get(CP).unwrap(), 10, 20, 0, foreground)
+        let entry = registry.get(CP).unwrap();
+        let meta = CustomGlyphMeta::of(&entry);
+        custom_glyph_raster(CP, entry.version, meta, 10, 20, 0, foreground)
     }
 
     fn raster(codepoint: u32) -> CustomGlyphRaster {
@@ -4073,6 +4151,43 @@ mod custom_glyph_tests {
     }
 
     #[test]
+    fn registration_facts_are_cached_per_registry() {
+        let glyph = |width| {
+            let registry = GlyphRegistry::new();
+            registry
+                .register(
+                    CP,
+                    StoredPayload::glyf(vec![1]),
+                    1000,
+                    width,
+                    GlyphLayout::default(),
+                )
+                .unwrap();
+            registry
+        };
+        // Two sessions, each with its first registration at CP: the same
+        // version, different glyphs.
+        let (narrow, wide) = (glyph(1), glyph(2));
+        let version = narrow.get(CP).unwrap().version;
+        assert_eq!(wide.get(CP).unwrap().version, version);
+        let mut metas = CustomGlyphMetas::default();
+        assert_eq!(metas.get(&narrow, version).unwrap().width, 1);
+        assert_eq!(metas.get(&wide, version).unwrap().width, 2);
+
+        // Once cached, drawing doesn't read the registry: still answered
+        // after the registration is gone from it.
+        narrow.reset();
+        assert!(narrow.get_version(version).is_none());
+        assert_eq!(metas.get(&narrow, version).unwrap().width, 1);
+        // Unknown and never cached: nothing to draw.
+        assert!(metas.get(&narrow, version + 1).is_none());
+
+        metas.set_unrenderable(&wide, version);
+        assert!(metas.get(&wide, version).unwrap().unrenderable);
+        assert!(!metas.get(&narrow, version).unwrap().unrenderable);
+    }
+
+    #[test]
     fn a_cell_draws_the_registration_it_was_printed_with() {
         use rio_backend::crosswords::square::Extras;
         let mut extras = ExtrasMap::default();
@@ -4117,10 +4232,11 @@ mod custom_glyph_tests {
             )
             .unwrap();
         let entry = registry.get(CP).unwrap();
-        let base = custom_glyph_raster(CP, &entry, 10, 20, 15, RED);
+        let (v, meta) = (entry.version, CustomGlyphMeta::of(&entry));
+        let base = custom_glyph_raster(CP, v, meta, 10, 20, 15, RED);
         // Cell widths 8 apart, and ascents that differ by one pixel.
-        assert_ne!(base, custom_glyph_raster(CP, &entry, 18, 20, 15, RED));
-        assert_ne!(base, custom_glyph_raster(CP, &entry, 10, 20, 16, RED));
+        assert_ne!(base, custom_glyph_raster(CP, v, meta, 18, 20, 15, RED));
+        assert_ne!(base, custom_glyph_raster(CP, v, meta, 10, 20, 16, RED));
     }
 
     #[test]

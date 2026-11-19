@@ -582,12 +582,6 @@ where
     /// initialised.
     #[cfg(feature = "graphics")]
     pub glyph_registry: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
-    /// When the last sweep for replaced registrations ran (spec §9). A
-    /// sweep walks every cell, scrollback included, so a program
-    /// registering past the bound gets `no_space` instead of a sweep on
-    /// every request: at most one a second, as kitty does.
-    #[cfg(feature = "graphics")]
-    glyph_reclaimed_at: Option<crate::time::Instant>,
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
@@ -698,8 +692,6 @@ impl<U: EventListener> Crosswords<U> {
             graphics: Graphics::new(&dimensions),
             #[cfg(feature = "graphics")]
             glyph_registry: None,
-            #[cfg(feature = "graphics")]
-            glyph_reclaimed_at: None,
             default_cursor_shape: cursor_shape,
             cursor_shape,
             blinking_cursor: false,
@@ -1797,13 +1789,23 @@ impl<U: EventListener> Crosswords<U> {
         if !crate::ansi::glyph_protocol::in_registration_block(c as u32) {
             return template;
         }
+        let cp = c as u32;
         let Some(version) = self
             .glyph_registry
             .as_ref()
-            .and_then(|registry| registry.bind(c as u32))
+            .and_then(|registry| registry.bind(cp))
         else {
             return template;
         };
+        // The common case, a cell with nothing else in its extras, is
+        // answered by the print cache.
+        let plain = template.extras_id().is_none();
+        if plain {
+            if let Some(id) = self.grid.extras_table.glyph_only(cp, version) {
+                template.set_extras_id(Some(id));
+                return template;
+            }
+        }
         let mut extras = template
             .extras_id()
             .and_then(|id| self.grid.extras_table.get(id))
@@ -1813,6 +1815,9 @@ impl<U: EventListener> Crosswords<U> {
         let id = self.grid.alloc_extras(extras);
         if id != 0 {
             template.set_extras_id(Some(id));
+            if plain {
+                self.grid.extras_table.set_glyph_only(cp, version, id);
+            }
         }
         template
     }
@@ -6001,23 +6006,19 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // frame. The first allocation fires `GlyphProtocolInstalled`
         // so the frontend can wire the registry into the font library
         // exactly once per session.
-        // §9: replaced registrations text still shows are bounded. Past
-        // the bound, find out which are really still shown (at most once
-        // a second); if that isn't enough, refuse until text using them
-        // is gone.
-        if self
-            .glyph_registry
-            .as_ref()
-            .is_some_and(|r| r.retired_len() >= MAX_RETIRED)
-        {
-            let now = crate::time::Instant::now();
-            let due = self.glyph_reclaimed_at.is_none_or(|at| {
-                now.saturating_duration_since(at) >= std::time::Duration::from_secs(1)
-            });
-            if due {
-                self.glyph_reclaimed_at = Some(now);
-                self.reclaim_glyphs();
-            }
+        // §9: replaced registrations text still shows are bounded. Only a
+        // registration that would add one can hit the bound; it first
+        // finds out which are really still shown, and if all of them
+        // are, is refused until text using them is gone. The sweep costs
+        // one walk of the cells with extras, like other requests that
+        // touch the scrollback (ED 3J), so it isn't rate limited: a
+        // client that keeps asking after `no_space` pays for it in time,
+        // and gets the space as soon as it frees it.
+        if self.glyph_registry.as_ref().is_some_and(|r| {
+            r.retired_len() >= MAX_RETIRED
+                && r.retires_shown(cp, &stored, upm, width, &layout)
+        }) {
+            self.reclaim_glyphs();
             if self
                 .glyph_registry
                 .as_ref()
@@ -7951,6 +7952,65 @@ mod tests {
 
     #[cfg(feature = "graphics")]
     #[test]
+    fn glyph_protocol_print_cache_shares_one_slot_and_only_for_plain_cells() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        let version = current_version(&cw, 0x10_0000);
+        let id = |cw: &Crosswords<VoidListener>, col| {
+            cw.grid[Line(0)][Column(col)].extras_id()
+        };
+        // Plain, linked, plain: the plain cells share one slot, the
+        // linked one keeps its link.
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        parser.advance(&mut cw, b"\x1b]8;;https://example.com\x1b\\");
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        parser.advance(&mut cw, b"\x1b]8;;\x1b\\");
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        assert_eq!(id(&cw, 0), id(&cw, 2));
+        assert_ne!(id(&cw, 0), id(&cw, 1));
+        let linked = cw.grid.extras_table.get(id(&cw, 1).unwrap()).unwrap();
+        assert_eq!(linked.glyph, Some(version));
+        assert!(linked.hyperlink.is_some());
+        let plain = cw.grid.extras_table.get(id(&cw, 2).unwrap()).unwrap();
+        assert_eq!(plain.glyph, Some(version));
+        assert!(plain.hyperlink.is_none());
+
+        // A new registration is a miss.
+        register_upm(&mut cw, 0x10_0000, 2048);
+        let second = current_version(&cw, 0x10_0000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        assert_eq!(bound_version(&cw, 0, 3), Some(second));
+        assert_eq!(bound_version(&cw, 0, 2), Some(version));
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_print_cache_forgets_slots_the_sweep_frees() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        let version = current_version(&cw, 0x10_0000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        let freed = cw.grid[Line(0)][Column(0)].extras_id().unwrap();
+        // Overwrite it, sweep, and give its slot to a link.
+        parser.advance(&mut cw, b"\rx");
+        cw.grid.reclaim_extras();
+        parser.advance(
+            &mut cw,
+            b"\r\x1b]8;;https://example.com\x1b\\y\x1b]8;;\x1b\\",
+        );
+        assert_eq!(cw.grid[Line(0)][Column(0)].extras_id(), Some(freed));
+        // Printing the glyph again must not reuse the link's slot.
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        assert_eq!(bound_version(&cw, 0, 1), Some(version));
+        let sq = cw.grid[Line(0)][Column(1)];
+        let extras = cw.grid.extras_table.get(sq.extras_id().unwrap()).unwrap();
+        assert!(extras.hyperlink.is_none());
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
     fn glyph_protocol_overwritten_text_releases_its_registration() {
         let mut cw = make_crosswords();
         let mut parser = crate::performer::handler::Processor::default();
@@ -8004,14 +8064,18 @@ mod tests {
         // Every one of them is still shown.
         assert_eq!(registry.retired_len(), MAX_RETIRED);
 
+        // Registrations that retire nothing still succeed: a new
+        // codepoint, replacing it before any text uses it, and the
+        // current one sent again.
+        register_upm(&mut cw, 0x10_0001, 1000);
+        register_upm(&mut cw, 0x10_0001, 2048);
+        register_upm(&mut cw, 0x10_0000, MAX_RETIRED as u16 + 1);
+        assert_eq!(registry.retired_len(), MAX_RETIRED);
+
         // Overwrite the text that used them (all of it is on screen: 1025
-        // cells in 80 columns). A sweep runs at most once a second, so
-        // right away it is still refused...
+        // cells in 80 columns), and the space is back right away.
         parser.advance(&mut cw, b"\x1b[H");
         parser.advance(&mut cw, " ".repeat(80 * 14).as_bytes());
-        assert_eq!(over(&mut cw), Err(RegisterError::NoSpace));
-        // ...and once the sweep is due, the space is back.
-        cw.glyph_reclaimed_at = None;
         assert_eq!(over(&mut cw), Ok(()));
         assert_eq!(registry.retired_len(), 1);
     }
