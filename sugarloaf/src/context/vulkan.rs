@@ -206,27 +206,32 @@ pub struct VulkanFrame {
 
 impl VulkanContext {
     pub fn new(sugarloaf_window: SugarloafWindow) -> Self {
+        Self::try_new(&sugarloaf_window).expect("Vulkan initialization failed")
+    }
+
+    /// Attempt driver initialization once. The context keeps this same instance;
+    /// the caller can select the CPU renderer if no driver is available.
+    pub fn try_new(sugarloaf_window: &SugarloafWindow) -> Option<Self> {
         let size = sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
-
-        // Loading the loader itself can fail if libvulkan.so is missing —
-        // which is the expected failure on a machine without a Vulkan
-        // driver installed. We let the panic propagate: the caller is
-        // `Context::new` and the backend selection happened upstream, so
-        // there's no graceful degradation path here (the WGPU/CPU
-        // backends live behind different enum variants).
-        let entry =
-            unsafe { Entry::load() }.expect("failed to load Vulkan loader (libvulkan)");
-
+        let entry = unsafe { Entry::load() }.ok()?;
         let validation_requested = validation_requested();
-        let instance = create_instance(&entry, &sugarloaf_window, validation_requested);
+        let instance =
+            create_instance(&entry, sugarloaf_window, validation_requested).ok()?;
+        let has_device = unsafe { instance.enumerate_physical_devices() }
+            .is_ok_and(|devices| !devices.is_empty());
+        if !has_device {
+            unsafe { instance.destroy_instance(None) };
+            return None;
+        }
+
         let _debug_messenger = if validation_requested {
             create_debug_messenger(&entry, &instance)
         } else {
             None
         };
         let surface_loader = khr::surface::Instance::new(&entry, &instance);
-        let surface = create_surface(&entry, &instance, &sugarloaf_window);
+        let surface = create_surface(&entry, &instance, sugarloaf_window);
 
         let (physical_device, queue_family_index) =
             pick_physical_device(&instance, &surface_loader, surface);
@@ -282,7 +287,7 @@ impl VulkanContext {
             _entry: entry,
         });
 
-        VulkanContext {
+        Some(VulkanContext {
             size,
             scale,
             supports_f16,
@@ -304,7 +309,7 @@ impl VulkanContext {
             surface,
             surface_loader,
             _debug_messenger,
-        }
+        })
     }
 
     #[inline]
@@ -1116,7 +1121,7 @@ fn create_instance(
     entry: &Entry,
     window: &SugarloafWindow,
     enable_validation: bool,
-) -> Instance {
+) -> Result<Instance, vk::Result> {
     let app_name = c"sugarloaf";
     let app_info = vk::ApplicationInfo::default()
         .application_name(app_name)
@@ -1166,7 +1171,6 @@ fn create_instance(
         .enabled_layer_names(&layer_ptrs);
 
     unsafe { entry.create_instance(&create_info, None) }
-        .expect("vkCreateInstance failed — is a Vulkan 1.3 driver installed?")
 }
 
 /// True if the user opted into validation via `RIO_VULKAN_VALIDATION=1`.
