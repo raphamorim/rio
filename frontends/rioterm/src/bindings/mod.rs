@@ -7,6 +7,7 @@ pub mod kitty_keyboard;
 use crate::crosswords::vi_mode::ViMotion;
 use crate::crosswords::Mode;
 use bitflags::bitflags;
+use kitty_keyboard::SequenceModifiers;
 use rio_backend::config::bindings::KeyBinding as ConfigKeyBinding;
 use rio_backend::config::keyboard::Keyboard as ConfigKeyboard;
 use rio_window::event::MouseButton;
@@ -999,6 +1000,71 @@ pub fn ctrl_seq(key: &Key, text: &str, mods: ModifiersState) -> Option<u8> {
     })
 }
 
+/// xterm modifyOtherKeys (`CSI > 4 ; level m`, formatOtherKeys 0):
+/// `CSI 27 ; modifier ; codepoint ~` for a character key held with ctrl
+/// or alt.
+///
+/// Level 1 covers only the combos the legacy encoding collapses:
+/// ctrl+shift+a would reach the program as ^A and ctrl+1 as a plain `1`,
+/// while ctrl+a is ^A by established behaviour and stays on the legacy
+/// path. Level 2 covers every ctrl or alt combo. Shift alone is the
+/// character itself and super belongs to the platform, so neither is
+/// encoded here. Named keys (Enter, Tab, Backspace, Escape) keep their
+/// legacy sequences.
+///
+/// The codepoint is the character the key produced, so ctrl+shift+a
+/// reports 65 as xterm does. Returns `None` when the legacy path should
+/// handle the key.
+pub fn modify_other_keys_seq(
+    key: &Key,
+    mods: ModifiersState,
+    level: u8,
+) -> Option<Vec<u8>> {
+    if level == 0 || mods.super_key() {
+        return None;
+    }
+    if !mods.control_key() && !mods.alt_key() {
+        return None;
+    }
+
+    let Key::Character(ch) = key else {
+        return None;
+    };
+    let mut it = ch.chars();
+    let (Some(c), None) = (it.next(), it.next()) else {
+        return None;
+    };
+
+    let ambiguous =
+        mods.control_key() && (mods.shift_key() || mods.alt_key() || !has_c0_identity(c));
+    if level == 1 && !ambiguous {
+        return None;
+    }
+
+    let modifier = SequenceModifiers::from(mods).encode_esc_sequence();
+    Some(format!("\x1b[27;{modifier};{}~", u32::from(c)).into_bytes())
+}
+
+/// Whether ctrl plus this character has a C0 byte of its own in the
+/// legacy encoding, which is what xterm level 1 leaves alone.
+fn has_c0_identity(c: char) -> bool {
+    matches!(
+        c.to_ascii_lowercase(),
+        'a'..='z'
+            | ' '
+            | '2'..='8'
+            | '@'
+            | '['
+            | '\\'
+            | ']'
+            | '^'
+            | '_'
+            | '/'
+            | '?'
+            | '~'
+    )
+}
+
 pub fn config_key_bindings(
     config_key_bindings: Vec<ConfigKeyBinding>,
     mut bindings: Vec<KeyBinding>,
@@ -1679,6 +1745,77 @@ mod tests {
         assert_eq!(ctrl_seq(&key("6"), "6", ctrl | ModifiersState::SUPER), None);
         assert_eq!(ctrl_seq(&key("6"), "6", ModifiersState::empty()), None);
         assert_eq!(ctrl_seq(&Key::Named(Enter), "", ctrl), None);
+    }
+
+    #[test]
+    fn modify_other_keys_seq_levels() {
+        let ctrl = ModifiersState::CONTROL;
+        let shift = ModifiersState::SHIFT;
+        let alt = ModifiersState::ALT;
+        let key = |s: &str| Key::Character(s.into());
+        let seq = |s: &[u8]| Some(s.to_vec());
+
+        // Level 0: the legacy path owns every key.
+        assert_eq!(modify_other_keys_seq(&key("A"), ctrl | shift, 0), None);
+        assert_eq!(modify_other_keys_seq(&key("a"), ctrl, 0), None);
+        assert_eq!(modify_other_keys_seq(&key("1"), ctrl, 0), None);
+        assert_eq!(
+            modify_other_keys_seq(&key("a"), ModifiersState::empty(), 0),
+            None
+        );
+
+        // Level 1: only combos the legacy encoding collapses. Ctrl+Shift+A
+        // would become ^A, Ctrl+1 would become a plain '1'; Ctrl+A is ^A
+        // by established behaviour and stays on the legacy path.
+        assert_eq!(
+            modify_other_keys_seq(&key("A"), ctrl | shift, 1),
+            seq(b"\x1b[27;6;65~")
+        );
+        assert_eq!(modify_other_keys_seq(&key("a"), ctrl, 1), None);
+        assert_eq!(
+            modify_other_keys_seq(&key("1"), ctrl, 1),
+            seq(b"\x1b[27;5;49~")
+        );
+        assert_eq!(
+            modify_other_keys_seq(&key("a"), ModifiersState::empty(), 1),
+            None
+        );
+        // The codepoint is the character the logical key produced.
+        assert_eq!(
+            modify_other_keys_seq(&key("F"), ctrl | shift, 1),
+            seq(b"\x1b[27;6;70~")
+        );
+
+        // Level 2: every Ctrl or Alt combo.
+        assert_eq!(
+            modify_other_keys_seq(&key("A"), ctrl | shift, 2),
+            seq(b"\x1b[27;6;65~")
+        );
+        assert_eq!(
+            modify_other_keys_seq(&key("a"), ctrl, 2),
+            seq(b"\x1b[27;5;97~")
+        );
+        assert_eq!(
+            modify_other_keys_seq(&key("1"), ctrl, 2),
+            seq(b"\x1b[27;5;49~")
+        );
+        assert_eq!(
+            modify_other_keys_seq(&key("a"), alt, 2),
+            seq(b"\x1b[27;3;97~")
+        );
+        assert_eq!(
+            modify_other_keys_seq(&key("a"), ModifiersState::empty(), 2),
+            None
+        );
+
+        // Shift alone is the character itself, super is the platform's.
+        assert_eq!(modify_other_keys_seq(&key("A"), shift, 2), None);
+        assert_eq!(
+            modify_other_keys_seq(&key("a"), ctrl | ModifiersState::SUPER, 2),
+            None
+        );
+        // Named keys keep their legacy sequences.
+        assert_eq!(modify_other_keys_seq(&Key::Named(Enter), ctrl, 2), None);
     }
 
     #[test]
