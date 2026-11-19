@@ -2,6 +2,8 @@
 
 ## 0.6.0 (unreleased)
 
+- **Native tabs are the default on macOS.** `navigation.mode` now defaults to `"NativeTab"` there, so new tabs are macOS tabs; set `mode = "Tab"` under `[navigation]` for Rio's own tab strip. Other platforms keep `"Tab"` ([#2112](https://github.com/raphamorim/rio/pull/2112)).
+
 - **macOS native tabs sit in the unified titlebar.** With `navigation.mode = "NativeTab"` and `window.macos-use-unified-titlebar = true` on macOS 26 and later, the tab bar moves beside the traffic lights instead of adding a row below the titlebar, and the liquid glass background extends under it, so the window is one surface. The window title shows while there is a single tab and gives way to the tabs once the tab bar appears. Contributed by [@fguisso](https://github.com/fguisso) ([#2112](https://github.com/raphamorim/rio/pull/2112)).
 
 - **Variable fonts on Linux and Windows draw the instance you configured.** The named instance a font lookup matches (Regular, Bold, a `slnt` or `ital` italic, or one with design axes like Recursive's `MONO`) is replayed into shaping, rasterizing and metrics, as on macOS, and an explicit `weight` changes only `wght`. The cell of a pinned instance is measured from its own advances, since `hhea`'s widest advance always describes the default instance. Glyphs of one face are no longer drawn at another's instance: swash's scale context kept the previous glyph's axis values, so a Regular glyph rasterized right after a Bold one could come out Bold, already the case for the bundled Cascadia fallback. Coordinates now replace the context's instead of adding to them ([#2111](https://github.com/raphamorim/rio/pull/2111)).

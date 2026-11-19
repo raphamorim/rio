@@ -51,13 +51,12 @@ pub enum NavigationMode {
     NativeTab,
 }
 
-#[allow(clippy::derivable_impls)]
 impl Default for NavigationMode {
+    /// The system's own tabs on macOS, Rio's tab strip elsewhere.
     fn default() -> NavigationMode {
         #[cfg(target_os = "macos")]
         {
-            // Use Tab for full GPU rendering
-            NavigationMode::Tab
+            NavigationMode::NativeTab
         }
 
         #[cfg(not(target_os = "macos"))]
