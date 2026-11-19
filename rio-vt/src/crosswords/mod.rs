@@ -590,6 +590,9 @@ where
     /// both the `cap=grapheme` advertisement and the
     /// `reason=unsupported` reply follow it.
     glyph_grapheme_query: bool,
+    /// Glyph Protocol payload formats accepted; see
+    /// [`Self::set_glyph_formats`].
+    glyph_formats: &'static [crate::ansi::glyph_protocol::GlyphFormat],
 
     /// When the running shell command started its output (OSC 133 `C`),
     /// so `D` can report how long it ran. `None` between commands.
@@ -679,6 +682,7 @@ impl<U: EventListener> Crosswords<U> {
             focused: false,
             program_status_seen: false,
             glyph_grapheme_query: false,
+            glyph_formats: crate::ansi::glyph_protocol::SUPPORTED_FORMATS,
             command_started_at: None,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
@@ -708,6 +712,16 @@ impl<U: EventListener> Crosswords<U> {
     /// place.
     pub fn set_glyph_grapheme_query(&mut self, enabled: bool) {
         self.glyph_grapheme_query = enabled;
+    }
+
+    /// The Glyph Protocol payload formats this terminal accepts, for a
+    /// frontend that draws registered glyphs itself and draws only
+    /// some. Every format by default; none switches the protocol off.
+    pub fn set_glyph_formats(
+        &mut self,
+        formats: &'static [crate::ansi::glyph_protocol::GlyphFormat],
+    ) {
+        self.glyph_formats = formats;
     }
 
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
@@ -6109,6 +6123,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // printed with (§6.3); clearing only affects text printed after.
     }
 
+    fn glyph_formats(&self) -> &'static [crate::ansi::glyph_protocol::GlyphFormat] {
+        self.glyph_formats
+    }
+
     fn glyph_grapheme_query_enabled(&self) -> bool {
         self.glyph_grapheme_query
     }
@@ -6850,6 +6868,44 @@ mod tests {
         assert!(pty_writes(&events).is_empty());
         parser.advance(&mut cw, b"\x1b_25a1;s\x1b\\");
         assert_eq!(pty_writes(&events).len(), 1);
+    }
+
+    #[test]
+    fn glyph_protocol_offers_only_the_formats_the_host_draws() {
+        use crate::ansi::glyph_protocol::GlyphFormat;
+        let (mut cw, events) = make_crosswords_with_events(3);
+        cw.set_glyph_formats(&[GlyphFormat::Vg]);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b_25a1;s\x1b\\");
+        // No `fmt` is `glyf`, which this host doesn't draw.
+        parser.advance(&mut cw, b"\x1b_25a1;r;cp=100000;AAAA\x1b\\");
+        assert_eq!(
+            pty_writes(&events),
+            vec![
+                "\x1b_25a1;s;fmt=vg\x1b\\".to_string(),
+                "\x1b_25a1;r;cp=100000;status=1;reason=unsupported_format\x1b\\"
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn glyph_protocol_is_off_for_a_host_that_draws_no_format() {
+        // Nothing answers, so a client's `s` + DA1 probe finds no
+        // support (§3.4), and nothing is registered or asked.
+        let (mut cw, events) = make_crosswords_with_events(3);
+        cw.set_glyph_formats(&[]);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b_25a1;s\x1b\\");
+        parser.advance(&mut cw, b"\x1b_25a1;q;cp=100000\x1b\\");
+        parser.advance(
+            &mut cw,
+            b"\x1b_25a1;r;cp=100000;fmt=vg;vb=0 0 1 1;fill=nonzero,fg:M0 0h1v1z\x1b\\",
+        );
+        parser.advance(&mut cw, b"\x1b_25a1;c\x1b\\");
+        assert!(events.borrow().is_empty(), "{:?}", events.borrow());
+        #[cfg(feature = "graphics")]
+        assert!(cw.glyph_registry.is_none());
     }
 
     #[test]

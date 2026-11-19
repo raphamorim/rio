@@ -906,6 +906,21 @@ impl RenderState {
         copy_rgba(&image.data, buf)
     }
 
+    /// The Glyph Protocol registration `square` was printed with, as a
+    /// version for [`crate::Surface::glyph`]: set for a registration
+    /// block codepoint printed while it was registered. Every other cell,
+    /// including one printed before its codepoint was registered, draws
+    /// as text whatever is registered now.
+    #[cfg(feature = "graphics")]
+    pub fn glyph_version(&self, square: &Square) -> Option<u32> {
+        // Checked first: a bg-only cell's other bits are a colour.
+        let eid = square.extras_id_checked()?;
+        if !rio_graphics::glyph_namespace::in_registration_block(square.c() as u32) {
+            return None;
+        }
+        self.extras.get(&eid)?.glyph
+    }
+
     /// The OSC 8 hyperlink under a viewport cell, if any.
     pub fn link_at(&self, line: usize, column: usize) -> Option<&str> {
         let square = self.square(line, column)?;
