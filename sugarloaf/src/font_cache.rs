@@ -161,11 +161,17 @@ pub(crate) fn compute_advance(
         offset,
         key,
     };
+    // At the face's instance, whose advances can differ from the file's
+    // default (a `MONO` axis, `wdth`).
+    let coords = font_ctx
+        .try_get(&font_id)
+        .map(|font| font.normalized_coords())
+        .unwrap_or_default();
     let glyph_id = font_ref.charmap().map(ch as u32);
-    let metrics = font_ref.glyph_metrics(&[]);
+    let metrics = font_ref.glyph_metrics(&coords);
     Some(AdvanceInfo {
         advance_units: metrics.advance_width(glyph_id),
-        units_per_em: font_ref.metrics(&[]).units_per_em,
+        units_per_em: font_ref.metrics(&coords).units_per_em,
     })
 }
 

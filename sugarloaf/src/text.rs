@@ -74,10 +74,11 @@ struct ShapedRun {
     size_bucket: u16,
     synthetic_bold: bool,
     synthetic_italic: bool,
-    /// Pinned axis coordinates applied when rasterizing this run's
-    /// glyphs; unused on macOS, where variations are baked into the handle.
+    /// The face's instance as normalized coordinates, applied when
+    /// rasterizing this run's glyphs; unused on macOS, where variations
+    /// are baked into the handle.
     #[cfg(not(target_os = "macos"))]
-    variations: Vec<(u32, f32)>,
+    coords: std::sync::Arc<[i16]>,
     ascent_px: i16,
     glyphs: Vec<ShapedGlyph>,
 }
@@ -154,7 +155,9 @@ pub struct Text {
     font_resolve: FxHashMap<(char, u8), (u32, bool)>,
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
     #[cfg(not(target_os = "macos"))]
-    variations_cache: FxHashMap<u32, Vec<(u32, f32)>>,
+    /// Each face's instance as normalized coordinates; see
+    /// [`crate::font::normalized_coords`].
+    variations_cache: FxHashMap<u32, std::sync::Arc<[i16]>>,
     ascent_cache: FxHashMap<(u32, u16), i16>,
     shape_cache: FxHashMap<u64, ShapedRun>,
 
@@ -388,9 +391,8 @@ impl Text {
         };
 
         #[cfg(not(target_os = "macos"))]
-        let (glyphs, ascent_px, variations) = {
+        let (glyphs, ascent_px, coords) = {
             use swash::FontRef;
-            use swash::Setting;
 
             // Pull (or cache) the font bytes + offset + key once per
             // font_id to avoid the RwLock read-lock per shape.
@@ -406,29 +408,25 @@ impl Text {
                 key: font_entry.2,
             };
 
-            // Pinned axis coordinates (empty for normal fonts).
-            let variations = match self.variations_cache.entry(font_id) {
-                std::collections::hash_map::Entry::Occupied(e) => e.get().clone(),
-                std::collections::hash_map::Entry::Vacant(e) => {
+            // The face's instance (empty for the default, and for normal
+            // fonts).
+            let coords = self
+                .variations_cache
+                .entry(font_id)
+                .or_insert_with(|| {
                     let lib = self.font_library.inner.read();
-                    let v = lib.get(&(font_id as usize)).variations.clone();
-                    e.insert(v).clone()
-                }
-            };
-            let settings = variations
-                .iter()
-                .map(|&(tag, value)| Setting { tag, value });
+                    let variations = &lib.get(&(font_id as usize)).variations;
+                    crate::font::normalized_coords(&font_ref, variations).into()
+                })
+                .clone();
 
-            // Ascent — via swash metrics scaled to device-px size.
-            // `metrics` wants normalized variation coords (`&[i16]`),
-            // not `&[Setting<f32>]`. Variations barely affect vertical
-            // metrics in practice, so pass `&[]` here — same pattern
-            // every other `metrics()` call in the crate uses.
+            // Ascent — via swash metrics scaled to device-px size, at the
+            // face's instance.
             let ascent_px = *self
                 .ascent_cache
                 .entry((font_id, size_bucket))
                 .or_insert_with(|| {
-                    let m = font_ref.metrics(&[]).scale(size_u16 as f32);
+                    let m = font_ref.metrics(&coords).scale(size_u16 as f32);
                     m.ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
                 });
 
@@ -438,7 +436,7 @@ impl Text {
                 .shape_ctx
                 .builder(font_ref)
                 .size(size_u16 as f32)
-                .variations(settings)
+                .normalized_coords(coords.iter())
                 .build();
             shaper.add_str(text);
             let mut glyphs: Vec<ShapedGlyph> = Vec::new();
@@ -454,7 +452,7 @@ impl Text {
                     });
                 }
             });
-            (glyphs, ascent_px, variations)
+            (glyphs, ascent_px, coords)
         };
 
         let run = ShapedRun {
@@ -464,7 +462,7 @@ impl Text {
             synthetic_bold,
             synthetic_italic,
             #[cfg(not(target_os = "macos"))]
-            variations,
+            coords,
             ascent_px,
             glyphs,
         };
@@ -621,7 +619,7 @@ impl Text {
                     run.synthetic_bold,
                     run.synthetic_italic,
                     self.font_library.inner.read().hinting,
-                    &run.variations,
+                    &run.coords,
                 )?;
                 let is_color = raw.is_color;
                 let raster = crate::grid::RasterizedGlyph {
@@ -666,7 +664,7 @@ impl Text {
                     run.synthetic_bold,
                     run.synthetic_italic,
                     self.font_library.inner.read().hinting,
-                    &run.variations,
+                    &run.coords,
                 )?;
                 let is_color = raw.is_color;
 
@@ -753,7 +751,7 @@ impl Text {
                 run.synthetic_bold,
                 run.synthetic_italic,
                 self.font_library.inner.read().hinting,
-                &run.variations,
+                &run.coords,
             )?;
             (
                 raw.width,
@@ -1240,14 +1238,14 @@ fn rasterize_swash_glyph(
     synthetic_bold: bool,
     synthetic_italic: bool,
     hint: bool,
-    variations: &[(u32, f32)],
+    coords: &[i16],
 ) -> Option<SwashRawGlyph> {
     use swash::scale::{
         image::{Content, Image as GlyphImage},
         Render, Source,
     };
     use swash::zeno::{Angle, Format, Transform};
-    use swash::{FontRef, Setting};
+    use swash::FontRef;
 
     let font_ref = FontRef {
         data: font_entry.0.as_ref(),
@@ -1255,16 +1253,13 @@ fn rasterize_swash_glyph(
         key: font_entry.2,
     };
 
-    // Pinned axis coordinates pick the instance's outlines.
-    let settings = variations
-        .iter()
-        .map(|&(tag, value)| Setting { tag, value });
-
+    // The instance's outlines. Replacing the context's coordinates, not
+    // adding to them: see `crate::font::normalized_coords`.
     let mut scaler = scale_ctx
         .builder(font_ref)
         .hint(hint)
         .size(size_px)
-        .variations(settings)
+        .normalized_coords(coords.iter())
         .build();
 
     let sources: &[Source] =
@@ -2038,6 +2033,30 @@ fn blit_text_color(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The scale context is shared by every face: a face pinning nothing
+    /// is still drawn at its default instance right after a Bold glyph.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn rasterizing_after_a_bold_glyph_draws_the_regular_one() {
+        let data = crate::font::SharedData::new(
+            crate::font::constants::FONT_CASCADIA_CODE_NF.to_vec(),
+        );
+        let font = swash::FontRef::from_index(data.as_ref(), 0).expect("bundled font");
+        let entry = (data.clone(), font.offset, font.key);
+        let glyph = font.charmap().map('a');
+        let wght = u32::from_be_bytes(*b"wght");
+        let bold = crate::font::normalized_coords(&font, &[(wght, 700.0)]);
+        let draw = |ctx: &mut swash::scale::ScaleContext, coords: &[i16]| {
+            rasterize_swash_glyph(ctx, &entry, glyph, 32.0, false, false, true, coords)
+                .expect("glyph")
+                .bytes
+        };
+        let regular = draw(&mut swash::scale::ScaleContext::new(), &[]);
+        let mut shared = swash::scale::ScaleContext::new();
+        assert_ne!(draw(&mut shared, &bold[..]), regular);
+        assert_eq!(draw(&mut shared, &[]), regular);
+    }
 
     // A font reload hands the UI text renderer a new library. Every
     // cache keyed by the old library's font ids or holding its handles

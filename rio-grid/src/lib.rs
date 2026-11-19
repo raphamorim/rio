@@ -1395,9 +1395,10 @@ pub struct GridGlyphRasterizer {
         bool,
         std::sync::Arc<Vec<rio_backend::sugarloaf::swash::Setting<u16>>>,
     )>,
-    /// Per-font axis pins, mirrored from `FontData.variations`.
+    /// Each face's instance as normalized coordinates, from
+    /// `FontData.variations`; see `sugarloaf::font::normalized_coords`.
     #[cfg(not(target_os = "macos"))]
-    variations_cache: FxHashMap<u32, Vec<(u32, f32)>>,
+    variations_cache: FxHashMap<u32, std::sync::Arc<[i16]>>,
 
     // non-macOS: swash wants UTF-8, so keep a `String` scratch.
     #[cfg(not(target_os = "macos"))]
@@ -1928,21 +1929,9 @@ fn shape_run_swash(
     size_bucket: Option<u16>,
     font_library: &FontLibrary,
 ) -> Option<(Vec<ShapedGlyph>, i16)> {
-    use rio_backend::sugarloaf::swash::{FontRef, Setting};
+    use rio_backend::sugarloaf::swash::FontRef;
 
     let (_, features) = rasterizer.library_settings(font_library);
-    let settings: smallvec::SmallVec<[Setting<f32>; 4]> = rasterizer
-        .variations_cache
-        .entry(font_id)
-        .or_insert_with(|| {
-            let lib = font_library.inner.read();
-            lib.try_get(&(font_id as usize))
-                .map(|f| f.variations.clone())
-                .unwrap_or_default()
-        })
-        .iter()
-        .map(|&(tag, value)| Setting { tag, value })
-        .collect();
 
     let font_entry = rasterizer
         .font_data_cache
@@ -1957,13 +1946,30 @@ fn shape_run_swash(
         offset: font_entry.1,
         key: font_entry.2,
     };
+    // The face's instance (empty for the default, and for normal fonts).
+    let coords = rasterizer
+        .variations_cache
+        .entry(font_id)
+        .or_insert_with(|| {
+            let lib = font_library.inner.read();
+            lib.try_get(&(font_id as usize))
+                .map(|f| {
+                    rio_backend::sugarloaf::font::normalized_coords(
+                        &font_ref,
+                        &f.variations,
+                    )
+                })
+                .unwrap_or_default()
+                .into()
+        })
+        .clone();
 
     let ascent_px = match size_bucket {
         Some(size_bucket) => *rasterizer
             .ascent_cache
             .entry((font_id, size_bucket))
             .or_insert_with(|| {
-                let m = font_ref.metrics(&[]).scale(size_u16 as f32);
+                let m = font_ref.metrics(&coords).scale(size_u16 as f32);
                 rounded_ascent_px(m.ascent)
             }),
         None => 0,
@@ -1974,7 +1980,7 @@ fn shape_run_swash(
         .builder(font_ref)
         .size(size_u16 as f32)
         .features(features.iter().copied())
-        .variations(settings.iter().copied())
+        .normalized_coords(coords.iter())
         .build();
     shaper.add_str(&rasterizer.run_str_scratch);
     let mut glyphs: Vec<ShapedGlyph> = Vec::new();
@@ -3273,13 +3279,18 @@ fn primary_ascent_px(
     .ascent;
     #[cfg(not(target_os = "macos"))]
     let ascent = {
-        let data = font_library.inner.read().get_data(&font_id)?;
+        let lib = font_library.inner.read();
+        let data = lib.get_data(&font_id)?;
         let font = rio_backend::sugarloaf::swash::FontRef {
             data: data.0.as_ref(),
             offset: data.1,
             key: data.2,
         };
-        font.metrics(&[]).scale(size_u16 as f32).ascent
+        let coords = lib
+            .try_get(&font_id)
+            .map(|f| f.normalized_coords())
+            .unwrap_or_default();
+        font.metrics(&coords).scale(size_u16 as f32).ascent
     };
     let ascent = rounded_ascent_px(ascent);
     rasterizer.ascent_cache.insert(key, ascent);
@@ -3601,7 +3612,7 @@ fn rasterize_glyph_native(
             Render, Source,
         },
         zeno::{Angle, Format, Transform},
-        FontRef, Setting,
+        FontRef,
     };
 
     let font_entry = rasterizer.font_data_cache.get(&font_id)?.clone();
@@ -3618,21 +3629,19 @@ fn rasterize_glyph_native(
         .as_ref()
         .map(|s| s.0)
         .unwrap_or(true);
-    let settings: smallvec::SmallVec<[Setting<f32>; 4]> = rasterizer
+    let coords = rasterizer
         .variations_cache
         .get(&font_id)
-        .map(|pins| {
-            pins.iter()
-                .map(|&(tag, value)| Setting { tag, value })
-                .collect()
-        })
+        .cloned()
         .unwrap_or_default();
+    // Replacing the context's coordinates, not adding to them: see
+    // `sugarloaf::font::normalized_coords`.
     let mut scaler = rasterizer
         .scale_ctx
         .builder(font_ref)
         .hint(hinting)
         .size(size_u16 as f32)
-        .variations(settings.iter().copied())
+        .normalized_coords(coords.iter())
         .build();
 
     let sources: &[Source] = match rio_backend::sugarloaf::font::select_color_bitmap(

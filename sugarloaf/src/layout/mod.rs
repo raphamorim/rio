@@ -290,11 +290,16 @@ pub fn compute_cell_metrics(
                     offset,
                     key,
                 };
-                let m = font_ref.metrics(&[]);
+                // At the face's instance.
+                let coords = lib
+                    .try_get(&id)
+                    .map(|font| font.normalized_coords())
+                    .unwrap_or_default();
+                let m = font_ref.metrics(&coords);
                 let upem = m.units_per_em as f32;
                 let s = font_size / upem;
                 let glyph = font_ref.charmap().map(' ' as u32);
-                let advance = font_ref.glyph_metrics(&[]).advance_width(glyph);
+                let advance = font_ref.glyph_metrics(&coords).advance_width(glyph);
                 let cw = if advance > 0.0 {
                     advance * s
                 } else {

@@ -10,8 +10,9 @@ use font_kit::source::SystemSource;
 pub struct ID {
     #[cfg(not(target_arch = "wasm32"))]
     handle: Option<font_kit::handle::Handle>,
-    /// What `Database::query` matched beyond the base face.
-    #[cfg(not(target_arch = "wasm32"))]
+    /// What `Database::query` matched beyond the base face. Not on
+    /// macOS, where CoreText applies the instance itself.
+    #[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
     pub(crate) matched: MatchedFace,
     // TODO: Fix wasm32
     #[cfg(target_arch = "wasm32")]
@@ -29,11 +30,18 @@ pub struct MatchedFace {
 }
 
 impl ID {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
     fn from_handle(handle: font_kit::handle::Handle, matched: MatchedFace) -> Self {
         Self {
             handle: Some(handle),
             matched,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn from_handle(handle: font_kit::handle::Handle) -> Self {
+        Self {
+            handle: Some(handle),
         }
     }
 
@@ -183,6 +191,7 @@ struct FontCandidate {
     stretch: Stretch,
     style: Style,
     /// Instance coordinates the reopened base face cannot reproduce.
+    #[cfg(not(target_os = "macos"))]
     instance: Option<Vec<(u32, f32)>>,
     postscript: Option<String>,
     full_name: String,
@@ -215,44 +224,12 @@ fn family_candidates(
         tracing::debug!("no family match for '{family_name}'");
         return;
     };
-    // Patterns of one family share files; read each at most once here.
-    let mut files: std::collections::HashMap<PathBuf, Option<Vec<u8>>> =
-        std::collections::HashMap::new();
     for handle in family_handle.fonts() {
         if let Ok(font) = handle.load() {
             let props = font.properties();
-            let mut weight = Weight(props.weight.0 as u16);
-            let mut instance = None;
-            // A reopened file only gives its default instance, so recover the
-            // real one: fontconfig hides the 1-based `fvar` id in the high
-            // bits of `FC_INDEX`; DirectWrite reports properties at index 0.
-            if let font_kit::handle::Handle::Path { path, font_index } = handle.clone() {
-                let data = files
-                    .entry(path.clone())
-                    .or_insert_with(|| read_font_file(family_name, &path));
-                if let Some(data) = data.as_deref() {
-                    let face = font_index & 0xFFFF;
-                    let want_italic = props.style != font_kit::properties::Style::Normal;
-                    match font_index >> 16 {
-                        0 => {
-                            instance =
-                                match_instance(data, face, weight.0 as f32, want_italic)
-                        }
-                        instance_id => {
-                            if let Some(coords) =
-                                named_instance_coords(data, face, instance_id - 1)
-                            {
-                                if let Some(w) = fvar_wght(&coords) {
-                                    weight = Weight(
-                                        w.round().clamp(0.0, u16::MAX as f32) as u16,
-                                    );
-                                }
-                                instance = pin_coords(&coords);
-                            }
-                        }
-                    }
-                }
-            }
+            let weight = Weight(props.weight.0 as u16);
+            #[cfg(not(target_os = "macos"))]
+            let (weight, instance) = recover_instance(&font, handle, weight);
             tracing::debug!(
                 "found candidate: weight={}, stretch={:?}, style={:?}",
                 weight.0,
@@ -264,6 +241,7 @@ fn family_candidates(
                 weight,
                 stretch: Stretch::from_font_kit(props.stretch),
                 style: Style::from_font_kit(props.style),
+                #[cfg(not(target_os = "macos"))]
                 instance,
                 postscript: font.postscript_name(),
                 full_name: font.full_name(),
@@ -272,21 +250,65 @@ fn family_candidates(
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn read_font_file(family_name: &str, path: &std::path::Path) -> Option<Vec<u8>> {
-    std::fs::read(path)
-        .inspect_err(|err| {
-            tracing::debug!("cannot read '{family_name}' at {}: {err}", path.display())
-        })
-        .ok()
+/// The instance a pattern stands for, which reopening its file by path
+/// and index can't reproduce, and the weight it resolves to. fontconfig
+/// puts the 1-based `fvar` instance id in the high bits of `FC_INDEX`;
+/// DirectWrite keeps every instance at the base index and tells them
+/// apart only by their properties. (On macOS CoreText applies the
+/// instance itself.)
+#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
+fn recover_instance(
+    font: &font_kit::font::Font,
+    handle: &font_kit::handle::Handle,
+    weight: Weight,
+) -> (Weight, Option<Vec<(u32, f32)>>) {
+    let font_kit::handle::Handle::Path { font_index, .. } = handle else {
+        return (weight, None);
+    };
+    // The bytes `load` already read, not a second read of the file.
+    let Some(data) = font.copy_font_data() else {
+        return (weight, None);
+    };
+    let face = font_index & 0xFFFF;
+    match font_index >> 16 {
+        #[cfg(target_os = "windows")]
+        0 => {
+            let italic = font.properties().style != font_kit::properties::Style::Normal;
+            (weight, match_instance(&data, face, weight.0 as f32, italic))
+        }
+        // fontconfig's pattern for the variable font itself: its default.
+        #[cfg(not(target_os = "windows"))]
+        0 => (weight, None),
+        instance_id => {
+            let Some(coords) = named_instance_coords(&data, face, instance_id - 1) else {
+                return (weight, None);
+            };
+            let weight = fvar_wght(&coords)
+                .map(|w| Weight(w.round().clamp(0.0, u16::MAX as f32) as u16))
+                .unwrap_or(weight);
+            (weight, pin_coords(&coords))
+        }
+    }
+}
+
+/// Whether an axis at `value` makes text italic: `ital` turned on, or
+/// `slnt` leaning further than its default. The one rule for matching an
+/// instance and for the face loaded from it.
+pub(crate) fn leans_italic(tag: u32, value: f32, default: f32) -> bool {
+    match &tag.to_be_bytes() {
+        b"ital" => value > default + 0.5,
+        b"slnt" => value < default,
+        _ => false,
+    }
 }
 
 /// One instance axis: (tag big-endian `u32`, user coordinate, default).
+#[cfg(not(target_os = "macos"))]
 type AxisTriple = (u32, f32, f32);
 
 /// User-space coordinates of named instance `instance_index`, in axis
 /// order; `None` for static fonts or a bad index.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
 fn named_instance_coords(
     data: &[u8],
     face_index: u32,
@@ -299,7 +321,7 @@ fn named_instance_coords(
     Some(instance_triples(&axes, &instance))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
 fn instance_triples(
     axes: &skrifa::AxisCollection<'_>,
     instance: &skrifa::NamedInstance<'_>,
@@ -317,7 +339,7 @@ fn instance_triples(
 }
 
 /// The `wght` coordinate among `coords`, if the font has that axis.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
 fn fvar_wght(coords: &[AxisTriple]) -> Option<f32> {
     let wght = u32::from_be_bytes(*b"wght");
     coords
@@ -328,7 +350,7 @@ fn fvar_wght(coords: &[AxisTriple]) -> Option<f32> {
 
 /// Only the coordinates off their axis default; `None` for the file
 /// default itself.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
 fn pin_coords(coords: &[AxisTriple]) -> Option<Vec<(u32, f32)>> {
     let pinned: Vec<(u32, f32)> = coords
         .iter()
@@ -339,17 +361,16 @@ fn pin_coords(coords: &[AxisTriple]) -> Option<Vec<(u32, f32)>> {
 }
 
 /// Whether coordinates lean on a slant/italic axis.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_os = "windows")]
 fn triple_italic(coords: &[AxisTriple]) -> bool {
-    coords.iter().any(|&(tag, value, default)| {
-        let tag = tag.to_be_bytes();
-        (tag == *b"ital" && value > default + 0.5) || (tag == *b"slnt" && value < default)
-    })
+    coords
+        .iter()
+        .any(|&(tag, value, default)| leans_italic(tag, value, default))
 }
 
 /// The instance `want_wght`/`want_italic` describe. DirectWrite reports
 /// per-instance properties but keeps every instance at the base index.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(target_os = "windows")]
 fn match_instance(
     data: &[u8],
     face_index: u32,
@@ -676,13 +697,18 @@ impl Database {
             let chosen = chosen.or_else(|| find_best_match(&candidates, query));
             if let Some(index) = chosen {
                 tracing::debug!("Best match selected at index {}", index);
-                return Some(ID::from_handle(
-                    candidates[index].handle.clone(),
+                let candidate = &candidates[index];
+                #[cfg(not(target_os = "macos"))]
+                let id = ID::from_handle(
+                    candidate.handle.clone(),
                     MatchedFace {
-                        weight: candidates[index].weight.0 as f32,
-                        coords: candidates[index].instance.clone().unwrap_or_default(),
+                        weight: candidate.weight.0 as f32,
+                        coords: candidate.instance.clone().unwrap_or_default(),
                     },
-                ));
+                );
+                #[cfg(target_os = "macos")]
+                let id = ID::from_handle(candidate.handle.clone());
+                return Some(id);
             } else {
                 tracing::debug!("No best match found from candidates");
             }

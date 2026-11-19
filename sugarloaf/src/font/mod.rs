@@ -1239,6 +1239,21 @@ impl FontData {
         self.handle.as_ref()
     }
 
+    /// [`normalized_coords`] of this face's pinned variations; empty for
+    /// a face without its own data (macOS, where the instance is baked
+    /// into the CoreText handle).
+    pub fn normalized_coords(&self) -> Vec<i16> {
+        let Some(data) = self.data.as_ref() else {
+            return Vec::new();
+        };
+        let font = swash::FontRef {
+            data: data.as_ref(),
+            offset: self.offset,
+            key: self.key,
+        };
+        normalized_coords(&font, &self.variations)
+    }
+
     /// PostScript name extracted at load time (`name` table ID 6).
     /// `None` only for fonts whose name table couldn't be parsed.
     /// Used to map a discovered font path back to a Rio `font_id` in
@@ -1317,10 +1332,14 @@ impl FontData {
                 key: self.key,
             };
 
-            let scaled_metrics = font_ref.metrics(&[]).scale(font_size);
+            // At the face's instance: a pinned one can differ from the
+            // file's default in every metric.
+            let coords = normalized_coords(&font_ref, &self.variations);
+            let scaled_metrics = font_ref.metrics(&coords).scale(font_size);
 
             // Use the unified method that always includes CJK measurement
-            let face_metrics = FaceMetrics::from_font(&font_ref, &scaled_metrics);
+            let face_metrics =
+                FaceMetrics::from_font(&font_ref, &scaled_metrics, &coords, font_size);
 
             // Calculate metrics using consistent approach
             let metrics = if let Some(primary) = primary_metrics {
@@ -1395,9 +1414,13 @@ impl FontData {
                 None => variations.push((WGHT_TAG, f32::from(w))),
             }
         }
+        // The same rule the query matched the instance by.
         if variations.iter().any(|&(tag, value)| {
-            let tag = tag.to_be_bytes();
-            (tag == *b"ital" && value > 0.5) || (tag == *b"slnt" && value < 0.0)
+            let default = font
+                .variations()
+                .find_by_tag(tag)
+                .map_or(0.0, |axis| axis.default_value());
+            loader::leans_italic(tag, value, default)
         }) {
             style = Style::Italic;
         }
@@ -1782,6 +1805,30 @@ enum FindResult {
 /// RGBA atlas. Raw premultiplied strikes cannot pass through Swash's resampler.
 /// Only the non-macOS rasterizers call this, but it is compiled everywhere so
 /// its tests run on every platform.
+/// The normalized coordinates (2.14 fixed point, one per `fvar` axis) of
+/// `variations` on `font`: what swash's metrics take, and what its
+/// scaler should be given. Empty when nothing is pinned, which means the
+/// default instance everywhere swash takes coordinates.
+///
+/// Give the scaler these with `normalized_coords`, never the settings
+/// with `variations`: a `ScaleContext` keeps the coordinates of the last
+/// glyph it scaled, and `variations` only overwrites the axes it names,
+/// so a face pinning nothing would be drawn at the previous face's
+/// instance (a Regular glyph drawn right after a Bold one comes out
+/// Bold).
+pub fn normalized_coords(font: &swash::FontRef, variations: &[(u32, f32)]) -> Vec<i16> {
+    if variations.is_empty() {
+        return Vec::new();
+    }
+    font.variations()
+        .normalized_coords(
+            variations
+                .iter()
+                .map(|&(tag, value)| swash::Setting { tag, value }),
+        )
+        .collect()
+}
+
 pub fn select_color_bitmap(
     font: swash::FontRef<'_>,
     glyph_id: u16,
@@ -2369,6 +2416,52 @@ fn load_fallback_from_memory(slot: Slot) -> FontData {
 
 #[cfg(test)]
 mod alias_tests {
+    /// swash's `ScaleContext` keeps the last glyph's coordinates. Scaling
+    /// with `normalized_coords` replaces them, so a face pinning nothing
+    /// is drawn at its default instance even right after a Bold one.
+    /// (With `variations`, the Regular glyph below comes out Bold.)
+    #[test]
+    fn a_shared_scale_context_draws_each_face_at_its_own_instance() {
+        use swash::scale::{Render, ScaleContext, Source};
+        use swash::zeno::Format;
+        let font = swash::FontRef::from_index(constants::FONT_CASCADIA_CODE_NF, 0)
+            .expect("bundled font");
+        let glyph = font.charmap().map('a');
+        let wght = u32::from_be_bytes(*b"wght");
+        let render = |ctx: &mut ScaleContext, variations: &[(u32, f32)]| {
+            let coords = normalized_coords(&font, variations);
+            let mut scaler = ctx
+                .builder(font)
+                .size(32.0)
+                .hint(true)
+                .normalized_coords(coords.iter())
+                .build();
+            Render::new(&[Source::Outline])
+                .format(Format::Alpha)
+                .render(&mut scaler, glyph)
+                .expect("glyph")
+                .data
+        };
+        let regular = render(&mut ScaleContext::new(), &[]);
+        let bold = render(&mut ScaleContext::new(), &[(wght, 700.0)]);
+        assert_ne!(regular, bold, "the instances differ");
+
+        let mut shared = ScaleContext::new();
+        render(&mut shared, &[(wght, 700.0)]);
+        assert_eq!(render(&mut shared, &[]), regular);
+    }
+
+    #[test]
+    fn normalized_coords_are_empty_only_without_pins() {
+        let font = swash::FontRef::from_index(constants::FONT_CASCADIA_CODE_NF, 0)
+            .expect("bundled font");
+        let wght = u32::from_be_bytes(*b"wght");
+        assert!(normalized_coords(&font, &[]).is_empty());
+        let bold = normalized_coords(&font, &[(wght, 700.0)]);
+        assert_eq!(bold.len(), font.variations().len());
+        assert!(bold.iter().any(|&c| c != 0), "wght 700 is off the default");
+    }
+
     use super::*;
 
     #[cfg(target_os = "macos")]
@@ -2805,6 +2898,9 @@ mod alias_tests {
     /// End-to-end for the merge above: design axes fontconfig matched
     /// (like `MONO`) must survive an explicit `weight` through the real
     /// query chain. `cargo test -p sugarloaf --lib -- --ignored`.
+    /// Not on macOS, whose lookup is CoreText's and applies the instance
+    /// itself.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     #[ignore = "requires Recursive installed locally"]
     fn explicit_weight_keeps_real_recursive_query_match() {
