@@ -616,6 +616,8 @@ where
     /// both the `cap=grapheme` advertisement and the
     /// `reason=unsupported` reply follow it.
     glyph_grapheme_query: bool,
+    /// Glyph Protocol payload formats the frontend draws.
+    glyph_formats: &'static [&'static str],
 
     /// When the running shell command started its output (OSC 133 `C`),
     /// so `D` can report how long it ran. `None` between commands.
@@ -705,6 +707,7 @@ impl<U: EventListener> Crosswords<U> {
             focused: false,
             program_status_seen: false,
             glyph_grapheme_query: false,
+            glyph_formats: crate::ansi::glyph_protocol::SUPPORTED_FORMATS,
             command_started_at: None,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
@@ -734,6 +737,13 @@ impl<U: EventListener> Crosswords<U> {
     /// place.
     pub fn set_glyph_grapheme_query(&mut self, enabled: bool) {
         self.glyph_grapheme_query = enabled;
+    }
+
+    /// Limit Glyph Protocol to the payload formats the frontend draws:
+    /// the `s` reply lists exactly these and `r` refuses any other. All
+    /// of them by default; empty for a frontend that draws none.
+    pub fn set_glyph_formats(&mut self, formats: &'static [&'static str]) {
+        self.glyph_formats = formats;
     }
 
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
@@ -5951,6 +5961,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // §7.3: cleared codepoints fall back to font rendering on the
         // next frame — repaint everything that might show them.
         self.mark_fully_damaged();
+    }
+
+    fn glyph_formats(&self) -> &'static [&'static str] {
+        self.glyph_formats
     }
 
     fn glyph_grapheme_query_enabled(&self) -> bool {

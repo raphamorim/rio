@@ -808,12 +808,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         .glyph_registry_for(route_id)
                         .is_some_and(|r| r.contains(cp));
                     let in_system = library.covers_codepoint(cp);
-                    let status = match (in_glossary, in_system) {
-                        (true, true) => QueryStatus::Both,
-                        (true, false) => QueryStatus::Glossary,
-                        (false, true) => QueryStatus::System,
-                        (false, false) => QueryStatus::Free,
-                    };
+                    let status = QueryStatus::new(in_glossary, in_system);
                     let resp = format_query_response(cp, status);
                     // Any tab, like PtyWrite: a query from a pane in a
                     // background tab still needs its reply (§5.5).

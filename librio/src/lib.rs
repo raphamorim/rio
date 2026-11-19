@@ -10,6 +10,11 @@ pub use key::{
 pub use render_state::{
     ImageLayer, ImagePlacement, ImageProtocol, RenderState, ViewportSelection,
 };
+#[cfg(feature = "graphics")]
+pub use rio_graphics::{
+    glyph::{glyf_decode, glyph_registry},
+    glyph_layout, glyph_vector,
+};
 pub use rio_vt::clipboard::ClipboardType;
 pub use rio_vt::config::colors::term::TermColors;
 pub use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
@@ -182,6 +187,21 @@ pub trait SurfaceDelegate: MaybeSendSync + 'static {
     fn handles_program_status(&self) -> bool {
         false
     }
+    /// Glyph Protocol payload formats this delegate draws, out of
+    /// `"glyf"`, `"colrv0"`, `"colrv1"` and `"vg"`. Read once per surface
+    /// at creation. Programs are offered exactly these and may register
+    /// nothing else; the host reads a registration with
+    /// [`Surface::glyph`] and draws it in place of the font's glyph.
+    /// None by default, which leaves the protocol off.
+    fn glyph_formats(&self) -> &'static [&'static str] {
+        &[]
+    }
+    /// A program asked what draws `cp` (Glyph Protocol `q`). Only called
+    /// with [`Self::glyph_formats`] non-empty, and like [`Self::wakeup`]
+    /// with the terminal locked. The host MUST answer once with
+    /// [`Surface::glyph_query_reply`], from here or any thread: the
+    /// terminal holds its later replies until then.
+    fn glyph_query(&self, _surface: SurfaceId, _cp: u32) {}
     /// Bytes the terminal wants delivered to the child process. Only called
     /// on non-`pty` builds, where the host owns the transport (a WebSocket
     /// to a real shell, an in-page demo interpreter, ...); with a PTY the
@@ -240,9 +260,18 @@ pub(crate) struct Listener {
     surface_id: SurfaceId,
     delegate: Arc<dyn SurfaceDelegate>,
     inline_images: InlineImages,
+    /// Whether the host answers glyph queries: it draws some format.
+    glyph_queries: bool,
+    held: HeldReplies,
     #[cfg(feature = "pty")]
     pty_writer: Arc<Mutex<Option<corcovado::channel::Sender<Msg>>>>,
 }
+
+/// What goes back to the terminal behind a glyph query the host has yet
+/// to answer, in request order: `None` is a query's own place, the rest
+/// are the replies and declines that came after it.
+type HeldReplies =
+    Arc<std::sync::Mutex<std::collections::VecDeque<Option<Cow<'static, [u8]>>>>>;
 
 impl Listener {
     fn dispatch(&self, event: RioEvent) {
@@ -285,6 +314,10 @@ impl Listener {
             // terminal knows when it has every one of them.
             RioEvent::PtyWrite(_, text) => {
                 self.pass_back(Cow::Owned(text.into_bytes()));
+            }
+            RioEvent::GlyphProtocolQuery { cp, .. } if self.glyph_queries => {
+                self.held.lock().unwrap().push_back(None);
+                self.delegate.glyph_query(self.surface_id, cp);
             }
             // Not answered here. The terminal is told the query is
             // settled, so the replies behind it take the direct path.
@@ -366,6 +399,16 @@ impl Listener {
     /// the terminal: the PTY's writer settles one fenced item with it
     /// on `pty` builds, the delegate gets the bytes otherwise.
     fn pass_back(&self, bytes: Cow<'static, [u8]>) {
+        let mut held = self.held.lock().unwrap();
+        if held.is_empty() {
+            self.deliver(bytes)
+        } else {
+            held.push_back(Some(bytes))
+        }
+    }
+
+    /// One of those, past the held ones.
+    fn deliver(&self, bytes: Cow<'static, [u8]>) {
         #[cfg(feature = "pty")]
         if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
             let _ = channel.send(Msg::Reply(bytes));
@@ -482,6 +525,12 @@ fn trailing_url_punctuation(text: &str) -> usize {
 
 pub struct Surface {
     id: SurfaceId,
+    /// The terminal's glyph registry; see [`Surface::glyph`].
+    #[cfg(feature = "graphics")]
+    glyphs: glyph_registry::GlyphRegistry,
+    /// For the replies held behind a glyph query.
+    #[cfg(feature = "graphics")]
+    replies: Listener,
     alt_is_meta: std::sync::atomic::AtomicBool,
     terminal: Arc<TerminalLock<Crosswords<Listener>>>,
     /// Compiled URL detector, built on first hover. Hit-testing runs per
@@ -566,13 +615,23 @@ impl Surface {
         #[cfg(feature = "pty")]
         let pty_writer = Arc::new(Mutex::new(None));
         let inline_images = InlineImages::default();
+        // Without `graphics` nothing stores a registration.
+        let glyph_formats = if cfg!(feature = "graphics") {
+            engine.delegate.glyph_formats()
+        } else {
+            &[]
+        };
         let listener = Listener {
             surface_id: id,
             delegate: engine.delegate.clone(),
             inline_images: inline_images.clone(),
+            glyph_queries: !glyph_formats.is_empty(),
+            held: Default::default(),
             #[cfg(feature = "pty")]
             pty_writer: pty_writer.clone(),
         };
+        #[cfg(feature = "graphics")]
+        let replies = listener.clone();
 
         let mut terminal = Crosswords::new(
             GridSize::new(
@@ -588,6 +647,9 @@ impl Surface {
             desc.scrollback,
         );
         terminal.set_program_status_enabled(engine.delegate.handles_program_status());
+        terminal.set_glyph_formats(glyph_formats);
+        #[cfg(feature = "graphics")]
+        let glyphs = terminal.glyph_registry.insert(Default::default()).clone();
         // On wasm the delegate (and so the whole graph) is single-threaded
         // by design; Arc stays because the pty build shares it with the IO
         // thread and the API is one type on every target.
@@ -598,6 +660,10 @@ impl Surface {
         {
             Ok(Surface {
                 id,
+                #[cfg(feature = "graphics")]
+                glyphs,
+                #[cfg(feature = "graphics")]
+                replies,
                 // Terminals default alt to meta; the host may override it.
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
                 terminal,
@@ -682,6 +748,10 @@ impl Surface {
 
             Ok(Surface {
                 id,
+                #[cfg(feature = "graphics")]
+                glyphs,
+                #[cfg(feature = "graphics")]
+                replies,
                 // Terminals default alt to meta; the host may override it.
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
                 terminal,
@@ -718,6 +788,33 @@ impl Surface {
             }
         }
         self.send(bytes);
+    }
+
+    /// The glyph a program registered at `cp` (Glyph Protocol), to draw in
+    /// place of the font's wherever a cell holds `cp`. Never takes the
+    /// terminal lock, so cheap per cell; a registration damages the whole
+    /// screen and bumps `version`, which can key a raster cache.
+    #[cfg(feature = "graphics")]
+    pub fn glyph(&self, cp: u32) -> Option<glyph_registry::RegisteredGlyph> {
+        glyph_registry::in_registration_block(cp)
+            .then(|| self.glyphs.get(cp))
+            .flatten()
+    }
+
+    /// Answer the oldest unanswered [`SurfaceDelegate::glyph_query`]:
+    /// `system` is whether the host's fonts cover `cp`. Whether a program
+    /// registered it is filled in here, and the replies held behind the
+    /// query follow it.
+    #[cfg(feature = "graphics")]
+    pub fn glyph_query_reply(&self, cp: u32, system: bool) {
+        use rio_vt::ansi::glyph_protocol::{format_query_response, QueryStatus};
+        let status = QueryStatus::new(self.glyphs.contains(cp), system);
+        let mut held = self.replies.held.lock().unwrap();
+        held.pop_front();
+        held.push_front(Some(format_query_response(cp, status).into_bytes().into()));
+        while let Some(bytes) = held.pop_front_if(|reply| reply.is_some()).flatten() {
+            self.replies.deliver(bytes);
+        }
     }
 
     /// Bytes for the child, as they are: the PTY on `pty` builds, the
@@ -2812,5 +2909,72 @@ mod tests {
             .image_placement(0, CELL_W, CELL_H)
             .expect("back in view");
         assert_eq!(placement.geometry.y, 0.0);
+    }
+
+    // Registers one contour with one on-curve point, the smallest `glyf`.
+    #[cfg(feature = "graphics")]
+    const REGISTER_GLYPH: &[u8] =
+        b"\x1b_25a1;r;cp=100000;reply=0;upm=1000;AAEAAAAAAAAAAAAAAAABAAAAAA==\x1b\\";
+
+    // A delegate that draws no glyphs leaves Glyph Protocol off: nothing
+    // a program registers is kept.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_needs_the_delegate_to_opt_in() {
+        let surface = quiet_surface(80, 24);
+
+        surface.inject_output(REGISTER_GLYPH);
+
+        assert!(surface.glyph(0x100000).is_none());
+    }
+
+    // A delegate that draws `glyf` reads what a program registers in it,
+    // has that format alone offered to programs, and answers the
+    // program's query in request order.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_reaches_the_delegate() {
+        struct GlyphHost(Mutex<Vec<u32>>);
+        impl SurfaceDelegate for GlyphHost {
+            fn wakeup(&self, _surface: SurfaceId) {}
+            fn glyph_formats(&self) -> &'static [&'static str] {
+                &["glyf"]
+            }
+            fn glyph_query(&self, _surface: SurfaceId, cp: u32) {
+                self.0.lock().unwrap().push(cp);
+            }
+        }
+        let delegate = Arc::new(GlyphHost(Mutex::new(Vec::new())));
+        let engine = Engine::new(delegate.clone());
+        // The child shows the replies it is sent.
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec!["-c".into(), "stty raw -echo; printf READY; cat -v".into()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn cat");
+        let shown = |text: &str| {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            while !surface.dump().contains(text) {
+                assert!(
+                    Instant::now() < deadline,
+                    "no {text:?} in {:?}",
+                    surface.dump()
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        shown("READY");
+
+        surface.inject_output(REGISTER_GLYPH);
+        let glyph = surface.glyph(0x100000).expect("registered");
+        assert_eq!((glyph.upm, glyph.width), (1000, 1));
+
+        // The support reply waits behind the query until the host answers.
+        surface.inject_output(b"\x1b_25a1;q;cp=100000\x1b\\\x1b_25a1;s\x1b\\");
+        assert_eq!(*delegate.0.lock().unwrap(), [0x100000]);
+        surface.glyph_query_reply(0x100000, false);
+        shown("q;cp=100000;status=glossary^[\\^[_25a1;s;fmt=glyf^[\\");
     }
 }

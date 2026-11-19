@@ -59,10 +59,8 @@ pub fn is_glyph_protocol(body: &[u8]) -> bool {
 pub const MAX_PAYLOAD_BYTES: usize = 32 * 1024;
 
 /// Payload formats this build supports, advertised in the reply to
-/// the `s` verb as a comma-separated list of names. An empty slice
-/// produces `fmt=` (protocol implemented but no payload format
-/// accepted) — a degenerate state reserved for future negotiation,
-/// never produced by this build.
+/// the `s` verb as a comma-separated list of names unless the host
+/// draws fewer.
 pub const SUPPORTED_FORMATS: &[&str] = &["glyf", "colrv0", "colrv1", "vg"];
 
 pub use rio_graphics::glyph_namespace::in_registration_block;
@@ -235,6 +233,17 @@ pub enum QueryStatus {
 }
 
 impl QueryStatus {
+    /// The status of a codepoint, from whether the session's glossary
+    /// and the terminal's fonts cover it.
+    pub fn new(glossary: bool, system: bool) -> Self {
+        match (glossary, system) {
+            (true, true) => QueryStatus::Both,
+            (true, false) => QueryStatus::Glossary,
+            (false, true) => QueryStatus::System,
+            (false, false) => QueryStatus::Free,
+        }
+    }
+
     /// Wire form of the `status=` value: a comma-separated list of
     /// coverage names. `Free` returns the empty string.
     pub fn as_str(self) -> &'static str {
@@ -306,6 +315,12 @@ pub enum ParseError {
 /// Parse a raw APC body (minus the `ESC _` introducer and `ESC \`
 /// terminator) into a [`GlyphCommand`].
 pub fn parse(body: &[u8]) -> Result<GlyphCommand, ParseError> {
+    parse_with(body, SUPPORTED_FORMATS)
+}
+
+/// [`parse`] for a terminal that lists only `formats` in its `s` reply:
+/// a registration in any other format is refused as unsupported.
+pub fn parse_with(body: &[u8], formats: &[&str]) -> Result<GlyphCommand, ParseError> {
     if !is_glyph_protocol(body) {
         return Err(ParseError::NotGlyphProtocol);
     }
@@ -320,7 +335,7 @@ pub fn parse(body: &[u8]) -> Result<GlyphCommand, ParseError> {
     match verb[0] {
         b's' => parse_support(rest),
         b'q' => parse_query(rest),
-        b'r' => parse_register(rest),
+        b'r' => parse_register(rest, formats),
         b'c' => parse_clear(rest),
         _ => Err(ParseError::Malformed("unknown verb")),
     }
@@ -367,7 +382,7 @@ fn parse_query(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     }
 }
 
-fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
+fn parse_register(rest: &[u8], formats: &[&str]) -> Result<GlyphCommand, ParseError> {
     // Register splits control parameters from the payload at the LAST
     // `;`. Neither base64 nor `fmt=vg` text has a `;`, so this is
     // unambiguous.
@@ -406,7 +421,7 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     // `s` gets its own reason, so a client can tell it from a bad
     // payload and fall back to a listed one.
     let fmt = params.get("fmt").copied().unwrap_or(b"glyf");
-    if !SUPPORTED_FORMATS.iter().any(|name| name.as_bytes() == fmt) {
+    if !formats.iter().any(|name| name.as_bytes() == fmt) {
         return Err(ParseError::RegisterFailed {
             cp,
             reason: RegisterError::UnsupportedFormat,
@@ -493,7 +508,14 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
                 .map_err(|reason| ParseError::RegisterFailed { cp, reason, reply })?;
             GlyphPayload::ColrV1 { container, upm }
         }
-        _ => unreachable!("fmt validated above"),
+        // A name the host lists but this parser doesn't know.
+        _ => {
+            return Err(ParseError::RegisterFailed {
+                cp,
+                reason: RegisterError::UnsupportedFormat,
+                reply,
+            })
+        }
     };
 
     Ok(GlyphCommand::Register {
@@ -873,9 +895,8 @@ impl<'a> Params<'a> {
 
 /// Format the reply to `s` (support). `fmts` is the list of supported
 /// payload format names, joined with `,` on the wire. An empty slice
-/// produces `fmt=` — a degenerate "protocol implemented but no payload
-/// format accepted" state, reserved for future negotiation and never
-/// produced by this build. `caps` lists optional capabilities (§3.3);
+/// produces `fmt=`: protocol implemented but no payload format
+/// accepted. `caps` lists optional capabilities (§3.3);
 /// the `cap` key is left out when there are none, which the spec
 /// defines as equal to an empty `cap=`.
 pub(crate) fn format_support_response(fmts: &[&str], caps: &[&str]) -> String {
@@ -1323,6 +1344,25 @@ mod tests {
             format_register_error(0x10_0000, RegisterError::UnsupportedFormat),
             "\x1b_25a1;r;cp=100000;status=1;reason=unsupported_format\x1b\\"
         );
+    }
+
+    #[test]
+    fn a_host_list_limits_what_registers() {
+        // A format the host leaves out is refused, and so is one it
+        // names that this parser doesn't know.
+        for (fmt, formats) in [("colrv0", &["glyf"][..]), ("svg", &["svg"][..])] {
+            let body = format!("25a1;r;cp=100000;fmt={fmt};AAAA");
+            assert!(
+                matches!(
+                    parse_with(body.as_bytes(), formats),
+                    Err(ParseError::RegisterFailed {
+                        reason: RegisterError::UnsupportedFormat,
+                        ..
+                    })
+                ),
+                "{fmt}"
+            );
+        }
     }
 
     #[test]
