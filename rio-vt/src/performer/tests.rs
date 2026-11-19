@@ -414,9 +414,11 @@ fn child_exit_drains_multiple_budgets_and_finishes_pending_sync() {
 }
 
 /// The exit statuses a machine reports.
+#[cfg(unix)]
 #[derive(Clone)]
 struct ExitRecorder(mpsc::Sender<Option<i32>>);
 
+#[cfg(unix)]
 impl EventListener for ExitRecorder {
     fn send_event(&self, event: RioEvent, _: WindowId) {
         if let RioEvent::ChildExited(_, status) = event {
@@ -426,6 +428,7 @@ impl EventListener for ExitRecorder {
 }
 
 /// `pty` reads to its end and then hangs up, with the read token armed.
+#[cfg(unix)]
 fn hangup_machine(
     mut pty: TestPty,
 ) -> (
