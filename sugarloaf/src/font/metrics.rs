@@ -83,12 +83,28 @@ impl FaceMetrics {
     /// This is the standard method for creating FaceMetrics that includes measuring
     /// the CJK water ideograph "水" (U+6C34) for proper font size normalization
     /// when mixing CJK and Latin fonts.
+    ///
+    /// `metrics` is `font_ref.metrics(coords)` scaled to `font_size`, and
+    /// `coords` the face's instance ([`crate::font::normalized_coords`]).
     pub fn from_font(
         font_ref: &swash::FontRef,
         metrics: &FontIntrospectorMetrics,
+        coords: &[i16],
+        font_size: f32,
     ) -> Self {
+        // `hhea`'s widest advance is the default instance's, whatever the
+        // coordinates: no variation table can change it. An instance off
+        // the default is measured from its own advances instead; the
+        // default has no coordinates, even when pinned at its own values
+        // (see `crate::font::normalized_coords`).
+        let cell_width = if coords.is_empty() {
+            metrics.max_width
+        } else {
+            Self::instance_cell_width(font_ref, coords, font_size)
+                .unwrap_or(metrics.max_width)
+        };
         Self {
-            cell_width: metrics.max_width as f64,
+            cell_width: cell_width as f64,
             ascent: metrics.ascent as f64,
             descent: metrics.descent as f64,
             line_gap: metrics.leading as f64,
@@ -99,8 +115,25 @@ impl FaceMetrics {
             cap_height: Some(metrics.cap_height as f64),
             ex_height: Some(metrics.x_height as f64),
             // Measure actual CJK character width from the font
-            ic_width: Self::measure_cjk_character_width(font_ref),
+            ic_width: Self::measure_cjk_character_width(font_ref, coords),
         }
+    }
+
+    /// The widest printable ASCII advance at `coords`, in pixels at
+    /// `font_size`: the cell a monospace instance's text takes. `None`
+    /// when the font maps none of them.
+    fn instance_cell_width(
+        font_ref: &swash::FontRef,
+        coords: &[i16],
+        font_size: f32,
+    ) -> Option<f32> {
+        let charmap = font_ref.charmap();
+        let advances = font_ref.glyph_metrics(coords).scale(font_size);
+        (0x20u32..=0x7E)
+            .map(|c| charmap.map(c))
+            .filter(|&glyph| glyph != 0)
+            .map(|glyph| advances.advance_width(glyph))
+            .reduce(f32::max)
     }
 
     /// Measure the width of the CJK water ideograph character "水" (U+6C34)
@@ -113,7 +146,10 @@ impl FaceMetrics {
     /// - It's present in virtually all CJK fonts (basic kanji/hanzi)
     /// - Its width is representative of typical CJK character width
     /// - It avoids edge cases like punctuation or rare characters
-    fn measure_cjk_character_width(font_ref: &swash::FontRef) -> Option<f64> {
+    fn measure_cjk_character_width(
+        font_ref: &swash::FontRef,
+        coords: &[i16],
+    ) -> Option<f64> {
         const CJK_WATER_IDEOGRAPH: u32 = 0x6C34; // "水"
 
         // Get character map
@@ -127,7 +163,7 @@ impl FaceMetrics {
         }
 
         // Get glyph metrics
-        let glyph_metrics = font_ref.glyph_metrics(&[]);
+        let glyph_metrics = font_ref.glyph_metrics(coords);
 
         // Get advance width for the glyph
         let advance_width = glyph_metrics.advance_width(glyph_id);
@@ -330,6 +366,74 @@ impl Metrics {
 
 #[cfg(test)]
 mod tests {
+    /// The cell of a pinned instance is its own widest ASCII advance, not
+    /// `hhea`'s, which is the default instance's whatever the coordinates.
+    /// SF is proportional, so its advances follow `wght`; skipped where it
+    /// isn't installed.
+    #[test]
+    fn a_pinned_instance_measures_its_own_cell() {
+        let Ok(data) = std::fs::read("/System/Library/Fonts/SFNS.ttf") else {
+            return;
+        };
+        let font = swash::FontRef::from_index(&data, 0).expect("SF");
+        let wght = u32::from_be_bytes(*b"wght");
+        let size = 16.0;
+        let at = |variations: &[(u32, f32)]| {
+            let coords = crate::font::normalized_coords(&font, variations);
+            let metrics = font.metrics(&coords).scale(size);
+            FaceMetrics::from_font(&font, &metrics, &coords, size)
+        };
+        let default = at(&[]);
+        assert_eq!(
+            default.cell_width,
+            font.metrics(&[]).scale(size).max_width as f64,
+            "the default instance keeps hhea's width"
+        );
+        let wght_default = font
+            .variations()
+            .find_by_tag(wght)
+            .expect("SF has wght")
+            .default_value();
+        assert_eq!(
+            at(&[(wght, wght_default)]).cell_width,
+            default.cell_width,
+            "pinning the default is the default"
+        );
+        let light = at(&[(wght, 200.0)]);
+        let heavy = at(&[(wght, 900.0)]);
+        assert!(
+            heavy.cell_width > light.cell_width,
+            "{} > {}",
+            heavy.cell_width,
+            light.cell_width
+        );
+        assert!(
+            heavy.cell_width < default.cell_width,
+            "not hhea's widest glyph"
+        );
+    }
+
+    /// For a monospace font both measures agree, so the bundled font's
+    /// cell doesn't change when an instance is pinned.
+    #[test]
+    fn a_monospace_instance_keeps_the_cell() {
+        let font =
+            swash::FontRef::from_index(crate::font::constants::FONT_CASCADIA_CODE_NF, 0)
+                .expect("bundled font");
+        let wght = u32::from_be_bytes(*b"wght");
+        let size = 16.0;
+        let coords = crate::font::normalized_coords(&font, &[(wght, 700.0)]);
+        let bold = FaceMetrics::from_font(
+            &font,
+            &font.metrics(&coords).scale(size),
+            &coords,
+            size,
+        );
+        let regular =
+            FaceMetrics::from_font(&font, &font.metrics(&[]).scale(size), &[], size);
+        assert_eq!(bold.cell_width, regular.cell_width);
+    }
+
     use super::*;
 
     #[test]
