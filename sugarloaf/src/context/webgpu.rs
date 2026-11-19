@@ -1,5 +1,24 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use crate::sugarloaf::{Colorspace, SugarloafWindow, SugarloafWindowSize};
 use crate::SugarloafRenderer;
+
+/// Minimum spacing between surface repairs (reconfigure or recreate)
+/// while acquisition keeps failing.
+const SURFACE_REPAIR_INTERVAL: Duration = Duration::from_millis(500);
+
+/// Result of trying to get the next swapchain texture.
+pub enum FrameAcquisition {
+    Ready(wgpu::SurfaceTexture),
+    /// No texture this frame. `retry` asks the embedder to schedule
+    /// another frame soon: the surface was repaired (or the device
+    /// needs rebuilding) and the dropped frame's damage is gone.
+    Skipped {
+        retry: bool,
+    },
+}
 
 pub struct WgpuContext<'a> {
     pub device: wgpu::Device,
@@ -14,6 +33,22 @@ pub struct WgpuContext<'a> {
     pub supports_f16: bool,
     pub colorspace: Colorspace,
     pub max_texture_dimension_2d: u32,
+    instance: wgpu::Instance,
+    adapter: wgpu::Adapter,
+    window_handle: raw_window_handle::RawWindowHandle,
+    display_handle: raw_window_handle::RawDisplayHandle,
+    /// Set by a `Suboptimal` acquire; the surface can only be
+    /// reconfigured once that frame's texture has been presented.
+    needs_reconfigure: bool,
+    /// Flipped by wgpu's device-lost callback. A lost device makes
+    /// every later call a silent no-op (wgpu drops `DeviceLost`
+    /// errors instead of raising them), so the renderer has to poll
+    /// this and rebuild.
+    device_lost: Arc<AtomicBool>,
+    /// Last acquisition failure logged, so a surface that keeps failing
+    /// logs once per kind instead of once per frame.
+    last_acquire_failure: Option<&'static str>,
+    last_surface_repair: Option<Instant>,
 }
 
 impl<'a> WgpuContext<'a> {
@@ -24,6 +59,8 @@ impl<'a> WgpuContext<'a> {
     ) -> WgpuContext<'a> {
         let size = sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
+        let window_handle = sugarloaf_window.handle;
+        let display_handle = sugarloaf_window.display;
 
         // The backend can be configured using the `WGPU_BACKEND`
         // environment variable. If the variable is not set, the primary backend
@@ -110,39 +147,7 @@ impl<'a> WgpuContext<'a> {
         let alpha_capable_adapter: Option<wgpu::Adapter> = None;
 
         let default_adapter = |surface: &wgpu::Surface| {
-            futures::executor::block_on(instance.request_adapter(
-                &wgpu::RequestAdapterOptions {
-                    // Hard-coded — sugarloaf used to expose a
-                    // `power_preference` knob, but in practice every Rio
-                    // user picks `HighPerformance` (the alternative gives
-                    // visibly worse text on hybrid laptops). Removed from
-                    // the public API.
-                    power_preference: wgpu::PowerPreference::HighPerformance,
-                    compatible_surface: Some(surface),
-                    force_fallback_adapter: false,
-                    apply_limit_buckets: false,
-                },
-            ))
-            .expect("Request adapter")
-        };
-        let request_device = |adapter: &wgpu::Adapter| {
-            if let Ok(result) = futures::executor::block_on(
-                adapter.request_device(&wgpu::DeviceDescriptor::default()),
-            ) {
-                Ok((result.0, result.1))
-            } else {
-                // These downlevel limits will allow the code to run on all possible hardware
-                futures::executor::block_on(adapter.request_device(
-                    &wgpu::DeviceDescriptor {
-                        memory_hints: wgpu::MemoryHints::Performance,
-                        label: None,
-                        required_features: wgpu::Features::empty(),
-                        required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
-                        ..Default::default()
-                    },
-                ))
-                .map(|result| (result.0, result.1))
-            }
+            request_default_adapter(&instance, surface).expect("Request adapter")
         };
 
         let (adapter, device, queue) = match alpha_capable_adapter {
@@ -202,39 +207,13 @@ impl<'a> WgpuContext<'a> {
             wgpu::CompositeAlphaMode::Auto
         };
 
-        // Configure view formats for wide color gamut support
-        let view_formats = match renderer_config.colorspace {
-            Colorspace::DisplayP3 | Colorspace::Rec2020 => {
-                // For wide color gamut, we may want to support additional view formats
-                // This allows the surface to be viewed in different formats
-                vec![format]
-            }
-            Colorspace::Srgb => {
-                vec![]
-            }
-        };
-
-        surface.configure(
-            &device,
-            &wgpu::SurfaceConfiguration {
-                usage: Self::get_texture_usage(&surface_caps),
-                format,
-                width: size.width as u32,
-                height: size.height as u32,
-                view_formats,
-                alpha_mode,
-                color_space: wgpu::SurfaceColorSpace::Auto,
-                present_mode: wgpu::PresentMode::Fifo,
-                desired_maximum_frame_latency: 2,
-            },
-        );
-
         let max_texture_dimension_2d = device.limits().max_texture_dimension_2d;
+        let device_lost = watch_device_loss(&device);
 
         tracing::info!("Configured colorspace: {:?}", renderer_config.colorspace);
         tracing::info!("Surface format: {:?}", format);
 
-        WgpuContext {
+        let context = WgpuContext {
             device,
             queue,
             surface,
@@ -251,7 +230,17 @@ impl<'a> WgpuContext<'a> {
             supports_f16: false,
             colorspace: renderer_config.colorspace,
             max_texture_dimension_2d,
-        }
+            instance,
+            adapter,
+            window_handle,
+            display_handle,
+            needs_reconfigure: false,
+            device_lost,
+            last_acquire_failure: None,
+            last_surface_repair: None,
+        };
+        context.configure_surface();
+        context
     }
 
     fn get_texture_usage(caps: &wgpu::SurfaceCapabilities) -> wgpu::TextureUsages {
@@ -280,7 +269,11 @@ impl<'a> WgpuContext<'a> {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.size.width = width as f32;
         self.size.height = height as f32;
+        self.needs_reconfigure = false;
+        self.configure_surface();
+    }
 
+    fn configure_surface(&self) {
         // Configure view formats for wide color gamut support
         let view_formats = match self.colorspace {
             Colorspace::DisplayP3 | Colorspace::Rec2020 => {
@@ -296,8 +289,8 @@ impl<'a> WgpuContext<'a> {
             &wgpu::SurfaceConfiguration {
                 usage: Self::get_texture_usage(&self.surface_caps),
                 format: self.format,
-                width,
-                height,
+                width: self.size.width as u32,
+                height: self.size.height as u32,
                 view_formats,
                 alpha_mode: self.alpha_mode,
                 color_space: wgpu::SurfaceColorSpace::Auto,
@@ -305,6 +298,136 @@ impl<'a> WgpuContext<'a> {
                 desired_maximum_frame_latency: 2,
             },
         );
+    }
+
+    /// Get the next swapchain texture, repairing the surface when the
+    /// platform reports it stale. Never blocks on a repair: a frame that
+    /// could not be acquired is skipped and the caller decides whether
+    /// to schedule another.
+    pub fn acquire_frame(&mut self) -> FrameAcquisition {
+        if self.is_device_lost() {
+            return FrameAcquisition::Skipped { retry: true };
+        }
+        if std::mem::take(&mut self.needs_reconfigure) {
+            self.configure_surface();
+        }
+
+        let (failure, retry) = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame) => {
+                self.last_acquire_failure = None;
+                self.last_surface_repair = None;
+                return FrameAcquisition::Ready(frame);
+            }
+            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                self.needs_reconfigure = true;
+                self.last_acquire_failure = None;
+                self.last_surface_repair = None;
+                return FrameAcquisition::Ready(frame);
+            }
+            // Minimized or covered: nothing to draw until a window event.
+            wgpu::CurrentSurfaceTexture::Occluded => {
+                return FrameAcquisition::Skipped { retry: false };
+            }
+            wgpu::CurrentSurfaceTexture::Timeout => ("timed out", true),
+            // A minimized window can report `Outdated` on every frame;
+            // repairing it each time would only burn CPU until the
+            // restore resizes (and reconfigures) the surface anyway.
+            wgpu::CurrentSurfaceTexture::Outdated => {
+                let repaired = self.may_repair_surface();
+                if repaired {
+                    self.configure_surface();
+                }
+                ("was outdated", repaired)
+            }
+            wgpu::CurrentSurfaceTexture::Lost => {
+                let repaired = self.may_repair_surface();
+                if repaired {
+                    self.recreate_surface();
+                }
+                ("lost the surface", repaired)
+            }
+            wgpu::CurrentSurfaceTexture::Validation => {
+                // wgpu drops `DeviceLost` errors and reports the acquire
+                // as a validation failure. A destroyed device only runs
+                // its lost callback when polled.
+                let _ = self.device.poll(wgpu::PollType::Poll);
+                if self.is_device_lost() {
+                    ("lost the device", true)
+                } else {
+                    ("failed validation", false)
+                }
+            }
+        };
+        if self.last_acquire_failure != Some(failure) {
+            tracing::warn!("surface texture acquisition {failure}");
+            self.last_acquire_failure = Some(failure);
+        }
+        FrameAcquisition::Skipped { retry }
+    }
+
+    fn may_repair_surface(&mut self) -> bool {
+        let now = Instant::now();
+        if self
+            .last_surface_repair
+            .is_some_and(|at| now.duration_since(at) < SURFACE_REPAIR_INTERVAL)
+        {
+            return false;
+        }
+        self.last_surface_repair = Some(now);
+        true
+    }
+
+    fn recreate_surface(&mut self) {
+        let window = SugarloafWindow {
+            handle: self.window_handle,
+            display: self.display_handle,
+            size: self.size,
+            scale: self.scale,
+        };
+        match self.instance.create_surface(window) {
+            Ok(surface) => {
+                self.surface_caps = surface.get_capabilities(&self.adapter);
+                self.surface = surface;
+                self.configure_surface();
+            }
+            Err(err) => tracing::error!("failed to recreate the surface: {err}"),
+        }
+    }
+
+    #[inline]
+    pub fn is_device_lost(&self) -> bool {
+        self.device_lost.load(Ordering::Acquire)
+    }
+
+    /// Replace a lost device with a new one and rebuild the surface on
+    /// it. Every resource created on the old device is dead; the caller
+    /// owns recreating those. Tries the current adapter first, then
+    /// asks for a new one, since a driver reset can retire the adapter
+    /// itself.
+    pub fn recreate_device(&mut self) -> Result<(), String> {
+        let (adapter, (device, queue)) = match request_device(&self.adapter) {
+            Ok(pair) => (self.adapter.clone(), pair),
+            Err(_) => {
+                let adapter = request_default_adapter(&self.instance, &self.surface)
+                    .map_err(|err| format!("no adapter available: {err}"))?;
+                let pair = request_device(&adapter)
+                    .map_err(|err| format!("adapter refused a device: {err}"))?;
+                (adapter, pair)
+            }
+        };
+
+        self.device_lost = watch_device_loss(&device);
+        self.max_texture_dimension_2d = device.limits().max_texture_dimension_2d;
+        self.adapter_info = adapter.get_info();
+        self.adapter = adapter;
+        self.device = device;
+        self.queue = queue;
+        self.needs_reconfigure = false;
+        self.last_acquire_failure = None;
+        self.last_surface_repair = None;
+        self.recreate_surface();
+        tracing::info!("recreated the wgpu device on {:?}", self.adapter_info);
+        Ok(())
     }
 
     #[inline]
@@ -336,6 +459,54 @@ impl<'a> WgpuContext<'a> {
         // wgpu always uses f32 (Rgba8Unorm), no f16 conversion needed
         rgba8_data.to_vec()
     }
+}
+
+fn request_default_adapter(
+    instance: &wgpu::Instance,
+    surface: &wgpu::Surface,
+) -> Result<wgpu::Adapter, wgpu::RequestAdapterError> {
+    futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        // Hard-coded — sugarloaf used to expose a
+        // `power_preference` knob, but in practice every Rio
+        // user picks `HighPerformance` (the alternative gives
+        // visibly worse text on hybrid laptops). Removed from
+        // the public API.
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: Some(surface),
+        force_fallback_adapter: false,
+        apply_limit_buckets: false,
+    }))
+}
+
+fn request_device(
+    adapter: &wgpu::Adapter,
+) -> Result<(wgpu::Device, wgpu::Queue), wgpu::RequestDeviceError> {
+    if let Ok(result) = futures::executor::block_on(
+        adapter.request_device(&wgpu::DeviceDescriptor::default()),
+    ) {
+        Ok(result)
+    } else {
+        // These downlevel limits will allow the code to run on all possible hardware
+        futures::executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            memory_hints: wgpu::MemoryHints::Performance,
+            label: None,
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+            ..Default::default()
+        }))
+    }
+}
+
+fn watch_device_loss(device: &wgpu::Device) -> Arc<AtomicBool> {
+    let lost = Arc::new(AtomicBool::new(false));
+    let flag = lost.clone();
+    device.set_device_lost_callback(move |reason, message| {
+        if reason != wgpu::DeviceLostReason::Destroyed {
+            tracing::error!("wgpu device lost ({reason:?}): {message}");
+        }
+        flag.store(true, Ordering::Release);
+    });
+    lost
 }
 
 #[inline]

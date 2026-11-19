@@ -447,6 +447,13 @@ impl Renderer {
             && !self.confirm_quit.is_active()
     }
 
+    /// Repaint every panel of the current tab on the next frame, the
+    /// same way an active-panel switch does.
+    #[inline]
+    pub fn force_full_damage(&mut self) {
+        self.last_active = None;
+    }
+
     #[inline]
     pub fn run(
         &mut self,
