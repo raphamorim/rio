@@ -728,21 +728,18 @@ impl Grid<Square> {
             out.resize(src.inner.len(), Style::default());
             return;
         }
-        // One lookup per run of cells sharing a style id, written as a
-        // repeat: a row is a handful of runs, not a lookup per cell.
-        let mut run_start = 0;
-        let mut run_id = src.inner.first().and_then(|sq| sq.style_id_checked());
-        for (x, sq) in src.inner.iter().enumerate().skip(1) {
+        // One lookup per change of style id, one write per cell: a row
+        // is a handful of runs, and the lookup costs more than the write.
+        let mut last_id = None;
+        let mut last_style = Style::default();
+        out.extend(src.inner.iter().map(|sq| {
             let id = sq.style_id_checked();
-            if id != run_id {
-                let style = run_id.map(|id| self.style_set.get(id)).unwrap_or_default();
-                out.extend(std::iter::repeat_n(style, x - run_start));
-                run_start = x;
-                run_id = id;
+            if id != last_id {
+                last_id = id;
+                last_style = id.map(|id| self.style_set.get(id)).unwrap_or_default();
             }
-        }
-        let style = run_id.map(|id| self.style_set.get(id)).unwrap_or_default();
-        out.extend(std::iter::repeat_n(style, src.inner.len() - run_start));
+            last_style
+        }));
     }
 
     /// Read the style id of the current cursor template.
