@@ -1134,12 +1134,16 @@ filled or stroked with its colour, through its clip when one covers
 it. Path coordinates go through the layer's matrix, then the
 placement of §8.9.3.
 
-`fg` and `fg@<alpha>` resolve to the cell's foreground colour when
-the glyph is rasterized. Terminals that cache rasterized glyphs MUST
-re-rasterize on foreground change for any glyph that uses the
-foreground, like `colrv1` (§8.7). A glyph whose every colour,
+`fg` and `fg@<alpha>` are the cell's foreground colour when the
+glyph is drawn. A terminal that caches rasterized glyphs MUST NOT
+draw a glyph that uses the foreground with a stale one: it
+re-rasterizes on foreground change, as for `colrv1` (§8.7), or
+applies the foreground at draw time. A glyph whose every colour,
 gradient stops included, is the foreground MAY be kept as a coverage
-mask and tinted at draw time, as `glyf` is.
+mask and tinted at draw time, as `glyf` is; a glyph that mixes the
+foreground with fixed colours MAY be kept as two layers, the fixed
+colours `K` and the foreground's coverage `F`, and drawn as
+`K + fg·F`, which is exact because `fg` is opaque there (§8.9.1).
 
 #### 8.9.5 Limits
 
@@ -1171,7 +1175,9 @@ payload over any of them is rejected with `reason=outline_too_large`:
 These numbers come from icon sets and emoji. Of 584 icons sampled
 from nine sets, the largest needs 226 segments and 14 viewBox sizes
 of path; of 600 emoji sampled from Twemoji, OpenMoji, Noto and Fluent
-Flat, the largest needs 83 layers, 955 segments and 41 sizes. Under
+Flat, the largest needs 83 layers, 955 segments and 41 sizes. A
+converter can't save layers by merging same-colour fills: overlapping
+shapes drawn in opposite directions cancel under nonzero winding. Under
 these limits the most expensive path found takes about 1.4 ms to draw
 into an 80×160 pixel cell with tiny-skia, and about 1.1 ms with
 kitty's own renderer.
@@ -1182,9 +1188,7 @@ whole viewBox, each a radial gradient (the most the length limit
 allows), take 1.6 ms at 80×160 in kitty and 60 ms at 7×7 cells. A
 terminal SHOULD rasterize a glyph when it is first drawn and cache the
 result (Appendix C), and MAY bound the work spent on one glyph, or the
-area it rasterizes, drawing the glyph as missing past it. A converter can't save layers by merging
-same-colour fills: overlapping shapes drawn in opposite directions
-cancel under nonzero winding.
+area it rasterizes, drawing the glyph as missing past it.
 
 #### 8.9.6 Not included
 
