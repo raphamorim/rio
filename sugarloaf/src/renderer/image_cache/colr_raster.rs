@@ -421,10 +421,11 @@ fn fill_rule(rule: rio_graphics::glyph_vector::FillRule) -> FillRule {
 
 /// A solid colour as drawn: for a monochrome glyph the foreground is
 /// white with its alpha, which becomes the mask's coverage; otherwise
-/// the foreground is resolved now. `fg` is the cell's foreground as an
-/// opaque colour (spec §8.9.1): only `fg@<alpha>` makes it translucent,
-/// so a glyph draws the same whatever alpha the terminal's own colour
-/// carries, and `K + fg·F` compositing at draw time stays exact.
+/// the foreground is resolved now. In such a mixed glyph `fg` is the
+/// foreground as an opaque colour (spec §8.9.1): only `fg@<alpha>`
+/// makes it translucent, so `K + fg·F` compositing at draw time stays
+/// exact. An all-foreground glyph is a mask the grid tints like text,
+/// foreground alpha included.
 fn vector_solid(
     solid: &rio_graphics::glyph_vector::Solid,
     monochrome: bool,
@@ -1276,7 +1277,7 @@ mod tests {
         }
 
         #[test]
-        fn fg_is_the_opaque_foreground() {
+        fn fg_is_opaque_where_it_mixes_with_fixed_colours() {
             // A glyph mixing `fg` with a fixed colour resolves the
             // foreground into RGBA. A translucent foreground colour
             // doesn't make `fg` translucent; only `fg@<alpha>` does.
@@ -1299,6 +1300,28 @@ mod tests {
             assert!(r.is_color);
             assert_eq!(rgba_at(&r, 4, 12)[3], 255);
             assert!((120..=135).contains(&rgba_at(&r, 15, 12)[3]));
+
+            // An all-foreground glyph is a coverage mask the grid tints
+            // like text, foreground alpha and all, so the mask itself
+            // doesn't depend on it.
+            let mono = parse(
+                b"fill=nonzero,fg:M0 0h24v24H0Z",
+                parse_view_box(b"0,0,24,24").unwrap(),
+                Fit::Contain,
+            )
+            .unwrap();
+            let r = rasterize_payload(
+                &StoredPayload::Vector { glyph: mono },
+                1000,
+                24,
+                24,
+                [10, 200, 30, 128],
+                &GlyphLayout::default(),
+                0.0,
+            )
+            .unwrap();
+            assert!(!r.is_color);
+            assert_eq!(alpha(&r, 12, 12), 255);
         }
 
         /// Rows of a 20x40 cell that have any ink.
