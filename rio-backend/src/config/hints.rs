@@ -5,7 +5,7 @@ pub const DEFAULT_HINTS_ALPHABET: &str = "jfkdls;ahgurieowpq";
 
 /// Default URL/path regex pattern.
 ///
-/// Ported verbatim from ghostty's `src/config/url.zig`. Requires a regex
+/// Requires a regex
 /// engine with lookbehind support — rio uses oniguruma via the `onig`
 /// crate. Three alternations:
 ///
@@ -87,7 +87,9 @@ pub struct Hint {
     #[serde(default = "default_bool_false")]
     pub hyperlinks: bool,
 
-    /// Whether to apply post-processing to matches
+    /// Whether to trim trailing punctuation and unbalanced brackets from
+    /// regex matches. OSC 8 hyperlinks carry an explicit URI and are
+    /// never trimmed.
     #[serde(default = "default_bool_true", rename = "post-processing")]
     pub post_processing: bool,
 
@@ -196,6 +198,12 @@ pub enum HintInternalAction {
     Select,
     /// Move vi mode cursor to hint
     MoveViModeCursor,
+    /// Hand the hint text to the platform's default handler.
+    ///
+    /// Preferred over naming an opener as a command, because the match
+    /// comes from terminal output and is therefore attacker-controlled:
+    /// the launcher must not be anything that parses metacharacters.
+    Open,
 }
 
 /// Custom command configuration
@@ -265,8 +273,8 @@ fn default_hints_enabled() -> Vec<Hint> {
         hyperlinks: true,
         post_processing: true,
         persist: false,
-        action: HintAction::Command {
-            command: default_url_command(),
+        action: HintAction::Action {
+            action: HintInternalAction::Open,
         },
         mouse: HintMouse::default(),
         binding: Some(HintBinding {
@@ -275,20 +283,6 @@ fn default_hints_enabled() -> Vec<Hint> {
             mode: Vec::new(),
         }),
     }]
-}
-
-fn default_url_command() -> HintCommand {
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    return HintCommand::Simple("xdg-open".to_string());
-
-    #[cfg(target_os = "macos")]
-    return HintCommand::Simple("open".to_string());
-
-    #[cfg(target_os = "windows")]
-    return HintCommand::WithArgs {
-        program: "cmd".to_string(),
-        args: vec!["/c".to_string(), "start".to_string(), "".to_string()],
-    };
 }
 
 fn default_bool_true() -> bool {
@@ -314,6 +308,47 @@ mod tests {
         assert!(default_hint.hyperlinks);
         assert!(default_hint.post_processing);
         assert!(!default_hint.persist);
+    }
+
+    /// The default hint must not launch anything through a shell. Hint text
+    /// comes from terminal output, so it is attacker-controlled, and a
+    /// `cmd /c start` default made `&` in a URL a command separator.
+    #[test]
+    fn test_default_hint_does_not_go_through_a_shell() {
+        let hints = Hints::default();
+        assert_eq!(
+            hints.rules[0].action,
+            HintAction::Action {
+                action: HintInternalAction::Open
+            },
+        );
+
+        let serialized = toml::to_string(&hints).unwrap();
+        assert!(
+            !serialized.contains("program") && !serialized.contains("cmd"),
+            "defaults must name no launcher program: {serialized}"
+        );
+    }
+
+    /// `Open` has to survive a config write/read cycle, so that writing the
+    /// default config back out cannot produce something unparseable.
+    #[test]
+    fn test_open_action_roundtrips_through_toml() {
+        let hint = Hint {
+            regex: None,
+            hyperlinks: true,
+            post_processing: true,
+            persist: false,
+            action: HintAction::Action {
+                action: HintInternalAction::Open,
+            },
+            mouse: HintMouse::default(),
+            binding: None,
+        };
+
+        let serialized = toml::to_string(&hint).unwrap();
+        let deserialized: Hint = toml::from_str(&serialized).unwrap();
+        assert_eq!(hint, deserialized);
     }
 
     #[test]
@@ -368,7 +403,7 @@ mod tests {
 
         // Non-dotted (directory-like): absorbs trailing spaces+words because
         // the path could be a directory whose name contains spaces (e.g.
-        // `~/Desktop please/...`). This matches ghostty's behavior.
+        // `~/Desktop please/...`).
         assert_eq!(find_all("open ~/Desktop please"), vec!["~/Desktop please"]);
         assert_eq!(find_all("cd /tmp/foo"), vec!["/tmp/foo"]);
         assert_eq!(find_all("logs at $HOME/logs"), vec!["$HOME/logs"]);

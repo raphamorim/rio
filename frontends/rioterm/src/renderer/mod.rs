@@ -1,3 +1,11 @@
+/// The input policy every overlay text sink applies, in ONE place so
+/// the key path and the IME commit path can never drift: non-empty and
+/// free of control characters.
+#[inline]
+pub(crate) fn is_printable_text(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| !c.is_control())
+}
+
 pub mod assistant;
 pub mod command_palette;
 pub mod confirm_quit;
@@ -9,12 +17,10 @@ pub mod search;
 pub mod trail_cursor;
 pub mod utils;
 
-use rio_backend::event::TerminalDamage;
-use taffy::NodeId;
-
-use crate::context::renderable::{PendingUpdate, RenderableContent};
+use crate::context::renderable::RenderableContent;
 use crate::context::ContextManager;
 use crate::crosswords::style::{Style as CellStyle, StyleFlags};
+use crate::screen::hint::HintMatches;
 use rio_backend::config::colors::term::TermColors;
 use rio_backend::config::colors::{
     term::{List, DIM_FACTOR},
@@ -22,8 +28,107 @@ use rio_backend::config::colors::{
 };
 use rio_backend::config::navigation::Navigation;
 use rio_backend::config::Config;
+use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::event::EventProxy;
+use rio_backend::sugarloaf::text::DrawOpts;
 use rio_backend::sugarloaf::Sugarloaf;
+
+// Hint tooltip: browser-style status pill showing where the hovered
+// link goes. Shares the overlay draw order with search / palette.
+const TOOLTIP_FONT_SIZE: f32 = 12.0;
+const TOOLTIP_PADDING_X: f32 = 9.0;
+const TOOLTIP_PADDING_Y: f32 = 5.0;
+const TOOLTIP_MARGIN: f32 = 6.0;
+const TOOLTIP_CORNER_RADIUS: f32 = 5.0;
+const TOOLTIP_MAX_WIDTH_RATIO: f32 = 0.6;
+const TOOLTIP_BG_COLOR: [f32; 4] = [0.12, 0.12, 0.12, 0.96];
+const TOOLTIP_TEXT_COLOR: [u8; 4] = [237, 237, 237, 255];
+const TOOLTIP_DEPTH_BG: f32 = 0.1;
+const TOOLTIP_ORDER: u8 = 20;
+
+/// Longest prefix of `text` that still fits `max_width` once an
+/// ellipsis is appended, or `text` untouched when it already fits.
+///
+/// Truncates the tail, never the head: for a URL the scheme and host
+/// are the part worth reading before clicking, so they must survive.
+/// `measure` is injected so this stays testable without a GPU context.
+fn elide_tail(
+    text: &str,
+    max_width: f32,
+    mut measure: impl FnMut(&str) -> f32,
+) -> String {
+    if measure(text) <= max_width {
+        return text.to_string();
+    }
+
+    let chars: Vec<char> = text.chars().collect();
+    let ellipsis = |n: usize| chars[..n].iter().collect::<String>() + "\u{2026}";
+
+    // Largest `n` whose prefix-plus-ellipsis fits. `lo < hi` keeps
+    // `mid >= 1`, so `mid - 1` cannot wrap.
+    let (mut lo, mut hi) = (0usize, chars.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if measure(&ellipsis(mid)) <= max_width {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    ellipsis(lo)
+}
+
+/// Draw the hovered hint's target at the bottom-left, the way a browser
+/// shows a link destination in its status bar.
+///
+/// Immediate mode: this is called only on frames where a hint is
+/// highlighted, so "not drawn" is "not visible" and there is no
+/// show/hide state to keep anywhere.
+fn draw_hint_tooltip(
+    sugarloaf: &mut Sugarloaf,
+    text: &str,
+    window_size: (f32, f32),
+    scale_factor: f32,
+) {
+    let logical_width = window_size.0 / scale_factor;
+    let logical_height = window_size.1 / scale_factor;
+
+    let opts = DrawOpts {
+        font_size: TOOLTIP_FONT_SIZE,
+        color: TOOLTIP_TEXT_COLOR,
+        ..DrawOpts::default()
+    };
+
+    let max_text_width =
+        (logical_width * TOOLTIP_MAX_WIDTH_RATIO - TOOLTIP_PADDING_X * 2.0).max(0.0);
+
+    let ui = sugarloaf.text_mut();
+    let label = elide_tail(text, max_text_width, |s| ui.measure(s, &opts));
+
+    let text_width = ui.measure(&label, &opts);
+    let height = TOOLTIP_FONT_SIZE + TOOLTIP_PADDING_Y * 2.0;
+    let width = text_width + TOOLTIP_PADDING_X * 2.0;
+    let x = TOOLTIP_MARGIN;
+    let y = (logical_height - height - TOOLTIP_MARGIN).max(0.0);
+
+    sugarloaf.rounded_rect(
+        None,
+        x,
+        y,
+        width,
+        height,
+        TOOLTIP_BG_COLOR,
+        TOOLTIP_DEPTH_BG,
+        TOOLTIP_CORNER_RADIUS,
+        TOOLTIP_ORDER,
+    );
+    sugarloaf.text_mut().draw(
+        x + TOOLTIP_PADDING_X,
+        y + TOOLTIP_PADDING_Y,
+        &label,
+        &opts,
+    );
+}
 
 /// The window-bg clear alpha that flows into sugarloaf's
 /// `set_background_color`. Stored on the renderer and re-applied on
@@ -43,10 +148,9 @@ fn window_bg_alpha(config: &Config) -> f32 {
     }
 }
 
-pub use rio_backend::sugarloaf::{atlas_image_key, kitty_image_key};
+pub use rio_backend::sugarloaf::{atlas_image_key, kitty_image_key, route_image_key};
 
 pub struct Renderer {
-    is_vi_mode_enabled: bool,
     is_game_mode_enabled: bool,
     pub is_window_focused: bool,
     draw_bold_text_with_light_colors: bool,
@@ -59,12 +163,21 @@ pub struct Renderer {
     pub command_palette: command_palette::CommandPalette,
     unfocused_split_opacity: f32,
     unfocused_split_fill: Option<ColorArray>,
-    last_active: Option<NodeId>,
+    /// Route id of the pane rendered as active last frame. Keyed on
+    /// `route_id` (globally unique) rather than the grid's taffy `NodeId`:
+    /// each tab owns its own taffy tree and identically-shaped trees hand
+    /// out identical NodeIds, so a tab switch would compare equal and skip
+    /// the full-damage refresh the incoming tab needs.
+    last_active: Option<usize>,
     /// Last `rio_backend::sugarloaf::Color` we applied to sugarloaf's window clear via
     /// `set_background_color`. Lets the per-frame "derive bg from
     /// active panel's OSC state" loop avoid redundant resyncs.
     last_window_bg: Option<rio_backend::sugarloaf::Color>,
     pub config_has_blinking_enabled: bool,
+    /// Where shaping breaks runs beyond what the content forces; the
+    /// row builder gets the cursor column only when the break at the
+    /// cursor is on.
+    pub cursor_shaping_break: bool,
     pub config_blinking_interval: u64,
     pub(crate) ignore_selection_fg_color: bool,
     pub search: search::SearchOverlay,
@@ -138,8 +251,8 @@ impl Renderer {
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
-            is_vi_mode_enabled: false,
             config_has_blinking_enabled: config.cursor.blinking,
+            cursor_shaping_break: config.fonts.cursor_shaping_break,
             is_window_focused: true,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
@@ -163,7 +276,17 @@ impl Renderer {
             is_game_mode_enabled: config.renderer.strategy.is_game(),
             custom_mouse_cursor: config.effects.custom_mouse_cursor,
             trail_cursor_enabled: config.effects.trail_cursor,
-            trail_cursor: trail_cursor::TrailCursor::new(),
+            trail_cursor: trail_cursor::TrailCursor::new(trail_cursor::TrailSettings {
+                color: config
+                    .effects
+                    .trail_cursor_color
+                    .as_deref()
+                    .map(rio_backend::config::colors::hex_to_color_arr),
+                opacity: config.effects.trail_cursor_opacity,
+                decay_fast: config.effects.trail_cursor_decay[0] as f32 / 1000.0,
+                decay_slow: config.effects.trail_cursor_decay[1] as f32 / 1000.0,
+                start_threshold: config.effects.trail_cursor_start_threshold as f32,
+            }),
         }
     }
 
@@ -227,16 +350,42 @@ impl Renderer {
         }
     }
 
+    /// Resolve the color painted as a cell's background.
+    ///
+    /// DIM and BOLD are glyph intensity attributes (ECMA-48), so they
+    /// tint a background only under INVERSE, where `cell_bg` already
+    /// swapped fg/bg and this color is really the foreground. Ungated,
+    /// faint text over an explicit background painted a darker block
+    /// (tmux always sets one: it re-emits the pane's OSC 11 as SGR 48
+    /// on every cell it draws).
     #[inline]
     pub(crate) fn compute_bg_color(
         &self,
         cell_style: &CellStyle,
         term_colors: &TermColors,
     ) -> ColorArray {
-        let dim = cell_style.flags.contains(StyleFlags::DIM);
-        let bold = cell_style.flags.contains(StyleFlags::BOLD);
+        let inverse = cell_style.flags.contains(StyleFlags::INVERSE);
+        let dim = inverse && cell_style.flags.contains(StyleFlags::DIM);
+        let bold = inverse && cell_style.flags.contains(StyleFlags::BOLD);
         match cell_style.bg {
-            AnsiColor::Named(ansi) => self.color(ansi as usize, term_colors),
+            // A named color lands here dimmable only via the inverse
+            // swap, so apply the same intensity table as the fg path
+            // in `compute_color` (alacritty resolves the fg first and
+            // swaps after, which yields the same result).
+            AnsiColor::Named(ansi) => {
+                let idx = match (self.draw_bold_text_with_light_colors, dim, bold) {
+                    (_, true, true)
+                        if ansi == NamedColor::Foreground
+                            && self.named_colors.light_foreground.is_none() =>
+                    {
+                        NamedColor::DimForeground as usize
+                    }
+                    (true, false, true) => ansi.to_light() as usize,
+                    (_, true, false) | (false, true, true) => ansi.to_dim() as usize,
+                    _ => ansi as usize,
+                };
+                self.color(idx, term_colors)
+            }
             AnsiColor::Spec(rgb) => {
                 if dim {
                     (&(rgb * DIM_FACTOR)).into()
@@ -259,9 +408,16 @@ impl Renderer {
         }
     }
 
+    /// Cursor color for a panel. In Vi mode the configured `vi-cursor`
+    /// color is used; otherwise OSC 12 wins over the theme `cursor`.
+    /// `List::fill_named` skips the Cursor slot, so the named colors
+    /// are read directly instead of going through `Renderer::color`.
     #[inline]
-    pub fn set_vi_mode(&mut self, is_vi_mode_enabled: bool) {
-        self.is_vi_mode_enabled = is_vi_mode_enabled;
+    pub fn cursor_color(&self, term_colors: &TermColors, is_vi_mode: bool) -> ColorArray {
+        if is_vi_mode {
+            return self.named_colors.vi_cursor;
+        }
+        term_colors[NamedColor::Cursor as usize].unwrap_or(self.named_colors.cursor)
     }
 
     // Get the RGB value for a color index.
@@ -270,40 +426,52 @@ impl Renderer {
         term_colors[color].unwrap_or(self.colors[color])
     }
 
+    /// Whether a click on the currently highlighted hint would actually
+    /// reach it, i.e. whether the link under the pointer is genuinely
+    /// clickable right now.
+    ///
+    /// `highlighted_hint` alone is not enough. It is recomputed only on
+    /// cell crossings and modifier changes, so it survives an overlay
+    /// opening on top of it, and each modal overlay listed here
+    /// consumes the click before the hint handler runs (see the press
+    /// handler in `application.rs`). Showing a target the user cannot
+    /// open would be a lie, so the tooltip is gated on the same
+    /// conditions. Checked per frame rather than at highlight time
+    /// because an overlay can appear without the pointer moving.
+    ///
+    /// Positional click consumers (the scrollbar strip, the tab
+    /// island, panel borders) also swallow presses but depend on
+    /// where the pointer sits, which a per-frame boolean cannot
+    /// express; a stale highlight over those is a pre-existing quirk
+    /// of the highlight lifecycle, not of this gate.
+    #[inline]
+    fn hint_click_would_land(&self) -> bool {
+        !self.assistant.is_active()
+            && !self.command_palette.is_enabled()
+            && !self.search.is_active()
+            && !self.confirm_quit.is_active()
+    }
+
     #[inline]
     pub fn run(
         &mut self,
         sugarloaf: &mut Sugarloaf,
         context_manager: &mut ContextManager<EventProxy>,
+        mut search: Option<Option<&mut RegexSearch>>,
     ) -> (Option<crate::context::renderable::WindowUpdate>, bool) {
         let mut any_panel_dirty = false;
         let grid = context_manager.current_grid_mut();
-        let active_key = grid.current;
+        let active_route = grid.current().route_id;
         let grid_scaled_margin = grid.get_scaled_margin();
         let mut has_active_changed = false;
-        if self.last_active != Some(active_key) {
+        if self.last_active != Some(active_route) {
             has_active_changed = true;
-            self.last_active = Some(active_key);
+            self.last_active = Some(active_route);
         }
 
-        for (_key, grid_context) in grid.contexts_mut().iter_mut() {
+        for grid_context in grid.contexts_mut().values_mut() {
             let panel_rect = grid_context.layout_rect;
             let context = grid_context.context_mut();
-
-            let mut has_ime = false;
-            if let Some(preedit) = context.ime.preedit() {
-                if let Some(content) = preedit.text.chars().next() {
-                    context.renderable_content.cursor.content = content;
-                    context.renderable_content.cursor.is_ime_enabled = true;
-                    has_ime = true;
-                }
-            }
-
-            if !has_ime {
-                context.renderable_content.cursor.is_ime_enabled = false;
-                context.renderable_content.cursor.content =
-                    context.renderable_content.cursor.content_ref;
-            }
 
             let force_full_damage = has_active_changed || self.is_game_mode_enabled;
 
@@ -314,97 +482,55 @@ impl Renderer {
                 // No updates pending, skip rendering
                 continue;
             }
-            any_panel_dirty = true;
-
-            // UI-side damage (scroll, selection, resize, etc.)
-            let ui_terminal_damage = context
-                .renderable_content
-                .pending_update
-                .take_terminal_damage();
-            context.renderable_content.pending_update.reset();
 
             {
                 let mut terminal = context.terminal.lock();
-
-                // Clear in-flight flag so PTY thread can notify again
-                terminal.damage_event_in_flight = false;
-
-                let pty_damage = terminal.peek_damage_event();
-
-                let damage = if force_full_damage {
-                    TerminalDamage::Full
-                } else {
-                    match (ui_terminal_damage, pty_damage) {
-                        (Some(ui), Some(pty)) => {
-                            PendingUpdate::merge_terminal_damages(ui, pty)
+                any_panel_dirty = true;
+                // Search matches are found before the snapshot, so the
+                // rows whose highlight changed are among the rows it
+                // copies: a highlight paints over a row without
+                // changing it, and nothing else would mark it.
+                let new_matches: Option<Option<Vec<_>>> = search
+                    .as_mut()
+                    .filter(|_| context.route_id == active_route)
+                    .map(|dfas| {
+                        dfas.as_deref_mut().map(|dfas| {
+                            HintMatches::visible_regex_matches(&terminal, dfas)
+                                .iter()
+                                .cloned()
+                                .collect()
+                        })
+                    });
+                if let Some(new_matches) = &new_matches {
+                    let old_matches = &context.renderable_content.hint_matches;
+                    if new_matches != old_matches {
+                        for regex_match in old_matches
+                            .iter()
+                            .flatten()
+                            .chain(new_matches.iter().flatten())
+                        {
+                            terminal.damage_range_rows(
+                                &rio_backend::selection::SelectionRange::new(
+                                    *regex_match.start(),
+                                    *regex_match.end(),
+                                    false,
+                                ),
+                            );
                         }
-                        (Some(d), None) | (None, Some(d)) => d,
-                        // UI-only damage (overlay hover, command-palette
-                        // input, etc.): cells didn't change, but the
-                        // panel still has to go through the render path
-                        // so UI overlays paint on top of a fresh frame.
-                        // Noop propagates to `RowsToRebuild::None` in
-                        // `screen::render`'s emit loop — grid keeps its
-                        // resident CPU bg/fg buffers, zero row work.
-                        (None, None) => TerminalDamage::Noop,
                     }
-                };
-
-                terminal.reset_damage();
-
-                let snapshot_cols = terminal.columns();
-                terminal.snapshot_visible(
-                    &damage,
-                    snapshot_cols,
-                    &mut context.renderable_content.visible_rows,
-                    &mut context.renderable_content.style_table,
-                    &mut context.renderable_content.extras,
-                );
-                context.renderable_content.term_colors = terminal.colors;
-                context.renderable_content.display_offset = terminal.display_offset();
-                context.renderable_content.columns = snapshot_cols;
-                context.renderable_content.screen_lines = terminal.screen_lines();
-                context.renderable_content.history_size = terminal.history_size();
-                context.renderable_content.lines_evicted = terminal.lines_evicted();
-                context.renderable_content.blinking_cursor = terminal.blinking_cursor;
-                context.renderable_content.cursor.state = terminal.cursor();
-                if terminal.graphics.kitty_graphics_dirty {
-                    context.renderable_content.kitty_virtual_placements =
-                        terminal.graphics.kitty_virtual_placements.clone();
-                    context.renderable_content.kitty_images =
-                        terminal.graphics.kitty_images.clone();
-                    context.renderable_content.kitty_placements = {
-                        let mut placements: Vec<_> = terminal
-                            .graphics
-                            .kitty_placements
-                            .values()
-                            .filter(|p| {
-                                terminal.graphics.kitty_images.contains_key(&p.image_id)
-                            })
-                            .cloned()
-                            .collect();
-                        // Tie-break on the unique key so equal
-                        // z-indexes keep a stable paint order across
-                        // frames (map iteration order is not).
-                        placements
-                            .sort_by_key(|p| (p.z_index, p.image_id, p.placement_id));
-                        placements
-                    };
-                    context.renderable_content.atlas_placements =
-                        terminal.graphics.atlas_placements.clone();
-                    context.renderable_content.kitty_graphics_dirty = true;
-                    terminal.graphics.kitty_graphics_dirty = false;
-                } else {
-                    context.renderable_content.kitty_graphics_dirty = false;
                 }
-                context.renderable_content.frame_damage = damage;
-                drop(terminal);
+                let snapshotted = context
+                    .renderable_content
+                    .update_from_terminal(&mut terminal, force_full_damage);
+                if let (true, Some(new_matches)) = (snapshotted, new_matches) {
+                    context.renderable_content.hint_matches = new_matches;
+                }
             }
-
             // Recalculate image overlay positions every frame when placements
             // exist. Positions depend on display_offset and history_size which
             // change on scroll and text output (like approach).
             let rc = &context.renderable_content;
+            let route_id = context.route_id;
             let has_overlays = !rc.kitty_placements.is_empty();
             let has_virtual = !rc.kitty_virtual_placements.is_empty();
             let has_atlas = !rc.atlas_placements.is_empty();
@@ -460,7 +586,7 @@ impl Renderer {
                             continue;
                         };
                         let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
-                            image_id: p.image_key,
+                            image_id: route_image_key(route_id, p.image_key),
                             x: geometry.x,
                             y: geometry.y,
                             width: geometry.width,
@@ -498,7 +624,10 @@ impl Renderer {
                             continue;
                         };
                         let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
-                            image_id: kitty_image_key(p.image_id),
+                            image_id: route_image_key(
+                                route_id,
+                                kitty_image_key(p.image_id),
+                            ),
                             x: geometry.x,
                             y: geometry.y,
                             width: geometry.width,
@@ -522,6 +651,7 @@ impl Renderer {
                     Self::push_virtual_placeholder_overlays(
                         overlays,
                         rc,
+                        route_id,
                         origin_x,
                         origin_y,
                         cell_width,
@@ -618,6 +748,9 @@ impl Renderer {
                 tint[2],
                 1.0 - self.unfocused_split_opacity,
             ];
+            // Within-grid comparison: taffy keys are only meaningful
+            // inside a single tab's tree.
+            let active_key = grid.current;
             for (key, grid_context) in grid.contexts_mut().iter() {
                 if &active_key == key {
                     continue;
@@ -670,6 +803,24 @@ impl Renderer {
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
         );
+
+        // The hint borrow (context_manager) and the draw target
+        // (sugarloaf) are disjoint, so the target text passes through
+        // by reference; nothing is cloned per hovered frame.
+        if let Some(hint) = context_manager
+            .current()
+            .renderable_content
+            .highlighted_hint
+            .as_ref()
+            .filter(|_| self.hint_click_would_land())
+        {
+            draw_hint_tooltip(
+                sugarloaf,
+                &hint.text,
+                (window_size.width, window_size.height),
+                scale_factor,
+            );
+        }
 
         self.command_palette.render(
             sugarloaf,
@@ -786,6 +937,7 @@ impl Renderer {
     fn push_virtual_placeholder_overlays(
         overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
         rc: &RenderableContent,
+        route_id: usize,
         origin_x: f32,
         origin_y: f32,
         cell_width: f32,
@@ -813,6 +965,11 @@ impl Renderer {
             // discontinuity, etc.) we flush the run as one overlay and
             // start a new one. Mirrors `PlacementIterator.next`.
             let mut run: Option<(IncompletePlacement, usize)> = None;
+            let row_styles = rc
+                .row_styles
+                .get(line_idx)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
 
             for (col_idx, square) in row.inner.iter().enumerate() {
                 if square.c() != PLACEHOLDER {
@@ -820,6 +977,7 @@ impl Renderer {
                         flush_run(
                             overlays,
                             rc,
+                            route_id,
                             p.complete(),
                             line_idx,
                             start_col,
@@ -834,7 +992,7 @@ impl Renderer {
                     continue;
                 }
 
-                let style = crate::grid_emit::resolve_style(&rc.style_table, *square);
+                let style = rio_grid::resolve_style(row_styles, col_idx);
                 let combining: &[char] = square
                     .extras_id()
                     .and_then(|eid| rc.extras.get(&eid))
@@ -856,6 +1014,7 @@ impl Renderer {
                             flush_run(
                                 overlays,
                                 rc,
+                                route_id,
                                 p.complete(),
                                 line_idx,
                                 start_col,
@@ -886,6 +1045,7 @@ impl Renderer {
                 flush_run(
                     overlays,
                     rc,
+                    route_id,
                     p.complete(),
                     line_idx,
                     start_col,
@@ -909,6 +1069,7 @@ impl Renderer {
         fn flush_run(
             overlays: &mut Vec<rio_backend::sugarloaf::GraphicOverlay>,
             rc: &RenderableContent,
+            route_id: usize,
             run: PlaceholderRun,
             screen_line: usize,
             start_screen_col: usize,
@@ -919,10 +1080,11 @@ impl Renderer {
             z_index: i32,
             clip: (f32, f32, f32, f32),
         ) {
-            let vp = rc
-                .kitty_virtual_placements
-                .get(&(run.image_id, run.placement_id))
-                .or_else(|| rc.kitty_virtual_placements.get(&(run.image_id, 0)));
+            let vp = rio_backend::ansi::kitty_virtual::resolve_virtual_placement(
+                &rc.kitty_virtual_placements,
+                run.image_id,
+                run.placement_id,
+            );
             let vp = match vp {
                 Some(v) => v,
                 None => return,
@@ -951,7 +1113,7 @@ impl Renderer {
             };
 
             let mut overlay = rio_backend::sugarloaf::GraphicOverlay {
-                image_id: kitty_image_key(run.image_id),
+                image_id: route_image_key(route_id, kitty_image_key(run.image_id)),
                 x: geom.x,
                 y: geom.y,
                 width: geom.width,
@@ -969,5 +1131,360 @@ impl Renderer {
                 overlays.push(overlay);
             }
         }
+    }
+}
+
+/// Bridges the frontend `Renderer` to the shared `rio-grid` emit code,
+/// delegating each palette operation to the existing methods/fields.
+impl rio_grid::GridPalette for Renderer {
+    #[inline]
+    fn named_colors(&self) -> &Colors {
+        &self.named_colors
+    }
+
+    #[inline]
+    fn compute_color(
+        &self,
+        color: &AnsiColor,
+        flags: StyleFlags,
+        term_colors: &TermColors,
+    ) -> ColorArray {
+        Renderer::compute_color(self, color, flags, term_colors)
+    }
+
+    #[inline]
+    fn compute_bg_color(
+        &self,
+        cell_style: &CellStyle,
+        term_colors: &TermColors,
+    ) -> ColorArray {
+        Renderer::compute_bg_color(self, cell_style, term_colors)
+    }
+
+    #[inline]
+    fn color(&self, idx: usize, term_colors: &TermColors) -> ColorArray {
+        Renderer::color(self, idx, term_colors)
+    }
+
+    #[inline]
+    fn use_drawable_chars(&self) -> bool {
+        Renderer::use_drawable_chars(self)
+    }
+
+    #[inline]
+    fn opacity_cells(&self) -> bool {
+        self.opacity_cells
+    }
+
+    #[inline]
+    fn cell_bg_alpha(&self) -> u8 {
+        self.cell_bg_alpha
+    }
+
+    #[inline]
+    fn ignore_selection_fg_color(&self) -> bool {
+        self.ignore_selection_fg_color
+    }
+}
+
+#[cfg(test)]
+mod compute_bg_color_tests {
+    use super::*;
+    use rio_backend::config::colors::ColorRgb;
+
+    fn renderer(draw_bold_text_with_light_colors: bool) -> Renderer {
+        Renderer::new(&Config {
+            draw_bold_text_with_light_colors,
+            ..Config::default()
+        })
+    }
+
+    fn style(bg: AnsiColor, flags: StyleFlags) -> CellStyle {
+        CellStyle {
+            bg,
+            flags,
+            ..CellStyle::default()
+        }
+    }
+
+    /// The reported regression: SGR 2 scaled an explicit RGB
+    /// background by DIM_FACTOR, a darker block behind the glyphs.
+    #[test]
+    fn dim_leaves_an_explicit_rgb_background_alone() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+        let bg = ColorRgb {
+            r: 0x28,
+            g: 0x2c,
+            b: 0x34,
+        };
+
+        let plain =
+            r.compute_bg_color(&style(AnsiColor::Spec(bg), StyleFlags::empty()), &colors);
+        let dimmed =
+            r.compute_bg_color(&style(AnsiColor::Spec(bg), StyleFlags::DIM), &colors);
+
+        assert_eq!(plain, bg.to_arr());
+        assert_eq!(dimmed, plain);
+    }
+
+    /// Same rule for the palette: no remap to the dim slot (0..=7)
+    /// or to the non-bright half (8..=15).
+    #[test]
+    fn dim_leaves_an_indexed_background_alone() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+
+        for idx in [1u8, 9] {
+            let dimmed = r.compute_bg_color(
+                &style(AnsiColor::Indexed(idx), StyleFlags::DIM),
+                &colors,
+            );
+            assert_eq!(dimmed, r.colors[idx as usize], "index {idx}");
+        }
+    }
+
+    /// Under INVERSE the bg slot holds the real foreground, which
+    /// keeps its intensity.
+    #[test]
+    fn inverse_still_dims_the_swapped_foreground() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+        let fg = ColorRgb {
+            r: 0xab,
+            g: 0xb2,
+            b: 0xbf,
+        };
+
+        let spec = r.compute_bg_color(
+            &style(AnsiColor::Spec(fg), StyleFlags::DIM | StyleFlags::INVERSE),
+            &colors,
+        );
+        assert_eq!(spec, (fg * DIM_FACTOR).to_arr());
+
+        let indexed = r.compute_bg_color(
+            &style(AnsiColor::Indexed(1), StyleFlags::DIM | StyleFlags::INVERSE),
+            &colors,
+        );
+        assert_eq!(indexed, r.colors[NamedColor::DimBlack as usize + 1]);
+    }
+
+    /// The default-colors case of the same rule: dim inverse text
+    /// paints its block in DimForeground, exactly what the fg path
+    /// resolves (alacritty gets this from resolving before the swap).
+    #[test]
+    fn inverse_dims_a_named_swapped_foreground() {
+        let r = renderer(false);
+        let colors = TermColors::default();
+
+        let plain = r.compute_bg_color(
+            &style(AnsiColor::Named(NamedColor::Foreground), StyleFlags::DIM),
+            &colors,
+        );
+        assert_eq!(plain, r.colors[NamedColor::Foreground as usize]);
+
+        let inverted = r.compute_bg_color(
+            &style(
+                AnsiColor::Named(NamedColor::Foreground),
+                StyleFlags::DIM | StyleFlags::INVERSE,
+            ),
+            &colors,
+        );
+        assert_eq!(inverted, r.colors[NamedColor::DimForeground as usize]);
+    }
+
+    /// `draw-bold-text-with-light-colors` is a rule about text: it
+    /// applies to a background only once INVERSE made it the text.
+    #[test]
+    fn bold_brightens_an_indexed_background_only_under_inverse() {
+        let r = renderer(true);
+        let colors = TermColors::default();
+
+        let plain =
+            r.compute_bg_color(&style(AnsiColor::Indexed(1), StyleFlags::BOLD), &colors);
+        assert_eq!(plain, r.colors[1]);
+
+        let inverted = r.compute_bg_color(
+            &style(
+                AnsiColor::Indexed(1),
+                StyleFlags::BOLD | StyleFlags::INVERSE,
+            ),
+            &colors,
+        );
+        assert_eq!(inverted, r.colors[9]);
+    }
+}
+
+#[cfg(test)]
+mod hint_tooltip_tests {
+    use super::elide_tail;
+
+    /// Fixed-width stand-in for the shaper: every char is 10 logical px.
+    fn measure(s: &str) -> f32 {
+        s.chars().count() as f32 * 10.0
+    }
+
+    #[test]
+    fn text_that_fits_is_returned_untouched() {
+        assert_eq!(
+            elide_tail("https://example.com", 1000.0, measure),
+            "https://example.com",
+        );
+    }
+
+    /// The head survives, so the scheme and host stay readable. At 100px
+    /// exactly ten chars fit, nine of them real plus the ellipsis.
+    #[test]
+    fn long_text_keeps_its_head_and_fits_the_budget() {
+        let out = elide_tail("https://example.com/a/very/long/path", 100.0, measure);
+        assert_eq!(out, "https://e\u{2026}");
+        assert!(measure(&out) <= 100.0);
+    }
+
+    /// Off-by-one guard on the binary search: the result must be the
+    /// longest prefix that fits, never one char short or one over.
+    /// With every char 10px wide the expected length is exact: a
+    /// budget of `n` chars fits `n - 1` real chars plus the ellipsis,
+    /// until the whole 24-char text fits untouched.
+    #[test]
+    fn truncation_takes_the_longest_prefix_that_fits() {
+        let text = "https://example.com/path";
+        for budget in 1..40usize {
+            let out = elide_tail(text, budget as f32 * 10.0, measure);
+            assert_eq!(
+                out.chars().count(),
+                budget.min(text.chars().count()),
+                "budget {budget} produced {out:?}",
+            );
+        }
+    }
+
+    /// Nothing fits: an ellipsis alone, not a panic and not an empty pill.
+    #[test]
+    fn zero_budget_yields_just_an_ellipsis() {
+        assert_eq!(elide_tail("abc", 0.0, measure), "\u{2026}");
+    }
+
+    /// Slicing is by char, not byte, so multibyte text cannot panic.
+    #[test]
+    fn multibyte_text_is_sliced_on_char_boundaries() {
+        assert_eq!(elide_tail("héllo wörld", 40.0, measure), "hél\u{2026}");
+    }
+}
+
+/// End-to-end guards for `rio_grid::cell_bg` driven through the
+/// `Renderer` palette impl. These moved out of `grid_emit` when it
+/// became the standalone `rio-grid` crate (which can't depend on the
+/// frontend `Renderer`); they live here now that `Renderer` provides
+/// the `GridPalette` the emit code needs.
+#[cfg(test)]
+mod grid_cell_bg_tests {
+    use super::*;
+    use rio_backend::config::colors::ColorRgb;
+    use rio_backend::crosswords::square::Square;
+
+    /// End-to-end guard for the tmux faint-text regression: tmux
+    /// re-emits the pane's OSC 11 as an explicit SGR 48 on every cell,
+    /// so a faint cell arrived as `Spec(bg) + DIM` and was painted at
+    /// `bg * DIM_FACTOR`, a dark block against the field around it.
+    // The row builder is handed the cursor column only when the break
+    // at the cursor is on, which the font config decides.
+    #[test]
+    fn the_cursor_shaping_break_comes_from_the_font_config() {
+        assert!(Renderer::new(&Config::default()).cursor_shaping_break);
+        let mut config = Config::default();
+        config.fonts.cursor_shaping_break = false;
+        assert!(!Renderer::new(&config).cursor_shaping_break);
+    }
+
+    #[test]
+    fn dim_cell_paints_its_explicit_background_unchanged() {
+        let renderer = Renderer::new(&Config::default());
+        let colors = TermColors::default();
+        let sq = Square::from_char('x');
+        let bg = ColorRgb {
+            r: 0x28,
+            g: 0x2c,
+            b: 0x34,
+        };
+        let style = CellStyle {
+            bg: AnsiColor::Spec(bg),
+            ..CellStyle::default()
+        };
+
+        let plain = rio_grid::cell_bg(sq, style, &renderer, &colors);
+        let dimmed = rio_grid::cell_bg(
+            sq,
+            CellStyle {
+                flags: StyleFlags::DIM,
+                ..style
+            },
+            &renderer,
+            &colors,
+        );
+
+        assert_eq!(plain, [0x28, 0x2c, 0x34, 255]);
+        assert_eq!(dimmed, plain);
+    }
+
+    /// A faint cell that never had its background set still paints
+    /// nothing, so window transparency keeps showing through.
+    #[test]
+    fn dim_cell_with_default_background_stays_unpainted() {
+        let renderer = Renderer::new(&Config::default());
+        let colors = TermColors::default();
+        let style = CellStyle {
+            flags: StyleFlags::DIM,
+            ..CellStyle::default()
+        };
+
+        assert_eq!(
+            rio_grid::cell_bg(Square::from_char('x'), style, &renderer, &colors),
+            [0, 0, 0, 0]
+        );
+    }
+}
+
+#[cfg(test)]
+mod cursor_color_tests {
+    use super::*;
+
+    const CURSOR: ColorArray = [1.0, 0.4, 0.0, 1.0];
+    const VI_CURSOR: ColorArray = [1.0, 1.0, 0.0, 1.0];
+    const OSC_12: ColorArray = [0.0, 0.5, 1.0, 1.0];
+
+    fn renderer() -> Renderer {
+        Renderer::new(&Config {
+            colors: Colors {
+                cursor: CURSOR,
+                vi_cursor: VI_CURSOR,
+                ..Colors::default()
+            },
+            ..Config::default()
+        })
+    }
+
+    #[test]
+    fn uses_cursor_color_outside_vi_mode() {
+        let r = renderer();
+        assert_eq!(r.cursor_color(&TermColors::default(), false), CURSOR);
+    }
+
+    /// The reported bug: `vi-cursor` was parsed but the cursor kept
+    /// the `cursor` color after entering Vi mode.
+    #[test]
+    fn uses_vi_cursor_color_in_vi_mode() {
+        let r = renderer();
+        assert_eq!(r.cursor_color(&TermColors::default(), true), VI_CURSOR);
+    }
+
+    #[test]
+    fn osc_12_overrides_cursor_color_only_outside_vi_mode() {
+        let r = renderer();
+        let mut colors = TermColors::default();
+        colors[NamedColor::Cursor as usize] = Some(OSC_12);
+
+        assert_eq!(r.cursor_color(&colors, false), OSC_12);
+        assert_eq!(r.cursor_color(&colors, true), VI_CURSOR);
     }
 }

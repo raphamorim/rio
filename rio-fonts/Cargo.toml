@@ -1,0 +1,17 @@
+[package]
+name = "rio-fonts"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+keywords.workspace = true
+repository = "https://github.com/raphamorim/rio"
+description = "Font assets and glyph placement rules shared by Rio's renderers (Nerd Font constraint table, embedded symbols fallback)"
+
+[dependencies]
+
+[features]
+default = []
+# Embed the symbols-only Nerd Font (~1.9 MB) for renderers that want a
+# guaranteed icon-glyph fallback without shipping a font file.
+symbols-nerd-font = []

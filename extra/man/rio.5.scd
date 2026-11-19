@@ -36,6 +36,12 @@ On Windows, the config file will be looked for in:
 
 	Default: _true_
 
+*hold* = _true_ | _false_
+
+	Keep a pane open after its command exits, until a key is pressed.
+
+	Default: _false_
+
 *draw-bold-text-with-light-colors* = _true_ | _false_
 
 	When _true_, bold text is drawn using the bright color variants.

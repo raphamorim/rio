@@ -387,8 +387,8 @@ impl Events {
     }
 
     pub fn clear(&mut self) {
-        self.sys_events.0.truncate(0);
-        self.events.truncate(0);
+        self.sys_events.0.clear();
+        self.events.clear();
         self.event_map.clear();
     }
 }

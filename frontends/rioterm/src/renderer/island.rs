@@ -13,12 +13,19 @@ use rio_backend::sugarloaf::text::DrawOpts;
 use rio_backend::sugarloaf::{Attributes, Sugarloaf};
 use rustc_hash::FxHashMap;
 use std::borrow::Cow;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub const ISLAND_HEIGHT: f32 = 38.0;
 const PROGRESS_BAR_HEIGHT: f32 = 3.0;
 
-const PROGRESS_BAR_TIMEOUT_SECS: u64 = 15;
+/// A bar with no report for this long is dismissed.
+pub const PROGRESS_BAR_TIMEOUT: Duration = Duration::from_secs(15);
+/// One sweep of the indeterminate block across the window.
+const PROGRESS_BOUNCE_MS: u128 = 1200;
+/// Indeterminate block length, in percent of the window width.
+const PROGRESS_BOUNCE_LEN: f32 = 25.0;
+/// How long the bar takes to ease into a new length or position.
+const PROGRESS_EASE_SECS: f32 = 0.2;
 const TITLE_FONT_SIZE: f32 = 12.0;
 
 const TAB_PADDING_X: f32 = 27.0;
@@ -26,6 +33,16 @@ const TAB_GAP: f32 = 6.0;
 const TAB_INSET_Y: f32 = 7.0;
 const TAB_RADIUS: f32 = 6.0;
 const TITLE_ELLIPSIS: char = '…';
+/// Bell dot for tabs that rang while in the background, and the gap
+/// between it and the tab title. A dot, not a glyph: the UI text layer
+/// resolves one font per run, so a bell glyph exists only where an
+/// emoji font is installed and resolvable, while a dot renders
+/// identically everywhere. Drawn at rect order 1: the tab backgrounds
+/// are submitted at order 0 AFTER the title pass, so a same-order dot
+/// would be painted over and invisible in every multi-tab strip.
+const BELL_DOT_SIZE: f32 = 6.0;
+const BELL_DOT_ORDER: u8 = 1;
+const BELL_GAP: f32 = 4.0;
 const DRAG_THRESHOLD: f32 = 4.0;
 const DRAG_ANIMATION_LENGTH: f32 = 0.15;
 const DRAG_MAX_DT: f32 = 0.05;
@@ -243,6 +260,32 @@ fn island_rect(slot_x: f32, tab_width: f32) -> (f32, f32, f32, f32, f32) {
     (x, y, w, h, radius)
 }
 
+/// How much width a lone tab's title may occupy, in logical pixels.
+///
+/// `window_width` is physical, as `render` receives it, while everything
+/// drawn is logical, the same conversion `tab_strip_layout` makes.
+#[inline]
+fn single_title_budget(window_width: f32, scale_factor: f32, left_margin: f32) -> f32 {
+    ((window_width / scale_factor)
+        - left_margin
+        - ISLAND_MARGIN_RIGHT
+        - TAB_PADDING_X * 2.0)
+        .max(0.0)
+}
+
+/// Where a lone tab's title starts: centred on the strip, but never far
+/// enough left to sit under the traffic lights on macOS. Physical in,
+/// logical out, as above.
+#[inline]
+fn single_title_x(
+    window_width: f32,
+    scale_factor: f32,
+    text_width: f32,
+    left_margin: f32,
+) -> f32 {
+    (((window_width / scale_factor) - text_width) / 2.0).max(left_margin + TAB_PADDING_X)
+}
+
 #[inline]
 fn close_button_center(island_x: f32, island_w: f32) -> Option<f32> {
     (island_w >= CLOSE_MIN_ISLAND_WIDTH)
@@ -303,6 +346,26 @@ fn draw_close_button(
     );
 }
 
+/// Fill percentage drawn for a report, or `None` for the bouncing block.
+/// Pause without a value reads as complete; Set and Error without one bounce.
+fn progress_fill(state: ProgressState, value: Option<u8>) -> Option<f32> {
+    match (state, value) {
+        (ProgressState::Indeterminate | ProgressState::Remove, _) => None,
+        (_, Some(v)) => Some(v as f32),
+        (ProgressState::Pause, None) => Some(100.0),
+        (_, None) => None,
+    }
+}
+
+/// Left edge of the bouncing block, in percent of the window width, at
+/// `elapsed` into the bounce. Eases in and out at each end.
+fn bounce_x(elapsed: Duration) -> f32 {
+    let ms = elapsed.as_millis() % (2 * PROGRESS_BOUNCE_MS);
+    let t = ms as f32 / PROGRESS_BOUNCE_MS as f32;
+    let t = if t <= 1.0 { t } else { 2.0 - t };
+    t * t * (3.0 - 2.0 * t) * (100.0 - PROGRESS_BOUNCE_LEN)
+}
+
 pub struct Island {
     pub hide_if_single: bool,
     /// Cap on tab width in logical px (`navigation.max-tab-width`).
@@ -313,14 +376,26 @@ pub struct Island {
     progress_state: Option<ProgressState>,
     /// Current progress value (0-100)
     progress_value: Option<u8>,
-    /// When the *current* state began. Reset only when transitioning into a
-    /// new state, so the indeterminate animation phase is not yanked back to
-    /// zero by repeated identical OSC 9;4 reports (issue #1509).
+    /// When the bar started bouncing. Kept while it keeps bouncing, so the
+    /// animation phase is not yanked back to zero by repeated identical
+    /// OSC 9;4 reports (issue #1509).
     progress_started_at: Option<Instant>,
     /// Last time we saw an OSC 9;4 report — bumped on every report, used by
     /// the stale-bar dismissal timer. Decoupled from `progress_started_at`
     /// for the same reason.
     progress_last_seen: Option<Instant>,
+    /// Dismissed (OSC 9;4;0 or timeout): the state is kept until the bar has
+    /// eased down to nothing, so it leaves gradually instead of blinking off.
+    progress_exiting: bool,
+    /// Target bar length in percent of the window width.
+    progress_len_target: f32,
+    /// Offset of the drawn length from `progress_len_target`, eased to zero.
+    progress_len: Spring,
+    /// Offset of the drawn left edge from where the state puts it, eased to
+    /// zero.
+    progress_x: Spring,
+    /// Timestamp of the last progress spring advance, for per-frame dt.
+    progress_last_frame: Instant,
     /// Progress bar color
     pub progress_bar_color: [f32; 4],
     /// Progress bar error color
@@ -359,6 +434,11 @@ impl Island {
             progress_value: None,
             progress_started_at: None,
             progress_last_seen: None,
+            progress_exiting: false,
+            progress_len_target: 0.0,
+            progress_len: Spring::new(),
+            progress_x: Spring::new(),
+            progress_last_frame: Instant::now(),
             // Default progress bar color (blue-ish)
             progress_bar_color: [0.3, 0.6, 1.0, 1.0],
             // Default error color (red-ish)
@@ -392,34 +472,87 @@ impl Island {
 
     /// Update the progress bar state from an OSC 9;4 report.
     ///
+    /// The drawn bar eases from wherever it is toward the new report, so
+    /// appearing, value changes, state switches and dismissal never pop.
     /// `progress_last_seen` is bumped on every (non-Remove) report so the
     /// stale-bar dismissal timer keeps the bar alive while the TUI is
-    /// actively reporting. `progress_started_at` is reset only when the
-    /// state actually transitions, so a TUI sending the same `OSC 9;4;3`
-    /// every 100 ms (issue #1509) doesn't yank the indeterminate animation
-    /// phase back to zero on every report. Mirrors ghostty's split between
-    /// `glib.timeoutAdd` (heartbeat) and `GtkProgressBar`'s internal pulse
-    /// state (animation).
+    /// actively reporting. `progress_started_at` is kept while the bar
+    /// keeps bouncing, so a TUI sending the same `OSC 9;4;3` every 100 ms
+    /// (issue #1509) doesn't yank the animation phase back to zero.
     pub fn set_progress_report(&mut self, report: ProgressReport) {
-        match report.state {
-            ProgressState::Remove => {
-                self.progress_state = None;
-                self.progress_value = None;
-                self.progress_started_at = None;
-                self.progress_last_seen = None;
-            }
-            new_state => {
-                let now = Instant::now();
-                self.progress_last_seen = Some(now);
+        if report.state == ProgressState::Remove {
+            self.begin_progress_exit();
+            return;
+        }
 
-                let transitioning = self.progress_state != Some(new_state);
-                self.progress_state = Some(new_state);
-                self.progress_value = report.progress;
-                if transitioning {
-                    self.progress_started_at = Some(now);
+        let now = Instant::now();
+        self.wake_progress_clock(now);
+        self.progress_last_seen = Some(now);
+        self.progress_exiting = false;
+        self.progress_state = Some(report.state);
+        self.progress_value = report.progress;
+
+        match progress_fill(report.state, report.progress) {
+            Some(fill) => {
+                if let Some(started_at) = self.progress_started_at.take() {
+                    self.progress_x.position +=
+                        bounce_x(now.saturating_duration_since(started_at));
                 }
+                self.retarget_progress_len(fill);
+            }
+            None => {
+                self.progress_started_at.get_or_insert(now);
+                self.retarget_progress_len(PROGRESS_BOUNCE_LEN);
             }
         }
+    }
+
+    /// Move the length target while keeping the drawn length where it is,
+    /// so the bar eases into the new length. Motion away from the new target
+    /// is dropped, so a dismissed bar never grows on before it shrinks.
+    fn retarget_progress_len(&mut self, target: f32) {
+        let len = &mut self.progress_len;
+        len.position += self.progress_len_target - target;
+        if len.position * len.velocity > 0.0 {
+            len.velocity = 0.0;
+        }
+        self.progress_len_target = target;
+    }
+
+    /// Restart the frame clock when the bar was idle, so the first frame of
+    /// a new animation doesn't count the idle time.
+    fn wake_progress_clock(&mut self, now: Instant) {
+        if !self.progress_animating() {
+            self.progress_last_frame = now;
+        }
+    }
+
+    /// Start easing the bar down to nothing. Idempotent: a repeated dismissal
+    /// (or the timeout firing every frame) must not restart the animation.
+    fn begin_progress_exit(&mut self) {
+        if self.progress_state.is_some() && !self.progress_exiting {
+            self.wake_progress_clock(Instant::now());
+            self.progress_exiting = true;
+            self.retarget_progress_len(0.0);
+        }
+    }
+
+    fn clear_progress(&mut self) {
+        self.progress_state = None;
+        self.progress_value = None;
+        self.progress_started_at = None;
+        self.progress_last_seen = None;
+        self.progress_exiting = false;
+        self.progress_len_target = 0.0;
+        self.progress_len.reset();
+        self.progress_x.reset();
+    }
+
+    fn progress_animating(&self) -> bool {
+        self.progress_started_at.is_some()
+            || self.progress_exiting
+            || self.progress_len.position != 0.0
+            || self.progress_x.position != 0.0
     }
 
     /// Check if the island needs continuous rendering (for animations)
@@ -427,8 +560,7 @@ impl Island {
         // A held drag doesn't need continuous frames: the floating tab
         // only moves on CursorMoved (which requests its own redraws);
         // only the slide springs animate between input events.
-        matches!(self.progress_state, Some(ProgressState::Indeterminate))
-            || !self.slide_springs.is_empty()
+        self.progress_animating() || !self.slide_springs.is_empty()
     }
 
     /// Arm a tab drag at mouse press. The drag only `started`s once the
@@ -611,32 +743,59 @@ impl Island {
     /// a long-running TUI that keeps reporting stays visible.
     fn check_progress_timeout(&mut self) {
         if let Some(last_seen) = self.progress_last_seen {
-            if last_seen.elapsed().as_secs() >= PROGRESS_BAR_TIMEOUT_SECS {
-                self.progress_state = None;
-                self.progress_value = None;
-                self.progress_started_at = None;
-                self.progress_last_seen = None;
+            if last_seen.elapsed() >= PROGRESS_BAR_TIMEOUT {
+                self.begin_progress_exit();
             }
         }
     }
 
-    /// Render the progress bar below the island
+    /// Advance the progress animation to `now` and return the state plus the
+    /// drawn span (left edge, length) in percent of the window width.
+    fn progress_span(&mut self, now: Instant) -> Option<(ProgressState, f32, f32)> {
+        self.check_progress_timeout();
+
+        let dt = now
+            .saturating_duration_since(self.progress_last_frame)
+            .as_secs_f32()
+            .min(DRAG_MAX_DT);
+        self.progress_last_frame = now;
+        self.progress_len.update(dt, PROGRESS_EASE_SECS);
+        self.progress_x.update(dt, PROGRESS_EASE_SECS);
+        if self.progress_exiting && self.progress_len.position == 0.0 {
+            self.clear_progress();
+        }
+        let state = self.progress_state?;
+
+        // Phase is anchored to `progress_started_at` (kept while bouncing);
+        // using `progress_last_seen` here would freeze the block at position
+        // 0 for any TUI that heartbeats its OSC 9;4;3 faster than the bounce.
+        // (Issue #1509.)
+        let x = self
+            .progress_started_at
+            .map_or(0.0, |t| bounce_x(now.saturating_duration_since(t)))
+            + self.progress_x.position;
+        let len = self.progress_len_target + self.progress_len.position;
+        let left = x.max(0.0);
+        let right = (x + len).min(100.0);
+        Some((state, left, (right - left).max(0.0)))
+    }
+
+    /// Render the progress bar below the tab strip, or at the top when hidden.
     fn render_progress_bar(
         &mut self,
         sugarloaf: &mut Sugarloaf,
         window_width: f32,
         scale_factor: f32,
+        y_position: f32,
     ) {
-        // Check for timeout first
-        self.check_progress_timeout();
-
-        let state = match self.progress_state {
-            Some(s) => s,
-            None => return, // No progress bar to render
+        let Some((state, left, len)) = self.progress_span(Instant::now()) else {
+            return;
         };
+        if len <= 0.0 {
+            return;
+        }
 
         let width = window_width / scale_factor;
-        let y_position = ISLAND_HEIGHT;
 
         // Determine color based on state
         let color = match state {
@@ -644,58 +803,16 @@ impl Island {
             _ => self.progress_bar_color,
         };
 
-        match state {
-            ProgressState::Remove => {
-                // Should not reach here, but just in case
-            }
-            ProgressState::Set | ProgressState::Error | ProgressState::Pause => {
-                // Render progress bar with specific percentage
-                let progress = self.progress_value.unwrap_or(0) as f32 / 100.0;
-                let bar_width = width * progress;
-
-                if bar_width > 0.0 {
-                    sugarloaf.rect(
-                        None,
-                        0.0,
-                        y_position,
-                        bar_width,
-                        PROGRESS_BAR_HEIGHT,
-                        color,
-                        0.0, // Same depth as other rects
-                        0,
-                    );
-                }
-            }
-            ProgressState::Indeterminate => {
-                // For indeterminate, show a pulsing/moving indicator.
-                // Phase is anchored to `progress_started_at` (set only on
-                // state transition) — using `progress_last_seen` here would
-                // freeze the bar at position 0 for any TUI that heartbeats
-                // its OSC 9;4;3 faster than `cycle_ms`. (Issue #1509.)
-                let elapsed = self
-                    .progress_started_at
-                    .map(|t| t.elapsed().as_millis() as f32)
-                    .unwrap_or(0.0);
-
-                // Move the bar from left to right over 2 seconds, then repeat
-                let cycle_ms = 2000.0;
-                let position = (elapsed % cycle_ms) / cycle_ms;
-                let bar_fraction = 0.2; // 20% of width
-                let bar_width = width * bar_fraction;
-                let x_pos = position * (width - bar_width);
-
-                sugarloaf.rect(
-                    None,
-                    x_pos,
-                    y_position,
-                    bar_width,
-                    PROGRESS_BAR_HEIGHT,
-                    color,
-                    0.0,
-                    0,
-                );
-            }
-        }
+        sugarloaf.rect(
+            None,
+            width * left / 100.0,
+            y_position,
+            width * len / 100.0,
+            PROGRESS_BAR_HEIGHT,
+            color,
+            0.0,
+            0,
+        );
     }
 
     /// Get the height of the island
@@ -725,8 +842,17 @@ impl Island {
             // tabs.
             self.drag = None;
             self.slide_springs.clear();
-            self.render_progress_bar(sugarloaf, window_width, scale_factor);
+            self.render_progress_bar(sugarloaf, window_width, scale_factor, 0.0);
             return;
+        }
+
+        // A lone tab draws as a centred title with no island, and cannot be
+        // reordered. A drag can only start with two or more tabs, but one can
+        // outlive the second tab (its shell exits mid-drag), and that would
+        // float an island where the title belongs.
+        if num_tabs == 1 {
+            self.drag = None;
+            self.slide_springs.clear();
         }
 
         // A reorder that didn't come from this drag (tab closed via
@@ -800,10 +926,21 @@ impl Island {
                 x_position += tab_width;
                 continue;
             }
-            let max_text_width = (tab_width - TAB_PADDING_X * 2.0).max(0.0);
-            let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
+            // A lone tab has nothing to be distinguished from, so it gets no
+            // island at all: just its title, centred across the strip. That
+            // leaves the width of the window to spend on the title, and no
+            // fill to carry a custom colour, which moves to the text.
+            let single = num_tabs == 1;
 
-            let text_color = if is_active {
+            let text_color = if single {
+                match context_manager.custom_color(tab_index) {
+                    Some(mut custom) => {
+                        custom[3] = 1.0;
+                        custom
+                    }
+                    None => self.active_text_color,
+                }
+            } else if is_active {
                 self.active_text_color
             } else {
                 self.inactive_text_color
@@ -814,6 +951,20 @@ impl Island {
                 color: color_u8(text_color),
                 ..DrawOpts::default()
             };
+
+            // The bell mark is its own text run: the UI text layer resolves
+            // a single font per draw from the run's first char, so gluing it
+            // onto the title would shape the whole title in the emoji font.
+            let bell = context_manager.bell(tab_index);
+            let bell_width = if bell { BELL_DOT_SIZE + BELL_GAP } else { 0.0 };
+
+            let max_text_width = if single {
+                single_title_budget(window_width, scale_factor, left_margin) - bell_width
+            } else {
+                tab_width - TAB_PADDING_X * 2.0 - bell_width
+            }
+            .max(0.0);
+            let title = fit_title_to_width(sugarloaf, &raw_title, max_text_width);
 
             // UI text always paints in a final pass above every rect,
             // so the floating tab's opaque background can't occlude
@@ -827,12 +978,47 @@ impl Island {
 
             if !hidden_by_drag {
                 // Measure → centre → draw. Immediate mode, no cached
-                // text_id bookkeeping.
-                let ui = sugarloaf.text_mut();
-                let text_width = ui.measure(&title, &title_opts);
-                let text_x = tab_x + (tab_width - text_width) / 2.0;
+                // text_id bookkeeping. The bell mark and the title are
+                // centred as one group.
+                let text_width =
+                    sugarloaf.text_mut().measure(&title, &title_opts) + bell_width;
+                let text_x = if single {
+                    single_title_x(window_width, scale_factor, text_width, left_margin)
+                } else {
+                    tab_x + (tab_width - text_width) / 2.0
+                };
                 let text_y = (ISLAND_HEIGHT / 2.0) - (TITLE_FONT_SIZE / 2.);
-                ui.draw(text_x, text_y, &title, &title_opts);
+                if bell {
+                    // Centered on the title's lowercase body, not the strip:
+                    // the em box hangs from `text_y` with its optical middle
+                    // about two thirds down, so a strip-centered dot rides
+                    // visibly high next to lowercase titles.
+                    let dot_y =
+                        text_y + TITLE_FONT_SIZE * (2.0 / 3.0) - BELL_DOT_SIZE / 2.0;
+                    sugarloaf.rounded_rect(
+                        None,
+                        text_x,
+                        dot_y,
+                        BELL_DOT_SIZE,
+                        BELL_DOT_SIZE,
+                        text_color,
+                        0.0,
+                        BELL_DOT_SIZE / 2.0,
+                        BELL_DOT_ORDER,
+                    );
+                }
+                sugarloaf.text_mut().draw(
+                    text_x + bell_width,
+                    text_y,
+                    &title,
+                    &title_opts,
+                );
+            }
+
+            // Nothing is drawn behind a lone title.
+            if single {
+                x_position += tab_width;
+                continue;
             }
 
             // Rounded island for this tab. A custom color (picker /
@@ -972,7 +1158,7 @@ impl Island {
         }
 
         // Render the progress bar below the island
-        self.render_progress_bar(sugarloaf, window_width, scale_factor);
+        self.render_progress_bar(sugarloaf, window_width, scale_factor, ISLAND_HEIGHT);
     }
 
     /// Toggle the color picker for a given tab index
@@ -1025,20 +1211,20 @@ impl Island {
 
     /// Handle keyboard input while the color picker (with rename field) is open.
     /// Returns true if input was consumed.
+    /// Handle one key event for the rename input. The caller
+    /// (`has_key_wait`'s `Modal::IslandRename` arm) already verified
+    /// the picker is open via `active_modal` and consumes the event
+    /// unconditionally, so there is nothing to return.
     pub fn handle_rename_input(
         &mut self,
         key_event: &rio_window::event::KeyEvent,
         context_manager: &mut ContextManager<EventProxy>,
-    ) -> bool {
+    ) {
         use rio_window::event::ElementState;
         use rio_window::keyboard::{Key, NamedKey};
 
-        if self.color_picker_tab.is_none() {
-            return false;
-        }
-
         if key_event.state != ElementState::Pressed {
-            return true; // consume release events too
+            return; // consume release events too
         }
 
         match &key_event.logical_key {
@@ -1057,14 +1243,23 @@ impl Island {
             }
             _ => {
                 if let Some(text) = key_event.text.as_ref() {
-                    let s = text.as_str();
-                    if !s.is_empty() && s.chars().all(|c| !c.is_control()) {
-                        self.rename_input.push_str(s);
-                        self.rename_caret_time = Instant::now();
-                    }
+                    self.append_rename_text(text.as_str());
                 }
             }
         }
+    }
+
+    /// Append committed or typed text to the rename input, applying
+    /// the shared overlay input policy (`is_printable_text`) so the
+    /// key path and the IME commit path can never drift. Returns
+    /// whether text was actually appended (same contract as
+    /// `CommandPalette::append_query`).
+    pub fn append_rename_text(&mut self, text: &str) -> bool {
+        if self.color_picker_tab.is_none() || !crate::renderer::is_printable_text(text) {
+            return false;
+        }
+        self.rename_input.push_str(text);
+        self.rename_caret_time = Instant::now();
         true
     }
 
@@ -1354,32 +1549,14 @@ impl Island {
         self.color_picker_tab.is_some()
     }
 
-    /// Get the title text for a specific tab index
+    /// Get the title text for a specific tab index: the one displayed
+    /// chain, shared with the native titlebar.
     fn get_title_for_tab(
         &self,
         context_manager: &ContextManager<EventProxy>,
         tab_index: usize,
     ) -> String {
-        // Custom user-set title takes priority
-        if let Some(custom) = context_manager.custom_title(tab_index) {
-            return custom.to_string();
-        }
-
-        if let Some(context_title) = context_manager.title(tab_index) {
-            if !context_title.content.is_empty() {
-                return context_title.content.clone();
-            }
-
-            // Fallback to program name if title is empty
-            if let Some(ref extra) = context_title.extra {
-                if !extra.program.is_empty() {
-                    return extra.program.clone();
-                }
-            }
-        }
-
-        // Default fallback - show tab number
-        String::from("~")
+        context_manager.displayed_title_for_tab(tab_index)
     }
 }
 
@@ -1404,6 +1581,60 @@ mod tests {
             assert!(CLOSE_MARGIN_RIGHT + CLOSE_HIT_HALF_WIDTH < CLOSE_MIN_ISLAND_WIDTH);
             assert!(CLOSE_HOVER_HALF * 2.0 <= ISLAND_HEIGHT - TAB_INSET_Y * 2.0);
         }
+    }
+
+    /// The regression that shipped: `window_width` is physical while draws
+    /// are logical, so centring on it put the title off the right edge of a
+    /// 2x display and nothing appeared at all.
+    #[test]
+    fn single_title_is_centred_in_logical_pixels() {
+        // 1600 physical at 2x is an 800pt strip, so a 100pt title starts at
+        // 350, not at 750 (which would be centred on the physical width and
+        // sit past the right edge).
+        let x = single_title_x(1600.0, 2.0, 100.0, 0.0);
+        assert_eq!(x, 350.0);
+        assert!(x + 100.0 <= 800.0, "title must stay on screen: {x}");
+
+        // At 1x the two agree, which is why this only showed up on retina.
+        assert_eq!(single_title_x(800.0, 1.0, 100.0, 0.0), 350.0);
+    }
+
+    #[test]
+    fn single_title_never_reaches_under_the_traffic_lights() {
+        let margin = 76.0;
+        // A title wider than the strip would centre at a negative x.
+        let x = single_title_x(1600.0, 2.0, 900.0, margin);
+        assert_eq!(x, margin + TAB_PADDING_X);
+    }
+
+    #[test]
+    fn single_title_budget_leaves_both_margins() {
+        // 800pt strip, no left margin: full width less the right margin and
+        // the padding on each side.
+        assert_eq!(
+            single_title_budget(1600.0, 2.0, 0.0),
+            800.0 - ISLAND_MARGIN_RIGHT - TAB_PADDING_X * 2.0
+        );
+        // The macOS left margin comes off the top of that.
+        assert_eq!(
+            single_title_budget(1600.0, 2.0, 76.0),
+            800.0 - 76.0 - ISLAND_MARGIN_RIGHT - TAB_PADDING_X * 2.0
+        );
+        // A window too narrow to hold any text yields no budget, not a
+        // negative one that would underflow the truncation.
+        assert_eq!(single_title_budget(100.0, 2.0, 76.0), 0.0);
+    }
+
+    /// A lone title gets far more room than a tab slot would give it, which
+    /// is the point of dropping the island.
+    #[test]
+    fn single_title_budget_beats_a_tab_slot() {
+        let slot = tab_strip_layout(1600.0, 2.0, 1, 240.0).tab_width;
+        let slot_budget = (slot - TAB_PADDING_X * 2.0).max(0.0);
+        assert!(
+            single_title_budget(1600.0, 2.0, 0.0) > slot_budget,
+            "expected more than a slot's {slot_budget}"
+        );
     }
 
     #[test]
@@ -1528,51 +1759,180 @@ mod tests {
     }
 
     #[test]
-    fn progress_state_transition_resets_started_at() {
-        // Set → Indeterminate is a real state change, so the animation
-        // anchor should be reseated. (Set has no animation, but the
-        // started_at field still becomes meaningful as soon as we hit
-        // Indeterminate.)
+    fn progress_bounce_restarts_only_when_it_comes_back() {
         let mut island = test_island();
+        island.set_progress_report(ProgressReport {
+            state: ProgressState::Indeterminate,
+            progress: None,
+        });
+        let first = island.progress_started_at.unwrap();
+
         island.set_progress_report(ProgressReport {
             state: ProgressState::Set,
             progress: Some(50),
         });
-        let first = island.progress_started_at.unwrap();
+        assert!(
+            island.progress_started_at.is_none(),
+            "a fill does not bounce"
+        );
 
         std::thread::sleep(std::time::Duration::from_millis(15));
         island.set_progress_report(ProgressReport {
             state: ProgressState::Indeterminate,
             progress: None,
         });
-
         assert!(
             island.progress_started_at.unwrap() > first,
-            "transitioning into a new state must move started_at forward"
+            "bouncing again starts the sweep from the left edge"
         );
-        assert_eq!(island.progress_state, Some(ProgressState::Indeterminate));
     }
 
     #[test]
-    fn progress_set_value_change_does_not_reseat_started_at() {
-        // Same `Set` state with a different percentage is still the same
-        // state — only the value updates. started_at stays put; the bar
-        // just redraws at the new fraction.
+    fn progress_value_without_percentage_matches_the_state() {
+        assert_eq!(progress_fill(ProgressState::Set, Some(40)), Some(40.0));
+        assert_eq!(progress_fill(ProgressState::Error, Some(40)), Some(40.0));
+        assert_eq!(progress_fill(ProgressState::Pause, None), Some(100.0));
+        assert_eq!(progress_fill(ProgressState::Error, None), None);
+        assert_eq!(progress_fill(ProgressState::Set, None), None);
+        assert_eq!(progress_fill(ProgressState::Indeterminate, Some(30)), None);
+    }
+
+    #[test]
+    fn bounce_eases_across_and_back_without_drift() {
+        let ms = std::time::Duration::from_millis;
+        let far = 100.0 - PROGRESS_BOUNCE_LEN;
+        assert_eq!(bounce_x(ms(0)), 0.0);
+        assert_eq!(bounce_x(ms(PROGRESS_BOUNCE_MS as u64)), far);
+        assert_eq!(bounce_x(ms(2 * PROGRESS_BOUNCE_MS as u64)), 0.0);
+        assert_eq!(bounce_x(ms(300)), bounce_x(ms(2100)));
+        assert!(bounce_x(ms(120)) < far * 0.1);
+        let day = std::time::Duration::from_secs(86_400);
+        assert_eq!(bounce_x(day + ms(600)), bounce_x(ms(600)));
+    }
+
+    /// Run frames 16ms apart for `ms` and return the last drawn span.
+    fn step(island: &mut Island, ms: u64) -> Option<(f32, f32)> {
+        let mut span = None;
+        for _ in 0..ms.div_ceil(16) {
+            let now = island.progress_last_frame + std::time::Duration::from_millis(16);
+            span = island.progress_span(now).map(|(_, x, len)| (x, len));
+        }
+        span
+    }
+
+    fn report(island: &mut Island, state: ProgressState, progress: Option<u8>) {
+        island.set_progress_report(ProgressReport { state, progress });
+    }
+
+    #[test]
+    fn progress_fill_eases_in_and_between_values() {
         let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(20),
-        });
-        let first = island.progress_started_at.unwrap();
+        report(&mut island, ProgressState::Set, Some(80));
+        let (_, len) = step(&mut island, 16).unwrap();
+        assert!(len > 0.0 && len < 40.0, "grows in from nothing: {len}");
+        let (_, len) = step(&mut island, 800).unwrap();
+        assert!((len - 80.0).abs() < 0.1, "settles at the value: {len}");
+        assert!(!island.needs_redraw());
 
-        std::thread::sleep(std::time::Duration::from_millis(15));
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(60),
-        });
+        report(&mut island, ProgressState::Set, Some(20));
+        let (_, len) = step(&mut island, 16).unwrap();
+        assert!(len > 50.0, "eases toward the new value: {len}");
+        let (_, len) = step(&mut island, 800).unwrap();
+        assert!((len - 20.0).abs() < 0.1, "{len}");
+    }
 
-        assert_eq!(island.progress_started_at, Some(first));
-        assert_eq!(island.progress_value, Some(60));
+    #[test]
+    fn progress_state_switch_keeps_the_fill() {
+        let mut island = test_island();
+        report(&mut island, ProgressState::Set, Some(80));
+        step(&mut island, 800);
+
+        report(&mut island, ProgressState::Error, Some(80));
+        let (_, len) = step(&mut island, 16).unwrap();
+        assert!(
+            (len - 80.0).abs() < 0.1,
+            "Set -> Error keeps the bar: {len}"
+        );
+
+        report(&mut island, ProgressState::Error, None);
+        assert!(island.progress_started_at.is_some());
+        let (_, len) = step(&mut island, 16).unwrap();
+        assert!(len > 60.0, "eases down to the block: {len}");
+        let (_, len) = step(&mut island, 800).unwrap();
+        assert!((len - PROGRESS_BOUNCE_LEN).abs() < 0.1, "{len}");
+    }
+
+    #[test]
+    fn progress_bounce_to_fill_slides_back_to_the_edge() {
+        let mut island = test_island();
+        report(&mut island, ProgressState::Indeterminate, None);
+        step(&mut island, 800);
+        let ago = std::time::Duration::from_millis(600);
+        island.progress_started_at = Some(Instant::now() - ago);
+        let before = bounce_x(ago);
+
+        report(&mut island, ProgressState::Set, Some(50));
+        let (x, _) = step(&mut island, 16).unwrap();
+        assert!(x > before / 2.0, "slides instead of jumping: {x}");
+        let (x, len) = step(&mut island, 800).unwrap();
+        assert_eq!(x, 0.0);
+        assert!((len - 50.0).abs() < 0.1, "{len}");
+    }
+
+    #[test]
+    fn progress_dismissed_mid_grow_only_shrinks() {
+        let mut island = test_island();
+        report(&mut island, ProgressState::Set, Some(100));
+        let (_, mut prev) = step(&mut island, 48).unwrap();
+        report(&mut island, ProgressState::Remove, None);
+        assert!(island.needs_redraw());
+        while let Some((_, len)) = step(&mut island, 16) {
+            assert!(len <= prev + 0.5, "grew after dismissal: {prev} -> {len}");
+            prev = len;
+        }
+        assert!(island.progress_state.is_none());
+        assert!(!island.needs_redraw());
+    }
+
+    #[test]
+    fn progress_report_mid_exit_eases_back_from_where_it_is() {
+        let mut island = test_island();
+        report(&mut island, ProgressState::Set, Some(80));
+        step(&mut island, 800);
+        report(&mut island, ProgressState::Remove, None);
+        let (_, shrinking) = step(&mut island, 64).unwrap();
+        assert!(shrinking > 5.0 && shrinking < 75.0, "{shrinking}");
+
+        report(&mut island, ProgressState::Set, Some(80));
+        assert!(!island.progress_exiting);
+        let (_, len) = step(&mut island, 16).unwrap();
+        assert!(
+            len > shrinking / 2.0,
+            "no snap to zero: {shrinking} -> {len}"
+        );
+        let (_, len) = step(&mut island, 800).unwrap();
+        assert!((len - 80.0).abs() < 0.1, "{len}");
+
+        report(&mut island, ProgressState::Indeterminate, None);
+        let started = island.progress_started_at.unwrap();
+        report(&mut island, ProgressState::Remove, None);
+        step(&mut island, 32);
+        report(&mut island, ProgressState::Indeterminate, None);
+        assert_eq!(island.progress_started_at, Some(started));
+    }
+
+    #[test]
+    fn progress_times_out_into_the_shrink() {
+        let mut island = test_island();
+        report(&mut island, ProgressState::Set, Some(50));
+        step(&mut island, 800);
+        island.progress_last_seen = Some(
+            Instant::now() - PROGRESS_BAR_TIMEOUT - std::time::Duration::from_millis(1),
+        );
+        step(&mut island, 16);
+        assert!(island.progress_exiting);
+        step(&mut island, 800);
+        assert!(island.progress_state.is_none());
     }
 
     /// Each char = 1.0 wide, including the ellipsis. Easy arithmetic.
@@ -1848,19 +2208,25 @@ mod tests {
     }
 
     #[test]
-    fn progress_remove_clears_all_progress_state() {
+    fn progress_remove_shrinks_out_then_clears_all_progress_state() {
         let mut island = test_island();
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Set,
-            progress: Some(50),
-        });
-        island.set_progress_report(ProgressReport {
-            state: ProgressState::Remove,
-            progress: None,
-        });
+        report(&mut island, ProgressState::Set, Some(50));
+        step(&mut island, 800);
+        report(&mut island, ProgressState::Remove, None);
+
+        // Still on screen and still animating: the bar retracts gradually
+        // instead of blinking off.
+        assert_eq!(island.progress_state, Some(ProgressState::Set));
+        assert!(island.progress_exiting);
+        assert!(island.needs_redraw());
+
+        // Once the shrink-out has run its course everything is dropped.
+        assert!(step(&mut island, 800).is_none());
         assert!(island.progress_state.is_none());
         assert!(island.progress_value.is_none());
         assert!(island.progress_started_at.is_none());
         assert!(island.progress_last_seen.is_none());
+        assert!(!island.progress_exiting);
+        assert!(!island.needs_redraw());
     }
 }

@@ -160,9 +160,7 @@ pub struct GridUniforms {
     /// `input_colorspace` (`renderer/mod.rs:264`), so the grid and
     /// every other pipeline agree on the transform. Without this the
     /// grid bg appears brighter/more saturated than the window bg
-    /// fill, which runs through `prepare_output_rgb`. Mirrors
-    /// `Uniforms.use_display_p3` + `load_color` pair at
-    /// `ghostty/src/renderer/shaders/shaders.metal:224`.
+    /// fill, which runs through `prepare_output_rgb`.
     pub input_colorspace: u32,
 }
 

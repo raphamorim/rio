@@ -16,6 +16,9 @@
       <ui:WixUI Id="WixUI_Minimal" />
       <Feature Id="ProductFeature" Title="ConsoleApp" Level="1">
          <ComponentRef Id="RioExe" />
+         <ComponentRef Id="ConPty" />
+         <ComponentRef Id="ConPtyHostArm64" />
+         {{ if eq .Arch "amd64" }}<ComponentRef Id="ConPtyHostX64" />{{ end }}
          <ComponentRef Id="RioShortcut" />
          <ComponentRef Id="ModifyPathEnv" />
          <ComponentRef Id="ContextMenu" />
@@ -25,6 +28,27 @@
          <Component Id="RioExe">
             <File Id="RioExeFile" Source="{{ .Binary }}.exe" Name="rio.exe" KeyPath="yes" />
          </Component>
+      </DirectoryRef>
+      <!-- Bundled ConPTY: conpty.dll next to rio.exe, and the console
+           host it looks for in a folder named for the machine's
+           architecture. See misc/windows/conhost/README.md. -->
+      <DirectoryRef Id="RioProgramFiles">
+         <Component Id="ConPty">
+            <File Id="ConPtyDll" Source=".\misc\windows\conhost\{{ .Arch }}\conpty.dll" Name="conpty.dll" KeyPath="yes" />
+            <File Id="ConPtyLicense" Source=".\misc\windows\conhost\LICENSE" Name="LICENSE-ConPTY.txt" />
+         </Component>
+         <Directory Id="ConPtyArm64" Name="arm64">
+            <Component Id="ConPtyHostArm64">
+               <File Id="OpenConsoleArm64" Source=".\misc\windows\conhost\{{ .Arch }}\arm64\OpenConsole.exe" Name="OpenConsole.exe" KeyPath="yes" />
+            </Component>
+         </Directory>
+         {{ if eq .Arch "amd64" }}
+         <Directory Id="ConPtyX64" Name="x64">
+            <Component Id="ConPtyHostX64">
+               <File Id="OpenConsoleX64" Source=".\misc\windows\conhost\amd64\x64\OpenConsole.exe" Name="OpenConsole.exe" KeyPath="yes" />
+            </Component>
+         </Directory>
+         {{ end }}
       </DirectoryRef>
       <DirectoryRef Id="RioProgramMenu">
          <!-- Application shortcut -->

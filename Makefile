@@ -64,6 +64,29 @@ $(APP_NAME)-%: $(TARGET)-%
 install-terminfo:
 	@tic -xe xterm-rio,rio -o $(APP_EXTRAS_DIR) $(TERMINFO)
 
+.PHONY: librio-ctest librio-xcframework
+librio-ctest:
+	cargo build -p librio
+	@mkdir -p target/librio
+	cc librio/ctest/main.c target/debug/liblibrio.a \
+		-o target/librio/ctest \
+		-framework CoreFoundation -framework Foundation -framework AppKit \
+		-framework CoreGraphics -framework CoreText -framework Metal \
+		-framework QuartzCore -framework CoreVideo -liconv -lc++
+	target/librio/ctest
+
+LIBRIO_XCF = target/librio/RioKit.xcframework
+librio-xcframework:
+	cargo build -p librio --profile librio --target aarch64-apple-darwin
+	@rm -rf $(LIBRIO_XCF)
+	@mkdir -p $(LIBRIO_XCF)/macos-arm64/Headers
+	@cp target/aarch64-apple-darwin/librio/liblibrio.a \
+		$(LIBRIO_XCF)/macos-arm64/librio.a
+	@cp librio/include/librio.h librio/include/module.modulemap \
+		$(LIBRIO_XCF)/macos-arm64/Headers/
+	@cp librio/xcframework-info.plist $(LIBRIO_XCF)/Info.plist
+	@echo "Created '$(LIBRIO_XCF)'"
+
 release-macos: app-universal
 	@codesign --remove-signature "$(TARGET_DIR_OSX)/$(APP_NAME)"
 	@codesign --force --deep --sign - "$(TARGET_DIR_OSX)/$(APP_NAME)"

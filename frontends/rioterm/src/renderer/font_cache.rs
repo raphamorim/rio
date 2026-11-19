@@ -3,7 +3,7 @@ use rio_backend::sugarloaf::swash::Attributes;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use tracing::debug;
-use unicode_width::UnicodeWidthChar;
+use rio_unicode::UnicodeWidthChar;
 
 /// Maximum number of font cache entries to keep in memory
 /// Increased for better performance with complex terminal content
@@ -137,7 +137,7 @@ impl FontCache {
                         // PUA codepoints fall through to the regular
                         // font lookup, which returns a sensible width.
                         if let Some((font_id, is_emoji)) =
-                            font_ctx.find_best_font_match(ch, &style, None)
+                            font_ctx.find_best_font_match(ch, &style)
                         {
                             if is_emoji {
                                 width = 2.0;

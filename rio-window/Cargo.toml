@@ -61,6 +61,14 @@ objc2 = { version = "0.5.2", features = ["relax-sign-encoding"] }
 objc = { workspace = true }
 libc = { workspace = true }
 core-graphics = "0.24.0"
+block2 = "0.5.1"
+objc2-user-notifications = { version = "0.2.2", features = [
+    "UNUserNotificationCenter",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationTrigger",
+    "block2",
+] }
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
 version = "0.2.2"
@@ -72,6 +80,7 @@ features = [
     "NSDictionary",
     "NSDistributedNotificationCenter",
     "NSEnumerator",
+    "NSError",
     "NSNotification",
     "NSObjCRuntime",
     "NSPathUtilities",
@@ -99,6 +108,8 @@ features = [
     "NSGraphicsContext",
     "NSImage",
     "NSImageRep",
+    "NSLayoutAnchor",
+    "NSLayoutConstraint",
     "NSMenu",
     "NSMenuItem",
     "NSOpenGLView",
@@ -108,8 +119,10 @@ features = [
     "NSScreen",
     "NSTextInputClient",
     "NSTextInputContext",
+    "NSTitlebarAccessoryViewController",
     "NSToolbar",
     "NSView",
+    "NSViewController",
     "NSWindow",
     "NSWindowScripting",
     "NSWindowTabGroup",
@@ -119,6 +132,13 @@ features = [
 
 [target.'cfg(target_os = "windows")'.dependencies]
 unicode-segmentation = "1.7.1"
+# Toast notifications are WinRT, which `windows-sys` does not cover. Kept at
+# the version sugarloaf pins so the tree holds one copy of the `windows` crate
+# (see `sugarloaf/Cargo.toml`).
+windows = { version = "0.62", features = [
+    "Data_Xml_Dom",
+    "UI_Notifications",
+] }
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
 version = "0.59.0"
@@ -151,9 +171,6 @@ features = [
     "Win32_UI_WindowsAndMessaging",
 ]
 
-[target.'cfg(windows)'.build-dependencies]
-winres = "0.1.12"
-
 [target.'cfg(all(unix, not(any(target_os = "redox", target_family = "wasm", target_os = "macos"))))'.dependencies]
 ahash = { version = "0.8.7", features = ["no-rng"], optional = true }
 bytemuck = { version = "1.13.1", default-features = false, optional = true }
@@ -176,7 +193,7 @@ wayland-backend = { version = "0.3.10", default-features = false, features = [
     "client_system",
 ], optional = true }
 wayland-client = { version = "0.31.10", optional = true }
-wayland-protocols = { version = "0.32.8", features = [
+wayland-protocols = { version = "0.32.9", features = [
     "staging",
 ], optional = true }
 wayland-protocols-plasma = { version = "0.3.8", features = [

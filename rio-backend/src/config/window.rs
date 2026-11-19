@@ -1,5 +1,6 @@
 use crate::config::defaults::*;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "renderer")]
 use sugarloaf::ImageProperties;
 
 #[derive(Default, Clone, Serialize, Deserialize, Copy, Debug, PartialEq)]
@@ -28,7 +29,7 @@ pub enum Colorspace {
 impl Default for Colorspace {
     fn default() -> Colorspace {
         // `[window] colorspace` = how to interpret hex / ANSI color values
-        // (matches ghostty's `window-colorspace` semantics). The surface
+        // The surface
         // itself is always wide-gamut on macOS; the config picks which
         // primaries the input bytes are assumed to be in. Default `srgb`
         // keeps `#ff0000` looking like the sRGB standard red most apps use.
@@ -124,6 +125,7 @@ impl WindowBlur {
     }
 }
 
+#[cfg(feature = "rio-window")]
 impl From<WindowBlur> for rio_window::window::BlurStyle {
     fn from(b: WindowBlur) -> Self {
         match b {
@@ -199,11 +201,16 @@ pub struct Window {
     pub opacity_cells: bool,
     #[serde(default)]
     pub blur: WindowBlur,
+    #[cfg(feature = "renderer")]
     #[serde(rename = "background-image", skip_serializing)]
     pub background_image: Option<ImageProperties>,
     #[serde(default = "Decorations::default")]
     pub decorations: Decorations,
-    #[serde(default = "bool::default", rename = "macos-use-unified-titlebar")]
+    /// On by default on macOS, where native tabs then sit in the titlebar.
+    #[serde(
+        default = "default_macos_unified_titlebar",
+        rename = "macos-use-unified-titlebar"
+    )]
     pub macos_use_unified_titlebar: bool,
     #[serde(rename = "macos-use-shadow", default = "default_bool_true")]
     pub macos_use_shadow: bool,
@@ -242,6 +249,12 @@ pub struct Window {
     pub quake_height_percentage: f32,
 }
 
+/// The unified titlebar is on by default on macOS, where native tabs sit
+/// in it; the setting means nothing elsewhere.
+fn default_macos_unified_titlebar() -> bool {
+    cfg!(target_os = "macos")
+}
+
 impl Default for Window {
     fn default() -> Window {
         Window {
@@ -250,10 +263,11 @@ impl Default for Window {
             mode: WindowMode::default(),
             opacity: default_opacity(),
             opacity_cells: false,
+            #[cfg(feature = "renderer")]
             background_image: None,
             decorations: Decorations::default(),
             blur: WindowBlur::default(),
-            macos_use_unified_titlebar: false,
+            macos_use_unified_titlebar: default_macos_unified_titlebar(),
             macos_use_shadow: true,
             macos_traffic_light_position_x: None,
             macos_traffic_light_position_y: None,
@@ -279,6 +293,7 @@ fn default_quake_height_percentage() -> f32 {
 }
 
 impl Colorspace {
+    #[cfg(feature = "renderer")]
     pub fn to_sugarloaf_colorspace(&self) -> sugarloaf::Colorspace {
         match self {
             Colorspace::Srgb => sugarloaf::Colorspace::Srgb,
@@ -287,7 +302,7 @@ impl Colorspace {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "rio-window"))]
     pub fn to_rio_window_colorspace(&self) -> rio_window::platform::macos::Colorspace {
         match self {
             Colorspace::Srgb => rio_window::platform::macos::Colorspace::Srgb,
@@ -296,7 +311,7 @@ impl Colorspace {
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(all(not(target_os = "macos"), feature = "rio-window"))]
     pub fn to_rio_window_colorspace(&self) {
         // No-op for non-macOS platforms
     }

@@ -7,6 +7,9 @@ on:
     paths:
       - ".github/workflows/release.yml"
       - ".goreleaser.yaml"
+      - "misc/windows/rio.wxs"
+      - "misc/windows/conhost/fetch.ps1"
+      - "misc/windows/conhost/LICENSE"
   workflow_dispatch:
 concurrency:
   group: release-${{ github.event_name }}-${{ github.ref_name }}
@@ -47,6 +50,24 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Metainfo carries this release
+        # Flathub builds from the tag, so the AppStream release entry
+        # must be in the tagged tree; a post-tag fixup is forever one
+        # release behind (the list once drifted 17 releases).
+        # misc/prepare-release.sh adds it together with the version
+        # bump; this gate makes skipping that impossible.
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          if ! grep -qF "release version=\"$v\"" misc/com.rioterm.Rio.metainfo.xml; then
+            echo "misc/com.rioterm.Rio.metainfo.xml has no <release> entry for $v." >&2
+            echo "Run misc/prepare-release.sh $v before tagging (it adds the entry" >&2
+            echo "alongside the workspace version bump)." >&2
+            echo "The tag already exists, so after fixing: retag with" >&2
+            echo "  git tag -f v$v && git push -f origin v$v" >&2
+            exit 1
+          fi
       - uses: actions/cache@v5
         with:
           path: dist/${{ matrix.cache-subdir }}
@@ -106,6 +127,36 @@ jobs:
           distribution: goreleaser-pro
           version: nightly
           args: release --clean --split ${{ matrix._ids }} --nightly --skip=winget
+  # Full gnu-toolchain coverage (LTO release profile on all three MSYS2
+  # flavors) runs here as a release gate instead of on every push.
+  msys2-build:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        sys: [MINGW64, UCRT64, CLANG64]
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.sys }}
+          release: false
+          update: false
+          install: base-devel git
+          pacboy: >-
+            rust:p
+            cc:p
+            pkgconf:p
+            cmake:p
+            freetype:p
+            python:p
+            fontconfig:p
+      - name: Build (release)
+        shell: msys2 {0}
+        run: cargo build --release --features wgpu
+
   release:
     # skip if cache exists for same commit, since we probably already released
     if: needs.build.outputs.cache-hit != 'true'
@@ -150,3 +201,34 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
+      # The release body cannot come from goreleaser's release.header, because
+      # changelog.disable skips the pipe that renders it, leaving the body
+      # empty. Set it here instead.
+      - name: Set release notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG='${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'nightly' }}'
+          gh release edit "$TAG" --notes "**Full Changelog**: https://github.com/raphamorim/rio/blob/$TAG/CHANGELOG.md"
+  librio-xcframework:
+    needs: release
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build RioKit.xcframework
+        run: make librio-xcframework
+      - name: Package
+        run: ditto -c -k --keepParent target/librio/RioKit.xcframework RioKit.xcframework.zip
+      - name: Upload to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG='${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'nightly' }}'
+          gh release upload "$TAG" \
+            RioKit.xcframework.zip \
+            target/librio/RioKit.xcframework/macos-arm64/librio.a \
+            librio/include/librio.h \
+            --clobber

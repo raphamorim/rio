@@ -5,9 +5,9 @@
 
 use crate::sugarloaf::primitives::is_private_user_area;
 use crate::SpanStyle;
+use rio_unicode::UnicodeWidthChar;
 use rustc_hash::FxHashMap;
 use swash::Attributes;
-use unicode_width::UnicodeWidthChar;
 
 /// Unscaled horizontal advance for a glyph + the font's units-per-em,
 /// stored together so callers can recover pixels at any font size:
@@ -127,7 +127,7 @@ pub(crate) fn resolve_with(
     // No route context here — this cache is for layout/width measurement,
     // not pane rendering. PUA codepoints fall through to the regular
     // font lookup, which returns a sensible width.
-    let (font_id, is_emoji) = font_lib.resolve_font_for_char(ch, &style, None);
+    let (font_id, is_emoji) = font_lib.resolve_font_for_char(ch, &style);
 
     if is_emoji {
         width = 2.0;
@@ -161,11 +161,17 @@ pub(crate) fn compute_advance(
         offset,
         key,
     };
+    // At the face's instance, whose advances can differ from the file's
+    // default (a `MONO` axis, `wdth`).
+    let coords = font_ctx
+        .try_get(&font_id)
+        .map(|font| font.normalized_coords())
+        .unwrap_or_default();
     let glyph_id = font_ref.charmap().map(ch as u32);
-    let metrics = font_ref.glyph_metrics(&[]);
+    let metrics = font_ref.glyph_metrics(&coords);
     Some(AdvanceInfo {
         advance_units: metrics.advance_width(glyph_id),
-        units_per_em: font_ref.metrics(&[]).units_per_em,
+        units_per_em: font_ref.metrics(&coords).units_per_em,
     })
 }
 
@@ -179,7 +185,9 @@ pub(crate) fn compute_advance(
     ch: char,
 ) -> Option<AdvanceInfo> {
     let font = font_ctx.try_get(&font_id)?;
-    let handle = if let Some(path) = font.path() {
+    let handle = if let Some(handle) = font.handle() {
+        Some(handle.clone())
+    } else if let Some(path) = font.path() {
         crate::font::macos::FontHandle::from_path(path)
     } else if let Some(bytes) = font.data() {
         crate::font::macos::FontHandle::from_bytes(bytes.as_ref())

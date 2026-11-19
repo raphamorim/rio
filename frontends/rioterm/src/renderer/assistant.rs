@@ -88,6 +88,16 @@ impl AssistantOverlay {
         self.error.is_some()
     }
 
+    /// Whether the active toast is a hard error. Errors are modal
+    /// (keys and IME blocked, Enter dismisses); warnings render but
+    /// must never block input over a working terminal.
+    #[inline]
+    pub fn is_error(&self) -> bool {
+        self.error
+            .as_ref()
+            .is_some_and(|error| error.level == RioErrorLevel::Error)
+    }
+
     #[inline]
     pub fn set_error(&mut self, error: RioError) {
         self.error = Some(error);
