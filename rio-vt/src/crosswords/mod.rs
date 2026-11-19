@@ -6006,17 +6006,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // frame. The first allocation fires `GlyphProtocolInstalled`
         // so the frontend can wire the registry into the font library
         // exactly once per session.
-        // §9: replaced registrations text still shows are bounded. Only a
-        // registration that would add one can hit the bound; it first
-        // finds out which are really still shown, and if all of them
-        // are, is refused until text using them is gone. The sweep costs
-        // one walk of the cells with extras, like other requests that
-        // touch the scrollback (ED 3J), so it isn't rate limited: a
-        // client that keeps asking after `no_space` pays for it in time,
-        // and gets the space as soon as it frees it.
+        // §9: replaced registrations text still shows are bounded. Past
+        // the bound, a registration that adds a glyph (anything but the
+        // current one again) first finds out which are really still
+        // shown, and if all of them are, is refused until text using
+        // them is gone. Any new glyph counts, not only one that replaces
+        // a shown one: it can be printed and then cleared, and `c` can't
+        // be refused. The sweep costs one walk of the cells with extras,
+        // like other requests that touch the scrollback (ED 3J), so it
+        // isn't rate limited: a client that keeps asking after
+        // `no_space` pays for it in time, and gets the space as soon as
+        // it frees it.
         if self.glyph_registry.as_ref().is_some_and(|r| {
             r.retired_len() >= MAX_RETIRED
-                && r.retires_shown(cp, &stored, upm, width, &layout)
+                && !r.is_current(cp, &stored, upm, width, &layout)
         }) {
             self.reclaim_glyphs();
             if self
@@ -8064,11 +8067,18 @@ mod tests {
         // Every one of them is still shown.
         assert_eq!(registry.retired_len(), MAX_RETIRED);
 
-        // Registrations that retire nothing still succeed: a new
-        // codepoint, replacing it before any text uses it, and the
-        // current one sent again.
-        register_upm(&mut cw, 0x10_0001, 1000);
-        register_upm(&mut cw, 0x10_0001, 2048);
+        // A new codepoint is refused too, since it could be printed and
+        // cleared; the current one sent again adds nothing and succeeds.
+        assert_eq!(
+            Handler::glyph_register(
+                &mut cw,
+                0x10_0001,
+                glyf_payload(minimal_glyf_bytes(), 1000),
+                1,
+                Default::default(),
+            ),
+            Err(RegisterError::NoSpace)
+        );
         register_upm(&mut cw, 0x10_0000, MAX_RETIRED as u16 + 1);
         assert_eq!(registry.retired_len(), MAX_RETIRED);
 
@@ -8078,6 +8088,46 @@ mod tests {
         parser.advance(&mut cw, " ".repeat(80 * 14).as_bytes());
         assert_eq!(over(&mut cw), Ok(()));
         assert_eq!(registry.retired_len(), 1);
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_bound_holds_when_clearing_retires() {
+        // Register, print, clear: every round retires one more glyph text
+        // shows, through `c` rather than a replacing `r`. The bound still
+        // has to stop it.
+        use crate::ansi::glyph_protocol::RegisterError;
+        use rio_graphics::glyph::glyph_registry::MAX_RETIRED;
+        // Every glyph printed stays on screen or in the scrollback.
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(80, 24),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            100,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+        let mut refused = false;
+        for round in 0..2 * MAX_RETIRED {
+            let registered = Handler::glyph_register(
+                &mut cw,
+                0x10_0000,
+                glyf_payload(minimal_glyf_bytes(), 1000 + round as u16),
+                1,
+                Default::default(),
+            );
+            if registered == Err(RegisterError::NoSpace) {
+                refused = true;
+                break;
+            }
+            registered.unwrap();
+            parser.advance(&mut cw, "\u{100000}".as_bytes());
+            Handler::glyph_clear(&mut cw, Some(0x10_0000));
+        }
+        let retired = cw.glyph_registry.as_ref().unwrap().retired_len();
+        assert!(retired <= MAX_RETIRED, "{retired} retired");
+        assert!(refused);
     }
 
     #[cfg(feature = "graphics")]

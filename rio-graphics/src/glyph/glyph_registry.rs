@@ -282,11 +282,9 @@ impl GlyphRegistry {
         Ok(())
     }
 
-    /// Whether this registration would replace one that text still
-    /// shows, which then has to be kept as retired. False for a new
-    /// codepoint, for one identical to the current registration, and
-    /// for replacing one no text was printed with.
-    pub fn retires_shown(
+    /// Whether this is already the current registration at `cp`, so
+    /// registering it again keeps it and adds nothing.
+    pub fn is_current(
         &self,
         cp: u32,
         payload: &StoredPayload,
@@ -299,10 +297,7 @@ impl GlyphRegistry {
             .current
             .get(&cp)
             .and_then(|version| inner.by_version.get(version))
-            .is_some_and(|existing| {
-                existing.bound.load(Ordering::Relaxed)
-                    && !existing.is_same(payload, upm, width, layout)
-            })
+            .is_some_and(|existing| existing.is_same(payload, upm, width, layout))
     }
 
     /// Clear one codepoint for text printed from now on. No-op if

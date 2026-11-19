@@ -573,11 +573,12 @@ A registration can outlive the program that made it. A later
 program in the same session that emits a block codepoint without
 registering it first gets whatever was registered there last, or
 the system font, or tofu. Where the terminal binds at print time
-(§6.3), registering never changes what an earlier program printed. Programs MUST register every block
-codepoint they emit, rather than relying on what the session
-already holds. Because the block holds only application-drawn
-glyphs, a leftover registration can only affect other programs
-using the block, never text or an installed font's icons.
+(§6.3), registering never changes what an earlier program printed.
+Programs MUST register every block codepoint they emit, rather than
+relying on what the session already holds. Because the block holds
+only application-drawn glyphs, a leftover registration can only
+affect other programs using the block, never text or an installed
+font's icons.
 
 ## 7. Clear (`c`)
 
@@ -1255,10 +1256,12 @@ Other considerations:
   scrollback, past the 1024 slots. A terminal that binds at print time
   MUST bound that: count the glyphs still used by text against its
   budget, reject registrations past it with `reason=no_space`, and
-  free a glyph, with its rasterizations, when the last cell using it
-  is gone. It knows exactly which glyphs are in use, so the bound is
-  exact: in kitty, registering and printing 200 new glyphs in a row
-  never kept more than 40 rasterized at once.
+  release a glyph once no cell uses it, which it can find out by
+  walking its cells before refusing. Rasterizations of a released
+  glyph are never drawn again, so a cache can drop them with it or
+  evict them like any other. It knows exactly which glyphs are in use,
+  so the bound is exact: in kitty, registering and printing 200 new
+  glyphs in a row never kept more than 40 rasterized at once.
 - **Font fingerprinting.** `q` with a `cp` outside the block tells a
   program, one codepoint at a time, whether an installed font covers
   it, so a remote program can learn something about the installed
