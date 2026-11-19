@@ -211,7 +211,10 @@ pub trait SurfaceDelegate: MaybeSendSync + 'static {
     /// Bytes the terminal wants delivered to the child process. Only called
     /// on non-`pty` builds, where the host owns the transport (a WebSocket
     /// to a real shell, an in-page demo interpreter, ...); with a PTY the
-    /// bytes go straight to it and this never fires.
+    /// bytes go straight to it and this never fires. Called with the
+    /// terminal locked, or from inside [`Surface::glyph_query_reply`]
+    /// while it keeps the replies in order, so only hand the bytes on
+    /// here; calling back into the surface deadlocks.
     fn output(&self, _surface: SurfaceId, _bytes: &[u8]) {}
 }
 
