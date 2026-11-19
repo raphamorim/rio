@@ -1,5 +1,8 @@
 extern crate libc;
 
+mod working_dir;
+pub use working_dir::{check_working_dir, expand_tilde, in_flatpak, resolve_working_dir};
+
 #[cfg(not(windows))]
 mod unix;
 #[cfg(not(windows))]

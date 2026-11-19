@@ -137,6 +137,22 @@ fn window_should_be_opaque(config: &rio_backend::config::Config) -> bool {
     config.window.opacity >= 1.0 && !config.window.blur.is_glass()
 }
 
+/// A warning for a `working-dir` shells can't start in (they start in the
+/// current directory instead), which would otherwise only reach the log.
+/// Not under Flatpak, where shells start on the host, which may see
+/// directories the sandbox can't.
+fn working_dir_error(config: &rio_backend::config::Config) -> Option<RioError> {
+    let dir = config.working_dir.as_deref()?;
+    if teletypewriter::in_flatpak() {
+        return None;
+    }
+    let why = teletypewriter::check_working_dir(dir).err()?;
+    Some(RioError {
+        level: RioErrorLevel::Warning,
+        report: RioErrorType::InvalidWorkingDirectory(why),
+    })
+}
+
 impl Screen<'_> {
     pub fn new<'screen>(
         window_properties: ScreenWindowProperties,
@@ -326,6 +342,9 @@ impl Screen<'_> {
             }
         } else {
             sugarloaf.clear_background_image();
+        }
+        if let Some(error) = working_dir_error(config) {
+            renderer.assistant.set_error(error);
         }
 
         Ok(Screen {
@@ -641,6 +660,9 @@ impl Screen<'_> {
             }
         } else {
             self.sugarloaf.clear_background_image();
+        }
+        if let Some(error) = working_dir_error(config) {
+            self.renderer.assistant.set_error(error);
         }
     }
 
@@ -5155,5 +5177,40 @@ mod tests {
             at: std::time::Instant::now() - crate::constants::MULTI_CLICK_THRESHOLD * 2,
         };
         assert!(!stale.validates_double_click(origin));
+    }
+}
+
+#[cfg(test)]
+mod working_dir_error_tests {
+    use super::working_dir_error;
+    use rio_backend::config::Config;
+    use rio_backend::error::RioErrorType;
+
+    fn with_dir(dir: Option<String>) -> Config {
+        Config {
+            working_dir: dir,
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn unset_or_usable_is_no_error() {
+        assert!(working_dir_error(&with_dir(None)).is_none());
+        let tmp = std::env::temp_dir().to_string_lossy().into_owned();
+        assert!(working_dir_error(&with_dir(Some(tmp))).is_none());
+        assert!(working_dir_error(&with_dir(Some("~".into()))).is_none());
+    }
+
+    #[test]
+    fn a_missing_directory_is_reported() {
+        let missing = std::env::temp_dir()
+            .join("rio-working-dir-that-does-not-exist")
+            .to_string_lossy()
+            .into_owned();
+        let error = working_dir_error(&with_dir(Some(missing))).expect("reported");
+        assert!(matches!(
+            error.report,
+            RioErrorType::InvalidWorkingDirectory(ref why) if why.contains("is not a directory")
+        ));
     }
 }

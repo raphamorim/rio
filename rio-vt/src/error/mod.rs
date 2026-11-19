@@ -62,6 +62,10 @@ pub enum RioErrorType {
     // background image referenced in config could not be loaded
     BackgroundImageLoadFailure(String),
 
+    // configured working-dir can't be used; the shell starts in the
+    // current directory instead
+    InvalidWorkingDirectory(String),
+
     // reports that are ignored by RioErrorType
     IgnoredReport,
 }
@@ -98,6 +102,12 @@ impl std::fmt::Display for RioErrorType {
                 write!(
                     f,
                     "Could not load the configured background image:\n\n{message}\n\nCheck `window.background-image.path` in your config."
+                )
+            }
+            RioErrorType::InvalidWorkingDirectory(message) => {
+                write!(
+                    f,
+                    "Could not use the configured working directory:\n\n{message}\n\nShells start in the current directory instead. Check `working-dir` in your config."
                 )
             }
         }
