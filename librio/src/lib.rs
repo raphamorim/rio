@@ -503,12 +503,9 @@ impl Engine {
         desc: &SurfaceDesc,
     ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
         #[cfg(feature = "pty")]
-        {
-            let pty = spawn_pty(desc)?;
-            Surface::new_with_pty(self, desc, pty)
-        }
+        return Surface::new(self, desc, spawn_pty(desc)?);
         #[cfg(not(feature = "pty"))]
-        Ok(Surface::new(self, desc))
+        Surface::new(self, desc)
     }
 
     /// A surface over a pty master the host already holds, instead of a
@@ -533,7 +530,7 @@ impl Engine {
             desc.pixel_width,
             desc.pixel_height,
         )?;
-        Surface::new_with_pty(self, desc, pty)
+        Surface::new(self, desc, pty)
     }
 }
 
@@ -669,25 +666,11 @@ fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
     }
 }
 
-/// What every surface is made of, whatever carries its bytes.
-struct SurfaceCore {
-    id: SurfaceId,
-    /// For the pty's event loop; the terminal holds its own.
-    #[cfg(feature = "pty")]
-    listener: Listener,
-    terminal: Arc<TerminalLock<Crosswords<Listener>>>,
-    inline_images: InlineImages,
-    #[cfg(feature = "graphics")]
-    glyphs: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
-    #[cfg(feature = "graphics")]
-    replies: Listener,
-    #[cfg(feature = "pty")]
-    pty_writer: Arc<Mutex<Option<corcovado::channel::Sender<Msg>>>>,
-}
-
 /// A pty with the shell `desc` names, or the user's login shell.
 #[cfg(feature = "pty")]
 fn spawn_pty(desc: &SurfaceDesc) -> std::io::Result<teletypewriter::Pty> {
+    // No shell in the descriptor means "whatever the user's default is",
+    // which teletypewriter resolves (and starts as a login shell).
     let shell = desc.shell.as_deref();
 
     // The child inherits the host process's environment, which for GUI
@@ -697,12 +680,13 @@ fn spawn_pty(desc: &SurfaceDesc) -> std::io::Result<teletypewriter::Pty> {
     // ssh sessions both keep working.
     #[cfg(not(target_os = "windows"))]
     {
-        let terminfo = if teletypewriter::terminfo_exists("xterm-rio") {
-            "xterm-rio"
-        } else if teletypewriter::terminfo_exists("rio") {
-            "rio"
-        } else {
-            "xterm-256color"
+        let terminfo = match (
+            teletypewriter::terminfo_exists("xterm-rio"),
+            teletypewriter::terminfo_exists("rio"),
+        ) {
+            (true, _) => "xterm-rio",
+            (false, true) => "rio",
+            (false, false) => "xterm-256color",
         };
         let env = vec![
             ("TERM".to_string(), terminfo.to_string()),
@@ -732,9 +716,17 @@ fn spawn_pty(desc: &SurfaceDesc) -> std::io::Result<teletypewriter::Pty> {
 }
 
 impl Surface {
-    /// The parts shared by every surface: the terminal and what it
-    /// reports to.
-    fn core(engine: &Engine, desc: &SurfaceDesc) -> SurfaceCore {
+    /// A surface over `pty`, which librio reads and writes on its own
+    /// threads: [`Engine::create_surface`] spawns it and
+    /// [`Engine::adopt_surface`] wraps the host's. Without the `pty`
+    /// feature the host carries the bytes: it feeds the program's output
+    /// with [`Surface::inject_output`] and gets the terminal's through
+    /// [`SurfaceDelegate::output`].
+    fn new(
+        engine: &Engine,
+        desc: &SurfaceDesc,
+        #[cfg(feature = "pty")] pty: teletypewriter::Pty,
+    ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
         let id = engine.next_surface_id.fetch_add(1, Ordering::SeqCst);
         #[cfg(feature = "pty")]
         let pty_writer = Arc::new(Mutex::new(None));
@@ -756,6 +748,8 @@ impl Surface {
             #[cfg(feature = "pty")]
             pty_writer: pty_writer.clone(),
         };
+        #[cfg(feature = "graphics")]
+        let replies = listener.clone();
 
         let mut terminal = Crosswords::new(
             GridSize::new(
@@ -787,96 +781,70 @@ impl Surface {
         #[allow(clippy::arc_with_non_send_sync)]
         let terminal = Arc::new(TerminalLock::new(terminal));
 
-        SurfaceCore {
-            id,
-            #[cfg(feature = "graphics")]
-            replies: listener.clone(),
-            #[cfg(feature = "pty")]
-            listener,
-            terminal,
-            inline_images,
-            #[cfg(feature = "graphics")]
-            glyphs,
-            #[cfg(feature = "pty")]
-            pty_writer,
+        #[cfg(not(feature = "pty"))]
+        {
+            Ok(Surface {
+                id,
+                #[cfg(feature = "graphics")]
+                glyphs,
+                #[cfg(feature = "graphics")]
+                replies,
+                // Terminals default alt to meta; the host may override it.
+                alt_is_meta: std::sync::atomic::AtomicBool::new(true),
+                terminal,
+                url_regex: std::sync::Mutex::new(None),
+                processor: std::sync::Mutex::new(None),
+                inline_images,
+                cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                delegate: engine.delegate.clone(),
+            })
         }
-    }
 
-    /// A surface whose bytes the host carries: it feeds the program's
-    /// output with [`Surface::inject_output`] and gets the terminal's
-    /// through [`SurfaceDelegate::output`].
-    #[cfg(not(feature = "pty"))]
-    fn new(engine: &Engine, desc: &SurfaceDesc) -> Surface {
-        let core = Self::core(engine, desc);
-        Surface {
-            id: core.id,
-            #[cfg(feature = "graphics")]
-            glyphs: core.glyphs,
-            #[cfg(feature = "graphics")]
-            replies: core.replies,
-            // Terminals default alt to meta; the host may override it.
-            alt_is_meta: std::sync::atomic::AtomicBool::new(true),
-            terminal: core.terminal,
-            url_regex: std::sync::Mutex::new(None),
-            processor: std::sync::Mutex::new(None),
-            inline_images: core.inline_images,
-            cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-            delegate: engine.delegate.clone(),
+        #[cfg(feature = "pty")]
+        {
+            #[cfg(not(target_os = "windows"))]
+            let shell_pid = *pty.child.pid.clone() as u32;
+            #[cfg(target_os = "windows")]
+            let shell_pid = pty.child_watcher().pid().map(|pid| pid.get()).unwrap_or(0);
+            #[cfg(not(target_os = "windows"))]
+            let main_fd = *pty.child.id;
+            #[cfg(not(target_os = "windows"))]
+            let child_terminator = pty.child.terminator();
+
+            let machine = Machine::new(
+                Arc::clone(&terminal),
+                pty,
+                listener,
+                WindowId::from(id as u64),
+                id,
+            )
+            .map_err(|err| std::io::Error::other(err.to_string()))?;
+            let channel = machine.channel();
+            *pty_writer.lock().unwrap() = Some(channel.clone());
+            let io_thread = machine.spawn();
+
+            Ok(Surface {
+                id,
+                #[cfg(feature = "graphics")]
+                glyphs,
+                #[cfg(feature = "graphics")]
+                replies,
+                // Terminals default alt to meta; the host may override it.
+                alt_is_meta: std::sync::atomic::AtomicBool::new(true),
+                terminal,
+                url_regex: std::sync::Mutex::new(None),
+                processor: std::sync::Mutex::new(None),
+                inline_images,
+                cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                channel,
+                shell_pid,
+                #[cfg(not(target_os = "windows"))]
+                main_fd,
+                #[cfg(not(target_os = "windows"))]
+                child_terminator,
+                _io_thread: io_thread,
+            })
         }
-    }
-
-    /// A surface over `pty`, which librio reads and writes on its own
-    /// threads.
-    #[cfg(feature = "pty")]
-    fn new_with_pty(
-        engine: &Engine,
-        desc: &SurfaceDesc,
-        pty: teletypewriter::Pty,
-    ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
-        let core = Self::core(engine, desc);
-
-        #[cfg(not(target_os = "windows"))]
-        let shell_pid = *pty.child.pid.clone() as u32;
-        #[cfg(target_os = "windows")]
-        let shell_pid = pty.child_watcher().pid().map(|pid| pid.get()).unwrap_or(0);
-        #[cfg(not(target_os = "windows"))]
-        let main_fd = *pty.child.id;
-        #[cfg(not(target_os = "windows"))]
-        let child_terminator = pty.child.terminator();
-
-        let machine = Machine::new(
-            Arc::clone(&core.terminal),
-            pty,
-            core.listener,
-            WindowId::from(core.id as u64),
-            core.id,
-        )
-        .map_err(|err| std::io::Error::other(err.to_string()))?;
-        let channel = machine.channel();
-        *core.pty_writer.lock().unwrap() = Some(channel.clone());
-        let io_thread = machine.spawn();
-
-        Ok(Surface {
-            id: core.id,
-            #[cfg(feature = "graphics")]
-            glyphs: core.glyphs,
-            #[cfg(feature = "graphics")]
-            replies: core.replies,
-            // Terminals default alt to meta; the host may override it.
-            alt_is_meta: std::sync::atomic::AtomicBool::new(true),
-            terminal: core.terminal,
-            url_regex: std::sync::Mutex::new(None),
-            processor: std::sync::Mutex::new(None),
-            inline_images: core.inline_images,
-            cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-            channel,
-            shell_pid,
-            #[cfg(not(target_os = "windows"))]
-            main_fd,
-            #[cfg(not(target_os = "windows"))]
-            child_terminator,
-            _io_thread: io_thread,
-        })
     }
 
     pub fn id(&self) -> SurfaceId {
