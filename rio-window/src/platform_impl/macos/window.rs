@@ -1,18 +1,20 @@
 #![allow(clippy::unnecessary_cast)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use objc2::rc::{autoreleasepool, Retained};
 use objc2::{
     declare_class, msg_send, msg_send_id, mutability, sel, ClassType, DeclaredClass,
 };
+use objc2_app_kit::NSViewFrameDidChangeNotification;
 use objc2_app_kit::{
     NSAutoresizingMaskOptions, NSColor, NSLayoutAttribute, NSLayoutConstraint,
     NSResponder, NSTitlebarAccessoryViewController, NSView, NSWindow, NSWindowButton,
-    NSWindowOrderingMode,
+    NSWindowOrderingMode, NSWindowTitleVisibility,
 };
 use objc2_foundation::{
-    MainThreadBound, MainThreadMarker, NSArray, NSObject, NSObjectNSDelayedPerforming,
+    MainThreadBound, MainThreadMarker, NSArray, NSNotification, NSNotificationCenter,
+    NSObject, NSObjectNSDelayedPerforming, NSSize, NSString,
 };
 
 use super::event_loop::ActiveEventLoop;
@@ -110,6 +112,36 @@ pub struct WinitWindowState {
     pub(crate) integrate_native_tabs: bool,
     pub(crate) native_tab_constraints: RefCell<Vec<Retained<NSLayoutConstraint>>>,
     pub(crate) integrated_titlebar_glass: RefCell<Option<super::glass::GlassEffect>>,
+    /// The `NSTabBar` our constraints were set up for, observed for frame
+    /// changes: AppKit resizes it on appearance changes and the like, which
+    /// can drop the constraints, so they are set up again.
+    pub(crate) observed_tab_bar: RefCell<Option<Retained<NSView>>>,
+    /// The title was hidden because the tab bar took the titlebar, so it is
+    /// shown again when the tab bar goes.
+    pub(crate) title_hidden_for_tabs: Cell<bool>,
+}
+
+/// Identifies the tab bar's accessory once recognised, so it is still
+/// recognised when AppKit removes it. Ghostty's `isTabBar` does the same.
+const TAB_BAR_IDENTIFIER: &str = "_rioTabBar";
+
+/// Whether `child` is AppKit's native tab bar accessory: one holding an
+/// `NSTabBar`, or the empty bottom `NSView` AppKit adds first when a window
+/// joins a tab group, putting the tab bar in it later.
+fn is_tab_bar(child: &NSTitlebarAccessoryViewController) -> bool {
+    let identifier: Option<Retained<NSString>> =
+        unsafe { msg_send_id![child, identifier] };
+    if let Some(identifier) = identifier {
+        return identifier.to_string() == TAB_BAR_IDENTIFIER;
+    }
+    let view = unsafe { child.view() };
+    if first_descendant(&view, "NSTabBar").is_some() {
+        return true;
+    }
+    let layout = unsafe { child.layoutAttribute() };
+    layout == NSLayoutAttribute::Bottom
+        && view.class().name() == "NSView"
+        && unsafe { view.subviews() }.is_empty()
 }
 
 fn retained(view: &NSView) -> Retained<NSView> {
@@ -186,8 +218,19 @@ declare_class!(
             &self,
             child: &NSTitlebarAccessoryViewController,
         ) {
-            if self.ivars().integrate_native_tabs {
-                unsafe { child.setLayoutAttribute(NSLayoutAttribute::Right) };
+            // Only the tab bar moves into the titlebar; any other
+            // accessory keeps its own layout.
+            let tab_bar = self.ivars().integrate_native_tabs && is_tab_bar(child);
+            if tab_bar {
+                // Before it is added: changing the layout of an added
+                // accessory trips an AppKit assertion.
+                unsafe {
+                    child.setLayoutAttribute(NSLayoutAttribute::Right);
+                    let identifier = NSString::from_str(TAB_BAR_IDENTIFIER);
+                    let _: () = msg_send![child, setIdentifier: &*identifier];
+                }
+                // A tab dragged into another group gets a new tab bar.
+                self.stop_observing_tab_bar();
             }
 
             unsafe {
@@ -197,7 +240,7 @@ declare_class!(
                 ];
             }
 
-            if self.ivars().integrate_native_tabs {
+            if tab_bar {
                 self.reattach_integrated_titlebar_glass();
                 unsafe {
                     self.performSelector_withObject_afterDelay(
@@ -207,6 +250,44 @@ declare_class!(
                     )
                 };
             }
+        }
+
+        #[method(removeTitlebarAccessoryViewControllerAtIndex:)]
+        fn remove_titlebar_accessory_view_controller_at_index(&self, index: isize) {
+            let tab_bar = self.ivars().integrate_native_tabs
+                && usize::try_from(index).is_ok_and(|index| {
+                    let children = unsafe { self.titlebarAccessoryViewControllers() };
+                    children.iter().nth(index).is_some_and(is_tab_bar)
+                });
+
+            unsafe {
+                let _: () = msg_send![
+                    super(self),
+                    removeTitlebarAccessoryViewControllerAtIndex: index
+                ];
+            }
+
+            if tab_bar {
+                self.stop_observing_tab_bar();
+                self.clear_native_tab_constraints();
+                if self.ivars().title_hidden_for_tabs.replace(false) {
+                    self.setTitleVisibility(NSWindowTitleVisibility::NSWindowTitleVisible);
+                }
+            }
+        }
+
+        /// AppKit resized the tab bar, which can drop our constraints: set
+        /// them up again once it has settled.
+        #[method(nativeTabBarFrameDidChange:)]
+        fn native_tab_bar_frame_did_change(&self, _notification: &NSNotification) {
+            self.stop_observing_tab_bar();
+            unsafe {
+                self.performSelector_withObject_afterDelay(
+                    sel!(setupNativeTabBar),
+                    None,
+                    0.0,
+                )
+            };
         }
 
         #[method(becomeMainWindow)]
@@ -245,6 +326,16 @@ declare_class!(
             let Some(tab_bar) = first_descendant(&root, "NSTabBar") else {
                 return;
             };
+            // Already set up for this tab bar; the observer catches changes.
+            if self
+                .ivars()
+                .observed_tab_bar
+                .borrow()
+                .as_deref()
+                .is_some_and(|observed| std::ptr::eq(observed, &*tab_bar))
+            {
+                return;
+            }
             self.reattach_integrated_titlebar_glass();
             let Some(toolbar) = first_descendant(&root, "NSToolbarView") else {
                 return;
@@ -265,13 +356,25 @@ declare_class!(
             };
 
             self.clear_native_tab_constraints();
-            let left_inset = self
-                .standardWindowButton(NSWindowButton::NSWindowZoomButton)
-                .map(|button| {
+            // Past the window buttons, or from the edge when they're hidden.
+            let left_inset = match self.standardWindowButton(NSWindowButton::NSWindowZoomButton)
+            {
+                Some(button) if unsafe { button.isHidden() } => 0.0,
+                Some(button) => {
                     let frame = button.frame();
                     frame.origin.x + frame.size.width
-                })
-                .unwrap_or(70.0);
+                }
+                None => 70.0,
+            };
+
+            // Keep the tab bar from stretching vertically: as tall as its
+            // (square) new-tab button. AppKit may add the button later.
+            if let Some(button) = first_descendant(&root, "NSTabBarNewTabButton") {
+                let width = tab_bar.frame().size.width;
+                unsafe {
+                    tab_bar.setFrameSize(NSSize::new(width, button.frame().size.width))
+                };
+            }
 
             unsafe {
                 clip_view.setTranslatesAutoresizingMaskIntoConstraints(false);
@@ -315,6 +418,24 @@ declare_class!(
                 clip_view.setNeedsLayout(true);
                 accessory_view.setNeedsLayout(true);
             }
+
+            // The tabs carry the titles while they're in the titlebar.
+            let title = unsafe { self.titleVisibility() };
+            if title == NSWindowTitleVisibility::NSWindowTitleVisible {
+                self.setTitleVisibility(NSWindowTitleVisibility::NSWindowTitleHidden);
+                self.ivars().title_hidden_for_tabs.set(true);
+            }
+
+            unsafe {
+                tab_bar.setPostsFrameChangedNotifications(true);
+                NSNotificationCenter::defaultCenter().addObserver_selector_name_object(
+                    self,
+                    sel!(nativeTabBarFrameDidChange:),
+                    Some(NSViewFrameDidChangeNotification),
+                    Some(&tab_bar),
+                );
+            }
+            self.ivars().observed_tab_bar.replace(Some(tab_bar));
         }
     }
 );
@@ -435,6 +556,21 @@ impl WinitWindow {
                 view,
                 NSWindowOrderingMode::NSWindowBelow,
                 None,
+            );
+        }
+    }
+
+    /// Stop watching the tab bar's frame; the next setup starts over.
+    /// (A window's observations also end when it is deallocated.)
+    fn stop_observing_tab_bar(&self) {
+        let Some(tab_bar) = self.ivars().observed_tab_bar.take() else {
+            return;
+        };
+        unsafe {
+            NSNotificationCenter::defaultCenter().removeObserver_name_object(
+                self,
+                Some(NSViewFrameDidChangeNotification),
+                Some(&tab_bar),
             );
         }
     }

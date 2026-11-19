@@ -607,6 +607,8 @@ fn new_window(
                     integrate_native_tabs,
                     native_tab_constraints: RefCell::new(Vec::new()),
                     integrated_titlebar_glass: RefCell::new(None),
+                    observed_tab_bar: RefCell::new(None),
+                    title_hidden_for_tabs: Cell::new(false),
                 })),
                 initWithContentRect: frame,
                 styleMask: masks,
@@ -661,9 +663,9 @@ fn new_window(
                 // The toolbar style is ignored if there is no toolbar, so it is
                 // necessary to add one.
                 window.setToolbar(Some(&NSToolbar::new(mtm)));
+                // The title is hidden only while the tab bar is in the
+                // titlebar, so a lone window keeps it.
                 window.setToolbarStyle(if integrate_native_tabs {
-                    window
-                        .setTitleVisibility(NSWindowTitleVisibility::NSWindowTitleHidden);
                     NSWindowToolbarStyle::UnifiedCompact
                 } else {
                     NSWindowToolbarStyle::Unified
