@@ -150,8 +150,10 @@ pub struct ExtrasTable {
     /// (clone, modify, re-alloc).
     lookup: rustc_hash::FxHashMap<crate::crosswords::square::Extras, u16>,
     /// Allocations since the last mark-and-sweep. The table holds
-    /// hyperlink and zero-width data whose slots stay referenced by
-    /// cells until their rows scroll off the ring; without a periodic
+    /// hyperlink, zero-width and Glyph Protocol binding data whose
+    /// slots stay referenced by cells until their rows scroll off the
+    /// ring (the binding sweep, `Crosswords::reclaim_glyphs`, reads the
+    /// survivors); without a periodic
     /// sweep, hyperlink-heavy workloads exhaust the u16 id space and
     /// new hyperlinks silently drop. (Images no longer live here;
     /// placements own them with deterministic cleanup.)

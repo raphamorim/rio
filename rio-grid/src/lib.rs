@@ -46,14 +46,16 @@ pub type ExtrasMap = FxHashMap<u16, Extras>;
 /// The Glyph Protocol registration a cell was printed with, as its
 /// registry version: what the cell draws, whatever is registered at the
 /// codepoint now (spec §6.3). Only block codepoints can carry one, so
-/// every other cell skips the extras lookup.
+/// every other cell skips the extras lookup. A bg-only cell keeps its
+/// colour where a text cell keeps its codepoint and extras id, so it is
+/// ruled out first rather than read as either.
 #[inline]
 fn bound_glyph_version(extras_table: &ExtrasMap, sq: Square) -> Option<u32> {
     use rio_backend::sugarloaf::font::glyph_registry::in_registration_block;
-    if !in_registration_block(sq.c() as u32) {
+    if sq.is_bg_only() || !in_registration_block(sq.c() as u32) {
         return None;
     }
-    extras_table.get(&sq.extras_id()?)?.glyph
+    extras_table.get(&sq.extras_id_checked()?)?.glyph
 }
 
 pub mod preedit;
@@ -4094,6 +4096,12 @@ mod custom_glyph_tests {
         assert_eq!(bound_glyph_version(&extras, cell(block, Some(2))), None);
         // Only block codepoints bind; anything else isn't even looked up.
         assert_eq!(bound_glyph_version(&extras, cell('a', Some(1))), None);
+        // A bg-only cell whose colour bits happen to spell a block
+        // codepoint and a bound extras id is still just a colour.
+        let mut bg = cell(block, Some(1));
+        bg.set_bg_rgb(0x10, 0x00, 0x01);
+        assert!(bg.is_bg_only());
+        assert_eq!(bound_glyph_version(&extras, bg), None);
     }
 
     #[test]

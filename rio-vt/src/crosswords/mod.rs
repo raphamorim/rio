@@ -6047,6 +6047,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 },
                 self.window_id,
             );
+            // The renderer only has the registry once the frontend handles
+            // that event, and text printed in between draws as nothing
+            // until its row repaints. Repaint once, here, so it can't
+            // stay that way; later registrations change nothing on
+            // screen and don't.
+            self.mark_fully_damaged();
         }
 
         // No repaint: text already printed keeps the registration it was
@@ -7857,7 +7863,8 @@ mod tests {
         cw.reset_damage();
         register_upm(&mut cw, 0x10_0000, 2048);
         let second = current_version(&cw, 0x10_0000);
-        // Registering changes nothing on screen, so nothing repaints.
+        // Registering changes nothing on screen, so nothing repaints
+        // (only the first registration does, see below).
         assert!(!cw.is_fully_damaged());
         parser.advance(&mut cw, "\u{100000}".as_bytes());
 
@@ -7876,6 +7883,20 @@ mod tests {
         let registry = cw.glyph_registry.as_ref().unwrap();
         assert!(registry.get_version(first).is_some());
         assert!(registry.get_version(second).is_some());
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_first_registration_repaints_once() {
+        // The renderer gets the registry through an event; one repaint
+        // covers text printed before it arrives.
+        let mut cw = make_crosswords();
+        cw.reset_damage();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        assert!(cw.is_fully_damaged());
+        cw.reset_damage();
+        register_upm(&mut cw, 0x10_0001, 1000);
+        assert!(!cw.is_fully_damaged());
     }
 
     #[cfg(feature = "graphics")]
