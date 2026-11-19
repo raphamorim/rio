@@ -6,7 +6,6 @@ edition = "2021"
 authors = ["Raphael Amorim <rapha850@gmail.com>"]
 description = "Non-blocking IO library"
 documentation = "https://raphamorim.io/rio/docs"
-homepage = "https://github.com/raphamorim/rio"
 repository = "https://github.com/raphamorim/rio"
 readme = "README.md"
 keywords = ["io", "async", "non-blocking"]
