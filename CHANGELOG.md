@@ -2,6 +2,8 @@
 
 ## 0.6.0 (unreleased)
 
+- **`working-dir` expands `~` and survives a missing directory.** `working-dir = "~"` or `"~/projects"` now starts shells in the home directory instead of failing the spawn, on every platform, and a directory that doesn't exist (or isn't a directory) starts them in the current directory with a warning in the window instead of failing. With `use-fork`, the default on Linux and BSD, the setting was ignored entirely; shells now start there too. Under Flatpak the path goes to the host as is, since it may see directories the sandbox can't ([#1747](https://github.com/raphamorim/rio/pull/1747)).
+
 - **Native tabs in the unified titlebar are the default on macOS.** `navigation.mode` now defaults to `"NativeTab"` there and `window.macos-use-unified-titlebar` to `true`, so new tabs are macOS tabs next to the traffic lights. Set `macos-use-unified-titlebar = false` under `[window]` for AppKit's tab row below the titlebar, or `mode = "Tab"` under `[navigation]` for Rio's own tab strip. Other platforms keep `"Tab"` ([#2112](https://github.com/raphamorim/rio/pull/2112)).
 
 - **macOS native tabs sit in the unified titlebar.** With `navigation.mode = "NativeTab"` and `window.macos-use-unified-titlebar = true` on macOS 26 and later, the tab bar moves beside the traffic lights instead of adding a row below the titlebar, and the liquid glass background extends under it, so the window is one surface. The window title shows while there is a single tab and gives way to the tabs once the tab bar appears. Contributed by [@fguisso](https://github.com/fguisso) ([#2112](https://github.com/raphamorim/rio/pull/2112)).
