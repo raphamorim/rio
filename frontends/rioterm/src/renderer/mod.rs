@@ -483,9 +483,6 @@ impl Renderer {
                 continue;
             }
 
-            let trace_frame =
-                tracing::enabled!(target: "rio::frame", tracing::Level::TRACE);
-            let lock_taken = trace_frame.then(std::time::Instant::now);
             {
                 let mut terminal = context.terminal.lock();
                 any_panel_dirty = true;
@@ -529,18 +526,6 @@ impl Renderer {
                     context.renderable_content.hint_matches = new_matches;
                 }
             }
-            if let Some(taken) = lock_taken {
-                let rc = &context.renderable_content;
-                tracing::trace!(
-                    target: "rio::frame",
-                    route = context.route_id,
-                    damage = ?rc.frame_damage,
-                    rows_copied = rc.visible_rows.iter().filter(|row| row.dirty).count(),
-                    lock_us = taken.elapsed().as_micros() as u64,
-                    "snapshot"
-                );
-            }
-
             // Recalculate image overlay positions every frame when placements
             // exist. Positions depend on display_offset and history_size which
             // change on scroll and text output (like approach).
