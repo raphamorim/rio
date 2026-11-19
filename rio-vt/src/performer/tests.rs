@@ -30,6 +30,12 @@ struct TestPty {
     deregister_calls: usize,
     winsize_calls: usize,
     raw_error: Option<i32>,
+    /// Whether a child of ours runs on it; see `EventedPty::has_child`.
+    has_child: bool,
+    /// Announces each `stop_reading`.
+    stopped: Option<mpsc::Sender<()>>,
+    /// The child's exit, reported on the child event token.
+    exit: Option<corcovado::Registration>,
 }
 
 impl Read for TestPty {
@@ -212,6 +218,14 @@ impl ProcessReadWrite for TestPty {
                 PollOpt::edge(),
             )?;
         }
+        if let Some(exit) = &self.exit {
+            poll.register(
+                exit,
+                self.child_event_token(),
+                Ready::readable(),
+                PollOpt::edge(),
+            )?;
+        }
         Ok(())
     }
     fn reregister(
@@ -251,6 +265,15 @@ impl EventedPty for TestPty {
     fn child_event_token(&self) -> corcovado::Token {
         2.into()
     }
+    fn has_child(&self) -> bool {
+        self.has_child
+    }
+    fn stop_reading(&mut self, _: &corcovado::Poll) -> io::Result<()> {
+        if let Some(stopped) = &self.stopped {
+            let _ = stopped.send(());
+        }
+        Ok(())
+    }
     fn next_child_event(&mut self) -> Option<ChildEvent> {
         Some(ChildEvent::Exited(Some(0)))
     }
@@ -273,6 +296,9 @@ fn test_pty(bytes: Vec<u8>, ending: Option<ErrorKind>) -> TestPty {
         deregister_calls: 0,
         winsize_calls: 0,
         raw_error: None,
+        has_child: true,
+        stopped: None,
+        exit: None,
     }
 }
 
@@ -326,13 +352,10 @@ fn read_with_contended_terminal(ending: Option<ErrorKind>, raw_error: Option<i32
     drop(guard);
     let (machine, result) = worker.join().unwrap();
     exhausted.unwrap();
-    if let Some(code) = raw_error {
-        assert_eq!(result.unwrap_err().raw_os_error(), Some(code));
-    } else {
-        match ending {
-            Some(kind) => assert_eq!(result.unwrap_err().kind(), kind),
-            None => assert_eq!(result.unwrap(), ReadOutcome::Closed),
-        }
+    match (raw_error, ending) {
+        (None, Some(kind)) => assert_eq!(result.unwrap_err().kind(), kind),
+        // EOF, and Linux's EIO for a closed other side, are both Closed.
+        _ => assert_eq!(result.unwrap(), ReadOutcome::Closed),
     }
     assert_eq!(first_line(&machine, 12), "final output");
 }
@@ -388,6 +411,101 @@ fn child_exit_drains_multiple_budgets_and_finishes_pending_sync() {
         machine.writer.is_some(),
         "the writer was stopped and joined"
     );
+}
+
+/// The exit statuses a machine reports.
+#[derive(Clone)]
+struct ExitRecorder(mpsc::Sender<Option<i32>>);
+
+impl EventListener for ExitRecorder {
+    fn send_event(&self, event: RioEvent, _: WindowId) {
+        if let RioEvent::ChildExited(_, status) = event {
+            let _ = self.0.send(status);
+        }
+    }
+}
+
+/// `pty` reads to its end and then hangs up, with the read token armed.
+fn hangup_machine(
+    mut pty: TestPty,
+) -> (
+    Machine<TestPty, ExitRecorder>,
+    mpsc::Receiver<Option<i32>>,
+    corcovado::SetReadiness,
+) {
+    let (registration, readiness) = corcovado::Registration::new2();
+    pty.child = Some(registration);
+    pty.read_event = true;
+    readiness
+        .set_readiness(Ready::readable() | Ready::from(UnixReady::hup()))
+        .unwrap();
+    let (sender, statuses) = mpsc::channel();
+    let recorder = ExitRecorder(sender);
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        recorder.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let machine = Machine::new(terminal, pty, recorder, WindowId::from(0), 0).unwrap();
+    (machine, statuses, readiness)
+}
+
+// A pty with no child of ours ends when its other side closes, after
+// what was written before.
+#[cfg(unix)]
+#[test]
+fn hangup_ends_a_pty_without_a_child() {
+    let mut pty = test_pty(b"final output".to_vec(), None);
+    pty.has_child = false;
+    let (machine, statuses, _readiness) = hangup_machine(pty);
+    let shutdown = machine.channel();
+    let (completed, receiver) = mpsc::channel();
+    let worker = machine.spawn();
+    std::thread::spawn(move || completed.send(worker.join().unwrap()).unwrap());
+    let result = receiver.recv_timeout(Duration::from_secs(5));
+    if result.is_err() {
+        shutdown.send(Msg::Shutdown).unwrap();
+    }
+    let (machine, _) = result.expect("a hangup must end a pty with no child");
+    assert_eq!(first_line(&machine, 12), "final output");
+    assert_eq!(statuses.try_iter().collect::<Vec<_>>(), [None]);
+    assert_eq!(machine.pty.shutdown_calls, 1);
+    assert_eq!(machine.pty.deregister_calls, 1);
+}
+
+// With a child of ours, the other side closing only stops the reading:
+// the session ends when the child exits, and reports its status.
+#[cfg(unix)]
+#[test]
+fn hangup_waits_for_the_child_and_its_status() {
+    let (stopped, reading_stopped) = mpsc::channel();
+    let (exit, exited) = corcovado::Registration::new2();
+    let mut pty = test_pty(b"final output".to_vec(), None);
+    pty.stopped = Some(stopped);
+    pty.exit = Some(exit);
+    let (machine, statuses, _readiness) = hangup_machine(pty);
+    let shutdown = machine.channel();
+    let worker = machine.spawn();
+
+    reading_stopped
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the hangup stops the reading");
+    assert!(
+        statuses.recv_timeout(Duration::from_millis(100)).is_err(),
+        "the session lasts until the child exits"
+    );
+    exited.set_readiness(Ready::readable()).unwrap();
+    let status = statuses.recv_timeout(Duration::from_secs(5));
+    if status.is_err() {
+        shutdown.send(Msg::Shutdown).unwrap();
+    }
+    assert_eq!(status.expect("the child's exit ends it"), Some(0));
+    let (machine, _) = worker.join().unwrap();
+    assert_eq!(first_line(&machine, 12), "final output");
+    assert_eq!(machine.pty.shutdown_calls, 1);
 }
 
 #[cfg(unix)]
@@ -692,6 +810,9 @@ fn a_stuck_write_is_not_retried_when_more_arrives() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            has_child: true,
+            stopped: None,
+            exit: None,
         },
         EventRecorder(events),
         WindowId::from(0),
@@ -808,6 +929,9 @@ fn a_parser_reply_is_written_without_the_event_loop() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            has_child: true,
+            stopped: None,
+            exit: None,
         },
         EventRecorder(events),
         WindowId::from(0),
@@ -1022,6 +1146,9 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            has_child: true,
+            stopped: None,
+            exit: None,
         },
         listener.clone(),
         WindowId::from(0),
@@ -1149,6 +1276,9 @@ fn spawn_reader(payload: Vec<u8>, piled: Option<u8>, listener: OnTitle) -> Spawn
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            has_child: true,
+            stopped: None,
+            exit: None,
         },
         listener,
         WindowId::from(0),
@@ -1351,6 +1481,9 @@ fn replies_keep_their_place_before_an_owner_answer_in_the_same_read() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            has_child: true,
+            stopped: None,
+            exit: None,
         },
         owner,
         WindowId::from(0),
@@ -1442,6 +1575,9 @@ fn a_waiting_thread_gets_the_terminal_after_the_current_chunk() {
                 deregister_calls: 0,
                 winsize_calls: 0,
                 raw_error: None,
+                has_child: true,
+                stopped: None,
+                exit: None,
             },
             listener.clone(),
             WindowId::from(0),
@@ -1544,6 +1680,9 @@ fn a_scrolling_burst_wakes_the_ui_thread_once() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            has_child: true,
+            stopped: None,
+            exit: None,
         },
         EventRecorder(events),
         WindowId::from(0),
@@ -1612,6 +1751,9 @@ fn a_fence_in_a_later_write_waits_for_the_owners_answer() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            has_child: true,
+            stopped: None,
+            exit: None,
         },
         EventRecorder(events),
         WindowId::from(0),
@@ -1741,6 +1883,9 @@ fn a_declined_query_lifts_the_fence_without_writing() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            has_child: true,
+            stopped: None,
+            exit: None,
         },
         EventRecorder(events),
         WindowId::from(0),

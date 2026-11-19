@@ -523,6 +523,43 @@ mod tests {
         assert!(pty.next_child_event().is_none());
     }
 
+    // Only a spawned pty has a child whose exit ends the session; and
+    // the read side, once taken off the poll, isn't taken off again.
+    #[test]
+    fn a_pty_knows_whether_it_has_a_child_and_stops_reading_once() {
+        use crate::ProcessReadWrite;
+        let (main, _sub) = openpty();
+        let adopted = create_pty_from_fd(main, 80, 24, 0, 0).unwrap();
+        assert!(!adopted.has_child());
+
+        let mut spawned = create_pty_with_spawn(
+            Some("/bin/sh"),
+            vec!["-c".into(), "exit 0".into()],
+            &None,
+            None,
+            80,
+            24,
+            0,
+            0,
+        )
+        .unwrap();
+        assert!(spawned.has_child());
+        let poll = corcovado::Poll::new().unwrap();
+        let mut tokens = (0..).map(corcovado::Token);
+        spawned
+            .register(
+                &poll,
+                &mut tokens,
+                corcovado::Ready::readable(),
+                corcovado::PollOpt::level(),
+            )
+            .unwrap();
+        spawned.stop_reading(&poll).unwrap();
+        spawned.stop_reading(&poll).unwrap();
+        spawned.deregister(&poll).unwrap();
+        spawned.shutdown().unwrap();
+    }
+
     // The name is the slave's: the same device as the slave descriptor.
     #[test]
     fn ptsname_names_the_slave() {

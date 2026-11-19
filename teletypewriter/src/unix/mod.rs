@@ -136,6 +136,8 @@ pub struct Pty {
     /// `None` when no child of ours is on the pty: nothing to report.
     signals: Option<Signals>,
     child_event_emitted: bool,
+    /// The read side is registered with the poll; see `stop_reading`.
+    reading: bool,
 }
 
 impl Pty {
@@ -149,6 +151,7 @@ impl Pty {
             signals_token: corcovado::Token::from(0),
             signals,
             child_event_emitted: false,
+            reading: false,
         })
     }
 }
@@ -237,6 +240,7 @@ impl ProcessReadWrite for Pty {
             interest,
             poll_opts,
         )?;
+        self.reading = true;
 
         self.signals_token = token.next().unwrap();
         if let Some(signals) = &self.signals {
@@ -267,7 +271,7 @@ impl ProcessReadWrite for Pty {
     }
 
     fn deregister(&mut self, poll: &corcovado::Poll) -> io::Result<()> {
-        poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
+        self.stop_reading(poll)?;
         if let Some(signals) = &self.signals {
             poll.deregister(signals)?;
         }
@@ -974,6 +978,17 @@ impl EventedPty for Pty {
     }
 
     #[inline]
+    fn has_child(&self) -> bool {
+        self.signals.is_some()
+    }
+
+    fn stop_reading(&mut self, poll: &corcovado::Poll) -> io::Result<()> {
+        if std::mem::take(&mut self.reading) {
+            poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
+        }
+        Ok(())
+    }
+
     fn next_child_event(&mut self) -> Option<ChildEvent> {
         if self.child_event_emitted {
             return None;
