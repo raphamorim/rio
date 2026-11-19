@@ -328,6 +328,13 @@ void rio_surface_set_alt_is_meta(rio_surface_t *surface, bool enabled);
  * wcwidth layout can turn it off. A program's DECSET/DECRST still wins at
  * runtime, and RIS restores this configured default. */
 void rio_surface_set_grapheme_clustering(rio_surface_t *surface, bool enabled);
+/* Whether the host breaks shaping runs around the cursor cell, as a
+ * renderer does so a ligature under the cursor shows its characters one
+ * by one. On by default: a cursor move then marks the row it left and
+ * the row it is on dirty where the break changes glyphs. A host that
+ * shapes rows the same wherever the cursor is turns this off, and a
+ * cursor move marks no row. */
+void rio_surface_set_cursor_shaping_break(rio_surface_t *surface, bool enabled);
 void rio_surface_resize(rio_surface_t *surface, uint16_t cols, uint16_t rows,
                         uint16_t pixel_width, uint16_t pixel_height);
 void rio_surface_scroll(rio_surface_t *surface, int32_t delta_lines);

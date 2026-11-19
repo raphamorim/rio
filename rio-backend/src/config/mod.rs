@@ -1092,10 +1092,16 @@ mod tests {
 
             [fonts]
             size = 14.0
+            cursor-shaping-break = false
         "#,
         );
 
         assert_eq!(result.fonts.size, 14.0);
+        assert!(!result.fonts.cursor_shaping_break);
+        assert!(
+            Config::default().fonts.cursor_shaping_break,
+            "the break at the cursor is on unless turned off"
+        );
         assert_eq!(result.line_height, 2.0);
         assert_eq!(result.margin.top, 0.0);
         assert_eq!(result.margin.bottom, 0.0);

@@ -494,6 +494,9 @@ pub struct Surface {
     processor: std::sync::Mutex<Option<rio_vt::performer::handler::Processor>>,
     /// Sixel/iTerm2 pixels for the render states to read.
     inline_images: InlineImages,
+    /// Whether the host breaks shaping runs at the cursor cell; read by
+    /// the render states to mark the rows a cursor move reshapes.
+    cursor_shaping_break: Arc<std::sync::atomic::AtomicBool>,
     /// Non-pty transport: `write` hands the bytes to the delegate instead
     /// of a PTY channel.
     #[cfg(not(feature = "pty"))]
@@ -604,6 +607,7 @@ impl Surface {
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
                 inline_images,
+                cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
                 delegate: engine.delegate.clone(),
             })
         }
@@ -688,6 +692,7 @@ impl Surface {
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
                 inline_images,
+                cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
                 channel,
                 shell_pid,
                 #[cfg(not(target_os = "windows"))]
@@ -804,6 +809,18 @@ impl Surface {
     /// still wins at runtime.
     pub fn set_grapheme_clustering(&self, enabled: bool) {
         self.terminal.lock().set_grapheme_clustering(enabled);
+    }
+
+    /// Whether the host breaks shaping runs around the cursor cell, as
+    /// a renderer does so a ligature under the cursor shows its
+    /// characters one by one. When it does, a render state update marks
+    /// the row the cursor left and the row it is on dirty on a cursor
+    /// move, without copying either from the terminal, since neither
+    /// changed. A host that shapes rows the same wherever the cursor is
+    /// turns this off and a cursor move marks no row. On by default.
+    pub fn set_cursor_shaping_break(&self, enabled: bool) {
+        self.cursor_shaping_break
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn key(&self, event: &KeyEvent) -> bool {
@@ -1390,6 +1407,10 @@ impl Surface {
     pub(crate) fn inline_images(&self) -> InlineImages {
         self.inline_images.clone()
     }
+
+    pub(crate) fn cursor_shaping_break(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        self.cursor_shaping_break.clone()
+    }
 }
 
 #[cfg(feature = "pty")]
@@ -1566,6 +1587,58 @@ mod tests {
 
     fn row_10(state: &RenderState) -> Option<char> {
         state.square(9, 0).map(|sq| sq.c())
+    }
+
+    // A cursor move marks the row the cursor left and the row it is on,
+    // which a shaping break at the cursor changes, without the terminal
+    // copying either. A host that does not break at the cursor says so:
+    // the row shaped around the cursor is marked once more, and a
+    // cursor move then leaves every row clean.
+    #[test]
+    fn the_cursor_shaping_break_decides_whether_a_move_dirties_rows() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        // A child that prints nothing, so only injected output and the
+        // cursor touch the rows.
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".to_string()),
+                args: vec!["-c".to_string(), "sleep 300".to_string()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        let mut state = RenderState::new(&surface);
+        surface.inject_output(b"ab\r\n\r\ncd\x1b[3;2H");
+        state.update();
+        state.reset_dirty();
+
+        surface.set_cursor_shaping_break(false);
+        state.update();
+        assert!(state.row_dirty(2), "the row shaped around the cursor");
+        assert!(!state.row_dirty(0));
+        state.reset_dirty();
+        surface.inject_output(b"\x1b[1;2H");
+        state.update();
+        assert_eq!(state.cursor(), (0, 1), "line 0, column 1");
+        assert!(
+            !state.row_dirty(0) && !state.row_dirty(2),
+            "no break, no row work"
+        );
+
+        surface.set_cursor_shaping_break(true);
+        surface.inject_output(b"\x1b[3;2H");
+        state.update();
+        assert!(state.row_dirty(2), "the row the cursor is on");
+        assert!(
+            !state.row_dirty(0),
+            "the row it left was shaped without a cursor"
+        );
+        state.reset_dirty();
+        surface.inject_output(b"\x1b[1;2H");
+        state.update();
+        assert!(state.row_dirty(0), "the row the cursor is on");
+        assert!(state.row_dirty(2), "the row the cursor left");
     }
 
     /// Move the active update's last BSU far enough back that it expired.

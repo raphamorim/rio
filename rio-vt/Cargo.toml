@@ -90,3 +90,7 @@ required-features = ["pty"]
 [[bench]]
 name = "vt_sync"
 harness = false
+
+[[bench]]
+name = "vt_frame"
+harness = false

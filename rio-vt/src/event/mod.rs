@@ -118,9 +118,11 @@ pub enum ClickState {
 /// - `Noop` — no terminal-side change worth rendering for
 /// - `Full` — global state changed (resize, palette, mode flip),
 ///   force a full rebuild even if no individual row is dirty
-/// - `Partial` — at least one row's content changed; the snapshot's
-///   per-row dirty bits identify which rows
-/// - `CursorOnly` — cursor moved/blinked, no cell content changed
+/// - `Partial`: at least one row's content changed, or the cursor
+///   moved (its row and the row it left shape differently, so both
+///   are marked); the snapshot's per-row dirty bits identify which rows
+/// - `CursorOnly`: the cursor blinked or the window focus changed;
+///   set by the UI, never by the terminal, and no row is rebuilt
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TerminalDamage {
     /// Nothing changed — skip rendering entirely
@@ -130,7 +132,7 @@ pub enum TerminalDamage {
     Full,
     /// At least one row changed; consult per-row dirty bits
     Partial,
-    /// Only the cursor position has changed
+    /// Only the cursor's visibility changed: a blink, a focus change
     CursorOnly,
 }
 

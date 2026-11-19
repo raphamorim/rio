@@ -806,10 +806,17 @@ impl Grid<Square> {
             out.resize(src.inner.len(), Style::default());
             return;
         }
+        // One lookup per change of style id, one write per cell: a row
+        // is a handful of runs, and the lookup costs more than the write.
+        let mut last_id = None;
+        let mut last_style = Style::default();
         out.extend(src.inner.iter().map(|sq| {
-            sq.style_id_checked()
-                .map(|id| self.style_set.get(id))
-                .unwrap_or_default()
+            let id = sq.style_id_checked();
+            if id != last_id {
+                last_id = id;
+                last_style = id.map(|id| self.style_set.get(id)).unwrap_or_default();
+            }
+            last_style
         }));
     }
 
