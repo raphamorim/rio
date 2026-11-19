@@ -475,7 +475,7 @@ fn match_instance(
 fn style_name_matches(cand: &FontCandidate, want: &str) -> bool {
     fn normalize(s: &str) -> String {
         s.chars()
-            .filter(|c| c.is_ascii_alphanumeric())
+            .filter(|c| c.is_alphanumeric())
             .flat_map(char::to_lowercase)
             .collect()
     }
@@ -1019,6 +1019,8 @@ mod style_name_tests {
         assert!(style_name_matches(&light, "extra light"));
         assert!(!style_name_matches(&light, "Light"));
         assert!(!style_name_matches(&light, ""));
+        // Not only ASCII: a name without an English entry still matches.
+        assert!(style_name_matches(&candidate(None, Some("太字")), "太字"));
     }
 
     /// The style name is the whole name, never its last word.

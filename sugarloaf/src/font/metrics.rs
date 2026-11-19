@@ -94,10 +94,10 @@ impl FaceMetrics {
     ) -> Self {
         // `hhea`'s widest advance is the default instance's, whatever the
         // coordinates: no variation table can change it. An instance off
-        // the default is measured from its own advances instead. All-zero
-        // coordinates are the default (a `weight` equal to the axis
-        // default), so they keep the same cell as no pin at all.
-        let cell_width = if coords.iter().all(|&c| c == 0) {
+        // the default is measured from its own advances instead; the
+        // default has no coordinates, even when pinned at its own values
+        // (see `crate::font::normalized_coords`).
+        let cell_width = if coords.is_empty() {
             metrics.max_width
         } else {
             Self::instance_cell_width(font_ref, coords, font_size)
