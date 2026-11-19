@@ -364,7 +364,7 @@ fn encode_legacy(
     let ctrl = mods.contains(Modifiers::CTRL);
 
     let base: Vec<u8> = match key {
-        Key::Enter => vec![b'\r'],
+        Key::Enter => vec![if ctrl { b'\n' } else { b'\r' }],
         Key::Tab => {
             if mods.contains(Modifiers::SHIFT) {
                 return Some(b"\x1b[Z".to_vec());
@@ -552,6 +552,22 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(encode(&event, &legacy()), Some(b"A".to_vec()));
+    }
+
+    #[test]
+    fn ctrl_enter_is_a_linefeed_in_legacy_mode() {
+        assert_eq!(encode(&press(Key::Enter), &legacy()), Some(b"\r".to_vec()));
+        assert_eq!(
+            encode(&with_mods(Key::Enter, Modifiers::CTRL), &legacy()),
+            Some(b"\n".to_vec())
+        );
+        assert_eq!(
+            encode(
+                &with_mods(Key::Enter, Modifiers::CTRL),
+                &kitty(KittyFlags::DISAMBIGUATE)
+            ),
+            Some(b"\x1b[13;5u".to_vec())
+        );
     }
 
     #[test]
