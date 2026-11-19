@@ -194,7 +194,9 @@ struct FontCandidate {
     #[cfg(not(target_os = "macos"))]
     instance: Option<Vec<(u32, f32)>>,
     postscript: Option<String>,
-    full_name: String,
+    /// The face's style name ("Light", "Semi Bold Italic"), for
+    /// `fonts.*.style`; see [`style_name`].
+    style_name: Option<String>,
 }
 
 /// Load every face of `family_name` from `source` into `candidates`.
@@ -230,6 +232,7 @@ fn family_candidates(
             let weight = Weight(props.weight.0 as u16);
             #[cfg(not(target_os = "macos"))]
             let (weight, instance) = recover_instance(&font, handle, weight);
+            let style_name = style_name(&font, handle);
             tracing::debug!(
                 "found candidate: weight={}, stretch={:?}, style={:?}",
                 weight.0,
@@ -244,9 +247,53 @@ fn family_candidates(
                 #[cfg(not(target_os = "macos"))]
                 instance,
                 postscript: font.postscript_name(),
-                full_name: font.full_name(),
+                style_name,
             });
         }
+    }
+}
+
+/// The face's own style name, what fontconfig reports as `style` and
+/// CoreText matches `fonts.*.style` against. With fontconfig it is read
+/// from the face: a named instance's `fvar` subfamily name, else name ID
+/// 17 or 2. font_kit's full name can't stand in there, since FreeType
+/// reads it from the file and every instance shares it. DirectWrite and
+/// CoreText name each instance, so there it is the full name less the
+/// family.
+#[cfg(not(target_arch = "wasm32"))]
+fn style_name(
+    font: &font_kit::font::Font,
+    handle: &font_kit::handle::Handle,
+) -> Option<String> {
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        use font_kit::handle::Handle;
+        use skrifa::{string::StringId, MetadataProvider};
+        let (Handle::Path { font_index, .. } | Handle::Memory { font_index, .. }) =
+            handle;
+        let font_index = *font_index;
+        // The bytes `load` already read, as in `recover_instance`.
+        let data = font.copy_font_data()?;
+        let face = skrifa::FontRef::from_index(&data, font_index & 0xFFFF).ok()?;
+        let id = match font_index >> 16 {
+            0 => [
+                StringId::TYPOGRAPHIC_SUBFAMILY_NAME,
+                StringId::SUBFAMILY_NAME,
+            ]
+            .into_iter()
+            .find(|&id| face.localized_strings(id).english_or_first().is_some())?,
+            instance_id => skrifa::NamedInstanceCollection::new(&face)
+                .get(instance_id as usize - 1)?
+                .subfamily_name_id(),
+        };
+        Some(face.localized_strings(id).english_or_first()?.to_string())
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        let _ = handle;
+        let (full, family) = (font.full_name(), font.family_name());
+        let style = full.strip_prefix(family.as_str()).unwrap_or(&full).trim();
+        Some(if style.is_empty() { "Regular" } else { style }.to_owned())
     }
 }
 
@@ -420,8 +467,10 @@ fn match_instance(
     pin_coords(best?.1.as_slice())
 }
 
-/// Exact style-name match: PostScript name suffix or trailing full-name
-/// words, e.g. "JetBrainsMono-ExtraLight" answers to "ExtraLight".
+/// Exact style-name match, ignoring case, spaces and punctuation: the
+/// face's style name, or its PostScript name's suffix, so "ExtraLight"
+/// answers to "Extra Light" and to "JetBrainsMono-ExtraLight". Never a
+/// part of one: "Bold" is not "Semi Bold".
 #[cfg(not(target_arch = "wasm32"))]
 fn style_name_matches(cand: &FontCandidate, want: &str) -> bool {
     fn normalize(s: &str) -> String {
@@ -434,16 +483,15 @@ fn style_name_matches(cand: &FontCandidate, want: &str) -> bool {
     if want.is_empty() {
         return false;
     }
-    if let Some((_, suffix)) = cand
+    let suffix = cand
         .postscript
         .as_deref()
         .and_then(|ps| ps.rsplit_once('-'))
-    {
-        return normalize(suffix) == want;
-    }
-    let words: Vec<&str> = cand.full_name.split_whitespace().collect();
-    (1..=words.len())
-        .any(|tail| normalize(words[words.len() - tail..].join(" ").as_str()) == want)
+        .map(|(_, suffix)| suffix);
+    [cand.style_name.as_deref(), suffix]
+        .into_iter()
+        .flatten()
+        .any(|name| normalize(name) == want)
 }
 
 /// CSS-spec compliant font matching algorithm
@@ -944,5 +992,54 @@ mod tests {
     fn the_default_face_weighs_its_wght_default() {
         let data = crate::font::constants::FONT_CASCADIA_CODE_NF;
         assert_eq!(super::default_wght(data, 0), Some(400.0));
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod style_name_tests {
+    use super::*;
+
+    fn candidate(postscript: Option<&str>, style_name: Option<&str>) -> FontCandidate {
+        FontCandidate {
+            handle: font_kit::handle::Handle::from_memory(std::sync::Arc::new(vec![]), 0),
+            weight: Weight::NORMAL,
+            stretch: Stretch::Normal,
+            style: Style::Normal,
+            #[cfg(not(target_os = "macos"))]
+            instance: None,
+            postscript: postscript.map(str::to_owned),
+            style_name: style_name.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_style_name_matches_exactly_ignoring_spelling() {
+        let light = candidate(Some("JetBrainsMono-ExtraLight"), Some("ExtraLight"));
+        assert!(style_name_matches(&light, "ExtraLight"));
+        assert!(style_name_matches(&light, "extra light"));
+        assert!(!style_name_matches(&light, "Light"));
+        assert!(!style_name_matches(&light, ""));
+    }
+
+    /// The style name is the whole name, never its last word.
+    #[test]
+    fn bold_is_not_semi_bold() {
+        let semibold = candidate(Some("Inter-SemiBold"), Some("Semi Bold"));
+        assert!(style_name_matches(&semibold, "SemiBold"));
+        assert!(!style_name_matches(&semibold, "Bold"));
+    }
+
+    /// Either name answers: a PostScript name without a style suffix
+    /// leaves the style name, and the other way around.
+    #[test]
+    fn either_name_answers() {
+        assert!(style_name_matches(
+            &candidate(Some("Iosevka"), Some("Medium")),
+            "Medium"
+        ));
+        assert!(style_name_matches(
+            &candidate(Some("Recursive-MonoCasualLight"), None),
+            "Mono Casual Light"
+        ));
     }
 }

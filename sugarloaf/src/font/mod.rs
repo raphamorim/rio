@@ -1804,7 +1804,9 @@ enum FindResult {
 /// The normalized coordinates (2.14 fixed point, one per `fvar` axis) of
 /// `variations` on `font`: what swash's metrics take, and what its
 /// scaler should be given. Empty when nothing is pinned, which means the
-/// default instance everywhere swash takes coordinates.
+/// default instance everywhere swash takes coordinates, so pins at their
+/// axis defaults (all-zero coordinates) are empty too: one instance, one
+/// key in swash's caches.
 ///
 /// Give the scaler these with `normalized_coords`, never the settings
 /// with `variations`: a `ScaleContext` keeps the coordinates of the last
@@ -1816,13 +1818,18 @@ pub fn normalized_coords(font: &swash::FontRef, variations: &[(u32, f32)]) -> Ve
     if variations.is_empty() {
         return Vec::new();
     }
-    font.variations()
+    let coords: Vec<i16> = font
+        .variations()
         .normalized_coords(
             variations
                 .iter()
                 .map(|&(tag, value)| swash::Setting { tag, value }),
         )
-        .collect()
+        .collect();
+    if coords.iter().all(|&c| c == 0) {
+        return Vec::new();
+    }
+    coords
 }
 
 /// Select a color bitmap that Swash can safely render for Rio's premultiplied
@@ -2452,7 +2459,7 @@ mod alias_tests {
     }
 
     #[test]
-    fn normalized_coords_are_empty_only_without_pins() {
+    fn normalized_coords_are_empty_only_at_the_default() {
         let font = swash::FontRef::from_index(constants::FONT_CASCADIA_CODE_NF, 0)
             .expect("bundled font");
         let wght = u32::from_be_bytes(*b"wght");
@@ -2460,6 +2467,15 @@ mod alias_tests {
         let bold = normalized_coords(&font, &[(wght, 700.0)]);
         assert_eq!(bold.len(), font.variations().len());
         assert!(bold.iter().any(|&c| c != 0), "wght 700 is off the default");
+        let default = font
+            .variations()
+            .find_by_tag(wght)
+            .expect("wght axis")
+            .default_value();
+        assert!(
+            normalized_coords(&font, &[(wght, default)]).is_empty(),
+            "a pin at the default is the default"
+        );
     }
 
     use super::*;
