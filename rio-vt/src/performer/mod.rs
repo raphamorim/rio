@@ -100,6 +100,8 @@ const READ_BUDGET: usize = READ_CHUNK * 4;
 #[derive(Debug, PartialEq, Eq)]
 enum ReadOutcome {
     Idle,
+    /// On Unix the other side of the pty is closed. On Windows the
+    /// ConPTY ring is momentarily empty.
     Closed,
     Budget,
 }
@@ -108,6 +110,8 @@ enum ReadOutcome {
 enum ExitReason {
     Shutdown,
     ChildExited(Option<i32>),
+    /// The other side of a pty with no child of ours closed.
+    HungUp,
 }
 
 // Guards the pairing that once regressed: a READ_BUDGET below
@@ -310,6 +314,12 @@ where
                 Err(err) if err.kind() == ErrorKind::Interrupted => continue,
                 Err(err) if err.kind() == ErrorKind::WouldBlock => {
                     result = Ok(ReadOutcome::Idle);
+                    true
+                }
+                // Linux reports a closed other side as EIO, not EOF.
+                #[cfg(unix)]
+                Err(err) if err.raw_os_error() == Some(libc::EIO) => {
+                    result = Ok(ReadOutcome::Closed);
                     true
                 }
                 Err(err) => {
@@ -565,8 +575,20 @@ where
                         #[cfg(not(unix))]
                         let hung_up = false;
                         // HUP can accompany unread final output.
-                        if event.readiness().is_readable() || hung_up {
-                            self.pty_read(state, buf)?;
+                        if (event.readiness().is_readable() || hung_up)
+                            && self.pty_read(state, buf)? == ReadOutcome::Closed
+                            && cfg!(unix)
+                        {
+                            // Nothing more will be read. A child of ours
+                            // ends the session when it exits, with its
+                            // status, which it may not have yet: the
+                            // other side can close first, or the child
+                            // close it and run on. Without one, this is
+                            // the end.
+                            if !self.pty.has_child() {
+                                return Ok(ExitReason::HungUp);
+                            }
+                            self.pty.stop_reading(&self.poll)?;
                         }
                     }
                     _ => (),
@@ -631,6 +653,15 @@ where
             Ok(ExitReason::ChildExited(status)) => {
                 self.event_proxy.send_event(
                     RioEvent::ChildExited(self.route_id, *status),
+                    self.window_id,
+                );
+                self.terminal.lock().exit();
+            }
+            // The session ends as it does when a child exits, with no
+            // status to report.
+            Ok(ExitReason::HungUp) => {
+                self.event_proxy.send_event(
+                    RioEvent::ChildExited(self.route_id, None),
                     self.window_id,
                 );
                 self.terminal.lock().exit();

@@ -52,8 +52,6 @@ extern "C" {
         termp: *const libc::termios,
         winsize: *const Winsize,
     ) -> libc::pid_t;
-
-    fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
 }
 
 /// Export `envs` in the forked child before exec. Runs post-fork, so
@@ -135,8 +133,27 @@ pub struct Pty {
     file: File,
     token: corcovado::Token,
     signals_token: corcovado::Token,
-    signals: Signals,
+    /// `None` when no child of ours is on the pty: nothing to report.
+    signals: Option<Signals>,
     child_event_emitted: bool,
+    /// The read side is registered with the poll; see `stop_reading`.
+    reading: bool,
+}
+
+impl Pty {
+    /// The master reads nonblocking. Tokens are assigned at `register`.
+    fn over(child: Child, file: File, signals: Option<Signals>) -> Result<Self, Error> {
+        set_nonblocking(file.as_raw_fd())?;
+        Ok(Self {
+            child,
+            file,
+            token: corcovado::Token::from(0),
+            signals_token: corcovado::Token::from(0),
+            signals,
+            child_event_emitted: false,
+            reading: false,
+        })
+    }
 }
 
 impl Deref for Pty {
@@ -223,14 +240,18 @@ impl ProcessReadWrite for Pty {
             interest,
             poll_opts,
         )?;
+        self.reading = true;
 
         self.signals_token = token.next().unwrap();
-        poll.register(
-            &self.signals,
-            self.signals_token,
-            corcovado::Ready::readable(),
-            corcovado::PollOpt::level(),
-        )
+        if let Some(signals) = &self.signals {
+            poll.register(
+                signals,
+                self.signals_token,
+                corcovado::Ready::readable(),
+                corcovado::PollOpt::level(),
+            )?;
+        }
+        Ok(())
     }
 
     fn reregister(
@@ -250,8 +271,11 @@ impl ProcessReadWrite for Pty {
     }
 
     fn deregister(&mut self, poll: &corcovado::Poll) -> io::Result<()> {
-        poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
-        poll.deregister(&self.signals)
+        self.stop_reading(poll)?;
+        if let Some(signals) = &self.signals {
+            poll.deregister(signals)?;
+        }
+        Ok(())
     }
 }
 
@@ -712,18 +736,7 @@ pub fn create_pty_with_spawn(
                 Some(child_process),
             );
 
-            unsafe {
-                set_nonblocking(main);
-            }
-
-            Ok(Pty {
-                child: child_unix,
-                child_event_emitted: false,
-                file,
-                token: corcovado::Token::from(0),
-                signals,
-                signals_token: corcovado::Token::from(0),
-            })
+            Pty::over(child_unix, file, Some(signals))
         }
         Err(err) => Err(Error::new(
             err.kind(),
@@ -734,6 +747,31 @@ pub fn create_pty_with_spawn(
             ),
         )),
     }
+}
+
+/// A [`Pty`] over an existing master. There is no child of ours on it:
+/// nothing is spawned, signaled or reaped. The descriptor is closed on
+/// failure, and made nonblocking, which any duplicate the caller keeps
+/// shares.
+pub fn create_pty_from_fd(
+    main: OwnedFd,
+    columns: u16,
+    rows: u16,
+    width: u16,
+    height: u16,
+) -> Result<Pty, Error> {
+    let fd = main.as_raw_fd();
+    let ptsname = tty_ptsname(fd)
+        .map_err(|err| Error::new(err.kind(), format!("not a pty master: {err}")))?;
+    let child = Child::detached(fd, ptsname);
+    child.set_winsize(WinsizeBuilder {
+        rows,
+        cols: columns,
+        width,
+        height,
+    })?;
+    set_cloexec(fd)?;
+    Pty::over(child, File::from(main), None)
 }
 
 ///
@@ -816,18 +854,7 @@ pub fn create_pty_with_fork(
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
             let child = Child::new(main, id, ptsname, None);
 
-            unsafe {
-                set_nonblocking(main);
-            }
-
-            Ok(Pty {
-                child,
-                child_event_emitted: false,
-                signals,
-                file,
-                token: corcovado::Token(0),
-                signals_token: corcovado::Token(0),
-            })
+            Pty::over(child, file, Some(signals))
         }
         _ => Err(Error::other(format!(
             "forkpty failed using {shell_program}"
@@ -857,21 +884,26 @@ fn set_controlling_terminal(fd: libc::c_int) -> Result<(), Error> {
 /// without it, so every shell spawned later would inherit the pty of
 /// each terminal already open and keep it from hanging up on close.
 fn set_cloexec(fd: libc::c_int) -> Result<(), Error> {
-    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
-    if flags < 0
-        || unsafe { libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC) } < 0
-    {
+    add_fd_flag(fd, libc::F_GETFD, libc::F_SETFD, libc::FD_CLOEXEC)
+}
+
+fn set_nonblocking(fd: libc::c_int) -> Result<(), Error> {
+    add_fd_flag(fd, libc::F_GETFL, libc::F_SETFL, libc::O_NONBLOCK)
+}
+
+/// Adds `flag` to the descriptor flags read with `get` and written with
+/// `set`.
+fn add_fd_flag(
+    fd: libc::c_int,
+    get: libc::c_int,
+    set: libc::c_int,
+    flag: libc::c_int,
+) -> Result<(), Error> {
+    let flags = unsafe { libc::fcntl(fd, get) };
+    if flags < 0 || unsafe { libc::fcntl(fd, set, flags | flag) } < 0 {
         return Err(Error::last_os_error());
     }
     Ok(())
-}
-
-// https://man7.org/linux/man-pages/man2/fcntl.2.html
-unsafe fn set_nonblocking(fd: libc::c_int) {
-    use libc::{fcntl, F_GETFL, F_SETFL, O_NONBLOCK};
-
-    let res = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
-    assert_eq!(res, 0);
 }
 
 pub fn command_per_pid(pid: libc::pid_t) -> String {
@@ -946,11 +978,22 @@ impl EventedPty for Pty {
     }
 
     #[inline]
+    fn has_child(&self) -> bool {
+        self.signals.is_some()
+    }
+
+    fn stop_reading(&mut self, poll: &corcovado::Poll) -> io::Result<()> {
+        if std::mem::take(&mut self.reading) {
+            poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
+        }
+        Ok(())
+    }
+
     fn next_child_event(&mut self) -> Option<ChildEvent> {
         if self.child_event_emitted {
             return None;
         }
-        self.signals.pending().next().and_then(|signal| {
+        self.signals.as_mut()?.pending().next().and_then(|signal| {
             if signal != sigconsts::SIGCHLD {
                 return None;
             }
@@ -1017,22 +1060,56 @@ fn get_pw_entry(buf: &mut [i8; 1024]) -> Result<Passwd<'_>, Error> {
     })
 }
 
-/// Unsafe
-/// Return tty pts name [`String`]
-///
-/// # Safety
-///
-/// This function is unsafe because it contains the usage of `libc::ptsname`
-/// from libc that's naturally unsafe.
-pub fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
-    let c_str: &CStr = unsafe {
-        let name_ptr = ptsname(fd as *mut _);
-        CStr::from_ptr(name_ptr)
-    };
-    let str_slice: &str = c_str.to_str().unwrap();
-    let str_buf: String = str_slice.to_owned();
+/// The slave's name for the pty master `fd`; `Err` when `fd` is not a
+/// pty master. Into a buffer of our own where the platform allows,
+/// since `ptsname` returns a static one shared by every thread.
+pub fn tty_ptsname(fd: libc::c_int) -> Result<String, Error> {
+    // 128 bytes is what macOS's ioctl writes, and longer than any
+    // `/dev/pts/N`.
+    let mut buf = [0 as libc::c_char; 128];
 
-    Ok(str_buf)
+    // What macOS's own `ptsname` calls.
+    #[cfg(target_vendor = "apple")]
+    if unsafe { libc::ioctl(fd, libc::TIOCPTYGNAME as libc::c_ulong, buf.as_mut_ptr()) }
+        != 0
+    {
+        return Err(Error::last_os_error());
+    }
+
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "netbsd"
+    ))]
+    match unsafe { libc::ptsname_r(fd, buf.as_mut_ptr(), buf.len()) } {
+        0 => {}
+        err => return Err(Error::from_raw_os_error(err)),
+    }
+
+    #[cfg(not(any(
+        target_vendor = "apple",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "netbsd"
+    )))]
+    {
+        let name = unsafe { libc::ptsname(fd) };
+        if name.is_null() {
+            return Err(Error::last_os_error());
+        }
+        let name = unsafe { CStr::from_ptr(name) }.to_bytes_with_nul();
+        if name.len() > buf.len() {
+            return Err(Error::other("pty name too long"));
+        }
+        for (dst, &src) in buf.iter_mut().zip(name) {
+            *dst = src as libc::c_char;
+        }
+    }
+
+    let name = unsafe { CStr::from_ptr(buf.as_ptr()) };
+    Ok(name.to_string_lossy().into_owned())
 }
 
 pub fn foreground_process_name(main_fd: RawFd, shell_pid: u32) -> String {
