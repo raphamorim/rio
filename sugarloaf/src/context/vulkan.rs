@@ -205,7 +205,7 @@ pub struct VulkanFrame {
 }
 
 impl VulkanContext {
-    pub fn new(sugarloaf_window: SugarloafWindow) -> Self {
+    pub fn new(sugarloaf_window: SugarloafWindow, prefer_integrated_gpu: bool) -> Self {
         let size = sugarloaf_window.size;
         let scale = sugarloaf_window.scale;
 
@@ -228,8 +228,12 @@ impl VulkanContext {
         let surface_loader = khr::surface::Instance::new(&entry, &instance);
         let surface = create_surface(&entry, &instance, &sugarloaf_window);
 
-        let (physical_device, queue_family_index) =
-            pick_physical_device(&instance, &surface_loader, surface);
+        let (physical_device, queue_family_index) = pick_physical_device(
+            &instance,
+            &surface_loader,
+            surface,
+            prefer_integrated_gpu,
+        );
 
         let device = create_device(&instance, physical_device, queue_family_index);
         let queue = unsafe { device.get_device_queue(queue_family_index, 0) };
@@ -1295,12 +1299,31 @@ fn create_surface(
     }
 }
 
-/// Pick a physical device + queue family. Prefer discrete GPU, require
-/// a queue family that supports both graphics and present on our surface.
+/// Rank a device class for [`pick_physical_device`]; higher wins.
+/// The discrete GPU leads unless the integrated one was asked for, and
+/// either way a hardware GPU outranks a virtual or software device.
+fn device_type_score(
+    device_type: vk::PhysicalDeviceType,
+    prefer_integrated_gpu: bool,
+) -> i32 {
+    match device_type {
+        vk::PhysicalDeviceType::INTEGRATED_GPU if prefer_integrated_gpu => 2000,
+        vk::PhysicalDeviceType::DISCRETE_GPU => 1000,
+        vk::PhysicalDeviceType::INTEGRATED_GPU => 500,
+        vk::PhysicalDeviceType::VIRTUAL_GPU => 100,
+        vk::PhysicalDeviceType::CPU => 10,
+        _ => 1,
+    }
+}
+
+/// Pick a physical device + queue family. Prefer the discrete GPU, or
+/// the integrated one when `prefer_integrated_gpu` is set; require a
+/// queue family that supports both graphics and present on our surface.
 fn pick_physical_device(
     instance: &Instance,
     surface_loader: &khr::surface::Instance,
     surface: vk::SurfaceKHR,
+    prefer_integrated_gpu: bool,
 ) -> (vk::PhysicalDevice, u32) {
     let devices = unsafe { instance.enumerate_physical_devices() }
         .expect("enumerate_physical_devices");
@@ -1324,13 +1347,7 @@ fn pick_physical_device(
             if !present_ok {
                 continue;
             }
-            let score = match props.device_type {
-                vk::PhysicalDeviceType::DISCRETE_GPU => 1000,
-                vk::PhysicalDeviceType::INTEGRATED_GPU => 500,
-                vk::PhysicalDeviceType::VIRTUAL_GPU => 100,
-                vk::PhysicalDeviceType::CPU => 10,
-                _ => 1,
-            };
+            let score = device_type_score(props.device_type, prefer_integrated_gpu);
             if best.map(|(_, _, s)| score > s).unwrap_or(true) {
                 best = Some((device, index, score));
             }
@@ -1565,4 +1582,55 @@ fn create_frames(
             }
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TYPES: [vk::PhysicalDeviceType; 5] = [
+        vk::PhysicalDeviceType::DISCRETE_GPU,
+        vk::PhysicalDeviceType::INTEGRATED_GPU,
+        vk::PhysicalDeviceType::VIRTUAL_GPU,
+        vk::PhysicalDeviceType::CPU,
+        vk::PhysicalDeviceType::OTHER,
+    ];
+
+    fn winner(prefer_integrated_gpu: bool) -> vk::PhysicalDeviceType {
+        *TYPES
+            .iter()
+            .max_by_key(|t| device_type_score(**t, prefer_integrated_gpu))
+            .unwrap()
+    }
+
+    #[test]
+    fn discrete_gpu_wins_by_default() {
+        assert_eq!(winner(false), vk::PhysicalDeviceType::DISCRETE_GPU);
+    }
+
+    #[test]
+    fn integrated_gpu_wins_when_preferred() {
+        assert_eq!(winner(true), vk::PhysicalDeviceType::INTEGRATED_GPU);
+    }
+
+    #[test]
+    fn hardware_outranks_software_under_either_preference() {
+        for prefer_integrated_gpu in [false, true] {
+            for hardware in [
+                vk::PhysicalDeviceType::DISCRETE_GPU,
+                vk::PhysicalDeviceType::INTEGRATED_GPU,
+            ] {
+                for other in [
+                    vk::PhysicalDeviceType::VIRTUAL_GPU,
+                    vk::PhysicalDeviceType::CPU,
+                    vk::PhysicalDeviceType::OTHER,
+                ] {
+                    assert!(
+                        device_type_score(hardware, prefer_integrated_gpu)
+                            > device_type_score(other, prefer_integrated_gpu)
+                    );
+                }
+            }
+        }
+    }
 }
