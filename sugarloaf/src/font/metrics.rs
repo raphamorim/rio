@@ -93,9 +93,11 @@ impl FaceMetrics {
         font_size: f32,
     ) -> Self {
         // `hhea`'s widest advance is the default instance's, whatever the
-        // coordinates: no variation table can change it. A pinned
-        // instance is measured from its own advances instead.
-        let cell_width = if coords.is_empty() {
+        // coordinates: no variation table can change it. An instance off
+        // the default is measured from its own advances instead. All-zero
+        // coordinates are the default (a `weight` equal to the axis
+        // default), so they keep the same cell as no pin at all.
+        let cell_width = if coords.iter().all(|&c| c == 0) {
             metrics.max_width
         } else {
             Self::instance_cell_width(font_ref, coords, font_size)
@@ -386,6 +388,16 @@ mod tests {
             default.cell_width,
             font.metrics(&[]).scale(size).max_width as f64,
             "the default instance keeps hhea's width"
+        );
+        let wght_default = font
+            .variations()
+            .find_by_tag(wght)
+            .expect("SF has wght")
+            .default_value();
+        assert_eq!(
+            at(&[(wght, wght_default)]).cell_width,
+            default.cell_width,
+            "pinning the default is the default"
         );
         let light = at(&[(wght, 200.0)]);
         let heavy = at(&[(wght, 900.0)]);

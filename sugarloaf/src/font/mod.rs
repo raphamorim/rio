@@ -1801,10 +1801,6 @@ enum FindResult {
     NotFound(SugarloafFont),
 }
 
-/// Select a color bitmap that Swash can safely render for Rio's premultiplied
-/// RGBA atlas. Raw premultiplied strikes cannot pass through Swash's resampler.
-/// Only the non-macOS rasterizers call this, but it is compiled everywhere so
-/// its tests run on every platform.
 /// The normalized coordinates (2.14 fixed point, one per `fvar` axis) of
 /// `variations` on `font`: what swash's metrics take, and what its
 /// scaler should be given. Empty when nothing is pinned, which means the
@@ -1829,6 +1825,10 @@ pub fn normalized_coords(font: &swash::FontRef, variations: &[(u32, f32)]) -> Ve
         .collect()
 }
 
+/// Select a color bitmap that Swash can safely render for Rio's premultiplied
+/// RGBA atlas. Raw premultiplied strikes cannot pass through Swash's resampler.
+/// Only the non-macOS rasterizers call this, but it is compiled everywhere so
+/// its tests run on every platform.
 pub fn select_color_bitmap(
     font: swash::FontRef<'_>,
     glyph_id: u16,

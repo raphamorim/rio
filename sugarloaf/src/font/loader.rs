@@ -276,9 +276,18 @@ fn recover_instance(
             let italic = font.properties().style != font_kit::properties::Style::Normal;
             (weight, match_instance(&data, face, weight.0 as f32, italic))
         }
-        // fontconfig's pattern for the variable font itself: its default.
+        // fontconfig's pattern for the variable font itself: its default
+        // instance, whose weight is `wght`'s default. font_kit reports
+        // `OS/2`'s for every face of the file, which can tie this face
+        // with the named instance of that weight and leave the choice
+        // to fontconfig's order (#1913).
         #[cfg(not(target_os = "windows"))]
-        0 => (weight, None),
+        0 => {
+            let weight = default_wght(&data, face)
+                .map(|w| Weight(w.round().clamp(0.0, u16::MAX as f32) as u16))
+                .unwrap_or(weight);
+            (weight, None)
+        }
         instance_id => {
             let Some(coords) = named_instance_coords(&data, face, instance_id - 1) else {
                 return (weight, None);
@@ -336,6 +345,17 @@ fn instance_triples(
             )
         })
         .collect()
+}
+
+/// The default of the face's `wght` axis; `None` for a static face.
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_arch = "wasm32")))]
+fn default_wght(data: &[u8], face_index: u32) -> Option<f32> {
+    let font = skrifa::FontRef::from_index(data, face_index).ok()?;
+    let wght = skrifa::Tag::new(b"wght");
+    skrifa::AxisCollection::new(&font)
+        .iter()
+        .find(|axis| axis.tag() == wght)
+        .map(|axis| axis.default_value())
 }
 
 /// The `wght` coordinate among `coords`, if the font has that axis.
@@ -914,4 +934,15 @@ fn find_font_path_from_data(data: &[u8]) -> Option<PathBuf> {
         target_name
     );
     None
+}
+
+#[cfg(all(test, not(any(target_os = "macos", target_os = "windows"))))]
+mod tests {
+    /// Index 0 of a variable font is its default instance, reported at
+    /// `wght`'s default (Cascadia's is 400).
+    #[test]
+    fn the_default_face_weighs_its_wght_default() {
+        let data = crate::font::constants::FONT_CASCADIA_CODE_NF;
+        assert_eq!(super::default_wght(data, 0), Some(400.0));
+    }
 }

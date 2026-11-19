@@ -234,7 +234,7 @@ impl Text {
         self.font_resolve.clear();
         self.synthesis_cache.clear();
         #[cfg(not(target_os = "macos"))]
-        self.wght_variation_cache.clear();
+        self.variations_cache.clear();
         self.ascent_cache.clear();
         self.shape_cache.clear();
         #[cfg(target_os = "macos")]
