@@ -521,6 +521,13 @@ mod tests {
         // be our own process group.
         unsafe { libc::raise(libc::SIGCHLD) };
         assert!(pty.next_child_event().is_none());
+
+        // No session on it and no shell: nothing to name. The pty has
+        // no foreground group (macOS reports pid 0), and pid 0 has no
+        // name or cwd to read.
+        let main_fd = *pty.child.id;
+        assert_eq!(crate::unix::foreground_process_name(main_fd, 0), "");
+        assert!(crate::unix::foreground_process_path(main_fd, 0).is_err());
     }
 
     // Only a spawned pty has a child whose exit ends the session; and

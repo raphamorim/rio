@@ -494,11 +494,46 @@ impl Engine {
         }
     }
 
+    /// A surface running the shell `desc` names, or the user's login
+    /// shell, on a new pty. Without the `pty` feature the host carries
+    /// the bytes instead, and `desc`'s shell, args and working_dir are
+    /// unused.
     pub fn create_surface(
         &self,
         desc: &SurfaceDesc,
     ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
-        Surface::new(self, desc)
+        #[cfg(feature = "pty")]
+        {
+            let pty = spawn_pty(desc)?;
+            Surface::new_with_pty(self, desc, pty)
+        }
+        #[cfg(not(feature = "pty"))]
+        Ok(Surface::new(self, desc))
+    }
+
+    /// A surface over a pty master the host already holds, instead of a
+    /// spawned shell, like foot's `--pty`. `desc`'s shell, args and
+    /// working_dir are unused. Nothing of ours runs on it, so nothing is
+    /// signaled or reaped and [`Surface::child_pid`] is 0, and the
+    /// surface ends when the other side closes: once no process holds
+    /// the slave, which on Linux includes one that has never been
+    /// opened. Anything but a pty master is refused. The descriptor is
+    /// made nonblocking, which a duplicate the host keeps shares, and
+    /// closed on failure.
+    #[cfg(all(feature = "pty", not(target_os = "windows")))]
+    pub fn adopt_surface(
+        &self,
+        desc: &SurfaceDesc,
+        main: std::os::fd::OwnedFd,
+    ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
+        let pty = teletypewriter::create_pty_from_fd(
+            main,
+            desc.cols,
+            desc.rows,
+            desc.pixel_width,
+            desc.pixel_height,
+        )?;
+        Surface::new_with_pty(self, desc, pty)
     }
 }
 
@@ -634,11 +669,72 @@ fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
     }
 }
 
+/// What every surface is made of, whatever carries its bytes.
+struct SurfaceCore {
+    id: SurfaceId,
+    /// For the pty's event loop; the terminal holds its own.
+    #[cfg(feature = "pty")]
+    listener: Listener,
+    terminal: Arc<TerminalLock<Crosswords<Listener>>>,
+    inline_images: InlineImages,
+    #[cfg(feature = "graphics")]
+    glyphs: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
+    #[cfg(feature = "graphics")]
+    replies: Listener,
+    #[cfg(feature = "pty")]
+    pty_writer: Arc<Mutex<Option<corcovado::channel::Sender<Msg>>>>,
+}
+
+/// A pty with the shell `desc` names, or the user's login shell.
+#[cfg(feature = "pty")]
+fn spawn_pty(desc: &SurfaceDesc) -> std::io::Result<teletypewriter::Pty> {
+    let shell = desc.shell.as_deref();
+
+    // The child inherits the host process's environment, which for GUI
+    // hosts has no TERM at all (or a stale one). Resolve it the way rio
+    // does: prefer rio's terminfo when it's installed, else fall back to
+    // the universally known xterm-256color so local prompts and remote
+    // ssh sessions both keep working.
+    #[cfg(not(target_os = "windows"))]
+    {
+        let terminfo = if teletypewriter::terminfo_exists("xterm-rio") {
+            "xterm-rio"
+        } else if teletypewriter::terminfo_exists("rio") {
+            "rio"
+        } else {
+            "xterm-256color"
+        };
+        let env = vec![
+            ("TERM".to_string(), terminfo.to_string()),
+            ("COLORTERM".to_string(), "truecolor".to_string()),
+        ];
+        create_pty_with_spawn(
+            shell,
+            desc.args.clone(),
+            &desc.working_dir,
+            Some(env),
+            desc.cols,
+            desc.rows,
+            desc.pixel_width,
+            desc.pixel_height,
+        )
+    }
+
+    #[cfg(target_os = "windows")]
+    create_pty(
+        shell,
+        desc.args.clone(),
+        &desc.working_dir,
+        None,
+        desc.cols,
+        desc.rows,
+    )
+}
+
 impl Surface {
-    fn new(
-        engine: &Engine,
-        desc: &SurfaceDesc,
-    ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
+    /// The parts shared by every surface: the terminal and what it
+    /// reports to.
+    fn core(engine: &Engine, desc: &SurfaceDesc) -> SurfaceCore {
         let id = engine.next_surface_id.fetch_add(1, Ordering::SeqCst);
         #[cfg(feature = "pty")]
         let pty_writer = Arc::new(Mutex::new(None));
@@ -660,8 +756,6 @@ impl Surface {
             #[cfg(feature = "pty")]
             pty_writer: pty_writer.clone(),
         };
-        #[cfg(feature = "graphics")]
-        let replies = listener.clone();
 
         let mut terminal = Crosswords::new(
             GridSize::new(
@@ -693,119 +787,96 @@ impl Surface {
         #[allow(clippy::arc_with_non_send_sync)]
         let terminal = Arc::new(TerminalLock::new(terminal));
 
-        #[cfg(not(feature = "pty"))]
-        {
-            Ok(Surface {
-                id,
-                #[cfg(feature = "graphics")]
-                glyphs,
-                #[cfg(feature = "graphics")]
-                replies,
-                // Terminals default alt to meta; the host may override it.
-                alt_is_meta: std::sync::atomic::AtomicBool::new(true),
-                terminal,
-                url_regex: std::sync::Mutex::new(None),
-                processor: std::sync::Mutex::new(None),
-                inline_images,
-                cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-                delegate: engine.delegate.clone(),
-            })
+        SurfaceCore {
+            id,
+            #[cfg(feature = "graphics")]
+            replies: listener.clone(),
+            #[cfg(feature = "pty")]
+            listener,
+            terminal,
+            inline_images,
+            #[cfg(feature = "graphics")]
+            glyphs,
+            #[cfg(feature = "pty")]
+            pty_writer,
         }
+    }
 
-        #[cfg(feature = "pty")]
-        {
-            // No shell in the descriptor means "whatever the user's default is",
-            // which teletypewriter resolves (and starts as a login shell).
-            let shell = desc.shell.as_deref();
-
-            // The child inherits the host process's environment, which for GUI
-            // hosts has no TERM at all (or a stale one). Resolve it the way rio
-            // does: prefer rio's terminfo when it's installed, else fall back to
-            // the universally known xterm-256color so local prompts and remote
-            // ssh sessions both keep working.
-            #[cfg(not(target_os = "windows"))]
-            let env = {
-                let terminfo = match (
-                    teletypewriter::terminfo_exists("xterm-rio"),
-                    teletypewriter::terminfo_exists("rio"),
-                ) {
-                    (true, _) => "xterm-rio",
-                    (false, true) => "rio",
-                    (false, false) => "xterm-256color",
-                };
-                Some(vec![
-                    ("TERM".to_string(), terminfo.to_string()),
-                    ("COLORTERM".to_string(), "truecolor".to_string()),
-                ])
-            };
-
-            #[cfg(not(target_os = "windows"))]
-            let pty = create_pty_with_spawn(
-                shell,
-                desc.args.clone(),
-                &desc.working_dir,
-                env,
-                desc.cols,
-                desc.rows,
-                desc.pixel_width,
-                desc.pixel_height,
-            )
-            .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
-
-            #[cfg(target_os = "windows")]
-            let pty = create_pty(
-                shell,
-                desc.args.clone(),
-                &desc.working_dir,
-                None,
-                desc.cols,
-                desc.rows,
-            )
-            .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
-
-            #[cfg(not(target_os = "windows"))]
-            let shell_pid = *pty.child.pid.clone() as u32;
-            #[cfg(target_os = "windows")]
-            let shell_pid = pty.child_watcher().pid().map(|pid| pid.get()).unwrap_or(0);
-            #[cfg(not(target_os = "windows"))]
-            let main_fd = *pty.child.id;
-            #[cfg(not(target_os = "windows"))]
-            let child_terminator = pty.child.terminator();
-
-            let machine = Machine::new(
-                Arc::clone(&terminal),
-                pty,
-                listener,
-                WindowId::from(id as u64),
-                id,
-            )
-            .map_err(|err| std::io::Error::other(err.to_string()))?;
-            let channel = machine.channel();
-            *pty_writer.lock().unwrap() = Some(channel.clone());
-            let io_thread = machine.spawn();
-
-            Ok(Surface {
-                id,
-                #[cfg(feature = "graphics")]
-                glyphs,
-                #[cfg(feature = "graphics")]
-                replies,
-                // Terminals default alt to meta; the host may override it.
-                alt_is_meta: std::sync::atomic::AtomicBool::new(true),
-                terminal,
-                url_regex: std::sync::Mutex::new(None),
-                processor: std::sync::Mutex::new(None),
-                inline_images,
-                cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-                channel,
-                shell_pid,
-                #[cfg(not(target_os = "windows"))]
-                main_fd,
-                #[cfg(not(target_os = "windows"))]
-                child_terminator,
-                _io_thread: io_thread,
-            })
+    /// A surface whose bytes the host carries: it feeds the program's
+    /// output with [`Surface::inject_output`] and gets the terminal's
+    /// through [`SurfaceDelegate::output`].
+    #[cfg(not(feature = "pty"))]
+    fn new(engine: &Engine, desc: &SurfaceDesc) -> Surface {
+        let core = Self::core(engine, desc);
+        Surface {
+            id: core.id,
+            #[cfg(feature = "graphics")]
+            glyphs: core.glyphs,
+            #[cfg(feature = "graphics")]
+            replies: core.replies,
+            // Terminals default alt to meta; the host may override it.
+            alt_is_meta: std::sync::atomic::AtomicBool::new(true),
+            terminal: core.terminal,
+            url_regex: std::sync::Mutex::new(None),
+            processor: std::sync::Mutex::new(None),
+            inline_images: core.inline_images,
+            cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            delegate: engine.delegate.clone(),
         }
+    }
+
+    /// A surface over `pty`, which librio reads and writes on its own
+    /// threads.
+    #[cfg(feature = "pty")]
+    fn new_with_pty(
+        engine: &Engine,
+        desc: &SurfaceDesc,
+        pty: teletypewriter::Pty,
+    ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
+        let core = Self::core(engine, desc);
+
+        #[cfg(not(target_os = "windows"))]
+        let shell_pid = *pty.child.pid.clone() as u32;
+        #[cfg(target_os = "windows")]
+        let shell_pid = pty.child_watcher().pid().map(|pid| pid.get()).unwrap_or(0);
+        #[cfg(not(target_os = "windows"))]
+        let main_fd = *pty.child.id;
+        #[cfg(not(target_os = "windows"))]
+        let child_terminator = pty.child.terminator();
+
+        let machine = Machine::new(
+            Arc::clone(&core.terminal),
+            pty,
+            core.listener,
+            WindowId::from(core.id as u64),
+            core.id,
+        )
+        .map_err(|err| std::io::Error::other(err.to_string()))?;
+        let channel = machine.channel();
+        *core.pty_writer.lock().unwrap() = Some(channel.clone());
+        let io_thread = machine.spawn();
+
+        Ok(Surface {
+            id: core.id,
+            #[cfg(feature = "graphics")]
+            glyphs: core.glyphs,
+            #[cfg(feature = "graphics")]
+            replies: core.replies,
+            // Terminals default alt to meta; the host may override it.
+            alt_is_meta: std::sync::atomic::AtomicBool::new(true),
+            terminal: core.terminal,
+            url_regex: std::sync::Mutex::new(None),
+            processor: std::sync::Mutex::new(None),
+            inline_images: core.inline_images,
+            cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            channel,
+            shell_pid,
+            #[cfg(not(target_os = "windows"))]
+            main_fd,
+            #[cfg(not(target_os = "windows"))]
+            child_terminator,
+            _io_thread: io_thread,
+        })
     }
 
     pub fn id(&self) -> SurfaceId {
@@ -3195,5 +3266,87 @@ mod tests {
         shown("READY");
         surface.inject_output(b"\x1b_25a1;q;cp=e0a0\x1b\\\x1b_25a1;s\x1b\\");
         shown("q;cp=e0a0;status=system^[\\^[_25a1;s;fmt=vg^[\\");
+    }
+
+    /// A pty pair: the main (master) and sub (slave) ends.
+    fn openpty() -> (std::os::fd::OwnedFd, std::fs::File) {
+        use std::os::fd::FromRawFd;
+        let (mut main, mut sub) = (0, 0);
+        let opened = unsafe {
+            libc::openpty(
+                &mut main,
+                &mut sub,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(opened, 0);
+        unsafe {
+            (
+                std::os::fd::OwnedFd::from_raw_fd(main),
+                std::fs::File::from_raw_fd(sub),
+            )
+        }
+    }
+
+    struct ClosingDelegate(std::sync::atomic::AtomicBool);
+
+    impl SurfaceDelegate for ClosingDelegate {
+        fn wakeup(&self, _surface: SurfaceId) {}
+        fn close_surface(&self, _surface: SurfaceId) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    // A pty master the host holds drives a surface like a spawned shell;
+    // the test writes from the other side, and closing that side ends
+    // the surface.
+    #[test]
+    fn adopts_an_existing_pty() {
+        use std::io::Write;
+        let delegate =
+            Arc::new(ClosingDelegate(std::sync::atomic::AtomicBool::new(false)));
+        let engine = Engine::new(delegate.clone());
+        let (main, mut sub) = openpty();
+        let surface = engine
+            .adopt_surface(&SurfaceDesc::default(), main)
+            .expect("adopt the pty");
+        assert_eq!(surface.child_pid(), 0);
+        let mut state = RenderState::new(&surface);
+
+        sub.write_all(b"from the other side").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            state.update();
+            if (0..state.lines())
+                .any(|i| state.text_row(i).contains("from the other side"))
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the output never reached the grid"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        drop(sub);
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while !delegate.0.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "the surface did not close");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn adopting_refuses_what_is_not_a_pty_master() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let (read_end, _write_end) = std::io::pipe().unwrap();
+        assert!(engine
+            .adopt_surface(&SurfaceDesc::default(), read_end.into())
+            .is_err());
     }
 }
