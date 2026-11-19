@@ -524,7 +524,11 @@ impl WinitWindow {
     }
 
     pub(super) fn uninstall_integrated_titlebar_glass(&self) {
-        if let Some(glass) = self.ivars().integrated_titlebar_glass.borrow_mut().take() {
+        // Take it before calling AppKit: an `if let` on the borrow would hold
+        // it across `removeFromSuperview`, and anything AppKit calls back
+        // into that reads the glass would panic (as in `uninstall_glass`).
+        let glass = self.ivars().integrated_titlebar_glass.borrow_mut().take();
+        if let Some(glass) = glass {
             unsafe { glass.as_ns_view().removeFromSuperview() };
         }
     }
