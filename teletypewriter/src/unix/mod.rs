@@ -755,15 +755,18 @@ pub fn default_shell_program() -> String {
         .unwrap_or_default()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn create_pty_with_fork(
     shell: Option<&str>,
     args: &[String],
+    working_directory: &Option<String>,
     envs: &[(String, String)],
     columns: u16,
     rows: u16,
     width: u16,
     height: u16,
 ) -> Result<Pty, Error> {
+    let working_directory = working_directory.as_deref().map(CString::new).transpose()?;
     let mut main = 0;
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
@@ -799,6 +802,12 @@ pub fn create_pty_with_fork(
         )
     } {
         0 => {
+            if working_directory
+                .as_ref()
+                .is_some_and(|dir| unsafe { libc::chdir(dir.as_ptr()) != 0 })
+            {
+                unsafe { libc::_exit(127) }
+            }
             set_child_envs(envs);
             default_shell_command(shell_program, args);
             // Never return into the terminal application in the forked child

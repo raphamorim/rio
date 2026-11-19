@@ -329,7 +329,7 @@ impl Drop for Child {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::unix::create_pty_with_spawn;
+    use crate::unix::{create_pty_with_fork, create_pty_with_spawn};
     use crate::EventedPty;
     use libc::waitpid;
     use std::io::Error;
@@ -391,6 +391,31 @@ mod tests {
         child.terminate().unwrap();
         drop(child);
         assert_reaped(pid);
+    }
+
+    #[test]
+    fn forked_shell_starts_in_requested_directory() {
+        let pty = create_pty_with_fork(
+            Some("/bin/sh"),
+            &["-c".into(), "test \"$(pwd -P)\" = /".into()],
+            &Some("/".into()),
+            &[],
+            80,
+            24,
+            0,
+            0,
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let status = loop {
+            if let Some(status) = pty.child.waitpid().unwrap() {
+                break status;
+            }
+            assert!(Instant::now() < deadline, "forked shell did not exit");
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert!(libc::WIFEXITED(status));
+        assert_eq!(libc::WEXITSTATUS(status), 0);
     }
 
     #[test]
