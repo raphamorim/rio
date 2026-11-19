@@ -58,12 +58,47 @@ pub fn is_glyph_protocol(body: &[u8]) -> bool {
 /// with `payload_too_large`.
 pub const MAX_PAYLOAD_BYTES: usize = 32 * 1024;
 
-/// Payload formats this build supports, advertised in the reply to
-/// the `s` verb as a comma-separated list of names. An empty slice
-/// produces `fmt=` (protocol implemented but no payload format
-/// accepted) — a degenerate state reserved for future negotiation,
-/// never produced by this build.
-pub const SUPPORTED_FORMATS: &[&str] = &["glyf", "colrv0", "colrv1", "vg"];
+/// A payload format (§8), named on the wire by [`GlyphFormat::name`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GlyphFormat {
+    /// A TrueType simple glyph (§8.1).
+    Glyf,
+    /// COLRv0 layers over `glyf` outlines (§8.6).
+    ColrV0,
+    /// COLRv1 paint graphs over `glyf` outlines (§8.7).
+    ColrV1,
+    /// SVG path data as text (§8.9).
+    Vg,
+}
+
+impl GlyphFormat {
+    /// Every format this build parses, in the order the `s` reply lists
+    /// them. A frontend that draws registered glyphs itself may accept
+    /// fewer (`Handler::glyph_formats`).
+    pub const ALL: &'static [GlyphFormat] = &[
+        GlyphFormat::Glyf,
+        GlyphFormat::ColrV0,
+        GlyphFormat::ColrV1,
+        GlyphFormat::Vg,
+    ];
+
+    /// The name in `fmt=`.
+    pub fn name(self) -> &'static str {
+        match self {
+            GlyphFormat::Glyf => "glyf",
+            GlyphFormat::ColrV0 => "colrv0",
+            GlyphFormat::ColrV1 => "colrv1",
+            GlyphFormat::Vg => "vg",
+        }
+    }
+
+    fn from_name(name: &[u8]) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|f| f.name().as_bytes() == name)
+    }
+}
 
 pub use rio_graphics::glyph_namespace::in_registration_block;
 
@@ -235,6 +270,17 @@ pub enum QueryStatus {
 }
 
 impl QueryStatus {
+    /// The status of a codepoint, from whether the session's glossary
+    /// and the terminal's fonts cover it.
+    pub fn new(glossary: bool, system: bool) -> Self {
+        match (glossary, system) {
+            (true, true) => QueryStatus::Both,
+            (true, false) => QueryStatus::Glossary,
+            (false, true) => QueryStatus::System,
+            (false, false) => QueryStatus::Free,
+        }
+    }
+
     /// Wire form of the `status=` value: a comma-separated list of
     /// coverage names. `Free` returns the empty string.
     pub fn as_str(self) -> &'static str {
@@ -309,6 +355,15 @@ pub enum ParseError {
 /// Parse a raw APC body (minus the `ESC _` introducer and `ESC \`
 /// terminator) into a [`GlyphCommand`].
 pub fn parse(body: &[u8]) -> Result<GlyphCommand, ParseError> {
+    parse_with(body, GlyphFormat::ALL)
+}
+
+/// [`parse`] for a terminal that lists only `formats` in its `s`
+/// reply: a registration in any other is `unsupported_format`.
+pub fn parse_with(
+    body: &[u8],
+    formats: &[GlyphFormat],
+) -> Result<GlyphCommand, ParseError> {
     if !is_glyph_protocol(body) {
         return Err(ParseError::NotGlyphProtocol);
     }
@@ -323,7 +378,7 @@ pub fn parse(body: &[u8]) -> Result<GlyphCommand, ParseError> {
     match verb[0] {
         b's' => parse_support(rest),
         b'q' => parse_query(rest),
-        b'r' => parse_register(rest),
+        b'r' => parse_register(rest, formats),
         b'c' => parse_clear(rest),
         _ => Err(ParseError::Malformed("unknown verb")),
     }
@@ -370,7 +425,10 @@ fn parse_query(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     }
 }
 
-fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
+fn parse_register(
+    rest: &[u8],
+    formats: &[GlyphFormat],
+) -> Result<GlyphCommand, ParseError> {
     // Register splits control parameters from the payload at the LAST
     // `;`. Neither base64 nor `fmt=vg` text has a `;`, so this is
     // unambiguous.
@@ -409,13 +467,13 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     // `s` gets its own reason, so a client can tell it from a bad
     // payload and fall back to a listed one.
     let fmt = params.get("fmt").copied().unwrap_or(b"glyf");
-    if !SUPPORTED_FORMATS.iter().any(|name| name.as_bytes() == fmt) {
+    let Some(fmt) = GlyphFormat::from_name(fmt).filter(|f| formats.contains(f)) else {
         return Err(ParseError::RegisterFailed {
             cp,
             reason: RegisterError::UnsupportedFormat,
             reply,
         });
-    }
+    };
 
     let malformed = || ParseError::RegisterFailed {
         cp,
@@ -436,7 +494,7 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         None => 1,
     };
 
-    if fmt == b"vg" {
+    if fmt == GlyphFormat::Vg {
         let layout = parse_vector_layout(&params).ok_or_else(malformed)?;
         let view_box = params
             .get("vb")
@@ -501,18 +559,18 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     }
 
     let payload = match fmt {
-        b"glyf" => GlyphPayload::Glyf { glyf: raw, upm },
-        b"colrv0" => {
+        GlyphFormat::Glyf => GlyphPayload::Glyf { glyf: raw, upm },
+        GlyphFormat::ColrV0 => {
             let container = parse_colr_container(&raw)
                 .map_err(|reason| ParseError::RegisterFailed { cp, reason, reply })?;
             GlyphPayload::ColrV0 { container, upm }
         }
-        b"colrv1" => {
+        GlyphFormat::ColrV1 => {
             let container = parse_colr_container(&raw)
                 .map_err(|reason| ParseError::RegisterFailed { cp, reason, reply })?;
             GlyphPayload::ColrV1 { container, upm }
         }
-        _ => unreachable!("fmt validated above"),
+        GlyphFormat::Vg => unreachable!("vg returned above"),
     };
 
     Ok(GlyphCommand::Register {
@@ -894,14 +952,14 @@ impl<'a> Params<'a> {
     }
 }
 
-/// Format the reply to `s` (support). `fmts` is the list of supported
-/// payload format names, joined with `,` on the wire. An empty slice
-/// produces `fmt=` — a degenerate "protocol implemented but no payload
-/// format accepted" state, reserved for future negotiation and never
-/// produced by this build. `caps` lists optional capabilities (§3.3);
-/// the `cap` key is left out when there are none, which the spec
-/// defines as equal to an empty `cap=`.
-pub(crate) fn format_support_response(fmts: &[&str], caps: &[&str]) -> String {
+/// Format the reply to `s` (support). `fmts` are the accepted payload
+/// formats, their names joined with `,` on the wire. A terminal that
+/// accepts none doesn't answer `s` at all (`Handler::glyph_formats`).
+/// `caps` lists optional capabilities (§3.3); the `cap` key is left
+/// out when there are none, which the spec defines as equal to an
+/// empty `cap=`.
+pub(crate) fn format_support_response(fmts: &[GlyphFormat], caps: &[&str]) -> String {
+    let fmts: Vec<&str> = fmts.iter().map(|f| f.name()).collect();
     if caps.is_empty() {
         format!("\x1b_25a1;s;fmt={}\x1b\\", fmts.join(","))
     } else {
@@ -1453,7 +1511,7 @@ mod tests {
     #[test]
     fn every_advertised_format_is_accepted_by_name() {
         // `s` and `r` read the same list, so they can't drift apart.
-        for fmt in SUPPORTED_FORMATS {
+        for fmt in GlyphFormat::ALL.iter().map(|f| f.name()) {
             let body = format!("25a1;r;cp=100000;fmt={fmt};x");
             assert!(
                 !matches!(
@@ -1779,7 +1837,7 @@ stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A
     #[test]
     fn support_response_advertises_every_format() {
         assert_eq!(
-            format_support_response(SUPPORTED_FORMATS, &[]),
+            format_support_response(GlyphFormat::ALL, &[]),
             "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,vg\x1b\\"
         );
     }
@@ -1787,16 +1845,41 @@ stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A
     #[test]
     fn support_response_encodes_subset_and_empty() {
         assert_eq!(
-            format_support_response(&["glyf", "colrv0"], &[]),
+            format_support_response(&[GlyphFormat::Glyf, GlyphFormat::ColrV0], &[]),
             "\x1b_25a1;s;fmt=glyf,colrv0\x1b\\"
         );
         assert_eq!(format_support_response(&[], &[]), "\x1b_25a1;s;fmt=\x1b\\");
     }
 
     #[test]
+    fn only_the_listed_formats_register() {
+        let body = |fmt: &str| format!("25a1;r;cp=100000;fmt={fmt};AAAA");
+        let unsupported = |result| {
+            matches!(
+                result,
+                Err(ParseError::RegisterFailed {
+                    reason: RegisterError::UnsupportedFormat,
+                    ..
+                })
+            )
+        };
+        let glyf_only = &[GlyphFormat::Glyf][..];
+        assert!(unsupported(parse_with(
+            body("colrv0").as_bytes(),
+            glyf_only
+        )));
+        assert!(unsupported(parse_with(body("vg").as_bytes(), glyf_only)));
+        assert!(unsupported(parse_with(body("svg").as_bytes(), glyf_only)));
+        // No `fmt` is `glyf`, so it's refused where `glyf` isn't listed.
+        let vg_only = &[GlyphFormat::Vg][..];
+        assert!(unsupported(parse_with(b"25a1;r;cp=100000;AAAA", vg_only)));
+        assert!(!unsupported(parse_with(body("glyf").as_bytes(), glyf_only)));
+    }
+
+    #[test]
     fn support_response_lists_capabilities() {
         assert_eq!(
-            format_support_response(SUPPORTED_FORMATS, &[CAP_GRAPHEME]),
+            format_support_response(GlyphFormat::ALL, &[CAP_GRAPHEME]),
             "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,vg;cap=grapheme\x1b\\"
         );
     }
