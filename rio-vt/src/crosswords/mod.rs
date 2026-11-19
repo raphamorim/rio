@@ -682,7 +682,7 @@ impl<U: EventListener> Crosswords<U> {
             focused: false,
             program_status_seen: false,
             glyph_grapheme_query: false,
-            glyph_formats: crate::ansi::glyph_protocol::SUPPORTED_FORMATS,
+            glyph_formats: crate::ansi::glyph_protocol::GlyphFormat::ALL,
             command_started_at: None,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),

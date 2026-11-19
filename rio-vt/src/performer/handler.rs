@@ -468,7 +468,7 @@ pub trait Handler {
     /// messages are ignored and `s` goes unanswered, which is how a
     /// client tells the protocol is unsupported (§3.4).
     fn glyph_formats(&self) -> &'static [glyph_protocol::GlyphFormat] {
-        glyph_protocol::SUPPORTED_FORMATS
+        glyph_protocol::GlyphFormat::ALL
     }
 
     /// Whether this host answers grapheme queries (`q;grapheme=`,

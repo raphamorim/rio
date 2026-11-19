@@ -202,11 +202,12 @@ pub trait SurfaceDelegate: MaybeSendSync + 'static {
     }
     /// A program asked what draws `cp` (Glyph Protocol `q`). Only called
     /// for a delegate that draws some format, and like [`Self::wakeup`]
-    /// with the terminal locked, so don't call into the surface from
-    /// here. Answer with [`Surface::glyph_query_reply`] from any thread,
-    /// once per query and in order. Replies the terminal makes after the
-    /// query wait for that answer, so the program gets them in the order
-    /// it asked; a query never answered holds them forever.
+    /// with the terminal locked, so the only surface call allowed here is
+    /// [`Surface::glyph_query_reply`]. Answer with it once per query, in
+    /// order: right here, or later from any thread when looking the
+    /// codepoint up in the fonts is slow. Replies the terminal makes
+    /// after the query wait for that answer, so the program gets them in
+    /// the order it asked; a query never answered holds them forever.
     fn glyph_query(&self, _surface: SurfaceId, _cp: u32) {}
     /// Bytes the terminal wants delivered to the child process. Only called
     /// on non-`pty` builds, where the host owns the transport (a WebSocket
@@ -3148,5 +3149,51 @@ mod tests {
         assert!(surface.glyph_query_reply(false));
         assert!(!surface.glyph_query_reply(false), "one answer per query");
         shown("q;cp=100000;status=glossary^[\\^[_25a1;s;fmt=glyf^[\\");
+    }
+
+    // A host whose font lookup is cheap answers inside the callback.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_query_can_be_answered_from_the_callback() {
+        struct EagerHost(std::sync::OnceLock<std::sync::Weak<Surface>>);
+        impl SurfaceDelegate for EagerHost {
+            fn wakeup(&self, _surface: SurfaceId) {}
+            fn glyph_formats(&self) -> &'static [GlyphFormat] {
+                &[GlyphFormat::Vg]
+            }
+            fn glyph_query(&self, _surface: SurfaceId, _cp: u32) {
+                let surface = self.0.get().and_then(std::sync::Weak::upgrade);
+                assert!(surface.expect("surface").glyph_query_reply(true));
+            }
+        }
+        let delegate = Arc::new(EagerHost(std::sync::OnceLock::new()));
+        let engine = Engine::new(delegate.clone());
+        let surface = Arc::new(
+            engine
+                .create_surface(&SurfaceDesc {
+                    shell: Some("/bin/sh".into()),
+                    args: vec![
+                        "-c".into(),
+                        "stty raw -echo; printf READY; cat -v".into(),
+                    ],
+                    ..SurfaceDesc::default()
+                })
+                .expect("spawn cat"),
+        );
+        let _ = delegate.0.set(Arc::downgrade(&surface));
+        let shown = |text: &str| {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            while !surface.dump().contains(text) {
+                assert!(
+                    Instant::now() < deadline,
+                    "no {text:?} in {:?}",
+                    surface.dump()
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        shown("READY");
+        surface.inject_output(b"\x1b_25a1;q;cp=e0a0\x1b\\\x1b_25a1;s\x1b\\");
+        shown("q;cp=e0a0;status=system^[\\^[_25a1;s;fmt=vg^[\\");
     }
 }

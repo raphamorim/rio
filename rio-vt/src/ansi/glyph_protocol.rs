@@ -72,7 +72,9 @@ pub enum GlyphFormat {
 }
 
 impl GlyphFormat {
-    /// Every format, in the order the `s` reply lists them.
+    /// Every format this build parses, in the order the `s` reply lists
+    /// them. A frontend that draws registered glyphs itself may accept
+    /// fewer (`Handler::glyph_formats`).
     pub const ALL: &'static [GlyphFormat] = &[
         GlyphFormat::Glyf,
         GlyphFormat::ColrV0,
@@ -97,11 +99,6 @@ impl GlyphFormat {
             .find(|f| f.name().as_bytes() == name)
     }
 }
-
-/// Payload formats this build supports, advertised in the reply to
-/// the `s` verb. A frontend that draws registered glyphs itself may
-/// list fewer (`Handler::glyph_formats`).
-pub const SUPPORTED_FORMATS: &[GlyphFormat] = GlyphFormat::ALL;
 
 pub use rio_graphics::glyph_namespace::in_registration_block;
 
@@ -358,7 +355,7 @@ pub enum ParseError {
 /// Parse a raw APC body (minus the `ESC _` introducer and `ESC \`
 /// terminator) into a [`GlyphCommand`].
 pub fn parse(body: &[u8]) -> Result<GlyphCommand, ParseError> {
-    parse_with(body, SUPPORTED_FORMATS)
+    parse_with(body, GlyphFormat::ALL)
 }
 
 /// [`parse`] for a terminal that lists only `formats` in its `s`
@@ -1514,7 +1511,7 @@ mod tests {
     #[test]
     fn every_advertised_format_is_accepted_by_name() {
         // `s` and `r` read the same list, so they can't drift apart.
-        for fmt in SUPPORTED_FORMATS.iter().map(|f| f.name()) {
+        for fmt in GlyphFormat::ALL.iter().map(|f| f.name()) {
             let body = format!("25a1;r;cp=100000;fmt={fmt};x");
             assert!(
                 !matches!(
@@ -1840,7 +1837,7 @@ stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A
     #[test]
     fn support_response_advertises_every_format() {
         assert_eq!(
-            format_support_response(SUPPORTED_FORMATS, &[]),
+            format_support_response(GlyphFormat::ALL, &[]),
             "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,vg\x1b\\"
         );
     }
@@ -1882,7 +1879,7 @@ stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A
     #[test]
     fn support_response_lists_capabilities() {
         assert_eq!(
-            format_support_response(SUPPORTED_FORMATS, &[CAP_GRAPHEME]),
+            format_support_response(GlyphFormat::ALL, &[CAP_GRAPHEME]),
             "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,vg;cap=grapheme\x1b\\"
         );
     }
