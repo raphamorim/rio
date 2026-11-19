@@ -287,16 +287,13 @@ impl FontLibrary {
         &self,
         ch: char,
         fragment_style: &SpanStyle,
-        route_id: Option<usize>,
     ) -> (usize, bool) {
         // Fast path: codepoint is covered by an already-registered
         // font. No locks upgraded, no FFI call. Shared across all
         // platforms — only the cascade-discovery slow path differs.
         {
             let lib = self.inner.read();
-            if let Some(found) =
-                lib.find_best_font_match_strict(ch, fragment_style, route_id)
-            {
+            if let Some(found) = lib.find_best_font_match_strict(ch, fragment_style) {
                 return found;
             }
             if lib.no_installed_font.contains(&ch) {
@@ -540,8 +537,8 @@ impl FontLibrary {
         };
         self.inner
             .read()
-            .find_best_font_match_strict(ch, &SpanStyle::default(), None)
-            .is_some_and(|(font_id, _)| font_id != glyph_registry::CUSTOM_GLYPH_FONT_ID)
+            .find_best_font_match_strict(ch, &SpanStyle::default())
+            .is_some()
     }
 }
 
@@ -644,24 +641,12 @@ impl FontLibraryData {
         &self,
         ch: char,
         fragment_style: &SpanStyle,
-        route_id: Option<usize>,
     ) -> Option<(usize, bool)> {
-        // Glyph Protocol override takes precedence over everything
-        // else — if an application has registered this codepoint in
-        // *this pane's* registry, the registration is what the user
-        // is asking to see. Each pane consults its own registry via
-        // route_id, so two panes can host different programs with
-        // overlapping registrations without interfering. Checked
-        // before symbol maps and the font fallback chain because
-        // neither of those should "beat" an explicit registration.
-        if let Some(route_id) = route_id {
-            if let Some(registry) = self.glyph_registries.get(&route_id) {
-                if registry.contains(ch as u32) {
-                    return Some((glyph_registry::CUSTOM_GLYPH_FONT_ID, false));
-                }
-            }
-        }
-
+        // Glyph Protocol registrations don't route through here: a
+        // registration binds to text when it is printed (spec §6.3),
+        // so whether a cell draws one is the cell's to say, and the
+        // grid renderer reads it from the cell. A block codepoint
+        // printed with no registration resolves like any other.
         let mut synth = Synthesis::default();
         let mut char_cluster = CharCluster::new();
         let mut parser = Parser::new(
@@ -711,21 +696,8 @@ impl FontLibraryData {
         &self,
         ch: char,
         fragment_style: &SpanStyle,
-        route_id: Option<usize>,
     ) -> Option<(usize, bool)> {
-        // Glyph Protocol short-circuit, same precedence as
-        // find_best_font_match — the strict variant is the fast-path
-        // entry point used by `resolve_font_for_char` so it must also
-        // honour registrations or codepoints that match a registered
-        // glyph would briefly fall through to system font discovery.
-        if let Some(route_id) = route_id {
-            if let Some(registry) = self.glyph_registries.get(&route_id) {
-                if registry.contains(ch as u32) {
-                    return Some((glyph_registry::CUSTOM_GLYPH_FONT_ID, false));
-                }
-            }
-        }
-
+        // Registrations bind per cell; see `find_best_font_match`.
         let mut synth = Synthesis::default();
         let mut char_cluster = CharCluster::new();
         let mut parser = Parser::new(
@@ -2410,8 +2382,7 @@ mod alias_tests {
             Slot::Regular,
             &SugarloafFont::default(),
         ));
-        let coverage =
-            library.find_best_font_match_strict('M', &SpanStyle::default(), None);
+        let coverage = library.find_best_font_match_strict('M', &SpanStyle::default());
         let advance = compute_advance(&library, FONT_ID_REGULAR, 'M');
 
         assert_eq!(coverage, Some((FONT_ID_REGULAR, false)));
@@ -2584,7 +2555,7 @@ mod alias_tests {
         let (font_id, _) = lib
             .inner
             .read()
-            .find_best_font_match_strict('A', &style, None)
+            .find_best_font_match_strict('A', &style)
             .expect("cluster must resolve");
         assert_eq!(
             font_id, FONT_ID_BOLD,
@@ -2758,7 +2729,7 @@ mod postscript_resolver_tests {
         // U+6C34 ('水') — not in CascadiaMono. Library has no fallback
         // registered, so the pre-resolve walk returns None and the
         // discovery path has to fire.
-        let (font_id, _is_emoji) = lib.resolve_font_for_char('\u{6C34}', &style, None);
+        let (font_id, _is_emoji) = lib.resolve_font_for_char('\u{6C34}', &style);
 
         assert_ne!(
             font_id, 0,
@@ -2793,9 +2764,9 @@ mod postscript_resolver_tests {
 
         // Both codepoints should cascade to the same system CJK font on
         // any stock macOS install.
-        let (id_a, _) = lib.resolve_font_for_char('\u{6C34}', &style, None);
+        let (id_a, _) = lib.resolve_font_for_char('\u{6C34}', &style);
         let len_after_first = lib.inner.read().inner.len();
-        let (id_b, _) = lib.resolve_font_for_char('\u{6728}', &style, None);
+        let (id_b, _) = lib.resolve_font_for_char('\u{6728}', &style);
         let len_after_second = lib.inner.read().inner.len();
 
         assert_eq!(
@@ -2827,8 +2798,7 @@ mod postscript_resolver_tests {
         let starting_len = lib.inner.read().inner.len();
 
         // U+0378 is unassigned: no font has it.
-        let (font_id, _) =
-            lib.resolve_font_for_char('\u{378}', &SpanStyle::default(), None);
+        let (font_id, _) = lib.resolve_font_for_char('\u{378}', &SpanStyle::default());
         assert_eq!(font_id, 0, "a missing codepoint resolves to the primary");
         assert_eq!(lib.inner.read().inner.len(), starting_len);
         // The miss is remembered, so the next caller doesn't search.
@@ -2843,19 +2813,17 @@ mod postscript_resolver_tests {
                 ),
                 ..SpanStyle::default()
             },
-            Some(3),
         );
         assert_eq!(again, 0);
 
         // The registration block is never searched: no font defines it.
-        let (block, _) =
-            lib.resolve_font_for_char('\u{100000}', &SpanStyle::default(), None);
+        let (block, _) = lib.resolve_font_for_char('\u{100000}', &SpanStyle::default());
         assert_eq!(block, 0);
         assert!(!lib.inner.read().no_installed_font.contains(&'\u{100000}'));
         assert_eq!(lib.inner.read().inner.len(), starting_len);
 
         // A codepoint a real system font has is still discovered.
-        let (cjk, _) = lib.resolve_font_for_char('\u{6C34}', &SpanStyle::default(), None);
+        let (cjk, _) = lib.resolve_font_for_char('\u{6C34}', &SpanStyle::default());
         assert_ne!(cjk, 0);
         assert!(lib
             .ct_font(cjk)

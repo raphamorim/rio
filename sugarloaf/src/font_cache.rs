@@ -127,7 +127,7 @@ pub(crate) fn resolve_with(
     // No route context here — this cache is for layout/width measurement,
     // not pane rendering. PUA codepoints fall through to the regular
     // font lookup, which returns a sensible width.
-    let (font_id, is_emoji) = font_lib.resolve_font_for_char(ch, &style, None);
+    let (font_id, is_emoji) = font_lib.resolve_font_for_char(ch, &style);
 
     if is_emoji {
         width = 2.0;

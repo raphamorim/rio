@@ -43,6 +43,19 @@ use smallvec::SmallVec;
 /// cells. The renderer reads via `extras.get(&id)`.
 pub type ExtrasMap = FxHashMap<u16, Extras>;
 
+/// The Glyph Protocol registration a cell was printed with, as its
+/// registry version: what the cell draws, whatever is registered at the
+/// codepoint now (spec §6.3). Only block codepoints can carry one, so
+/// every other cell skips the extras lookup.
+#[inline]
+fn bound_glyph_version(extras_table: &ExtrasMap, sq: Square) -> Option<u32> {
+    use rio_backend::sugarloaf::font::glyph_registry::in_registration_block;
+    if !in_registration_block(sq.c() as u32) {
+        return None;
+    }
+    extras_table.get(&sq.extras_id()?)?.glyph
+}
+
 pub mod preedit;
 use preedit::{PreeditCaret, PreeditCell, PreeditLine};
 
@@ -1322,14 +1335,11 @@ struct RunCacheEntry {
 }
 
 pub struct GridGlyphRasterizer {
-    /// Cache of `(char, style_flags, route_id) → (font_id, is_emoji)`
-    /// resolutions. The route_id is part of the key because Glyph
-    /// Protocol registrations are per-pane: the same block codepoint
-    /// can resolve to `CUSTOM_GLYPH_FONT_ID` in one pane and to a
-    /// system font in another. Characters outside the block resolve identically
-    /// across panes; the duplication is cheap (a few bytes per
-    /// (char, route) pair) compared to the cost of mis-rendering.
-    font_resolve: FxHashMap<(char, u8, usize), (u32, bool)>,
+    /// Cache of `(char, style_flags) → (font_id, is_emoji)`
+    /// resolutions. The same in every pane: Glyph Protocol glyphs don't
+    /// resolve through fonts, a cell printed with a registration says so
+    /// itself (see `bound_glyph`).
+    font_resolve: FxHashMap<(char, u8), (u32, bool)>,
     ascent_cache: FxHashMap<(u32, u16), i16>,
     /// Atlas ids for Glyph Protocol rasterisations.
     custom_glyph_ids: CustomGlyphIds,
@@ -1480,7 +1490,6 @@ impl GridGlyphRasterizer {
         ch: char,
         style_flags: u8,
         font_library: &FontLibrary,
-        route_id: usize,
     ) -> (u32, bool) {
         // Kitty Unicode placeholder cells (U+10EEEE) are rendered as
         // image-overlay slices, not text. Resolve them to the primary
@@ -1493,9 +1502,7 @@ impl GridGlyphRasterizer {
 
         // ASCII printable + regular style → always primary font, never
         // emoji. Skips the FxHashMap lookup that dominates this fn's
-        // cost on terminal-typical content. ASCII codepoints can never
-        // be Glyph-Protocol-registered (registration block only), so the
-        // route_id is irrelevant on this fast path.
+        // cost on terminal-typical content.
         //
         // Bold / italic ASCII still goes through the cache because
         // the bold and italic font IDs are dynamic (depend on which
@@ -1506,11 +1513,10 @@ impl GridGlyphRasterizer {
 
         *self
             .font_resolve
-            .entry((ch, style_flags, route_id))
+            .entry((ch, style_flags))
             .or_insert_with(|| {
                 let span_style = span_style_for_flags(style_flags);
-                let (id, emoji) =
-                    font_library.resolve_font_for_char(ch, &span_style, Some(route_id));
+                let (id, emoji) = font_library.resolve_font_for_char(ch, &span_style);
                 (id as u32, emoji)
             })
     }
@@ -1578,11 +1584,7 @@ impl GridGlyphRasterizer {
             };
         }
 
-        let (font_id, _) = self.resolve_font(base, 0, font_library, route_id);
-        if font_id == CUSTOM_GLYPH_FONT_ID_U32 {
-            // Registered between the check above and the resolve.
-            return QueryStatus::Free;
-        }
+        let (font_id, _) = self.resolve_font(base, 0, font_library);
         if !cps
             .iter()
             .filter(|&&c| !is_default_ignorable(c))
@@ -2120,6 +2122,7 @@ pub fn build_row_fg<P: GridPalette>(
         row_hints,
         preedit,
         glyph_registry.as_ref(),
+        extras_table,
         fg_scratch,
     );
 
@@ -2159,18 +2162,20 @@ pub fn build_row_fg<P: GridPalette>(
         let run_start_style_id = sq.style_id();
         let run_style_flags =
             (resolve_style(row_styles, x).flags.bits() & SHAPING_FLAG_MASK) as u8;
-        let (font_id, is_emoji) =
-            rasterizer.resolve_font(ch, run_style_flags, font_library, route_id);
+        // Glyph Protocol: a cell printed with a registration draws it
+        // straight from the registry, without shaping, run-extension, or
+        // per-platform shaper plumbing, as its own one-cell run. Which
+        // registration is the cell's to say (§6.3), not the codepoint's.
+        let bound = bound_glyph_version(extras_table, sq);
+        let (font_id, is_emoji) = if bound.is_some() {
+            (CUSTOM_GLYPH_FONT_ID_U32, false)
+        } else {
+            rasterizer.resolve_font(ch, run_style_flags, font_library)
+        };
 
-        // Glyph Protocol short-circuit: registered codepoints render
-        // directly from the registry without shaping, run-extension,
-        // or per-platform shaper plumbing. Each registered cell is
-        // its own one-cell run.
-        if font_id == CUSTOM_GLYPH_FONT_ID_U32 {
-            // The font cascade reported a custom glyph but the row
-            // already cloned `glyph_registry` as None — registry was
-            // detached between font resolution and this branch (rare,
-            // but harmless: render nothing).
+        if let Some(version) = bound {
+            // A bound cell in a pane whose registry is gone (the session
+            // ended under the frame): render nothing.
             let Some(registry) = glyph_registry.as_ref() else {
                 x += 1;
                 continue;
@@ -2210,6 +2215,7 @@ pub fn build_row_fg<P: GridPalette>(
                 rasterizer,
                 registry,
                 ch as u32,
+                version,
                 cell_w_u32,
                 cell_h,
                 color,
@@ -2448,9 +2454,14 @@ pub fn build_row_fg<P: GridPalette>(
                 }
                 prev_style_id = style2_id;
             }
+            // A cell printed with a registration is a run of its own,
+            // even where its codepoint's fallback font matches the run.
+            if bound_glyph_version(extras_table, sq2).is_some() {
+                break;
+            }
             let ch2 = sq2.c();
             let (font_id2, _) =
-                rasterizer.resolve_font(ch2, run_style_flags, font_library, route_id);
+                rasterizer.resolve_font(ch2, run_style_flags, font_library);
             if font_id2 != font_id {
                 break;
             }
@@ -2674,7 +2685,6 @@ pub fn build_row_fg<P: GridPalette>(
                 rasterizer,
                 grid,
                 font_library,
-                route_id,
                 size_u16,
                 size_bucket,
                 cell_w,
@@ -2702,6 +2712,7 @@ pub fn build_row_fg<P: GridPalette>(
         row_hints,
         preedit,
         glyph_registry.as_ref(),
+        extras_table,
         fg_scratch,
     );
 
@@ -2820,7 +2831,6 @@ fn emit_preedit_cluster(
     rasterizer: &mut GridGlyphRasterizer,
     grid: &mut GridRenderer,
     font_library: &FontLibrary,
-    route_id: usize,
     size_u16: u16,
     size_bucket: u16,
     cell_w: f32,
@@ -2833,7 +2843,7 @@ fn emit_preedit_cluster(
     };
     let run_style_flags = 0u8;
     let (font_id, is_emoji) =
-        rasterizer.resolve_font(base, run_style_flags, font_library, route_id);
+        rasterizer.resolve_font(base, run_style_flags, font_library);
 
     // Layout reserves 1 or 2 cells per cluster; shaping draws natural
     // width. Per-char width sums misjudge both directions (a ZWJ emoji
@@ -2990,6 +3000,7 @@ fn custom_glyph_room(row: &Row<Square>, col: usize, cols: usize) -> u16 {
 fn custom_glyph_ink_covered(
     pre: &PreeditRow<'_>,
     registry: Option<&rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry>,
+    extras_table: &ExtrasMap,
     sq: Square,
     col: usize,
     row: &Row<Square>,
@@ -2999,10 +3010,12 @@ fn custom_glyph_ink_covered(
         return false;
     };
     pre.covers_ink(col, 2)
-        && registry.get(sq.c() as u32).is_some_and(|entry| {
-            let room = custom_glyph_room(row, col, cols);
-            pre.covers_ink(col, custom_glyph_span(entry.width, room) as usize)
-        })
+        && bound_glyph_version(extras_table, sq)
+            .and_then(|version| registry.get_version(version))
+            .is_some_and(|entry| {
+                let room = custom_glyph_room(row, col, cols);
+                pre.covers_ink(col, custom_glyph_span(entry.width, room) as usize)
+            })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3021,6 +3034,7 @@ fn emit_underlines<P: GridPalette>(
     row_hints: &[RowHint],
     preedit: Option<&PreeditRow<'_>>,
     glyph_registry: Option<&rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry>,
+    extras_table: &ExtrasMap,
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
@@ -3046,7 +3060,7 @@ fn emit_underlines<P: GridPalette>(
             None => continue,
         };
         if preedit.is_some_and(|p| {
-            custom_glyph_ink_covered(p, glyph_registry, sq, x, row, cols)
+            custom_glyph_ink_covered(p, glyph_registry, extras_table, sq, x, row, cols)
         }) {
             continue;
         }
@@ -3105,6 +3119,7 @@ fn emit_strikethroughs<P: GridPalette>(
     row_hints: &[RowHint],
     preedit: Option<&PreeditRow<'_>>,
     glyph_registry: Option<&rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry>,
+    extras_table: &ExtrasMap,
     fg_scratch: &mut Vec<CellText>,
 ) {
     for x in 0..cols {
@@ -3120,7 +3135,7 @@ fn emit_strikethroughs<P: GridPalette>(
             continue;
         }
         if preedit.is_some_and(|p| {
-            custom_glyph_ink_covered(p, glyph_registry, sq, x, row, cols)
+            custom_glyph_ink_covered(p, glyph_registry, extras_table, sq, x, row, cols)
         }) {
             continue;
         }
@@ -3368,6 +3383,7 @@ fn ensure_custom_glyph_by_codepoint(
     rasterizer: &mut GridGlyphRasterizer,
     registry: &rio_backend::sugarloaf::font::glyph_registry::GlyphRegistry,
     codepoint: u32,
+    version: u32,
     cell_w_u32: u32,
     cell_h: f32,
     foreground_rgba: [u8; 4],
@@ -3377,10 +3393,11 @@ fn ensure_custom_glyph_by_codepoint(
     use rio_backend::sugarloaf::font::glyph_registry::GlyphAlignV;
     use std::sync::atomic::Ordering;
 
-    // Fetch first so we know the registration's version + declared
-    // width. The lookup happens under the registry's RwLock read; the
-    // entry's payload is cloned out so the lock drops before tiny-skia.
-    let entry = registry.get(codepoint)?;
+    // The registration the cell was printed with, for its declared
+    // width and layout. The lookup happens under the registry's RwLock
+    // read; the entry's payload is cloned out so the lock drops before
+    // tiny-skia. Gone only if the sweep found no cell using it.
+    let entry = registry.get_version(version)?;
     if entry.render_state.unrenderable.load(Ordering::Relaxed) {
         return None;
     }
@@ -3784,7 +3801,7 @@ mod preedit_suppression_tests {
         size: u16,
     ) -> Option<f32> {
         let base = text.chars().next()?;
-        let (font_id, _) = r.resolve_font(base, 0, lib, 0);
+        let (font_id, _) = r.resolve_font(base, 0, lib);
         shape_preedit_text(r, text, font_id, size, size, lib)
             .map(|(_, _, advance)| advance)
     }
@@ -4037,11 +4054,13 @@ mod custom_glyph_tests {
             )
             .unwrap();
         let first = key(&registry, RED);
-        for _ in 0..4096 {
+        // Each a different glyph: an identical one keeps the current
+        // registration, and with it the key.
+        for i in 0..4096u32 {
             registry
                 .register(
                     CP,
-                    StoredPayload::glyf(vec![1]),
+                    StoredPayload::glyf(i.to_le_bytes().to_vec()),
                     1000,
                     1,
                     GlyphLayout::default(),
@@ -4049,6 +4068,32 @@ mod custom_glyph_tests {
                 .unwrap();
             assert_ne!(key(&registry, RED), first);
         }
+    }
+
+    #[test]
+    fn a_cell_draws_the_registration_it_was_printed_with() {
+        use rio_backend::crosswords::square::Extras;
+        let mut extras = ExtrasMap::default();
+        extras.insert(
+            1,
+            Extras {
+                glyph: Some(42),
+                ..Default::default()
+            },
+        );
+        extras.insert(2, Extras::default());
+        let cell = |c: char, id: Option<u16>| {
+            let mut sq = Square::from_char(c);
+            sq.set_extras_id(id);
+            sq
+        };
+        let block = char::from_u32(CP).unwrap();
+        assert_eq!(bound_glyph_version(&extras, cell(block, Some(1))), Some(42));
+        // Printed with nothing registered, or extras without a binding.
+        assert_eq!(bound_glyph_version(&extras, cell(block, None)), None);
+        assert_eq!(bound_glyph_version(&extras, cell(block, Some(2))), None);
+        // Only block codepoints bind; anything else isn't even looked up.
+        assert_eq!(bound_glyph_version(&extras, cell('a', Some(1))), None);
     }
 
     #[test]

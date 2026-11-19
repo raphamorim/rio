@@ -582,6 +582,12 @@ where
     /// initialised.
     #[cfg(feature = "graphics")]
     pub glyph_registry: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
+    /// When the last sweep for replaced registrations ran (spec §9). A
+    /// sweep walks every cell, scrollback included, so a program
+    /// registering past the bound gets `no_space` instead of a sweep on
+    /// every request: at most one a second, as kitty does.
+    #[cfg(feature = "graphics")]
+    glyph_reclaimed_at: Option<crate::time::Instant>,
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
@@ -692,6 +698,8 @@ impl<U: EventListener> Crosswords<U> {
             graphics: Graphics::new(&dimensions),
             #[cfg(feature = "graphics")]
             glyph_registry: None,
+            #[cfg(feature = "graphics")]
+            glyph_reclaimed_at: None,
             default_cursor_shape: cursor_shape,
             cursor_shape,
             blinking_cursor: false,
@@ -1769,7 +1777,85 @@ impl<U: EventListener> Crosswords<U> {
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
         self.grid.sync_template_style();
         let template = self.cell_template();
+        let template = self.bind_glyph(c, template);
         self.write_cell(c, template);
+    }
+
+    /// Glyph Protocol §6.3: a block codepoint printed while it has a
+    /// registration keeps that registration. The cell carries its
+    /// version in its extras (with the template's hyperlink, if any), so
+    /// registering or clearing the codepoint later changes only text
+    /// printed after it. Cells sharing a registration share one interned
+    /// extras slot, and the extras mark-and-sweep is what tells the
+    /// registry which replaced registrations are still shown.
+    #[cfg(feature = "graphics")]
+    fn bind_glyph(
+        &mut self,
+        c: char,
+        mut template: crate::crosswords::square::Square,
+    ) -> crate::crosswords::square::Square {
+        if !crate::ansi::glyph_protocol::in_registration_block(c as u32) {
+            return template;
+        }
+        let Some(version) = self
+            .glyph_registry
+            .as_ref()
+            .and_then(|registry| registry.bind(c as u32))
+        else {
+            return template;
+        };
+        let mut extras = template
+            .extras_id()
+            .and_then(|id| self.grid.extras_table.get(id))
+            .cloned()
+            .unwrap_or_default();
+        extras.glyph = Some(version);
+        let id = self.grid.alloc_extras(extras);
+        if id != 0 {
+            template.set_extras_id(Some(id));
+        }
+        template
+    }
+
+    #[cfg(not(feature = "graphics"))]
+    #[inline]
+    fn bind_glyph(
+        &mut self,
+        _c: char,
+        template: crate::crosswords::square::Square,
+    ) -> crate::crosswords::square::Square {
+        template
+    }
+
+    /// Whether printed block codepoints need binding, so the bulk print
+    /// paths, which write a whole run from one template, must hand them
+    /// to the scalar writer.
+    #[inline]
+    fn binds_glyphs(&self) -> bool {
+        #[cfg(feature = "graphics")]
+        {
+            self.glyph_registry.is_some()
+        }
+        #[cfg(not(feature = "graphics"))]
+        {
+            false
+        }
+    }
+
+    /// Drop the replaced registrations no cell shows any more, on either
+    /// screen, scrollback included (spec §9). Sweeps the extras tables
+    /// first so only cells that still exist count.
+    #[cfg(feature = "graphics")]
+    fn reclaim_glyphs(&mut self) {
+        let Some(registry) = self.glyph_registry.clone() else {
+            return;
+        };
+        self.grid.reclaim_extras();
+        self.inactive_grid.reclaim_extras();
+        let mut in_use: rustc_hash::FxHashSet<u32> = Default::default();
+        in_use.extend(self.grid.extras_table.glyph_versions());
+        in_use.extend(self.inactive_grid.extras_table.glyph_versions());
+        registry.retain_retired(|version| in_use.contains(&version));
     }
 
     /// Write an already-charset-mapped `c` into the cursor cell, taking a
@@ -3743,7 +3829,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.graphics.clear_all_kitty_state();
         self.send_graphics_updates();
         // Glyph Protocol §6.4: a full reset clears every registration.
-        self.glyph_clear(None);
+        // Both screens and the scrollback were just erased, so no text
+        // shows a replaced one either.
+        #[cfg(feature = "graphics")]
+        if let Some(registry) = self.glyph_registry.as_ref() {
+            registry.reset();
+        }
 
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
@@ -4213,6 +4304,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.grid.sync_template_style();
         let template = self.cell_template();
         let template_has_extras = template.extras_id().is_some();
+        // A block codepoint that may bind to a registration needs a cell
+        // template of its own, so it leaves the bulk run.
+        let binds = self.binds_glyphs();
 
         let mut i = 0;
         let n = codepoints.len();
@@ -4237,7 +4331,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 continue;
             }
 
-            if cp == crate::ansi::kitty_virtual::PLACEHOLDER as u32 {
+            if cp == crate::ansi::kitty_virtual::PLACEHOLDER as u32
+                || (binds && crate::ansi::glyph_protocol::in_registration_block(cp))
+            {
                 let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
                 self.write_codepoint_cell(cp, c, width);
                 i += 1;
@@ -4288,6 +4384,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
                 let next = codepoints[j];
                 if next == crate::ansi::kitty_virtual::PLACEHOLDER as u32
+                    || (binds && crate::ansi::glyph_protocol::in_registration_block(next))
                     || crate::codepoint_width::width_in(table, next) != Some(width)
                 {
                     break;
@@ -5819,7 +5916,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         };
         use rio_graphics::glyph::glyf_decode;
         use rio_graphics::glyph::glyph_registry::{
-            GlyphRegistry, RegisterRejection, StoredPayload,
+            GlyphRegistry, RegisterRejection, StoredPayload, MAX_RETIRED,
         };
 
         // Block check first: callers that bypass the wire parser (direct
@@ -5904,6 +6001,31 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // frame. The first allocation fires `GlyphProtocolInstalled`
         // so the frontend can wire the registry into the font library
         // exactly once per session.
+        // §9: replaced registrations text still shows are bounded. Past
+        // the bound, find out which are really still shown (at most once
+        // a second); if that isn't enough, refuse until text using them
+        // is gone.
+        if self
+            .glyph_registry
+            .as_ref()
+            .is_some_and(|r| r.retired_len() >= MAX_RETIRED)
+        {
+            let now = crate::time::Instant::now();
+            let due = self.glyph_reclaimed_at.is_none_or(|at| {
+                now.saturating_duration_since(at) >= std::time::Duration::from_secs(1)
+            });
+            if due {
+                self.glyph_reclaimed_at = Some(now);
+                self.reclaim_glyphs();
+            }
+            if self
+                .glyph_registry
+                .as_ref()
+                .is_some_and(|r| r.retired_len() >= MAX_RETIRED)
+            {
+                return Err(RegisterError::NoSpace);
+            }
+        }
         let was_uninitialised = self.glyph_registry.is_none();
         let registry = self.glyph_registry.get_or_insert_with(GlyphRegistry::new);
 
@@ -5927,13 +6049,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
             );
         }
 
-        // §7.3: re-registering a codepoint must repaint cells already
-        // showing it — partial damage can't know which rows hold the
-        // codepoint, so a register is a full-screen invalidation.
-        if result.is_ok() {
-            self.mark_fully_damaged();
-        }
-
+        // No repaint: text already printed keeps the registration it was
+        // printed with (§6.3), so registering changes nothing on screen.
         result
     }
 
@@ -5948,9 +6065,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
             None => registry.clear_all(),
             Some(cp) => registry.clear_one(cp),
         }
-        // §7.3: cleared codepoints fall back to font rendering on the
-        // next frame — repaint everything that might show them.
-        self.mark_fully_damaged();
+        // No repaint: text already printed keeps the registration it was
+        // printed with (§6.3); clearing only affects text printed after.
     }
 
     fn glyph_grapheme_query_enabled(&self) -> bool {
@@ -7697,26 +7813,201 @@ mod tests {
         );
     }
 
+    /// The registration the cell at (line, col) was printed with.
     #[cfg(feature = "graphics")]
-    #[test]
-    fn glyph_protocol_register_and_clear_mark_full_damage() {
-        let mut cw = make_crosswords();
-        cw.reset_damage();
-        assert!(!cw.is_fully_damaged());
+    fn bound_version<U: EventListener>(
+        cw: &Crosswords<U>,
+        line: i32,
+        col: usize,
+    ) -> Option<u32> {
+        let sq = cw.grid[Line(line)][Column(col)];
+        sq.extras_id()
+            .and_then(|id| cw.grid.extras_table.get(id))
+            .and_then(|extras| extras.glyph)
+    }
 
+    #[cfg(feature = "graphics")]
+    fn register_upm<U: EventListener>(cw: &mut Crosswords<U>, cp: u32, upm: u16) {
+        // Same outline, different upm: a different registration.
         Handler::glyph_register(
-            &mut cw,
-            0x10_0000,
-            glyf_payload(minimal_glyf_bytes(), 1000),
+            cw,
+            cp,
+            glyf_payload(minimal_glyf_bytes(), upm),
             1,
             Default::default(),
         )
         .unwrap();
-        assert!(cw.is_fully_damaged(), "register must repaint (§7.3)");
+    }
+
+    #[cfg(feature = "graphics")]
+    fn current_version(cw: &Crosswords<VoidListener>, cp: u32) -> u32 {
+        cw.glyph_registry.as_ref().unwrap().get(cp).unwrap().version
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_binds_registrations_when_printed() {
+        // Spec §6.3: a cell keeps the registration it was printed with.
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        let first = current_version(&cw, 0x10_0000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
 
         cw.reset_damage();
+        register_upm(&mut cw, 0x10_0000, 2048);
+        let second = current_version(&cw, 0x10_0000);
+        // Registering changes nothing on screen, so nothing repaints.
+        assert!(!cw.is_fully_damaged());
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+
         Handler::glyph_clear(&mut cw, Some(0x10_0000));
-        assert!(cw.is_fully_damaged(), "clear must repaint (§7.3)");
+        assert!(!cw.is_fully_damaged());
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+
+        assert_eq!(bound_version(&cw, 0, 0), Some(first));
+        assert_eq!(bound_version(&cw, 0, 1), Some(second));
+        // Printed with nothing registered: nothing to bind.
+        assert_eq!(bound_version(&cw, 0, 2), None);
+        // The text is the codepoint either way.
+        for col in 0..3 {
+            assert_eq!(cw.grid[Line(0)][Column(col)].c(), '\u{100000}');
+        }
+        let registry = cw.glyph_registry.as_ref().unwrap();
+        assert!(registry.get_version(first).is_some());
+        assert!(registry.get_version(second).is_some());
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_text_printed_before_a_registration_stays_unbound() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0001, 1000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        register_upm(&mut cw, 0x10_0000, 1000);
+        assert_eq!(bound_version(&cw, 0, 0), None);
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_binds_inside_a_bulk_print_run() {
+        // The bulk writers fill a run from one template; block
+        // codepoints leave the run so each gets its own binding.
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        register_upm(&mut cw, 0x10_0001, 1000);
+        let a = current_version(&cw, 0x10_0000);
+        let b = current_version(&cw, 0x10_0001);
+        parser.advance(&mut cw, "\u{e9}\u{100000}\u{100001}\u{e8}".as_bytes());
+        assert_eq!(bound_version(&cw, 0, 0), None);
+        assert_eq!(bound_version(&cw, 0, 1), Some(a));
+        assert_eq!(bound_version(&cw, 0, 2), Some(b));
+        assert_eq!(bound_version(&cw, 0, 3), None);
+        assert_eq!(cw.grid[Line(0)][Column(3)].c(), '\u{e8}');
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_binding_keeps_hyperlinks_and_marks() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        let version = current_version(&cw, 0x10_0000);
+        // Inside an OSC 8 link, then a combining mark on the same cell.
+        parser.advance(&mut cw, b"\x1b]8;;https://example.com\x1b\\");
+        parser.advance(&mut cw, "\u{100000}\u{301}".as_bytes());
+        let sq = cw.grid[Line(0)][Column(0)];
+        let extras = cw.grid.extras_table.get(sq.extras_id().unwrap()).unwrap();
+        assert_eq!(extras.glyph, Some(version));
+        assert_eq!(
+            extras.hyperlink.as_ref().unwrap().uri(),
+            "https://example.com"
+        );
+        assert_eq!(extras.zerowidth, vec!['\u{301}']);
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_overwritten_text_releases_its_registration() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        let first = current_version(&cw, 0x10_0000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        register_upm(&mut cw, 0x10_0000, 2048);
+        assert_eq!(cw.glyph_registry.as_ref().unwrap().retired_len(), 1);
+        // The only cell showing the first registration is overwritten.
+        parser.advance(&mut cw, b"\rx");
+        cw.reclaim_glyphs();
+        let registry = cw.glyph_registry.as_ref().unwrap();
+        assert!(registry.get_version(first).is_none());
+        assert_eq!(registry.retired_len(), 0);
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_bounds_the_registrations_text_keeps_alive() {
+        // §9: replace and print a registration until MAX_RETIRED old ones
+        // are still on screen. The next is refused with `no_space` until
+        // the text using them is gone.
+        use crate::ansi::glyph_protocol::RegisterError;
+        use rio_graphics::glyph::glyph_registry::MAX_RETIRED;
+        let size = CrosswordsSize::new(80, 24);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            100,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+        for upm in 1..=MAX_RETIRED as u16 + 1 {
+            register_upm(&mut cw, 0x10_0000, upm);
+            parser.advance(&mut cw, "\u{100000}".as_bytes());
+        }
+        let registry = cw.glyph_registry.clone().unwrap();
+        assert_eq!(registry.retired_len(), MAX_RETIRED);
+        let over = |cw: &mut Crosswords<VoidListener>| {
+            Handler::glyph_register(
+                cw,
+                0x10_0000,
+                glyf_payload(minimal_glyf_bytes(), 9999),
+                1,
+                Default::default(),
+            )
+        };
+        assert_eq!(over(&mut cw), Err(RegisterError::NoSpace));
+        // Every one of them is still shown.
+        assert_eq!(registry.retired_len(), MAX_RETIRED);
+
+        // Overwrite the text that used them (all of it is on screen: 1025
+        // cells in 80 columns). A sweep runs at most once a second, so
+        // right away it is still refused...
+        parser.advance(&mut cw, b"\x1b[H");
+        parser.advance(&mut cw, " ".repeat(80 * 14).as_bytes());
+        assert_eq!(over(&mut cw), Err(RegisterError::NoSpace));
+        // ...and once the sweep is due, the space is back.
+        cw.glyph_reclaimed_at = None;
+        assert_eq!(over(&mut cw), Ok(()));
+        assert_eq!(registry.retired_len(), 1);
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_full_reset_drops_retired_registrations() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        register_upm(&mut cw, 0x10_0000, 2048);
+        let registry = cw.glyph_registry.clone().unwrap();
+        assert_eq!(registry.retired_len(), 1);
+        parser.advance(&mut cw, b"\x1bc");
+        assert_eq!(registry.retired_len(), 0);
+        assert!(registry.is_empty());
     }
 
     #[cfg(feature = "graphics")]

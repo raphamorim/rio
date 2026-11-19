@@ -203,12 +203,16 @@ pub type ExtrasId = u16;
 pub struct Extras {
     pub zerowidth: Vec<char>,
     pub hyperlink: Option<Hyperlink>,
+    /// The Glyph Protocol registration this block codepoint was printed
+    /// with, as its registry version (spec §6.3). The cell draws that
+    /// registration whatever is registered at the codepoint later.
+    pub glyph: Option<u32>,
 }
 
 impl Extras {
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.zerowidth.is_empty() && self.hyperlink.is_none()
+        self.zerowidth.is_empty() && self.hyperlink.is_none() && self.glyph.is_none()
     }
 }
 

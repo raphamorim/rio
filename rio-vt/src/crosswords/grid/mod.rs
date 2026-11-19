@@ -240,6 +240,14 @@ impl ExtrasTable {
         }
     }
 
+    /// The Glyph Protocol registrations live slots are bound to: after
+    /// a sweep, exactly the ones some cell on this grid still shows.
+    pub fn glyph_versions(&self) -> impl Iterator<Item = u32> + '_ {
+        self.slots
+            .iter()
+            .filter_map(|slot| slot.as_ref().and_then(|extras| extras.glyph))
+    }
+
     // NOTE: there is deliberately no per-slot `free()`. Slots are
     // interned and may be referenced by any number of cells; the only
     // safe reclamation is the mark-and-sweep (`sweep_unmarked`), which

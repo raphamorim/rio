@@ -258,6 +258,8 @@ pub enum RegisterError {
     OutlineTooLarge,
     /// `fmt` names a format this terminal doesn't list in `s`.
     UnsupportedFormat,
+    /// Too many replaced registrations are still shown by text (§9).
+    NoSpace,
 }
 
 impl RegisterError {
@@ -270,6 +272,7 @@ impl RegisterError {
             RegisterError::PayloadTooLarge => "payload_too_large",
             RegisterError::OutlineTooLarge => "outline_too_large",
             RegisterError::UnsupportedFormat => "unsupported_format",
+            RegisterError::NoSpace => "no_space",
         }
     }
 }
