@@ -206,7 +206,11 @@ pub struct Window {
     pub background_image: Option<ImageProperties>,
     #[serde(default = "Decorations::default")]
     pub decorations: Decorations,
-    #[serde(default = "bool::default", rename = "macos-use-unified-titlebar")]
+    /// On by default on macOS, where native tabs then sit in the titlebar.
+    #[serde(
+        default = "default_macos_unified_titlebar",
+        rename = "macos-use-unified-titlebar"
+    )]
     pub macos_use_unified_titlebar: bool,
     #[serde(rename = "macos-use-shadow", default = "default_bool_true")]
     pub macos_use_shadow: bool,
@@ -245,6 +249,12 @@ pub struct Window {
     pub quake_height_percentage: f32,
 }
 
+/// The unified titlebar is on by default on macOS, where native tabs sit
+/// in it; the setting means nothing elsewhere.
+fn default_macos_unified_titlebar() -> bool {
+    cfg!(target_os = "macos")
+}
+
 impl Default for Window {
     fn default() -> Window {
         Window {
@@ -257,7 +267,7 @@ impl Default for Window {
             background_image: None,
             decorations: Decorations::default(),
             blur: WindowBlur::default(),
-            macos_use_unified_titlebar: false,
+            macos_use_unified_titlebar: default_macos_unified_titlebar(),
             macos_use_shadow: true,
             macos_traffic_light_position_x: None,
             macos_traffic_light_position_y: None,
