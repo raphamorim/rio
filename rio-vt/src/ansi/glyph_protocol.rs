@@ -420,13 +420,8 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         reply,
     };
 
-    let upm = match params.get("upm") {
-        Some(raw) => parse_decimal_u16(raw).ok_or(malformed())?,
-        None => 1000,
-    };
-    if upm == 0 {
-        return Err(malformed());
-    }
+    // Checks run in the order of spec §6.2: `cp`, `fmt`, then the
+    // placement keys, then the payload's size, then the payload.
 
     // Declared Unicode width (spec §8.5): `1` or `2`, default `1`.
     let width = match params.get("width") {
@@ -440,7 +435,11 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
 
     if fmt == b"vg" {
         let layout = parse_vector_layout(&params).ok_or_else(malformed)?;
-        let payload = parse_vector_payload(&params, trim(payload_b64))
+        let view_box = params
+            .get("vb")
+            .and_then(|raw| rio_graphics::glyph_vector::parse_view_box(raw))
+            .ok_or_else(malformed)?;
+        let payload = parse_vector_payload(view_box, &layout, trim(payload_b64))
             .map_err(|reason| ParseError::RegisterFailed { cp, reason, reply })?;
         return Ok(GlyphCommand::Register {
             cp,
@@ -451,8 +450,25 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         });
     }
 
+    // `upm` only means something to the font formats; `vg` ignores it.
+    let upm = match params.get("upm") {
+        Some(raw) => parse_decimal_u16(raw).ok_or(malformed())?,
+        None => 1000,
+    };
+    if upm == 0 {
+        return Err(malformed());
+    }
     let layout = parse_layout(&params).ok_or_else(malformed)?;
     let payload_b64 = trim(payload_b64);
+    // Size before content: base64 longer than this decodes past the cap
+    // even with padding, so it's too large whether or not it's valid.
+    if payload_b64.len() > MAX_PAYLOAD_BYTES.div_ceil(3) * 4 {
+        return Err(ParseError::RegisterFailed {
+            cp,
+            reason: RegisterError::PayloadTooLarge,
+            reply,
+        });
+    }
     let raw = BASE64
         .decode(payload_b64)
         .map_err(|_| ParseError::RegisterFailed {
@@ -508,18 +524,22 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
 /// `fmt=vg`: the payload is the text itself, read against the `vb`
 /// key. Placement is [`parse_vector_layout`]'s.
 fn parse_vector_payload(
-    params: &Params<'_>,
+    view_box: rio_graphics::glyph_vector::ViewBox,
+    layout: &GlyphLayout,
     text: &[u8],
 ) -> Result<GlyphPayload, RegisterError> {
-    use rio_graphics::glyph_vector::{self, VectorError};
+    use rio_graphics::glyph_vector::{self, Fit, VectorError};
     if text.len() > MAX_PAYLOAD_BYTES {
         return Err(RegisterError::PayloadTooLarge);
     }
-    let view_box = params
-        .get("vb")
-        .and_then(|raw| glyph_vector::parse_view_box(raw))
-        .ok_or(RegisterError::MalformedPayload)?;
-    let glyph = glyph_vector::parse(text, view_box).map_err(|err| match err {
+    // The limits are measured in the viewBox side `fit` maps onto the
+    // cell (spec §8.9.5).
+    let fit = match layout.size {
+        GlyphSize::Cover => Fit::Cover,
+        GlyphSize::Stretch => Fit::Stretch,
+        _ => Fit::Contain,
+    };
+    let glyph = glyph_vector::parse(text, view_box, fit).map_err(|err| match err {
         VectorError::Malformed => RegisterError::MalformedPayload,
         VectorError::TooLarge => RegisterError::OutlineTooLarge,
     })?;
@@ -1323,6 +1343,108 @@ mod tests {
             format_register_error(0x10_0000, RegisterError::UnsupportedFormat),
             "\x1b_25a1;r;cp=100000;status=1;reason=unsupported_format\x1b\\"
         );
+    }
+
+    #[test]
+    fn register_reports_problems_in_spec_order() {
+        // Spec §6.2: `cp`, then `fmt`, then placement keys, then the
+        // payload's size, then the payload itself.
+        let reason = |body: String| match parse(body.as_bytes()) {
+            Err(ParseError::RegisterFailed { reason, .. }) => reason,
+            other => panic!("{body}: {other:?}"),
+        };
+        let huge_vg = format!("M0 0{}", "l0 0".repeat(MAX_PAYLOAD_BYTES / 4 + 1));
+        let huge_b64 = "$".repeat(MAX_PAYLOAD_BYTES.div_ceil(3) * 4 + 4);
+        use RegisterError::*;
+        // Everything wrong: the codepoint wins.
+        assert_eq!(
+            reason(format!("25a1;r;cp=61;fmt=svg;vb=x;{huge_vg}")),
+            OutOfNamespace
+        );
+        // Then the format.
+        assert_eq!(
+            reason(format!("25a1;r;cp=100000;fmt=svg;vb=x;{huge_vg}")),
+            UnsupportedFormat
+        );
+        // Then the placement keys, before the size.
+        assert_eq!(
+            reason(format!("25a1;r;cp=100000;fmt=vg;vb=x;{huge_vg}")),
+            MalformedPayload
+        );
+        assert_eq!(
+            reason(format!(
+                "25a1;r;cp=100000;fmt=vg;vb=0,0,24,24;width=3;{huge_vg}"
+            )),
+            MalformedPayload
+        );
+        assert_eq!(
+            reason(format!("25a1;r;cp=100000;upm=0;{huge_b64}")),
+            MalformedPayload
+        );
+        // Then the size, before the content: invalid and too large is
+        // too large, for text and for base64.
+        assert_eq!(
+            reason(format!(
+                "25a1;r;cp=100000;fmt=vg;vb=0,0,24,24;{}X",
+                &huge_vg[..]
+            )),
+            PayloadTooLarge
+        );
+        assert_eq!(
+            reason(format!("25a1;r;cp=100000;{huge_b64}")),
+            PayloadTooLarge
+        );
+        // Small and invalid is malformed.
+        assert_eq!(
+            reason("25a1;r;cp=100000;$$$$".to_string()),
+            MalformedPayload
+        );
+    }
+
+    #[test]
+    fn vg_ignores_the_font_keys() {
+        // `upm` is a font key: invalid or zero, `vg` doesn't read it.
+        for keys in ["upm=0;", "upm=x;", "aw=0;lh=x;ymin=y;", "size=bogus;pad=9;"] {
+            let body = format!(
+                "25a1;r;cp=100000;fmt=vg;vb=0,0,24,24;{keys}fill=nonzero,fg:M0 0h4v4z"
+            );
+            assert!(
+                matches!(parse(body.as_bytes()), Ok(GlyphCommand::Register { .. })),
+                "{keys}"
+            );
+        }
+    }
+
+    #[test]
+    fn vg_limits_follow_fit() {
+        // A thin viewBox under cover is measured by its smaller side.
+        let reg = |fit: &str| {
+            parse(
+                format!("25a1;r;cp=100000;fmt=vg;vb=0,0,1000,1;{fit}fill=nonzero,fg:M0 0h1000")
+                    .as_bytes(),
+            )
+        };
+        assert!(matches!(reg(""), Ok(GlyphCommand::Register { .. })));
+        for fit in ["fit=cover;", "fit=stretch;"] {
+            assert!(
+                matches!(
+                    reg(fit),
+                    Err(ParseError::RegisterFailed {
+                        reason: RegisterError::OutlineTooLarge,
+                        ..
+                    })
+                ),
+                "{fit}"
+            );
+        }
+        // And past 4096:1 a viewBox is malformed.
+        assert!(matches!(
+            parse(b"25a1;r;cp=100000;fmt=vg;vb=0 0 1 0.000001;fill=nonzero,fg:M0 0h1"),
+            Err(ParseError::RegisterFailed {
+                reason: RegisterError::MalformedPayload,
+                ..
+            })
+        ));
     }
 
     #[test]
