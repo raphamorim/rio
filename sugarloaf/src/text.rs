@@ -333,8 +333,7 @@ impl Text {
                     FontStyle::Normal
                 };
                 ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
-                let resolved =
-                    self.font_library.resolve_font_for_char(first_ch, &ss, None);
+                let resolved = self.font_library.resolve_font_for_char(first_ch, &ss);
                 let v = (resolved.0 as u32, resolved.1);
                 e.insert(v);
                 v

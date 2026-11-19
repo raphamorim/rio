@@ -11,9 +11,16 @@
 //
 // Registrations are confined to the registration block (spec §4),
 // `U+100000`–`U+1003FF`, and the glossary has one slot per block
-// codepoint, so nothing is ever evicted. Cleared codepoints are
-// removed immediately; re-registering a codepoint replaces its entry.
-// Each
+// codepoint, so nothing is ever evicted.
+//
+// A registration is bound to text when it is printed (spec §6.3): the
+// terminal asks [`GlyphRegistry::bind`] for the codepoint's current
+// version and stores it in the cell, and the renderer draws the cell
+// from that version. Re-registering or clearing a codepoint changes
+// which version later text gets; a version text was printed with is
+// *retired*, kept until the terminal's mark-and-sweep finds no cell
+// using it ([`GlyphRegistry::retain_retired`]). One never printed is
+// dropped at once. Each
 // registration costs one slot regardless of payload type: a
 // `ColrV0`/`ColrV1` container with 200 inner outlines still occupies
 // a single glossary slot. The `n_glyphs`
@@ -21,8 +28,8 @@
 // MAX_COLR_GLYPHS`) is a separate per-payload limit.
 
 use parking_lot::RwLock;
-use rustc_hash::FxHashMap;
-use std::sync::atomic::AtomicBool;
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
 pub use crate::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphLayout, GlyphSize};
@@ -51,7 +58,7 @@ pub use crate::glyph_namespace::{
 /// renderer can walk the paint graph at any cell size without
 /// re-transmitting. The two colour variants share structure; the
 /// variant tag tells the renderer which COLR table version to parse.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum StoredPayload {
     Glyf {
         glyf: Vec<u8>,
@@ -113,11 +120,14 @@ pub struct RegisteredGlyph {
     pub width: u8,
     /// §8.5 sizing and placement.
     pub layout: GlyphLayout,
-    /// Bumps on every register call (fresh OR overwrite). Part of the
-    /// atlas key, so any mutation produces a fresh slot and prevents a
-    /// post-clear or post-overwrite render from serving the previous
-    /// rasterisation.
+    /// Unique per registration (an identical re-registration keeps the
+    /// one it would replace). What a cell stores when it is printed,
+    /// and part of the atlas key, so a new registration never serves
+    /// the previous one's pixels.
     pub version: u32,
+    /// Some text was printed with this registration, so it has to
+    /// outlive being replaced or cleared.
+    pub bound: Arc<AtomicBool>,
     /// What the renderer has learned about this payload. Replaced on
     /// every registration, so it can never outlive the payload.
     pub render_state: Arc<RenderState>,
@@ -125,15 +135,73 @@ pub struct RegisteredGlyph {
 
 #[derive(Debug, Default)]
 struct Inner {
-    by_cp: FxHashMap<u32, RegisteredGlyph>,
+    /// Each codepoint's current registration, as a version.
+    current: FxHashMap<u32, u32>,
+    /// Every registration still reachable: the current ones, and the
+    /// retired ones text may still show.
+    by_version: FxHashMap<u32, RegisteredGlyph>,
+    /// Versions in `by_version` that are no longer current.
+    retired: FxHashSet<u32>,
     /// Monotonic counter stamped onto every registration's `version`.
     next_version: u32,
 }
 
+impl RegisteredGlyph {
+    /// Registering this again changes nothing.
+    fn is_same(
+        &self,
+        payload: &StoredPayload,
+        upm: u16,
+        width: u8,
+        layout: &GlyphLayout,
+    ) -> bool {
+        self.upm == upm
+            && self.width == width
+            && self.layout == *layout
+            && *self.payload == *payload
+    }
+}
+
+impl Inner {
+    /// `version` is no longer current: keep it while text may show it,
+    /// drop it if no text ever did.
+    fn retire(&mut self, version: u32) {
+        let bound = self
+            .by_version
+            .get(&version)
+            .is_some_and(|g| g.bound.load(Ordering::Relaxed));
+        if bound {
+            self.retired.insert(version);
+        } else {
+            self.by_version.remove(&version);
+        }
+    }
+}
+
+/// Most retired registrations a registry holds before the terminal
+/// must reclaim them or refuse new ones with `no_space` (spec §9). The
+/// same as the glossary, so live and retired glyphs together stay
+/// within twice what the block can hold at once.
+pub const MAX_RETIRED: usize = GLOSSARY_CAPACITY;
+
 /// The public registry handle. Cloned cheaply via `Arc`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GlyphRegistry {
     inner: Arc<RwLock<Inner>>,
+    /// Unique for every registry and never reused. Versions are only
+    /// unique within one registry, so a cache shared by several
+    /// sessions keys on this too.
+    id: u64,
+}
+
+impl Default for GlyphRegistry {
+    fn default() -> Self {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        Self {
+            inner: Arc::default(),
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+        }
+    }
 }
 
 /// Reasons a register call is rejected by the registry itself (as
@@ -159,9 +227,17 @@ impl GlyphRegistry {
         Arc::ptr_eq(&self.inner, &other.inner)
     }
 
+    /// This registry's identity, shared by its clones. See the field.
+    #[inline]
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
     /// Register a glyph at a codepoint in the registration block, with
     /// its declared render span and §8.5 layout. If the codepoint is
-    /// already registered, its entry is replaced in the same slot.
+    /// already registered, the new registration applies to text printed
+    /// from now on; one identical to the current registration keeps it,
+    /// so re-sending a set of icons costs nothing.
     pub fn register(
         &self,
         cp: u32,
@@ -173,56 +249,138 @@ impl GlyphRegistry {
         if !in_registration_block(cp) {
             return Err(RegisterRejection::OutOfNamespace);
         }
-        // Wrap once; subsequent `get` clones share this Arc.
-        let payload = Arc::new(payload);
         let mut inner = self.inner.write();
+        if inner
+            .current
+            .get(&cp)
+            .and_then(|version| inner.by_version.get(version))
+            .is_some_and(|existing| existing.is_same(&payload, upm, width, &layout))
+        {
+            return Ok(());
+        }
 
-        // Allocate a fresh `version` regardless of whether this is an
-        // overwrite or a brand-new registration: any payload change
-        // must produce a new atlas key so previously-rasterised pixels
-        // for `cp` stop being served.
+        // A fresh `version` for every registration that changes
+        // something: it is what new text binds to, and it keys the atlas,
+        // so the previous registration's pixels are never served for it.
         let version = inner.next_version;
         inner.next_version = inner.next_version.wrapping_add(1);
-
-        // Every block codepoint has its own slot, so registering never
-        // needs to make room, and an overwrite replaces the entry.
-        inner.by_cp.insert(
-            cp,
+        inner.by_version.insert(
+            version,
             RegisteredGlyph {
-                payload,
+                payload: Arc::new(payload),
                 upm,
                 width,
                 layout,
                 version,
+                bound: Arc::default(),
                 render_state: Arc::default(),
             },
         );
+        if let Some(old) = inner.current.insert(cp, version) {
+            inner.retire(old);
+        }
         Ok(())
     }
 
-    /// Clear one codepoint. No-op if nothing was registered.
+    /// Whether this is already the current registration at `cp`, so
+    /// registering it again keeps it and adds nothing.
+    pub fn is_current(
+        &self,
+        cp: u32,
+        payload: &StoredPayload,
+        upm: u16,
+        width: u8,
+        layout: &GlyphLayout,
+    ) -> bool {
+        let inner = self.inner.read();
+        inner
+            .current
+            .get(&cp)
+            .and_then(|version| inner.by_version.get(version))
+            .is_some_and(|existing| existing.is_same(payload, upm, width, layout))
+    }
+
+    /// Clear one codepoint for text printed from now on. No-op if
+    /// nothing was registered.
     pub fn clear_one(&self, cp: u32) {
-        self.inner.write().by_cp.remove(&cp);
+        let mut inner = self.inner.write();
+        if let Some(old) = inner.current.remove(&cp) {
+            inner.retire(old);
+        }
     }
 
-    /// Drop every registration.
+    /// Clear every codepoint for text printed from now on.
     pub fn clear_all(&self) {
-        self.inner.write().by_cp.clear();
+        let mut inner = self.inner.write();
+        let old: Vec<u32> = inner.current.drain().map(|(_, v)| v).collect();
+        for version in old {
+            inner.retire(version);
+        }
     }
 
-    /// Look up a registration.
+    /// Drop everything, retired registrations included. For a full
+    /// reset, which also erases all the text that could show them.
+    pub fn reset(&self) {
+        let mut inner = self.inner.write();
+        inner.current.clear();
+        inner.by_version.clear();
+        inner.retired.clear();
+    }
+
+    /// The registration text printed now at `cp` binds to, if any: its
+    /// version, for the cell to keep. Marks it as shown by text, so it
+    /// survives being replaced.
+    pub fn bind(&self, cp: u32) -> Option<u32> {
+        let inner = self.inner.read();
+        let version = *inner.current.get(&cp)?;
+        if let Some(glyph) = inner.by_version.get(&version) {
+            glyph.bound.store(true, Ordering::Relaxed);
+        }
+        Some(version)
+    }
+
+    /// The registration a cell was printed with.
+    pub fn get_version(&self, version: u32) -> Option<RegisteredGlyph> {
+        self.inner.read().by_version.get(&version).cloned()
+    }
+
+    /// The current registration at `cp`: what text printed now gets.
     pub fn get(&self, cp: u32) -> Option<RegisteredGlyph> {
-        self.inner.read().by_cp.get(&cp).cloned()
+        let inner = self.inner.read();
+        let version = inner.current.get(&cp)?;
+        inner.by_version.get(version).cloned()
     }
 
-    /// True iff `cp` has a live custom registration.
+    /// True iff `cp` has a current registration.
     pub fn contains(&self, cp: u32) -> bool {
-        self.inner.read().by_cp.contains_key(&cp)
+        self.inner.read().current.contains_key(&cp)
     }
 
-    /// Live registration count. Exposed for tests and telemetry.
+    /// Current registration count. Exposed for tests and telemetry.
     pub fn len(&self) -> usize {
-        self.inner.read().by_cp.len()
+        self.inner.read().current.len()
+    }
+
+    /// Replaced or cleared registrations still kept for text.
+    pub fn retired_len(&self) -> usize {
+        self.inner.read().retired.len()
+    }
+
+    /// Keep only the retired registrations `in_use` says some cell
+    /// still shows; the terminal decides with a mark-and-sweep of its
+    /// cells. Current registrations are untouched.
+    pub fn retain_retired(&self, in_use: impl Fn(u32) -> bool) {
+        let mut inner = self.inner.write();
+        let dead: Vec<u32> = inner
+            .retired
+            .iter()
+            .copied()
+            .filter(|&version| !in_use(version))
+            .collect();
+        for version in dead {
+            inner.retired.remove(&version);
+            inner.by_version.remove(&version);
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -300,6 +458,97 @@ mod tests {
 
     fn glyf(bytes: Vec<u8>) -> StoredPayload {
         StoredPayload::glyf(bytes)
+    }
+
+    fn reg(r: &GlyphRegistry, cp: u32, byte: u8) -> u32 {
+        r.register(cp, glyf(vec![byte]), 1000, 1, GlyphLayout::default())
+            .unwrap();
+        r.get(cp).unwrap().version
+    }
+
+    #[test]
+    fn a_printed_registration_outlives_being_replaced() {
+        // Spec §6.3: text keeps the registration it was printed with.
+        let r = GlyphRegistry::new();
+        let first = reg(&r, 0x10_0000, 1);
+        assert_eq!(r.bind(0x10_0000), Some(first));
+        let second = reg(&r, 0x10_0000, 2);
+        assert_ne!(first, second);
+        // New text gets the new one; the printed one is still drawable.
+        assert_eq!(r.bind(0x10_0000), Some(second));
+        assert_glyf_bytes(&r.get_version(first).unwrap().payload, &[1]);
+        assert_eq!(r.retired_len(), 1);
+        // Cleared, new text gets nothing; printed text keeps its glyph.
+        r.clear_one(0x10_0000);
+        assert_eq!(r.bind(0x10_0000), None);
+        assert!(r.get_version(second).is_some());
+        assert_eq!(r.retired_len(), 2);
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn a_registration_never_printed_goes_when_replaced() {
+        let r = GlyphRegistry::new();
+        let first = reg(&r, 0x10_0000, 1);
+        reg(&r, 0x10_0000, 2);
+        assert!(r.get_version(first).is_none());
+        assert_eq!(r.retired_len(), 0);
+        let current = r.get(0x10_0000).unwrap().version;
+        r.clear_all();
+        assert!(r.get_version(current).is_none());
+    }
+
+    #[test]
+    fn an_identical_registration_keeps_the_current_one() {
+        // Re-sending the same icon (a theme change, a restart) costs
+        // nothing and doesn't retire what text shows.
+        let r = GlyphRegistry::new();
+        let first = reg(&r, 0x10_0000, 1);
+        r.bind(0x10_0000);
+        assert_eq!(reg(&r, 0x10_0000, 1), first);
+        assert_eq!(r.retired_len(), 0);
+        // Any difference is a new registration: payload, upm, width or
+        // layout.
+        assert_ne!(reg(&r, 0x10_0000, 9), first);
+        let v = r.get(0x10_0000).unwrap().version;
+        r.register(0x10_0000, glyf(vec![9]), 2048, 1, GlyphLayout::default())
+            .unwrap();
+        assert_ne!(r.get(0x10_0000).unwrap().version, v);
+        let v = r.get(0x10_0000).unwrap().version;
+        r.register(0x10_0000, glyf(vec![9]), 2048, 2, GlyphLayout::default())
+            .unwrap();
+        assert_ne!(r.get(0x10_0000).unwrap().version, v);
+    }
+
+    #[test]
+    fn retain_retired_drops_what_no_text_shows() {
+        let r = GlyphRegistry::new();
+        let a = reg(&r, 0x10_0000, 1);
+        r.bind(0x10_0000);
+        let b = reg(&r, 0x10_0000, 2);
+        r.bind(0x10_0000);
+        reg(&r, 0x10_0000, 3);
+        assert_eq!(r.retired_len(), 2);
+        r.retain_retired(|version| version == b);
+        assert!(r.get_version(a).is_none());
+        assert!(r.get_version(b).is_some());
+        assert_eq!(r.retired_len(), 1);
+        // Current registrations are never swept.
+        r.retain_retired(|_| false);
+        assert!(r.contains(0x10_0000));
+        assert_eq!(r.retired_len(), 0);
+    }
+
+    #[test]
+    fn reset_drops_retired_registrations_too() {
+        let r = GlyphRegistry::new();
+        let a = reg(&r, 0x10_0000, 1);
+        r.bind(0x10_0000);
+        reg(&r, 0x10_0000, 2);
+        r.reset();
+        assert!(r.is_empty());
+        assert_eq!(r.retired_len(), 0);
+        assert!(r.get_version(a).is_none());
     }
 
     fn assert_glyf_bytes(p: &StoredPayload, expected: &[u8]) {

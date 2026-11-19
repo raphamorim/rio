@@ -421,7 +421,11 @@ fn fill_rule(rule: rio_graphics::glyph_vector::FillRule) -> FillRule {
 
 /// A solid colour as drawn: for a monochrome glyph the foreground is
 /// white with its alpha, which becomes the mask's coverage; otherwise
-/// the foreground is resolved now.
+/// the foreground is resolved now. In such a mixed glyph `fg` is the
+/// foreground as an opaque colour (spec §8.9.1): only `fg@<alpha>`
+/// makes it translucent, so `K + fg·F` compositing at draw time stays
+/// exact. An all-foreground glyph is a mask the grid tints like text,
+/// foreground alpha included.
 fn vector_solid(
     solid: &rio_graphics::glyph_vector::Solid,
     monochrome: bool,
@@ -431,8 +435,8 @@ fn vector_solid(
     match *solid {
         Solid::Foreground { alpha } if monochrome => [0xFF, 0xFF, 0xFF, alpha],
         Solid::Foreground { alpha } => {
-            let [r, g, b, fg_a] = foreground_rgba;
-            [r, g, b, ((fg_a as u16 * alpha as u16 + 127) / 255) as u8]
+            let [r, g, b, _] = foreground_rgba;
+            [r, g, b, alpha]
         }
         Solid::Rgba(rgba) => rgba,
     }
@@ -1218,7 +1222,7 @@ mod tests {
     mod vector_format {
         use super::*;
         use crate::font::glyph_registry::StoredPayload;
-        use rio_graphics::glyph_vector::{parse, parse_view_box};
+        use rio_graphics::glyph_vector::{parse, parse_view_box, Fit};
 
         const FG: [u8; 4] = [10, 200, 30, 255];
 
@@ -1233,8 +1237,14 @@ mod tests {
             h: u16,
             layout: &GlyphLayout,
         ) -> RasterizedPayload {
-            let glyph = parse(text.as_bytes(), parse_view_box(vb.as_bytes()).unwrap())
-                .expect("payload parses");
+            let fit = match layout.size {
+                rio_graphics::glyph_layout::GlyphSize::Cover => Fit::Cover,
+                rio_graphics::glyph_layout::GlyphSize::Stretch => Fit::Stretch,
+                _ => Fit::Contain,
+            };
+            let glyph =
+                parse(text.as_bytes(), parse_view_box(vb.as_bytes()).unwrap(), fit)
+                    .expect("payload parses");
             rasterize_payload(
                 &StoredPayload::Vector { glyph },
                 1000,
@@ -1245,6 +1255,73 @@ mod tests {
                 0.0,
             )
             .expect("draws")
+        }
+
+        #[test]
+        fn gradients_interpolate_unpremultiplied_like_svg() {
+            // Transparent red to opaque blue. SVG interpolates straight
+            // (non-premultiplied) colour, so halfway is half-transparent
+            // purple: some red is left. Premultiplied interpolation, as
+            // in CSS and canvas, would leave none.
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 24 0 / 0 #ff000000 / 1 #0000ffff):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            let [red, _, blue, a] = rgba_at(&r, 12, 12);
+            assert!((110..=145).contains(&a), "half alpha: {a}");
+            // Premultiplied pixels: straight purple at half alpha is
+            // about (64, 0, 64).
+            assert!(red > 40 && blue > 40, "red {red} blue {blue}");
+        }
+
+        #[test]
+        fn fg_is_opaque_where_it_mixes_with_fixed_colours() {
+            // A glyph mixing `fg` with a fixed colour resolves the
+            // foreground into RGBA. A translucent foreground colour
+            // doesn't make `fg` translucent; only `fg@<alpha>` does.
+            let glyph = parse(
+                b"fill=nonzero,fg:M0 0h12v24H0Z|fill=nonzero,fg@0.5:M12 0h6v24h-6Z|fill=nonzero,#ff0000:M18 0h6v24h-6Z",
+                parse_view_box(b"0,0,24,24").unwrap(),
+                Fit::Contain,
+            )
+            .unwrap();
+            let r = rasterize_payload(
+                &StoredPayload::Vector { glyph },
+                1000,
+                24,
+                24,
+                [10, 200, 30, 128],
+                &GlyphLayout::default(),
+                0.0,
+            )
+            .unwrap();
+            assert!(r.is_color);
+            assert_eq!(rgba_at(&r, 4, 12)[3], 255);
+            assert!((120..=135).contains(&rgba_at(&r, 15, 12)[3]));
+
+            // An all-foreground glyph is a coverage mask the grid tints
+            // like text, foreground alpha and all, so the mask itself
+            // doesn't depend on it.
+            let mono = parse(
+                b"fill=nonzero,fg:M0 0h24v24H0Z",
+                parse_view_box(b"0,0,24,24").unwrap(),
+                Fit::Contain,
+            )
+            .unwrap();
+            let r = rasterize_payload(
+                &StoredPayload::Vector { glyph: mono },
+                1000,
+                24,
+                24,
+                [10, 200, 30, 128],
+                &GlyphLayout::default(),
+                0.0,
+            )
+            .unwrap();
+            assert!(!r.is_color);
+            assert_eq!(alpha(&r, 12, 12), 255);
         }
 
         /// Rows of a 20x40 cell that have any ink.
@@ -1618,8 +1695,12 @@ mod tests {
         #[test]
         fn foreground_tracking() {
             let glyph = |text: &str| StoredPayload::Vector {
-                glyph: parse(text.as_bytes(), parse_view_box(b"0,0,24,24").unwrap())
-                    .unwrap(),
+                glyph: parse(
+                    text.as_bytes(),
+                    parse_view_box(b"0,0,24,24").unwrap(),
+                    Fit::Contain,
+                )
+                .unwrap(),
             };
             // Masks are tinted at draw time; only RGBA bakes it in.
             assert!(!payload_uses_foreground(&glyph(

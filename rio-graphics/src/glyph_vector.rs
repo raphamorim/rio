@@ -116,6 +116,11 @@ pub const MAX_INK_MULTIPLE: f32 = 64.0;
 /// matrices in 608 converted emoji stretch from 0.29 to 59.
 pub const MAX_MATRIX_STRETCH: f64 = 4096.0;
 
+/// Most a viewBox's width may exceed its height, or the other way round.
+/// The limits are measured in one side (see [`ViewBox::size_for`]), and
+/// a thinner viewBox is not an icon.
+pub const MAX_VIEW_BOX_ASPECT: f32 = 4096.0;
+
 /// Largest magnitude a viewBox value may have. Keeps the coordinate
 /// bound, `MAX_EXTENT_MULTIPLE` times the viewBox size, well inside
 /// f32's exact-integer range.
@@ -129,6 +134,33 @@ pub struct ViewBox {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+}
+
+/// How the viewBox is scaled into the cell (§8.9.3), as SVG's
+/// `preserveAspectRatio` `meet` (contain) and `slice` (cover), or
+/// `none` (stretch).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Fit {
+    #[default]
+    Contain,
+    Cover,
+    Stretch,
+}
+
+impl ViewBox {
+    /// The viewBox size the limits are measured in: the side `fit` maps
+    /// onto the cell. `contain` fits the larger side, while `cover` and
+    /// `stretch` scale the smaller one up to the cell, so a limit in the
+    /// larger side would let a thin viewBox draw path many times the
+    /// cell's size. With this, the path drawn is at most
+    /// [`MAX_INK_MULTIPLE`] times the cell's larger pixel dimension in
+    /// every mode.
+    pub fn size_for(&self, fit: Fit) -> f32 {
+        match fit {
+            Fit::Contain => self.w.max(self.h),
+            Fit::Cover | Fit::Stretch => self.w.min(self.h),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -308,7 +340,8 @@ pub enum VectorError {
 }
 
 /// Parse a `vb=x,y,w,h` value. Separators are commas or spaces, as in
-/// SVG's `viewBox`. Width and height must be positive.
+/// SVG's `viewBox`. Width and height must be positive, and neither more
+/// than [`MAX_VIEW_BOX_ASPECT`] times the other.
 pub fn parse_view_box(raw: &[u8]) -> Option<ViewBox> {
     let mut cursor = Cursor { s: raw, pos: 0 };
     cursor.skip_wsp();
@@ -327,18 +360,25 @@ pub fn parse_view_box(raw: &[u8]) -> Option<ViewBox> {
         return None;
     }
     let [x, y, w, h] = values;
-    (w > 0.0 && h > 0.0).then_some(ViewBox { x, y, w, h })
+    let in_ratio = w <= h * MAX_VIEW_BOX_ASPECT && h <= w * MAX_VIEW_BOX_ASPECT;
+    (w > 0.0 && h > 0.0 && in_ratio).then_some(ViewBox { x, y, w, h })
 }
 
-/// Parse and validate a payload against its viewBox.
-pub fn parse(payload: &[u8], view_box: ViewBox) -> Result<VectorGlyph, VectorError> {
+/// Parse and validate a payload against its viewBox, with the limits
+/// measured in the side `fit` maps onto the cell.
+pub fn parse(
+    payload: &[u8],
+    view_box: ViewBox,
+    fit: Fit,
+) -> Result<VectorGlyph, VectorError> {
     if payload.is_empty() || !payload.iter().all(|b| (0x20..=0x7E).contains(b)) {
         return Err(VectorError::Malformed);
     }
-    let bounds = Bounds::new(view_box);
+    let size = view_box.size_for(fit);
+    let bounds = Bounds::new(view_box, size);
     let mut budget = Budget {
         segments: MAX_SEGMENTS,
-        ink: (view_box.w.max(view_box.h) * MAX_INK_MULTIPLE) as f64,
+        ink: (size * MAX_INK_MULTIPLE) as f64,
     };
     let mut layers = Vec::new();
     for raw_layer in payload.split(|&b| b == b'|') {
@@ -349,7 +389,7 @@ pub fn parse(payload: &[u8], view_box: ViewBox) -> Result<VectorGlyph, VectorErr
             .iter()
             .position(|&b| b == b':')
             .ok_or(VectorError::Malformed)?;
-        let (op, transform) = parse_header(&raw_layer[..colon], view_box)?;
+        let (op, transform) = parse_header(&raw_layer[..colon], size)?;
         let stroke_width = match &op {
             LayerOp::Stroke { style, .. } => style.width as f64 * scale_of(transform),
             LayerOp::Fill { .. } | LayerOp::Clip { .. } => 0.0,
@@ -410,9 +450,10 @@ fn scale_of(transform: Option<[f32; 6]>) -> f64 {
 
 /// A layer header: `<paint>,<value>[,m a b c d e f]`, where the value is
 /// a colour (or a fill rule for a clip). Returns the op and its matrix.
+/// `size` is the viewBox size the limits use ([`ViewBox::size_for`]).
 fn parse_header(
     raw: &[u8],
-    view_box: ViewBox,
+    size: f32,
 ) -> Result<(LayerOp, Option<[f32; 6]>), VectorError> {
     let raw = trim(raw);
     let comma = raw
@@ -448,34 +489,10 @@ fn parse_header(
     // A stroke wider than the viewBox only costs time: it covers the
     // whole span either way. Measured in viewBox units.
     let scaled = width as f64 * scale_of(transform);
-    if !(width > 0.0 && scaled <= view_box.w.max(view_box.h) as f64) {
+    if !(width > 0.0 && scaled <= size as f64) {
         return Err(VectorError::Malformed);
     }
-    let cap = match parts.next() {
-        None | Some(b"round") => LineCap::Round,
-        Some(b"butt") => LineCap::Butt,
-        Some(b"square") => LineCap::Square,
-        Some(_) => return Err(VectorError::Malformed),
-    };
-    let (join, miter_limit) = match parts.next() {
-        None | Some(b"round") => (LineJoin::Round, 4.0),
-        Some(b"bevel") => (LineJoin::Bevel, 4.0),
-        Some(miter) => {
-            let limit = miter.strip_prefix(b"miter").ok_or(VectorError::Malformed)?;
-            let limit = if limit.is_empty() {
-                4.0
-            } else {
-                parse_whole_number(limit)?
-            };
-            if !(1.0..=1000.0).contains(&limit) {
-                return Err(VectorError::Malformed);
-            }
-            (LineJoin::Miter, limit)
-        }
-    };
-    if parts.next().is_some() {
-        return Err(VectorError::Malformed);
-    }
+    let (cap, join, miter_limit) = parse_stroke_style(parts)?;
     let op = LayerOp::Stroke {
         style: StrokeStyle {
             width,
@@ -486,6 +503,54 @@ fn parse_header(
         color: parse_color(rest)?,
     };
     Ok((op, transform))
+}
+
+/// The `/`-separated styles after a stroke's width: at most one cap
+/// (`butt`, `square`) and one join (`bevel`, `miter[<limit>]`), in
+/// either order, so a converter can give just a join. `round` is a cap
+/// and a join, and the default for both, so it fills whichever of the
+/// two is left; two of the same kind is an error.
+fn parse_stroke_style<'a>(
+    parts: impl Iterator<Item = &'a [u8]>,
+) -> Result<(LineCap, LineJoin, f32), VectorError> {
+    let (mut cap, mut join) = (None, None);
+    let mut rounds = 0;
+    for part in parts {
+        let (slot_cap, slot_join) = match part {
+            b"round" => {
+                rounds += 1;
+                continue;
+            }
+            b"butt" => (Some(LineCap::Butt), None),
+            b"square" => (Some(LineCap::Square), None),
+            b"bevel" => (None, Some((LineJoin::Bevel, 4.0))),
+            _ => {
+                let limit = part.strip_prefix(b"miter").ok_or(VectorError::Malformed)?;
+                let limit = if limit.is_empty() {
+                    4.0
+                } else {
+                    parse_whole_number(limit)?
+                };
+                if !(1.0..=1000.0).contains(&limit) {
+                    return Err(VectorError::Malformed);
+                }
+                (None, Some((LineJoin::Miter, limit)))
+            }
+        };
+        if (slot_cap.is_some() && cap.is_some())
+            || (slot_join.is_some() && join.is_some())
+        {
+            return Err(VectorError::Malformed);
+        }
+        cap = cap.or(slot_cap);
+        join = join.or(slot_join);
+    }
+    let free = cap.is_none() as usize + join.is_none() as usize;
+    if rounds > free {
+        return Err(VectorError::Malformed);
+    }
+    let (join, miter_limit) = join.unwrap_or((LineJoin::Round, 4.0));
+    Ok((cap.unwrap_or(LineCap::Round), join, miter_limit))
 }
 
 /// Split `<value>[,m a b c d e f]`. A gradient's parentheses may hold
@@ -718,8 +783,9 @@ struct Bounds {
 }
 
 impl Bounds {
-    fn new(vb: ViewBox) -> Self {
-        let margin = vb.w.max(vb.h) * MAX_EXTENT_MULTIPLE;
+    /// `size` is the viewBox size the limits use ([`ViewBox::size_for`]).
+    fn new(vb: ViewBox, size: f32) -> Self {
+        let margin = size * MAX_EXTENT_MULTIPLE;
         Self {
             x0: vb.x - margin,
             y0: vb.y - margin,
@@ -1322,7 +1388,7 @@ mod tests {
     };
 
     fn layer(payload: &str) -> Result<VectorLayer, VectorError> {
-        let mut glyph = parse(payload.as_bytes(), VB24)?;
+        let mut glyph = parse(payload.as_bytes(), VB24, Fit::Contain)?;
         assert_eq!(glyph.layers.len(), 1);
         Ok(glyph.layers.remove(0))
     }
@@ -1363,6 +1429,7 @@ mod tests {
         let glyph = parse(
             b"fill=nonzero,fg:M0 0h4v4z|fill=evenodd,#e5534b:M1 1h2v2z|stroke=2,fg@0.2:M0 0l4 4",
             VB24,
+            Fit::Contain,
         )
         .unwrap();
         assert_eq!(glyph.layers.len(), 3);
@@ -1583,7 +1650,9 @@ mod tests {
             w: 960.0,
             h: 960.0,
         };
-        assert!(parse(b"fill=nonzero,fg:M480-480h100v100z", material).is_ok());
+        assert!(
+            parse(b"fill=nonzero,fg:M480-480h100v100z", material, Fit::Contain).is_ok()
+        );
     }
 
     fn op(payload: &str) -> LayerOp {
@@ -1722,6 +1791,7 @@ mod tests {
         let glyph = parse(
             b"clip=2,evenodd:M0 0h12v24H0Z|fill=nonzero,fg:M0 0h24v24H0Z|stroke=2,#ff0000:M0 12h24|fill=nonzero,fg:M0 0h1",
             VB24,
+            Fit::Contain,
         )
         .unwrap();
         assert_eq!(
@@ -1739,7 +1809,7 @@ mod tests {
             "clip=2,nonzero:M0 0h4v4z|clip=1,nonzero:M0 0h1v1z|fill=nonzero,fg:M0 0h1",
         ] {
             assert_eq!(
-                parse(payload.as_bytes(), VB24),
+                parse(payload.as_bytes(), VB24, Fit::Contain),
                 Err(VectorError::Malformed),
                 "{payload}"
             );
@@ -1747,7 +1817,8 @@ mod tests {
         // After a clip's range ends, another clip may start.
         assert!(parse(
             b"clip=1,nonzero:M0 0h4v4z|fill=nonzero,fg:M0 0h1|clip=1,nonzero:M0 0h4v4z|fill=nonzero,fg:M0 0h1",
-            VB24
+            VB24,
+            Fit::Contain
         )
         .is_ok());
         // Clip paths count against the segment and length caps like a fill.
@@ -1759,7 +1830,7 @@ mod tests {
     }
 
     fn layer_count_err(payload: &str) -> Result<usize, VectorError> {
-        parse(payload.as_bytes(), VB24).map(|g| g.layers.len())
+        parse(payload.as_bytes(), VB24, Fit::Contain).map(|g| g.layers.len())
     }
 
     #[test]
@@ -1811,6 +1882,7 @@ mod tests {
         let glyph = parse(
             b"clip=1,nonzero,m 1 0 0 1 2 2:M0 0h4v4z|fill=nonzero,fg:M0 0h1",
             VB24,
+            Fit::Contain,
         )
         .unwrap();
         assert_eq!(
@@ -1837,6 +1909,7 @@ mod tests {
         let mono = parse(
             b"fill=nonzero,lin(0 0 24 0 / 0 fg / 1 fg@0):M0 0h4v4z|clip=1,nonzero:M0 0h1v1z|fill=nonzero,fg@0.5:M0 0h1",
             VB24,
+            Fit::Contain,
         )
         .unwrap();
         assert!(mono.is_monochrome());
@@ -1844,6 +1917,7 @@ mod tests {
         let mixed = parse(
             b"fill=nonzero,lin(0 0 24 0 / 0 fg / 1 #ff0000):M0 0h4v4z",
             VB24,
+            Fit::Contain,
         )
         .unwrap();
         assert!(!mixed.is_monochrome());
@@ -1851,6 +1925,7 @@ mod tests {
         let fixed = parse(
             b"fill=nonzero,rad(0 0 0 12 12 12 / 0 #000000 / 1 #ffffff):M0 0h4v4z",
             VB24,
+            Fit::Contain,
         )
         .unwrap();
         assert!(!fixed.is_monochrome());
@@ -1873,16 +1948,20 @@ mod tests {
             "fill=nonzero,fg:M0 0{}",
             back_and_forth(MAX_SEGMENTS / 2 - 1)
         );
-        assert!(parse(format!("{half}|{half}").as_bytes(), VB24).is_ok());
+        assert!(parse(format!("{half}|{half}").as_bytes(), VB24, Fit::Contain).is_ok());
         assert_eq!(
             parse(
                 format!("{half}|{half}|fill=nonzero,fg:M0 0h1").as_bytes(),
-                VB24
+                VB24,
+                Fit::Contain
             ),
             Err(VectorError::TooLarge)
         );
         let layers = vec!["fill=nonzero,fg:M0 0h1"; MAX_LAYERS + 1].join("|");
-        assert_eq!(parse(layers.as_bytes(), VB24), Err(VectorError::TooLarge));
+        assert_eq!(
+            parse(layers.as_bytes(), VB24, Fit::Contain),
+            Err(VectorError::TooLarge)
+        );
     }
 
     #[test]
@@ -1942,11 +2021,12 @@ mod tests {
 
         // The budget is per registration, across layers.
         let half = format!("fill=nonzero,fg:{}", square.repeat(8));
-        assert!(parse(format!("{half}|{half}").as_bytes(), VB24).is_ok());
+        assert!(parse(format!("{half}|{half}").as_bytes(), VB24, Fit::Contain).is_ok());
         assert_eq!(
             parse(
                 format!("{half}|{half}|fill=nonzero,fg:M0 0h1").as_bytes(),
-                VB24
+                VB24,
+                Fit::Contain
             ),
             Err(VectorError::TooLarge)
         );
@@ -1954,7 +2034,7 @@ mod tests {
         // The cap scales with the viewBox.
         let vb = parse_view_box(b"0,0,960,960").unwrap();
         let big = format!("fill=nonzero,fg:{}", "M0 0h960v960h-960z".repeat(16));
-        assert!(parse(big.as_bytes(), vb).is_ok());
+        assert!(parse(big.as_bytes(), vb, Fit::Contain).is_ok());
     }
 
     /// Endpoints of every segment, `None` for a close.
@@ -2206,16 +2286,22 @@ mod tests {
             "fill=nonzero,fg:M0 0{}|fill=nonzero,fg:{arc}",
             filler(room - 1)
         );
-        assert!(parse(fits.as_bytes(), VB24).is_ok());
+        assert!(parse(fits.as_bytes(), VB24, Fit::Contain).is_ok());
         let over = format!("fill=nonzero,fg:M0 0{}|fill=nonzero,fg:{arc}", filler(room));
-        assert_eq!(parse(over.as_bytes(), VB24), Err(VectorError::TooLarge));
+        assert_eq!(
+            parse(over.as_bytes(), VB24, Fit::Contain),
+            Err(VectorError::TooLarge)
+        );
     }
 
     #[test]
     fn exactly_the_layer_cap_is_accepted() {
         let at_cap = vec!["fill=nonzero,fg:M0 0h1"; MAX_LAYERS].join("|");
         assert_eq!(
-            parse(at_cap.as_bytes(), VB24).unwrap().layers.len(),
+            parse(at_cap.as_bytes(), VB24, Fit::Contain)
+                .unwrap()
+                .layers
+                .len(),
             MAX_LAYERS
         );
         // Empty layers aren't layers: `|` must separate two of them.
@@ -2225,7 +2311,7 @@ mod tests {
             "fill=nonzero,fg:M0 0h1||fill=nonzero,fg:M0 0h1",
         ] {
             assert_eq!(
-                parse(payload.as_bytes(), VB24),
+                parse(payload.as_bytes(), VB24, Fit::Contain),
                 Err(VectorError::Malformed),
                 "{payload}"
             );
@@ -2330,7 +2416,7 @@ mod tests {
 
     #[test]
     fn colour_queries_skip_clip_layers() {
-        let glyph = |p: &str| parse(p.as_bytes(), VB24).unwrap();
+        let glyph = |p: &str| parse(p.as_bytes(), VB24, Fit::Contain).unwrap();
         // A clip has no colour, so it doesn't make a glyph coloured.
         let g = glyph("clip=1,nonzero:M0 0h12v24H0Z|fill=nonzero,fg@0.5:M0 0h4v4z");
         assert!(g.is_monochrome() && g.uses_foreground());
@@ -2361,7 +2447,7 @@ mod tests {
             state ^= state << 17;
             (state % n as u64) as usize
         };
-        let bounds = Bounds::new(VB24);
+        let bounds = Bounds::new(VB24, 24.0);
         let mut accepted = 0;
         for _ in 0..50_000 {
             let mut bytes = SEEDS[next(SEEDS.len())].as_bytes().to_vec();
@@ -2382,7 +2468,7 @@ mod tests {
                     _ => bytes.insert(at, byte),
                 }
             }
-            let Ok(glyph) = parse(&bytes, VB24) else {
+            let Ok(glyph) = parse(&bytes, VB24, Fit::Contain) else {
                 continue;
             };
             accepted += 1;
@@ -2477,15 +2563,115 @@ mod tests {
     }
 
     #[test]
+    fn cover_and_stretch_measure_limits_in_the_smaller_side() {
+        // `cover` and `stretch` scale the smaller side up to the cell,
+        // so a thin viewBox measured by its larger side would let path
+        // many times the cell's size through (kitty#10872: 7 s for
+        // 1.3 KB before kitty added defences).
+        let thin = parse_view_box(b"0,0,1000,1").unwrap();
+        let line = b"fill=nonzero,fg:M0 0h1000";
+        assert!(parse(line, thin, Fit::Contain).is_ok());
+        for fit in [Fit::Cover, Fit::Stretch] {
+            assert_eq!(
+                parse(line, thin, fit),
+                Err(VectorError::TooLarge),
+                "{fit:?}"
+            );
+            // 64 of the smaller side still fit.
+            assert!(parse(b"fill=nonzero,fg:M0 0h32h-32", thin, fit).is_ok());
+            // Points stay within one smaller side of the viewBox.
+            assert_eq!(
+                parse(b"fill=nonzero,fg:M0 -2h1", thin, fit),
+                Err(VectorError::TooLarge)
+            );
+            // A stroke is capped by the smaller side too.
+            assert!(parse(b"stroke=1,fg:M0 0h1", thin, fit).is_ok());
+            assert_eq!(
+                parse(b"stroke=2,fg:M0 0h1", thin, fit),
+                Err(VectorError::Malformed)
+            );
+        }
+        // A square viewBox is the same in every mode.
+        for fit in [Fit::Contain, Fit::Cover, Fit::Stretch] {
+            assert_eq!(VB24.size_for(fit), 24.0);
+        }
+    }
+
+    #[test]
+    fn view_box_aspect_is_bounded() {
+        assert!(parse_view_box(b"0,0,4096,1").is_some());
+        assert!(parse_view_box(b"0,0,1,4096").is_some());
+        assert!(parse_view_box(b"0,0,4097,1").is_none());
+        assert!(parse_view_box(b"0 0 1 0.000001").is_none());
+    }
+
+    #[test]
+    fn stroke_styles_come_in_either_order() {
+        let style = |header: &str| match layer(&format!("{header},fg:M0 0h4")) {
+            Ok(VectorLayer {
+                op: LayerOp::Stroke { style, .. },
+                ..
+            }) => Ok((style.cap, style.join, style.miter_limit)),
+            Ok(other) => panic!("{other:?}"),
+            Err(e) => Err(e),
+        };
+        // A join alone, as a converter might write it.
+        assert_eq!(
+            style("stroke=1/miter"),
+            Ok((LineCap::Round, LineJoin::Miter, 4.0))
+        );
+        assert_eq!(
+            style("stroke=1/miter10"),
+            Ok((LineCap::Round, LineJoin::Miter, 10.0))
+        );
+        assert_eq!(
+            style("stroke=1/bevel"),
+            Ok((LineCap::Round, LineJoin::Bevel, 4.0))
+        );
+        // Either order.
+        assert_eq!(
+            style("stroke=1/butt/bevel"),
+            Ok((LineCap::Butt, LineJoin::Bevel, 4.0))
+        );
+        assert_eq!(
+            style("stroke=1/bevel/butt"),
+            Ok((LineCap::Butt, LineJoin::Bevel, 4.0))
+        );
+        // `round` is both and fills whichever is left.
+        assert_eq!(
+            style("stroke=1/round/butt"),
+            Ok((LineCap::Butt, LineJoin::Round, 4.0))
+        );
+        assert_eq!(
+            style("stroke=1/miter/round"),
+            Ok((LineCap::Round, LineJoin::Miter, 4.0))
+        );
+        assert_eq!(
+            style("stroke=1/round/round"),
+            Ok((LineCap::Round, LineJoin::Round, 4.0))
+        );
+        for header in [
+            "stroke=1/butt/square",
+            "stroke=1/miter/bevel",
+            "stroke=1/round/round/round",
+            "stroke=1/butt/round/bevel/round",
+            "stroke=1/round/butt/square",
+            "stroke=1/miter0.5",
+        ] {
+            assert_eq!(style(header), Err(VectorError::Malformed), "{header}");
+        }
+    }
+
+    #[test]
     fn real_icons() {
         // Lucide "folder", stroked.
         let folder = "stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z";
-        let glyph = parse(folder.as_bytes(), VB24).unwrap();
+        let glyph = parse(folder.as_bytes(), VB24, Fit::Contain).unwrap();
         assert!(glyph.is_monochrome());
         // Phosphor duotone heart, as two layers.
         let vb = parse_view_box(b"0,0,256,256").unwrap();
         let heart = "fill=nonzero,fg@0.2:M232 102c0 66-104 122-104 122S24 168 24 102A54 54 0 0 1 78 48c22.59 0 41.94 12.31 50 32 8.06-19.69 27.41-32 50-32a54 54 0 0 1 54 54Z|fill=nonzero,fg:M178 40c-20.65 0-38.73 8.88-50 23.89C116.73 48.88 98.65 40 78 40a62.07 62.07 0 0 0-62 62c0 70 103.79 126.66 108.21 129a8 8 0 0 0 7.58 0C136.21 228.66 240 172 240 102a62.07 62.07 0 0 0-62-62Z";
-        let glyph = parse(heart.as_bytes(), vb).unwrap();
+        let glyph = parse(heart.as_bytes(), vb, Fit::Contain).unwrap();
         assert_eq!(glyph.layers.len(), 2);
         assert!(glyph.is_monochrome());
     }
