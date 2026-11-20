@@ -2139,15 +2139,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.screen.context_manager.request_render();
                 } else if cell_changed && route.window.screen.has_mouse_motion_and_drag()
                 {
-                    // A drag is reported for a button whose press was,
-                    // and for no other: the application never sees a
-                    // drag with no press around it, not from a hint click
-                    // (never reported) nor from a selection.
+                    // A drag is reported for a held button whose press
+                    // was, and for no other: the application never sees
+                    // a drag with no press around it, not from a hint
+                    // click (never reported) nor from a selection, nor
+                    // after a focus loss released the button while its
+                    // press waits for the release.
                     let mouse = &route.window.screen.mouse;
                     let dragging =
                         [MouseButton::Left, MouseButton::Middle, MouseButton::Right]
                             .into_iter()
-                            .find(|&button| mouse.is_press_reported(button))
+                            .find(|&button| {
+                                mouse.button_state(button) == ElementState::Pressed
+                                    && mouse.is_press_reported(button)
+                            })
                             .and_then(crate::mouse::report_code);
                     if let Some(code) = dragging {
                         route

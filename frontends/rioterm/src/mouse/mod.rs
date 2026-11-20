@@ -108,6 +108,17 @@ impl Mouse {
         self.divider = divider;
     }
 
+    /// Whether `button` is held; the buttons that are not tracked read
+    /// released.
+    pub fn button_state(&self, button: MouseButton) -> ElementState {
+        match button {
+            MouseButton::Left => self.left_button_state,
+            MouseButton::Middle => self.middle_button_state,
+            MouseButton::Right => self.right_button_state,
+            _ => ElementState::Released,
+        }
+    }
+
     /// `button` is pressed or released.
     pub fn set_button_state(&mut self, button: MouseButton, state: ElementState) {
         match button {
@@ -313,9 +324,13 @@ pub mod test {
         mouse.press_reported(MouseButton::Middle);
 
         mouse.focus_lost();
-        assert_eq!(mouse.left_button_state, ElementState::Released);
-        assert_eq!(mouse.middle_button_state, ElementState::Released);
-        assert_eq!(mouse.right_button_state, ElementState::Released);
+        for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
+            assert_eq!(mouse.button_state(button), ElementState::Released);
+        }
+        assert_eq!(
+            mouse.button_state(MouseButton::Back),
+            ElementState::Released
+        );
         assert!(mouse.is_press_reported(MouseButton::Middle));
         assert!(mouse.take_selection_gesture(), "the release still copies");
         assert!(mouse.take_reported_press(MouseButton::Middle));
