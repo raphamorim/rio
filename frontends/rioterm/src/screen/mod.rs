@@ -1923,14 +1923,15 @@ impl Screen<'_> {
         }
     }
 
-    /// The selection a mouse or touch gesture made is the primary
-    /// selection, the one a middle click pastes, whatever copy-on-select
-    /// says: that option is about the clipboard, which gets the same
-    /// text when it is on. Written once the gesture ends and not while
-    /// it moves, which would send the display server a copy per motion.
-    /// The text is built once for both. The clipboard drops the primary
-    /// write where there is no primary selection (macOS, Windows).
-    pub fn copy_gesture_selection(
+    /// The selection a left press on the grid leaves when it ends, by
+    /// a mouse release or a finger lifting, is the primary selection,
+    /// the one a middle click pastes, whatever copy-on-select says:
+    /// that option is about the clipboard, which gets the same text
+    /// when it is on. Written once the press ends and not while it
+    /// moves, which would send the display server a copy per motion.
+    /// The text is built once for both, and not at all where neither
+    /// wants it.
+    pub fn copy_selection_on_release(
         &mut self,
         clipboard: &mut Clipboard,
         copy_on_select: bool,
@@ -1950,14 +1951,6 @@ impl Screen<'_> {
             (true, false) => clipboard.set(ClipboardType::Clipboard, text),
             (false, true) => clipboard.set(ClipboardType::Selection, text),
             (false, false) => {}
-        }
-    }
-
-    /// A pointer drag reaches `pos`: the selection it holds, if any,
-    /// extends to it, and the gesture is marked so the release copies.
-    pub fn drag_selection_to(&mut self, pos: Pos, side: Side) {
-        if self.update_selection(pos, side) {
-            self.mouse.selection_changed();
         }
     }
 
@@ -2044,15 +2037,13 @@ impl Screen<'_> {
     }
 
     #[inline]
-    /// Extend the selection to `pos`, if there is one; whether there
-    /// was.
-    pub fn update_selection(&mut self, mut pos: Pos, side: Side) -> bool {
+    pub fn update_selection(&mut self, mut pos: Pos, side: Side) {
         let is_search_active = self.search_active();
         let current = self.context_manager.current_mut();
         let mut terminal = current.terminal.lock();
         let mut selection = match terminal.selection.take() {
             Some(selection) => selection,
-            None => return false,
+            None => return,
         };
 
         // Treat motion over message bar like motion over the last line.
@@ -2076,7 +2067,6 @@ impl Screen<'_> {
 
         // Request render to ensure it shows immediately
         self.context_manager.request_render();
-        true
     }
 
     #[inline]
@@ -2513,7 +2503,7 @@ impl Screen<'_> {
         let display_offset = self.display_offset();
         let point = self.mouse_position(display_offset);
         let side = self.mouse.square_side;
-        self.drag_selection_to(point, side);
+        self.update_selection(point, side);
     }
 
     #[inline]
@@ -3175,13 +3165,6 @@ impl Screen<'_> {
     pub fn on_left_click(&mut self, point: Pos) {
         let side = self.mouse.square_side;
 
-        // Every click below changes the selection, and the release of
-        // the press that made it, or the touch's end, copies it. The
-        // keyboard paths that change the selection (vi mode, search)
-        // are not clicks and leave no gesture.
-        if self.mouse.click_state != ClickState::None {
-            self.mouse.selection_changed();
-        }
         match self.mouse.click_state {
             ClickState::Click => {
                 // If Shift is pressed and there's an existing selection, expand it

@@ -1696,10 +1696,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             // Load mouse point, treating message bar and padding as the closest square.
                             let display_offset = route.window.screen.display_offset();
 
-                            // The press landed on the grid: held and moved,
-                            // it selects.
-                            route.window.screen.mouse.press_on_grid(button);
                             if let MouseButton::Left = button {
+                                // The press landed on the grid: held and
+                                // moved, it selects, and its release copies.
+                                route.window.screen.mouse.press_on_grid();
                                 let pos =
                                     route.window.screen.mouse_position(display_offset);
                                 route.window.screen.on_left_click(pos);
@@ -1713,15 +1713,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .process_mouse_bindings(button, &mut self.router.clipboard);
                     }
                     ElementState::Released => {
-                        // Whether the buttons now released made or changed
-                        // the selection; taken on every such release, so
-                        // one that returns early below leaves nothing for
-                        // the next.
-                        let selection_gesture =
-                            matches!(button, MouseButton::Left | MouseButton::Right)
-                                && route.window.screen.mouse.take_selection_gesture();
-                        // Whether the press of this button was reported to
-                        // the application; taken here for the same reason.
+                        // Whether the left press now released landed on
+                        // the grid, and whether the press of this button
+                        // was reported to the application. Both are taken
+                        // on every release, so one that returns early
+                        // below leaves nothing for the next.
+                        let grid_press = button == MouseButton::Left
+                            && route.window.screen.mouse.take_grid_press();
                         let reported_press =
                             route.window.screen.mouse.take_reported_press(button);
 
@@ -1831,8 +1829,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                     }
                                 }
                             }
-                        } else if selection_gesture {
-                            route.window.screen.copy_gesture_selection(
+                        } else if grid_press {
+                            route.window.screen.copy_selection_on_release(
                                 &mut self.router.clipboard,
                                 self.config.copy_on_select,
                             );
@@ -2109,18 +2107,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                // A held button whose press landed on the grid is
+                // A held left button whose press landed on the grid is
                 // selecting, whatever the modifiers and the mode say now:
                 // the drag goes where the press went. A press the chrome
                 // consumed or the application was told about does not
-                // select on its way across the grid. Hint and hyperlink
-                // highlighting waits while a selection moves, which saves
-                // terminal locks and regex matching.
-                let is_selecting = {
-                    let mouse = &route.window.screen.mouse;
-                    mouse.is_selecting_with(MouseButton::Left)
-                        || mouse.is_selecting_with(MouseButton::Right)
-                };
+                // select on its way across the grid, and the right button
+                // never selects. Hint and hyperlink highlighting waits
+                // while a selection moves, which saves terminal locks and
+                // regex matching.
+                let is_selecting = route.window.screen.mouse.is_selecting();
 
                 if !is_selecting {
                     let hint_changed = route.window.screen.update_highlighted_hints();
@@ -2138,7 +2133,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.mouse.square_side = square_side;
 
                 if is_selecting {
-                    route.window.screen.drag_selection_to(point, square_side);
+                    route.window.screen.update_selection(point, square_side);
                     route.window.screen.context_manager.request_render();
                 } else if cell_changed && route.window.screen.has_mouse_motion_and_drag()
                 {

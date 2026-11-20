@@ -102,7 +102,6 @@ pub fn on_touch(
 
 #[inline]
 fn on_touch_start(route: &mut Route, touch: Touch) {
-    route.window.screen.mouse.begin_touch();
     let touch_purpose = route.window.screen.touch_purpose();
     *touch_purpose = match mem::take(touch_purpose) {
         TouchPurpose::None => TouchPurpose::Tap(touch),
@@ -154,6 +153,9 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
 
                 route.window.screen.mouse.click_state = ClickState::Click;
                 route.window.screen.mouse.left_button_state = ElementState::Pressed;
+                // The touch is a press on the grid: lifting copies the
+                // selection it leaves.
+                route.window.screen.mouse.press_on_grid();
                 route
                     .window
                     .screen
@@ -204,7 +206,7 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
             let side = route.window.screen.side_by_pos(x);
             route.window.screen.mouse.square_side = side;
             let pos = route.window.screen.mouse_position(0);
-            route.window.screen.drag_selection_to(pos, side);
+            route.window.screen.update_selection(pos, side);
             tracing::info!("select motion");
         }
         TouchPurpose::Invalid(_) => (),
@@ -278,13 +280,12 @@ fn on_touch_end(
         TouchPurpose::None => (),
     }
 
-    // A touch ends like a mouse release: the selection it made, by a
-    // drag or by the tap above, is copied; a tap's fresh selection is
-    // empty and copies nothing.
-    if route.window.screen.mouse.take_selection_gesture() {
+    // A touch that selected ends like a mouse release: the selection
+    // it leaves is copied.
+    if route.window.screen.mouse.take_grid_press() {
         route
             .window
             .screen
-            .copy_gesture_selection(clipboard, copy_on_select);
+            .copy_selection_on_release(clipboard, copy_on_select);
     }
 }
