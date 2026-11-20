@@ -160,10 +160,12 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
                     .screen
                     .mouse
                     .press_lands(MouseButton::Left, crate::mouse::PressTarget::Grid);
+                // The finger selects what it covers, scrolled back or not.
+                let display_offset = route.window.screen.display_offset();
                 route
                     .window
                     .screen
-                    .on_left_click(route.window.screen.mouse_position(0));
+                    .on_left_click(route.window.screen.mouse_position(display_offset));
 
                 // Apply motion since touch start.
                 on_touch_motion(route, touch);
@@ -209,7 +211,8 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
             // a mouse drag does.
             let side = route.window.screen.side_by_pos(x);
             route.window.screen.mouse.square_side = side;
-            let pos = route.window.screen.mouse_position(0);
+            let display_offset = route.window.screen.display_offset();
+            let pos = route.window.screen.mouse_position(display_offset);
             route.window.screen.update_selection(pos, side);
             tracing::info!("select motion");
         }
@@ -247,10 +250,11 @@ fn on_touch_end(
 
             route.window.screen.mouse.click_state = ClickState::Click;
             route.window.screen.mouse.left_button_state = ElementState::Pressed;
+            let display_offset = route.window.screen.display_offset();
             route
                 .window
                 .screen
-                .on_left_click(route.window.screen.mouse_position(0));
+                .on_left_click(route.window.screen.mouse_position(display_offset));
             route.window.screen.mouse.click_state = ClickState::None;
             route.window.screen.mouse.left_button_state = ElementState::Released;
             tracing::info!("tap end");

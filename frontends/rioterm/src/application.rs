@@ -1707,11 +1707,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             if let MouseButton::Left = button {
                                 // The press landed on the grid: held and
                                 // moved, it selects, and its release copies.
-                                route
-                                    .window
-                                    .screen
-                                    .mouse
-                                    .press_lands(button, crate::mouse::PressTarget::Grid);
+                                // A click on a hint is a click and nothing
+                                // more: it lands nowhere, so a pointer that
+                                // drifts a cell before the release does not
+                                // turn the link into a selection.
+                                if !hint_click {
+                                    route.window.screen.mouse.press_lands(
+                                        button,
+                                        crate::mouse::PressTarget::Grid,
+                                    );
+                                }
                                 let pos =
                                     route.window.screen.mouse_position(display_offset);
                                 route.window.screen.on_left_click(pos);

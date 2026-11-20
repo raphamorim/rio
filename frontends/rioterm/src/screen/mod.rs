@@ -2486,7 +2486,9 @@ impl Screen<'_> {
     /// Reads mouse.raw_y to compute scroll direction.
     /// Scrolls 1 line per tick.
     pub fn selection_scroll_tick(&mut self) {
-        if self.mouse.left_button_state != rio_window::event::ElementState::Pressed {
+        // The timer outlives the drag by a tick at most; a press that
+        // is not selecting any more, or never was, scrolls nothing.
+        if !self.mouse.is_selecting() {
             return;
         }
 
