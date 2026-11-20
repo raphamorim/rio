@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+TryExec=rioterm-gtk
+Exec=rioterm-gtk
+Icon=com.rioterm.RioGtk
+Terminal=false
+StartupNotify=true
+Categories=System;TerminalEmulator;GTK;
+
+Name=Rio (GTK)
+GenericName=Terminal
+Comment=Rio terminal as a GTK app
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=rioterm-gtk

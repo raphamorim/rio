@@ -27,10 +27,10 @@ jobs:
             cache-subdir: darwin
           - os: ubuntu-22.04
             cache-subdir: linux
-            _ids: --id linux-x64-wayland --id linux-x64-x11
+            _ids: --id linux-x64-wayland --id linux-x64-x11 --id linux-x64-gtk
           - os: ubuntu-22.04-arm
             cache-subdir: linux
-            _ids: --id linux-arm64-wayland --id linux-arm64-x11
+            _ids: --id linux-arm64-wayland --id linux-arm64-x11 --id linux-arm64-gtk
           - os: windows-latest
             cache-subdir: windows
       fail-fast: false
@@ -79,7 +79,7 @@ jobs:
       - if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwayland-dev pkg-config libfontconfig1-dev glslang-tools
+          sudo apt-get install -y libwayland-dev pkg-config libfontconfig1-dev glslang-tools libgtk-4-dev libadwaita-1-dev
       - if: matrix.os == 'macos-latest'
         run: rustup target add x86_64-apple-darwin
       - if: matrix.os == 'windows-latest'

@@ -82,6 +82,21 @@ builds:
       - CARGO_PROFILE_RELEASE_OPT_LEVEL=s
     targets: [x86_64-unknown-linux-gnu]
 
+  # Rio as a GTK 4 / libadwaita app (frontends/rioterm-gtk): one build
+  # serves Wayland and X11, through GTK. Full opt-level, not `s`: its
+  # renderer is Sugarloaf's CPU one, where speed is the point.
+  - id: linux-arm64-gtk
+    builder: rust
+    command: build
+    binary: rioterm-gtk
+    flags: [--release, -p=rioterm-gtk]
+    targets: [aarch64-unknown-linux-gnu]
+  - id: linux-x64-gtk
+    builder: rust
+    command: build
+    binary: rioterm-gtk
+    flags: [--release, -p=rioterm-gtk]
+    targets: [x86_64-unknown-linux-gnu]
 release:
   make_latest: "{{ if .IsNightly }}false{{ else }}true{{ end }}"
   mode: append
@@ -268,6 +283,39 @@ nfpms:
     section: admin
     priority: optional
 
+  # rioterm-gtk installs next to rioterm: its own desktop file and icon
+  # name, and no terminfo (librio uses Rio's when rioterm installed it,
+  # xterm-256color otherwise).
+  - formats: [deb, rpm]
+    id: deb-arm64-gtk
+    ids: [linux-arm64-gtk]
+    package_name: rioterm-gtk
+    dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11), libgtk-4-1 (>= 4.6), libadwaita-1-0 (>= 1.1)]
+    overrides:
+      rpm:
+        dependencies: [glibc, libstdc++, gtk4, libadwaita]
+    contents:
+      - src: ./misc/com.rioterm.RioGtk.desktop
+        dst: /usr/share/applications/com.rioterm.RioGtk.desktop
+      - src: ./misc/logo.svg
+        dst: /usr/share/icons/hicolor/scalable/apps/com.rioterm.RioGtk.svg
+    section: admin
+    priority: optional
+  - formats: [deb, rpm]
+    id: deb-x64-gtk
+    ids: [linux-x64-gtk]
+    package_name: rioterm-gtk
+    dependencies: [libc6 (>= 2.35), libstdc++6 (>= 11), libgtk-4-1 (>= 4.6), libadwaita-1-0 (>= 1.1)]
+    overrides:
+      rpm:
+        dependencies: [glibc, libstdc++, gtk4, libadwaita]
+    contents:
+      - src: ./misc/com.rioterm.RioGtk.desktop
+        dst: /usr/share/applications/com.rioterm.RioGtk.desktop
+      - src: ./misc/logo.svg
+        dst: /usr/share/icons/hicolor/scalable/apps/com.rioterm.RioGtk.svg
+    section: admin
+    priority: optional
 msi:
   - id: win-x64
     name: "{{ .ProjectName }}-installer-x86_64"
