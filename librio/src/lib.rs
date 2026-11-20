@@ -661,15 +661,6 @@ fn mouse_report(
     out
 }
 
-fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
-    if bracketed {
-        let filtered = text.replace(['\x1b', '\x03', '\u{9b}'], "");
-        format!("\x1b[200~{filtered}\x1b[201~").into_bytes()
-    } else {
-        text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
-    }
-}
-
 /// A pty with the shell `desc` names, or the user's login shell.
 #[cfg(feature = "pty")]
 fn spawn_pty(desc: &SurfaceDesc) -> std::io::Result<teletypewriter::Pty> {
@@ -930,18 +921,16 @@ impl Surface {
         self.write(text.as_bytes().to_vec());
     }
 
-    /// Paste text the way terminals do: when the program asked for
-    /// bracketed paste (mode 2004) the text is sent verbatim inside
-    /// ESC[200~/ESC[201~ markers, minus ESC, ETX and the 8-bit CSI so
-    /// the payload can never close the bracket early and inject
-    /// keystrokes; otherwise newlines are normalized to CR, what the
-    /// Enter key produces.
+    /// Paste text the way Rio does, see [`rio_vt::paste::encode`]: in
+    /// bracketed paste mode (2004) between the markers, minus anything
+    /// that could close them early and with CRLF as one break; otherwise
+    /// with every line break as CR, what the Enter key produces.
     pub fn paste(&self, text: &str) {
         if text.is_empty() {
             return;
         }
         let bracketed = self.terminal.lock().mode().contains(Mode::BRACKETED_PASTE);
-        self.write(encode_paste(text, bracketed));
+        self.write(rio_vt::paste::encode(text, bracketed));
     }
 
     /// A stable, C-friendly view of the terminal modes an embedder needs
@@ -2052,29 +2041,6 @@ mod tests {
         assert_eq!(state.link_at(0, 13), None);
         assert_eq!(state.link_run(0, 6), Some((4, 11)));
         assert_eq!(state.link_run(0, 0), None);
-    }
-
-    // Bracketed paste sends the text verbatim minus ESC/ETX, so a
-    // malicious payload cannot close the bracket and inject keystrokes;
-    // unbracketed paste normalizes newlines to CR.
-    #[test]
-    fn paste_encoding_is_injection_safe() {
-        assert_eq!(
-            encode_paste("one\ntwo", true),
-            b"\x1b[200~one\ntwo\x1b[201~".to_vec()
-        );
-        assert_eq!(
-            encode_paste("a\x1b[201~rm -rf /\x03", true),
-            b"\x1b[200~a[201~rm -rf /\x1b[201~".to_vec()
-        );
-        assert_eq!(
-            encode_paste("a\u{9b}201~oops", true),
-            b"\x1b[200~a201~oops\x1b[201~".to_vec()
-        );
-        assert_eq!(
-            encode_paste("one\r\ntwo\nthree", false),
-            b"one\rtwo\rthree".to_vec()
-        );
     }
 
     // mode_bits mirrors the private modes programs toggle at runtime.

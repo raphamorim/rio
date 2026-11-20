@@ -3718,42 +3718,15 @@ impl Screen<'_> {
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_write(&b"\x1b[200~"[..]);
-
-            // Write filtered escape sequences.
-            //
-            // We remove `\x1b` to ensure it's impossible for the pasted text to write the bracketed
-            // paste end escape `\x1b[201~` and `\x03` since some shells incorrectly terminate
-            // bracketed paste on its receival.
-            //
-            // CRLF collapses to `\r` even in bracketed mode: the
-            // Windows clipboard terminates every line with `\r\n`,
-            // and shells treat that as two breaks, doubling every
-            // newline pasted into WSL or ssh. Lone `\n` stays as is.
-            let filtered = text.replace(['\x1b', '\x03'], "").replace("\r\n", "\r");
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_write(filtered.into_bytes());
-
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_write(&b"\x1b[201~"[..]);
+            // The markers, and the text minus anything that could close
+            // them early, with CRLF as one break (#1669).
+            let payload = rio_backend::paste::encode(text, true);
+            self.ctx_mut().current_mut().messenger.send_write(payload);
         } else {
             let payload = if bracketed {
-                // In non-bracketed (ie: normal) mode, terminal applications cannot distinguish
-                // pasted data from keystrokes.
-                //
-                // In theory, we should construct the keystrokes needed to produce the data we are
-                // pasting... since that's neither practical nor sensible (and probably an
-                // impossible task to solve in a general way), we'll just replace line breaks
-                // (windows and unix style) with a single carriage return (\r, which is what the
-                // Enter key produces).
-                text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
+                // The program can't tell a paste from typing: every line
+                // break is what Enter sends.
+                rio_backend::paste::encode(text, false)
             } else {
                 // When we explicitly disable bracketed paste don't manipulate with the input,
                 // so we pass user input as is.
