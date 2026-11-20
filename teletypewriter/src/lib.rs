@@ -1,5 +1,10 @@
 extern crate libc;
 
+mod working_dir;
+#[cfg(target_os = "linux")]
+pub use working_dir::resolve_host_working_dir;
+pub use working_dir::{check_working_dir, in_flatpak, resolve_working_dir};
+
 #[cfg(not(windows))]
 mod unix;
 #[cfg(not(windows))]

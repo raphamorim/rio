@@ -533,6 +533,10 @@ pub fn create_pty_with_spawn(
     width: u16,
     height: u16,
 ) -> Result<Pty, Error> {
+    // In a flatpak sandbox the shell starts on the host, which may see
+    // directories the sandbox can't, so the host checks the directory.
+    let in_flatpak = crate::in_flatpak();
+
     #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
     let mut is_controling_terminal = true;
 
@@ -632,7 +636,7 @@ pub fn create_pty_with_spawn(
     {
         // If running inside a flatpak sandbox.
         // Must retrieve $SHELL from outside the sandbox, so ask the host.
-        if std::path::PathBuf::from("/.flatpak-info").exists() {
+        if in_flatpak {
             builder = Command::new("flatpak-spawn");
 
             let mut with_args = vec![
@@ -650,11 +654,8 @@ pub fn create_pty_with_spawn(
                 }
             }
 
-            if let Some(directory) = working_directory {
-                with_args.push(format!(
-                    "--directory={}",
-                    std::path::Path::new(directory).display()
-                ));
+            if let Some(dir) = crate::resolve_host_working_dir(working_directory) {
+                with_args.push(format!("--directory={dir}"));
             }
 
             let output = std::process::Command::new("flatpak-spawn")
@@ -684,8 +685,23 @@ pub fn create_pty_with_spawn(
         builder.envs(env);
     }
 
+    // Checked here, entered in the child below, as Alacritty does: a
+    // failed `chdir` (the directory went away since) leaves the shell in
+    // the inherited directory, where `current_dir` would fail the spawn.
+    // Under flatpak it went to the host as `--directory` above.
+    let working_directory = if in_flatpak {
+        None
+    } else {
+        crate::resolve_working_dir(working_directory)
+            .and_then(|dir| CString::new(dir).ok())
+    };
+
     unsafe {
         builder.pre_exec(move || {
+            if let Some(dir) = &working_directory {
+                libc::chdir(dir.as_ptr());
+            }
+
             // Create a new process group.
             let err = libc::setsid();
             if err == -1 {
@@ -716,11 +732,6 @@ pub fn create_pty_with_spawn(
 
             Ok(())
         });
-    }
-
-    // Handle set working directory option.
-    if let Some(dir) = &working_directory {
-        builder.current_dir(dir);
     }
 
     // Prepare signal handling before spawning child.
@@ -793,15 +804,22 @@ pub fn default_shell_program() -> String {
         .unwrap_or_default()
 }
 
+// The same parameters as `create_pty_with_spawn`, in the same order.
+#[allow(clippy::too_many_arguments)]
 pub fn create_pty_with_fork(
     shell: Option<&str>,
     args: &[String],
+    working_directory: &Option<String>,
     envs: &[(String, String)],
     columns: u16,
     rows: u16,
     width: u16,
     height: u16,
 ) -> Result<Pty, Error> {
+    // Resolved in the parent so the failure path can log; the fork
+    // child only consumes the already-validated CString.
+    let working_directory = crate::resolve_working_dir(working_directory)
+        .and_then(|dir| CString::new(dir).ok());
     let mut main = 0;
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
@@ -837,6 +855,11 @@ pub fn create_pty_with_fork(
         )
     } {
         0 => {
+            if let Some(dir) = &working_directory {
+                unsafe {
+                    libc::chdir(dir.as_ptr());
+                }
+            }
             set_child_envs(envs);
             default_shell_command(shell_program, args);
             // Never return into the terminal application in the forked child
@@ -1274,5 +1297,80 @@ mod termp_tests {
         let term = create_termp(true);
         assert_eq!(term.c_ospeed, libc::B230400);
         assert_eq!(term.c_ispeed, libc::B230400);
+    }
+}
+
+#[cfg(test)]
+mod working_dir_spawn_tests {
+    use super::{create_pty_with_fork, create_pty_with_spawn, Pty};
+    use crate::ProcessReadWrite;
+    use std::io::Read;
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
+
+    /// Everything `pwd` printed before the shell exited.
+    fn output(mut pty: Pty) -> String {
+        let mut out = Vec::new();
+        let mut buf = [0u8; 4096];
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            match pty.reader().read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => out.extend_from_slice(&buf[..n]),
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10))
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
+                // EIO: the shell exited and closed the pty.
+                Err(_) => break,
+            }
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    fn pwd_args() -> Vec<String> {
+        vec!["-c".into(), "pwd -P".into()]
+    }
+
+    /// Where `/bin/sh -c 'pwd -P'` ran, through both spawn paths.
+    fn ran_in(working_dir: Option<&str>) -> [PathBuf; 2] {
+        let dir = working_dir.map(str::to_owned);
+        let spawned =
+            create_pty_with_spawn(Some("/bin/sh"), pwd_args(), &dir, None, 80, 24, 0, 0)
+                .expect("spawn");
+        let forked =
+            create_pty_with_fork(Some("/bin/sh"), &pwd_args(), &dir, &[], 80, 24, 0, 0)
+                .expect("fork");
+        [spawned, forked].map(|pty| PathBuf::from(output(pty).trim()))
+    }
+
+    fn real(path: impl AsRef<Path>) -> PathBuf {
+        std::fs::canonicalize(path).expect("canonical path")
+    }
+
+    #[test]
+    fn both_spawn_paths_start_in_the_working_dir() {
+        let tmp = real(std::env::temp_dir());
+        for path in ran_in(Some(&tmp.to_string_lossy())) {
+            assert_eq!(path, tmp);
+        }
+    }
+
+    #[test]
+    fn both_spawn_paths_expand_a_tilde() {
+        let home = real(std::env::home_dir().expect("home"));
+        for path in ran_in(Some("~")) {
+            assert_eq!(path, home);
+        }
+    }
+
+    /// Instead of failing the spawn, a missing directory leaves the shell
+    /// where we are.
+    #[test]
+    fn a_missing_working_dir_inherits_ours() {
+        let here = real(std::env::current_dir().expect("cwd"));
+        for path in ran_in(Some("/rio/working/dir/that/does/not/exist")) {
+            assert_eq!(path, here);
+        }
     }
 }

@@ -54,7 +54,9 @@ pub fn create_pty(
             format!("{shell} {}", args.join(" "))
         }
     });
-    conpty::new(exec.as_deref(), working_directory, env, columns, rows)
+    // A missing directory would fail CreateProcessW; `~` is the profile.
+    let working_directory = crate::resolve_working_dir(working_directory);
+    conpty::new(exec.as_deref(), &working_directory, env, columns, rows)
 }
 
 impl Pty {
