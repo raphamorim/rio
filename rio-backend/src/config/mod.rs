@@ -264,11 +264,11 @@ pub struct Config {
 pub struct CursorConfig {
     #[serde(default = "default_cursor")]
     pub shape: CursorShape,
-    /// Whether the cursor blinks by default, as Ghostty's
-    /// `cursor-style-blink`. Unset, it is steady, and programs may make
-    /// it blink (DECSCUSR and mode 12). Set, it is the default, and mode
-    /// 12 is ignored so a legacy program can't override it for good;
-    /// DECSCUSR still sets a style, and `CSI 0 SP q` restores this.
+    /// Whether the cursor blinks by default. Unset, it is steady, and
+    /// programs may make it blink (DECSCUSR and mode 12). Set, it is the
+    /// default, and mode 12 is ignored so a legacy program can't override
+    /// it for good; DECSCUSR still sets a style, and `CSI 0 SP q`
+    /// restores this.
     #[serde(default)]
     pub blinking: Option<bool>,
     #[serde(default = "default_cursor_interval", rename = "blinking-interval")]

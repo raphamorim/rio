@@ -563,14 +563,14 @@ where
     /// reset go back to, with `default_cursor_shape`.
     pub default_blinking_cursor: bool,
     /// The user chose the default blink, so mode 12 (`?12h`/`?12l`) is
-    /// ignored, as in Ghostty: a program using it could otherwise stop
+    /// ignored: a program using it could otherwise stop
     /// the blink for good, mode 12 having no way back to the default.
     /// DECSCUSR, which has one, still applies.
     ignore_blink_mode: bool,
     /// Whether the cursor still follows the defaults: no program chose a
     /// style since the last `CSI 0 SP q` or reset. Only then does a new
-    /// default (a config reload) change the cursor on screen, as in
-    /// Ghostty, so a reload doesn't undo a program's insert-mode beam.
+    /// default (a config reload) change the cursor on screen, so a
+    /// reload doesn't undo a program's insert-mode beam.
     cursor_is_default: bool,
     pub window_id: WindowId,
     pub route_id: usize,
@@ -1462,9 +1462,8 @@ impl<U: EventListener> Crosswords<U> {
     /// screen takes it only while it follows the defaults: a style a
     /// program chose (an insert-mode beam) stays until it selects the
     /// default again, which then is the new one. `blinking` unset is a
-    /// steady cursor that programs are free to make blink; set, as
-    /// Ghostty's `cursor-style-blink`, it is the default and mode 12 is
-    /// ignored.
+    /// steady cursor that programs are free to make blink; set, it is
+    /// the default and mode 12 is ignored.
     pub fn set_default_cursor_style(
         &mut self,
         shape: CursorShape,
@@ -7434,8 +7433,8 @@ mod tests {
         assert_eq!(cw.cursor_shape, CursorShape::Block);
     }
 
-    // `CSI 0 SP q` is the default style, blinking included, as in
-    // Ghostty: an editor restoring it on exit gives back the configured
+    // `CSI 0 SP q` is the default style, blinking included: an editor
+    // restoring it on exit gives back the configured
     // blink, not a steady cursor.
     #[test]
     fn the_default_cursor_style_includes_its_blink() {
@@ -7480,9 +7479,8 @@ mod tests {
         assert!(!cw.blinking_cursor, "the default is steady");
     }
 
-    // A configured blink is the default and mode 12 is ignored, as
-    // Ghostty does for `cursor-style-blink`: mode 12 has no way back to
-    // the default. DECSCUSR, which has one, still applies.
+    // A configured blink is the default and mode 12 is ignored: mode 12
+    // has no way back to the default. DECSCUSR, which has one, still applies.
     #[test]
     fn a_configured_blink_ignores_mode_12() {
         let mut cw = make_crosswords();
@@ -7508,7 +7506,7 @@ mod tests {
     }
 
     // A new default (a config reload) shows only while the cursor follows
-    // the defaults, as in Ghostty: a program's chosen style stays until it
+    // the defaults: a program's chosen style stays until it
     // selects the default, which is then the new one.
     #[test]
     fn a_new_default_leaves_a_programs_cursor_alone() {
