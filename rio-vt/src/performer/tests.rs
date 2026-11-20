@@ -32,6 +32,9 @@ struct TestPty {
     raw_error: Option<i32>,
     /// The child is still running: no exit is known when asked.
     child_runs: bool,
+    /// The child's exit becomes known only after it was asked for
+    /// this many times.
+    exit_known_after: usize,
     /// Whether a child of ours runs on it; see `EventedPty::has_child`.
     has_child: bool,
     /// Announces each `stop_reading`.
@@ -280,6 +283,10 @@ impl EventedPty for TestPty {
         if self.child_runs {
             return None;
         }
+        if self.exit_known_after > 0 {
+            self.exit_known_after -= 1;
+            return None;
+        }
         Some(ChildEvent::Exited(Some(0)))
     }
 }
@@ -302,6 +309,7 @@ fn test_pty(bytes: Vec<u8>, ending: Option<ErrorKind>) -> TestPty {
         winsize_calls: 0,
         raw_error: None,
         child_runs: false,
+        exit_known_after: 0,
         has_child: true,
         stopped: None,
         exit: None,
@@ -695,8 +703,12 @@ impl EventListener for ExitStatuses {
 }
 
 /// The exit a failed read is announced with: the child's own status
-/// when its exit is known by then, none when the child still runs.
-fn exit_status_after_a_failed_read(child_runs: bool) -> Option<i32> {
+/// when its exit is known by then or soon after, none when the child
+/// still runs.
+fn exit_status_after_a_failed_read(
+    child_runs: bool,
+    exit_known_after: usize,
+) -> Option<i32> {
     let (sender, receiver) = mpsc::channel();
     let listener = ExitStatuses(sender);
     let terminal = Arc::new(TerminalLock::new(Crosswords::new(
@@ -712,8 +724,17 @@ fn exit_status_after_a_failed_read(child_runs: bool) -> Option<i32> {
     pty.child = Some(registration);
     pty.read_event = true;
     pty.child_runs = child_runs;
+    pty.exit_known_after = exit_known_after;
     readiness.set_readiness(Ready::readable()).unwrap();
-    let machine = Machine::new(terminal, pty, listener, WindowId::from(0), 0).unwrap();
+    let mut machine =
+        Machine::new(terminal, pty, listener, WindowId::from(0), 0).unwrap();
+    // Long for an exit that is a few asks away, on any machine; short
+    // for one that never comes, which is waited for to the end.
+    machine.waits.exit = if child_runs {
+        Duration::from_millis(20)
+    } else {
+        Duration::from_secs(5)
+    };
     let (machine, _) = machine.spawn().join().unwrap();
     assert_eq!(first_line(&machine, 12), "final output");
     let statuses: Vec<_> = receiver.try_iter().collect();
@@ -725,17 +746,27 @@ fn exit_status_after_a_failed_read(child_runs: bool) -> Option<i32> {
 /// is then what happened, and its status is not lost to the failure.
 #[test]
 fn a_read_failure_after_the_child_exited_keeps_the_exit_status() {
-    assert_eq!(exit_status_after_a_failed_read(false), Some(0));
+    assert_eq!(exit_status_after_a_failed_read(false, 0), Some(0));
+}
+
+/// The exit may not be known yet when the read fails: it is waited
+/// for, and the status is kept all the same.
+#[test]
+fn a_read_failure_just_before_the_child_exit_keeps_the_exit_status() {
+    assert_eq!(exit_status_after_a_failed_read(false, 3), Some(0));
 }
 
 #[test]
 fn a_read_failure_with_a_running_child_has_no_exit_status() {
-    assert_eq!(exit_status_after_a_failed_read(true), None);
+    assert_eq!(exit_status_after_a_failed_read(true, 0), None);
 }
 
 /// The machine for a drain after the child's exit, over a PTY with
 /// nothing to read at first: `before_read` gets the ordinal of each
-/// read and what it sends is the next thing read.
+/// read and what it sends is the next thing read. The drain's waits
+/// are much longer than the real ones, so a test that depends on
+/// them is not at the mercy of a machine that stalls for some tens
+/// of milliseconds.
 #[cfg(windows)]
 fn drain_fed_by(
     mut before_read: impl FnMut(usize, &mpsc::Sender<Vec<u8>>) + Send + 'static,
@@ -747,9 +778,16 @@ fn drain_fed_by(
     let (registration, readiness) = corcovado::Registration::new2();
     pty.child = Some(registration);
     readiness.set_readiness(Ready::readable()).unwrap();
-    let (machine, _) = machine_with(pty).spawn().join().unwrap();
+    let mut machine = machine_with(pty);
+    machine.waits.drain = DRAIN_QUIET * 40;
+    machine.waits.drain_quiet = DRAIN_QUIET;
+    let (machine, _) = machine.spawn().join().unwrap();
     machine
 }
+
+/// The quiet window of the drains made by `drain_fed_by`.
+#[cfg(windows)]
+const DRAIN_QUIET: Duration = Duration::from_millis(300);
 
 /// On Windows the pump thread delivers the last output after the exit
 /// event, so a drain that finds nothing to read asks again.
@@ -774,9 +812,9 @@ fn the_drain_waits_again_after_each_piece_of_output() {
     let mut sent = 0u8;
     let machine = drain_fed_by(move |_, feed| {
         let start = *start.get_or_insert_with(Instant::now);
-        // A piece every 12 ms: the third comes after 36 ms, past a
-        // window of 25 ms counted from the start.
-        if sent < 3 && start.elapsed() >= Duration::from_millis(12) * (sent as u32 + 1) {
+        // A piece every half window: the third comes after a window
+        // and a half, past a window counted from the start.
+        if sent < 3 && start.elapsed() >= DRAIN_QUIET / 2 * (sent as u32 + 1) {
             feed.send(vec![b'a' + sent]).unwrap();
             sent += 1;
         }
@@ -924,6 +962,7 @@ fn a_stuck_write_is_not_retried_when_more_arrives() {
             winsize_calls: 0,
             raw_error: None,
             child_runs: false,
+            exit_known_after: 0,
             has_child: true,
             stopped: None,
             exit: None,
@@ -1044,6 +1083,7 @@ fn a_parser_reply_is_written_without_the_event_loop() {
             winsize_calls: 0,
             raw_error: None,
             child_runs: false,
+            exit_known_after: 0,
             has_child: true,
             stopped: None,
             exit: None,
@@ -1262,6 +1302,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
             winsize_calls: 0,
             raw_error: None,
             child_runs: false,
+            exit_known_after: 0,
             has_child: true,
             stopped: None,
             exit: None,
@@ -1393,6 +1434,7 @@ fn spawn_reader(payload: Vec<u8>, piled: Option<u8>, listener: OnTitle) -> Spawn
             winsize_calls: 0,
             raw_error: None,
             child_runs: false,
+            exit_known_after: 0,
             has_child: true,
             stopped: None,
             exit: None,
@@ -1599,6 +1641,7 @@ fn replies_keep_their_place_before_an_owner_answer_in_the_same_read() {
             winsize_calls: 0,
             raw_error: None,
             child_runs: false,
+            exit_known_after: 0,
             has_child: true,
             stopped: None,
             exit: None,
@@ -1694,6 +1737,7 @@ fn a_waiting_thread_gets_the_terminal_after_the_current_chunk() {
                 winsize_calls: 0,
                 raw_error: None,
                 child_runs: false,
+                exit_known_after: 0,
                 has_child: true,
                 stopped: None,
                 exit: None,
@@ -1800,6 +1844,7 @@ fn a_scrolling_burst_wakes_the_ui_thread_once() {
             winsize_calls: 0,
             raw_error: None,
             child_runs: false,
+            exit_known_after: 0,
             has_child: true,
             stopped: None,
             exit: None,
@@ -1872,6 +1917,7 @@ fn a_fence_in_a_later_write_waits_for_the_owners_answer() {
             winsize_calls: 0,
             raw_error: None,
             child_runs: false,
+            exit_known_after: 0,
             has_child: true,
             stopped: None,
             exit: None,
@@ -2005,6 +2051,7 @@ fn a_declined_query_lifts_the_fence_without_writing() {
             winsize_calls: 0,
             raw_error: None,
             child_runs: false,
+            exit_known_after: 0,
             has_child: true,
             stopped: None,
             exit: None,

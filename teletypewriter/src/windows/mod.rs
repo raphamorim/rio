@@ -279,3 +279,41 @@ where
         .spawn()
         .map(|_| ())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// A PTY whose program wrote more than the ring holds, with nobody
+    /// reading it, is dropped: the close of the pseudoconsole does not
+    /// wait for a console host that waits for the ring. A Windows that
+    /// closes without waiting for its host drops it either way; there
+    /// this only shows the drop goes through.
+    #[test]
+    fn a_pty_with_unread_output_is_dropped() {
+        let line = "0123456789012345678901234567890123456789";
+        let pty = create_pty(
+            Some("cmd.exe"),
+            vec![
+                "/c".to_string(),
+                format!("for /l %i in (1,1,20000) do @echo {line}"),
+            ],
+            &None,
+            None,
+            80,
+            24,
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_secs(2));
+
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            drop(pty);
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(Duration::from_secs(30))
+            .expect("the drop of the PTY waited for output nobody reads");
+    }
+}

@@ -106,6 +106,31 @@ enum ReadOutcome {
     Budget,
 }
 
+/// How long the reader waits at the end of a session.
+#[cfg(feature = "pty")]
+#[derive(Clone, Copy)]
+struct Waits {
+    /// The drain after the child's exit, in all, while output keeps
+    /// coming.
+    drain: std::time::Duration,
+    /// The same drain on Windows, since the last read that brought
+    /// output: the ConPTY ring that is empty may yet be filled.
+    drain_quiet: std::time::Duration,
+    /// For the child's exit to be known, after a read failed.
+    exit: std::time::Duration,
+}
+
+#[cfg(feature = "pty")]
+impl Default for Waits {
+    fn default() -> Self {
+        Self {
+            drain: std::time::Duration::from_millis(100),
+            drain_quiet: std::time::Duration::from_millis(25),
+            exit: std::time::Duration::from_millis(100),
+        }
+    }
+}
+
 #[cfg(feature = "pty")]
 enum ExitReason {
     Shutdown,
@@ -180,6 +205,8 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     event_proxy: U,
     window_id: WindowId,
     route_id: usize,
+    /// The waits at the end of a session; a test sets its own.
+    waits: Waits,
 }
 
 #[cfg(feature = "pty")]
@@ -269,7 +296,29 @@ where
             event_proxy,
             window_id,
             route_id,
+            waits: Waits::default(),
         })
+    }
+
+    /// The exit of our child, if it is known now or within the wait
+    /// for it. The PTY can fail before the exit that made it fail is
+    /// reported: the two come from different places, in no set order.
+    fn child_exit_after_a_failure(&mut self) -> Option<Option<i32>> {
+        if !self.pty.has_child() {
+            return None;
+        }
+        let deadline = Instant::now() + self.waits.exit;
+        loop {
+            if let Some(teletypewriter::ChildEvent::Exited(status)) =
+                self.pty.next_child_event()
+            {
+                return Some(status);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
     }
 
     /// Wake the renderer unless an earlier wakeup is still unconsumed.
@@ -584,14 +633,14 @@ where
                                 Ok(outcome) => outcome,
                                 Err(err) => {
                                     // The PTY can end before the exit
-                                    // of its child is handled, in the
-                                    // same batch of events or ahead of
-                                    // it. An exit that is already known
-                                    // is what happened, and keeps its
-                                    // status.
-                                    if let Some(teletypewriter::ChildEvent::Exited(
-                                        status,
-                                    )) = self.pty.next_child_event()
+                                    // of its child is handled, or even
+                                    // known. The exit is then what
+                                    // happened, and keeps its status;
+                                    // it is waited for briefly, and a
+                                    // child that runs on has a PTY
+                                    // that failed.
+                                    if let Some(status) =
+                                        self.child_exit_after_a_failure()
                                     {
                                         tracing::debug!(
                                             "PTY read failed after the child exited: {err}"
@@ -632,7 +681,7 @@ where
             // Do not wait for descendants to close the slave. Drain across
             // parsing budgets, limiting continuously available output to 100 ms
             // between batches (terminal lock waits can extend this interval).
-            let deadline = Instant::now() + std::time::Duration::from_millis(100);
+            let deadline = Instant::now() + self.waits.drain;
             // Windows Idle means the ConPTY ring is momentarily empty,
             // while the pump thread delivers final output after the
             // exit event. Retry it through a short quiet window,
@@ -643,7 +692,7 @@ where
             // error, and that ends the drain. Unix Idle means a
             // descendant still holds the slave, and Closed is a real
             // EOF: both end the drain at once.
-            let quiet = std::time::Duration::from_millis(25);
+            let quiet = self.waits.drain_quiet;
             let mut quiet_deadline = Instant::now() + quiet;
             loop {
                 let parsed = state.parsed;
