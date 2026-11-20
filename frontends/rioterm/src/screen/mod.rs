@@ -5210,7 +5210,7 @@ mod working_dir_error_tests {
         let error = working_dir_error(&with_dir(Some(missing))).expect("reported");
         assert!(matches!(
             error.report,
-            RioErrorType::InvalidWorkingDirectory(ref why) if why.contains("is not a directory")
+            RioErrorType::InvalidWorkingDirectory(ref why) if why.contains("can't be opened")
         ));
     }
 }

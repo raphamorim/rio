@@ -534,8 +534,7 @@ pub fn create_pty_with_spawn(
     height: u16,
 ) -> Result<Pty, Error> {
     // In a flatpak sandbox the shell starts on the host, which may see
-    // directories the sandbox can't: the path is only expanded and passed
-    // on. Elsewhere it must be a directory here.
+    // directories the sandbox can't, so the host checks the directory.
     let in_flatpak = crate::in_flatpak();
 
     #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
@@ -655,14 +654,8 @@ pub fn create_pty_with_spawn(
                 }
             }
 
-            if let Some(dir) = working_directory.as_deref() {
-                match crate::expand_tilde(dir) {
-                    Some(dir) => with_args.push(format!("--directory={dir}")),
-                    None => tracing::warn!(
-                        "working-dir {dir:?} starts with ~ but there is no home directory; \
-                         inheriting the current directory"
-                    ),
-                }
+            if let Some(dir) = crate::resolve_host_working_dir(working_directory) {
+                with_args.push(format!("--directory={dir}"));
             }
 
             let output = std::process::Command::new("flatpak-spawn")
