@@ -45,7 +45,7 @@ jobs:
       - run: rustup component add rustfmt clippy
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update -yq && sudo apt-get install -yq libasound2-dev libfontconfig1-dev glslang-tools
+        run: sudo apt-get update -yq && sudo apt-get install -yq libasound2-dev libfontconfig1-dev glslang-tools libgtk-4-dev libadwaita-1-dev
       - run: cargo fetch
       - name: cargo fmt
         # Formatting is platform-independent; once is enough.
@@ -53,6 +53,13 @@ jobs:
         run: cargo fmt -- --check --color always
       - run: cargo clippy --all-targets --all-features
       - run: cargo test --features wgpu ${{ runner.os == 'Linux' && '--timings' || '' }}
+      # rioterm-gtk isn't a default member (it needs GTK 4 and libadwaita),
+      # so the runs above skip it; the Linux runner has both.
+      - name: rioterm-gtk
+        if: runner.os == 'Linux'
+        run: |
+          cargo clippy -p rioterm-gtk --all-targets -- -D warnings
+          cargo test -p rioterm-gtk
       - name: Upload build timings
         # One HTML per run showing which crates dominated and whether the
         # cache actually hit; download it when CI feels slow.
