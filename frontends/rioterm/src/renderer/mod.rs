@@ -8,6 +8,7 @@ pub(crate) fn is_printable_text(text: &str) -> bool {
 
 pub mod assistant;
 pub mod command_palette;
+pub mod confirm_paste;
 pub mod confirm_quit;
 pub mod custom_cursor;
 pub mod helpers;
@@ -182,6 +183,7 @@ pub struct Renderer {
     pub search: search::SearchOverlay,
     pub assistant: assistant::AssistantOverlay,
     pub confirm_quit: confirm_quit::ConfirmQuit,
+    pub confirm_paste: confirm_paste::ConfirmPaste,
     pub scrollbar: scrollbar::Scrollbar,
     #[allow(unused)]
     pub option_as_alt: String,
@@ -270,6 +272,10 @@ impl Renderer {
             search: search::SearchOverlay::default(),
             assistant: assistant::AssistantOverlay::default(),
             confirm_quit: confirm_quit::ConfirmQuit::default(),
+            confirm_paste: confirm_paste::ConfirmPaste::new(
+                config.paste_protection,
+                config.paste_bracketed_safe,
+            ),
             scrollbar: scrollbar::Scrollbar::new(config.enable_scroll_bar),
             is_game_mode_enabled: config.renderer.strategy.is_game(),
             custom_mouse_cursor: config.effects.custom_mouse_cursor,
@@ -448,6 +454,7 @@ impl Renderer {
             && !self.command_palette.is_enabled()
             && !self.search.is_active()
             && !self.confirm_quit.is_active()
+            && !self.confirm_paste.is_active()
     }
 
     #[inline]
@@ -826,6 +833,11 @@ impl Renderer {
         );
 
         self.confirm_quit.render(
+            sugarloaf,
+            (window_size.width, window_size.height, scale_factor),
+        );
+
+        self.confirm_paste.render(
             sugarloaf,
             (window_size.width, window_size.height, scale_factor),
         );
