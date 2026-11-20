@@ -3713,7 +3713,7 @@ impl Screen<'_> {
                 .confirm_paste
                 .needs_confirmation(text, bracketed)
         {
-            self.renderer.confirm_paste.hold(text.to_owned());
+            self.renderer.confirm_paste.hold(text.to_owned(), bracketed);
             self.mark_dirty();
             return;
         }

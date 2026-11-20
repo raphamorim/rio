@@ -115,6 +115,12 @@ pub fn encode(text: &str, bracketed: bool) -> Vec<u8> {
     out
 }
 
+/// Whether [`encode`] sends `c` as a space, for showing a paste the way
+/// it will arrive.
+pub fn is_replaced(c: char) -> bool {
+    c == '\u{9b}' || (c.is_ascii() && REPLACED.contains(&(c as u8)))
+}
+
 /// Whether `text` holds the end of a bracketed paste, in its 7-bit or
 /// 8-bit form. [`encode`] defuses it, but text carrying it was most
 /// likely made to escape the bracket.
@@ -174,6 +180,17 @@ mod tests {
             assert_eq!(encode(&text, false), b"a b".to_vec(), "{b:#04x}");
         }
         assert_eq!(encode("a\tb", false), b"a\tb".to_vec(), "tab is text");
+    }
+
+    #[test]
+    fn is_replaced_matches_what_encode_turns_into_spaces() {
+        for c in ['\x1b', '\x03', '\x1a', '\x00', '\x7f', '\u{9b}'] {
+            assert!(is_replaced(c), "{c:?}");
+            assert_eq!(encode(&c.to_string(), false), b" ".to_vec(), "{c:?}");
+        }
+        for c in ['a', '\t', '\n', '\r', '\x07', 'é', '\u{9c}'] {
+            assert!(!is_replaced(c), "{c:?}");
+        }
     }
 
     #[test]
