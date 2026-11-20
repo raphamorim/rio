@@ -37,6 +37,20 @@ pub struct EventedAnonRead {
     error_receiver: Receiver<String>,
 }
 
+/// Wakes a worker that `done` was set for, out of its park or out of
+/// its read or write of the pipe, until it has ended. Neither an unpark
+/// nor a cancel is kept for a thread that is only on its way to the
+/// pipe, so one of each could leave it there for good.
+fn stop_worker(thread: &JoinHandle<()>) {
+    while !thread.is_finished() {
+        thread.thread().unpark();
+        unsafe {
+            CancelSynchronousIo(thread.as_raw_handle());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
 // Helper to send an error string from the worker threads
 macro_rules! try_or_send {
     ($e:expr, $sender:ident) => {
@@ -212,10 +226,7 @@ impl Drop for EventedAnonRead {
 
         // Stop reader thread waiting for room in the ring, or for pipe
         // contents
-        thread.thread().unpark();
-        unsafe {
-            CancelSynchronousIo(thread.as_raw_handle());
-        }
+        stop_worker(&thread);
 
         thread
             .join()
@@ -407,16 +418,8 @@ impl Drop for EventedAnonWrite {
 
         // Stop the writer thread, which waits either for contents or in
         // a write to a pipe nobody reads: a child that takes no input
-        // leaves the pipe full, and that write never returns. Neither
-        // an unpark nor a cancel is kept for a thread that is only on
-        // its way to the write, so both are repeated until it ends.
-        while !thread.is_finished() {
-            thread.thread().unpark();
-            unsafe {
-                CancelSynchronousIo(thread.as_raw_handle());
-            }
-            std::thread::sleep(std::time::Duration::from_millis(1));
-        }
+        // leaves the pipe full, and that write never returns.
+        stop_worker(&thread);
 
         thread
             .join()
@@ -488,6 +491,29 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 
         drop(reader);
+    }
+
+    /// A reader is dropped at once, when its worker may not have got
+    /// to its read yet, with a pipe nothing is written to: a single
+    /// cancel that came before the read would leave it there.
+    #[test]
+    fn a_reader_is_dropped_before_its_worker_reads() {
+        for _ in 0..200 {
+            let (conout, host) = miow::pipe::anonymous(0).unwrap();
+            let reader = EventedAnonRead::new(conout);
+
+            let (tx, rx) = mpsc::channel();
+            let dropper = spawn(move || {
+                drop(reader);
+                let _ = tx.send(());
+            });
+            rx.recv_timeout(Duration::from_secs(10))
+                .expect("the drop waited for a read of an idle pipe");
+            dropper.join().unwrap();
+
+            // Only now does the pipe lose its writer.
+            drop(host);
+        }
     }
 
     /// The same for a writer whose pipe has no reader any more.
