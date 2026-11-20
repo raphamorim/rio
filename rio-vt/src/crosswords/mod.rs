@@ -559,6 +559,14 @@ where
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
+    /// Whether the cursor blinks by default: what `CSI 0 SP q` and a
+    /// reset go back to, with `default_cursor_shape`.
+    pub default_blinking_cursor: bool,
+    /// Whether the cursor still follows the defaults: no program chose a
+    /// style since the last `CSI 0 SP q` or reset. Only then does a new
+    /// default (a config reload) change the cursor on screen, as in
+    /// Ghostty, so a reload doesn't undo a program's insert-mode beam.
+    cursor_is_default: bool,
     pub window_id: WindowId,
     pub route_id: usize,
     title_stack: Vec<String>,
@@ -672,6 +680,8 @@ impl<U: EventListener> Crosswords<U> {
             default_cursor_shape: cursor_shape,
             cursor_shape,
             blinking_cursor: false,
+            default_blinking_cursor: false,
+            cursor_is_default: true,
             window_id,
             route_id,
             title_stack: Default::default(),
@@ -1430,6 +1440,28 @@ impl<U: EventListener> Crosswords<U> {
     /// is copied.
     fn damage_cursor_appearance(&mut self) {
         self.damage_cursor_line();
+    }
+
+    /// Show the cursor as `shape`, blinking or not, damaging it only if
+    /// that is a change.
+    fn show_cursor_style(&mut self, shape: CursorShape, blinking: bool) {
+        if shape != self.cursor_shape || blinking != self.blinking_cursor {
+            self.cursor_shape = shape;
+            self.blinking_cursor = blinking;
+            self.damage_cursor_appearance();
+        }
+    }
+
+    /// Set the default cursor style, from the config. The cursor on
+    /// screen takes it only while it follows the defaults: a style a
+    /// program chose (an insert-mode beam) stays until it selects the
+    /// default again, which then is the new one.
+    pub fn set_default_cursor_style(&mut self, shape: CursorShape, blinking: bool) {
+        self.default_cursor_shape = shape;
+        self.default_blinking_cursor = blinking;
+        if self.cursor_is_default {
+            self.show_cursor_style(shape, blinking);
+        }
     }
 
     /// Mark the visible rows of `range` for the next snapshot. A
@@ -3856,7 +3888,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             std::mem::swap(&mut self.grid, &mut self.inactive_grid);
         }
         self.active_charset = Default::default();
+        self.cursor_is_default = true;
         self.cursor_shape = self.default_cursor_shape;
+        self.blinking_cursor = self.default_blinking_cursor;
         self.grid.reset();
         self.inactive_grid.reset();
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
@@ -4094,11 +4128,20 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn set_cursor_style(&mut self, style: Option<CursorShape>, blinking: bool) {
-        let shape = style.unwrap_or(self.default_cursor_shape);
-        if shape != self.cursor_shape || blinking != self.blinking_cursor {
-            self.cursor_shape = shape;
-            self.blinking_cursor = blinking;
-            self.damage_cursor_appearance();
+        // `CSI 0 SP q` is the default style, blinking included; the
+        // parameter's own parity says nothing there.
+        match style {
+            None => {
+                self.cursor_is_default = true;
+                self.show_cursor_style(
+                    self.default_cursor_shape,
+                    self.default_blinking_cursor,
+                );
+            }
+            Some(shape) => {
+                self.cursor_is_default = false;
+                self.show_cursor_style(shape, blinking);
+            }
         }
         self.event_proxy
             .send_event(RioEvent::CursorBlinkingChange, self.window_id);
@@ -4106,7 +4149,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn set_cursor_shape(&mut self, shape: CursorShape) {
-        self.cursor_shape = shape;
+        // OSC 50 `CursorShape=`: a program's choice, like DECSCUSR.
+        self.cursor_is_default = false;
+        self.show_cursor_style(shape, self.blinking_cursor);
     }
 
     #[inline]
@@ -7370,6 +7415,79 @@ mod tests {
         // Shape only, back to a block.
         assert_eq!(style(&mut cw, b"\x1b[1 q"), Some(TerminalDamage::Partial));
         assert_eq!(cw.cursor_shape, CursorShape::Block);
+    }
+
+    // `CSI 0 SP q` is the default style, blinking included, as in
+    // Ghostty: an editor restoring it on exit gives back the configured
+    // blink, not a steady cursor.
+    #[test]
+    fn the_default_cursor_style_includes_its_blink() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.set_default_cursor_style(CursorShape::Underline, true);
+        assert_eq!(
+            (cw.cursor_shape, cw.blinking_cursor),
+            (CursorShape::Underline, true)
+        );
+        parser.advance(&mut cw, b"\x1b[6 q");
+        assert_eq!(
+            (cw.cursor_shape, cw.blinking_cursor),
+            (CursorShape::Beam, false)
+        );
+        parser.advance(&mut cw, b"\x1b[0 q");
+        assert_eq!(
+            (cw.cursor_shape, cw.blinking_cursor),
+            (CursorShape::Underline, true)
+        );
+        // A reset goes back to the defaults too.
+        parser.advance(&mut cw, b"\x1b[2 q\x1bc");
+        assert_eq!(
+            (cw.cursor_shape, cw.blinking_cursor),
+            (CursorShape::Underline, true)
+        );
+    }
+
+    // A new default (a config reload) shows only while the cursor follows
+    // the defaults, as in Ghostty: a program's chosen style stays until it
+    // selects the default, which is then the new one.
+    #[test]
+    fn a_new_default_leaves_a_programs_cursor_alone() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b[6 q");
+        cw.reset_damage();
+        cw.set_default_cursor_style(CursorShape::Underline, false);
+        assert_eq!(
+            cw.cursor_shape,
+            CursorShape::Beam,
+            "the program's beam stays"
+        );
+        assert_eq!(cw.peek_damage_event(), None, "nothing on screen changed");
+        parser.advance(&mut cw, b"\x1b[0 q");
+        assert_eq!(cw.cursor_shape, CursorShape::Underline);
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        cw.reset_damage();
+        // Following the defaults again, the next one shows right away.
+        cw.set_default_cursor_style(CursorShape::Block, false);
+        assert_eq!(cw.cursor_shape, CursorShape::Block);
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+    }
+
+    // OSC 50 `CursorShape=` changes the shape like DECSCUSR, so it is
+    // damage too.
+    #[test]
+    fn osc_50_cursor_shape_is_damage() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.reset_damage();
+        parser.advance(&mut cw, b"\x1b]50;CursorShape=1\x07");
+        assert_eq!(cw.cursor_shape, CursorShape::Beam);
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        cw.reset_damage();
+        parser.advance(&mut cw, b"\x1b]50;CursorShape=1\x07");
+        assert_eq!(cw.peek_damage_event(), None, "already a beam");
     }
 
     // A cursor move is a frame, for the cursor itself, and copies no

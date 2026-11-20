@@ -628,10 +628,12 @@ impl Screen<'_> {
                     .renderable_content
                     .pending_update
                     .set_dirty();
-                let shape = config.cursor.shape;
-                terminal.cursor_shape = shape;
-                terminal.default_cursor_shape = shape;
-                terminal.blinking_cursor = config.cursor.blinking;
+                // The new default shows only while no program chose a
+                // style (an editor's insert-mode beam stays).
+                terminal.set_default_cursor_style(
+                    config.cursor.shape,
+                    config.cursor.blinking,
+                );
                 drop(terminal);
             }
         }

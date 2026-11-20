@@ -336,7 +336,10 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // The application answers `q;grapheme=` by shaping the cluster
         // with the grid rasterizer (`GlyphProtocolGraphemeQuery`).
         terminal.set_glyph_grapheme_query(true);
-        terminal.blinking_cursor = cursor_state.1;
+        terminal.set_default_cursor_style(
+            CursorShape::from_char(cursor_state.0.content),
+            cursor_state.1,
+        );
         let terminal: Arc<TerminalLock<Crosswords<T>>> =
             Arc::new(TerminalLock::new(terminal));
 
