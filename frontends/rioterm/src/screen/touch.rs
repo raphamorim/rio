@@ -102,6 +102,10 @@ pub fn on_touch(
 
 #[inline]
 fn on_touch_start(route: &mut Route, touch: Touch) {
+    // A touch begins like a press: a selection made before it, from
+    // the keyboard say, is not what this touch made, and its end must
+    // not copy it.
+    route.window.screen.mouse.begin_press(MouseButton::Left);
     let touch_purpose = route.window.screen.touch_purpose();
     *touch_purpose = match mem::take(touch_purpose) {
         TouchPurpose::None => TouchPurpose::Tap(touch),
