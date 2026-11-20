@@ -1418,13 +1418,17 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.damage_line(line);
     }
 
-    /// DECTCEM showed or hid the cursor. A burst that does nothing else
-    /// has to wake the renderer like any other, which the line damage
-    /// does. The cursor row shapes differently with the cursor on it,
-    /// but it did not change: a renderer that shapes the cursor cell as
-    /// a run of its own rebuilds it from the row it already holds, as
-    /// for a cursor move, so no row is copied.
-    fn damage_cursor_visibility(&mut self) {
+    /// The cursor changed how it looks: DECTCEM showed or hid it, or
+    /// DECSCUSR or the blinking mode changed its shape or blinking. A
+    /// burst that does nothing else has to wake the renderer like any
+    /// other, which the line damage does; the event that announces the
+    /// change reaches the UI but marks nothing to draw, and goes to the
+    /// focused terminal rather than this one. The cursor row shapes
+    /// differently with the cursor on it, but it did not change: a
+    /// renderer that shapes the cursor cell as a run of its own rebuilds
+    /// it from the row it already holds, as for a cursor move, so no row
+    /// is copied.
+    fn damage_cursor_appearance(&mut self) {
         self.damage_cursor_line();
     }
 
@@ -3311,7 +3315,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::ShowCursor => {
                 if !self.mode.contains(Mode::SHOW_CURSOR) {
                     self.mode.insert(Mode::SHOW_CURSOR);
-                    self.damage_cursor_visibility();
+                    self.damage_cursor_appearance();
                 }
             }
             NamedPrivateMode::CursorKeys => self.mode.insert(Mode::APP_CURSOR),
@@ -3369,7 +3373,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::Origin => self.mode.insert(Mode::ORIGIN),
             NamedPrivateMode::ColumnMode => self.deccolm(),
             NamedPrivateMode::BlinkingCursor => {
-                self.blinking_cursor = true;
+                if !self.blinking_cursor {
+                    self.blinking_cursor = true;
+                    self.damage_cursor_appearance();
+                }
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
@@ -3422,7 +3429,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::ShowCursor => {
                 if self.mode.contains(Mode::SHOW_CURSOR) {
                     self.mode.remove(Mode::SHOW_CURSOR);
-                    self.damage_cursor_visibility();
+                    self.damage_cursor_appearance();
                 }
             }
             NamedPrivateMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
@@ -3446,7 +3453,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::Origin => self.mode.remove(Mode::ORIGIN),
             NamedPrivateMode::ColumnMode => self.deccolm(),
             NamedPrivateMode::BlinkingCursor => {
-                self.blinking_cursor = false;
+                if self.blinking_cursor {
+                    self.blinking_cursor = false;
+                    self.damage_cursor_appearance();
+                }
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
@@ -4084,13 +4094,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn set_cursor_style(&mut self, style: Option<CursorShape>, blinking: bool) {
-        if let Some(cursor_shape) = style {
-            self.cursor_shape = cursor_shape;
-        } else {
-            self.cursor_shape = self.default_cursor_shape;
+        let shape = style.unwrap_or(self.default_cursor_shape);
+        if shape != self.cursor_shape || blinking != self.blinking_cursor {
+            self.cursor_shape = shape;
+            self.blinking_cursor = blinking;
+            self.damage_cursor_appearance();
         }
-
-        self.blinking_cursor = blinking;
         self.event_proxy
             .send_event(RioEvent::CursorBlinkingChange, self.window_id);
     }
@@ -7321,6 +7330,46 @@ mod tests {
         parser.advance(&mut cw, b"\x1b[?25h");
         assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
         assert!(dirty(&cw).is_empty());
+    }
+
+    // DECSCUSR and the blinking mode are the same kind of change: alone
+    // in a burst (fish's vi mode switching to a beam on insert) they are
+    // a frame for the terminal that sent them, which a UI-side redraw of
+    // the focused terminal would miss in a split. Repeating the current
+    // style is not news.
+    #[test]
+    fn changing_the_cursor_style_is_damage() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.input_str("ab");
+        cw.reset_damage();
+        for row in 0..cw.grid.screen_lines() {
+            cw.grid[Line(row as i32)].dirty = false;
+        }
+        let dirty = |cw: &Crosswords<VoidListener>| -> bool {
+            (0..cw.grid.screen_lines() as i32).any(|row| cw.grid[Line(row)].dirty)
+        };
+        let mut style = |cw: &mut Crosswords<VoidListener>, seq: &[u8]| {
+            parser.advance(cw, seq);
+            let damage = cw.peek_damage_event();
+            assert!(!dirty(cw), "no row changed, none is copied");
+            cw.reset_damage();
+            damage
+        };
+
+        // Steady beam, then the same again.
+        assert_eq!(style(&mut cw, b"\x1b[6 q"), Some(TerminalDamage::Partial));
+        assert_eq!(cw.cursor_shape, CursorShape::Beam);
+        assert_eq!(style(&mut cw, b"\x1b[6 q"), None, "already a steady beam");
+        // Blinking only.
+        assert_eq!(style(&mut cw, b"\x1b[5 q"), Some(TerminalDamage::Partial));
+        assert_eq!(style(&mut cw, b"\x1b[?12l"), Some(TerminalDamage::Partial));
+        assert_eq!(style(&mut cw, b"\x1b[?12l"), None, "already steady");
+        assert_eq!(style(&mut cw, b"\x1b[?12h"), Some(TerminalDamage::Partial));
+        // Shape only, back to a block.
+        assert_eq!(style(&mut cw, b"\x1b[1 q"), Some(TerminalDamage::Partial));
+        assert_eq!(cw.cursor_shape, CursorShape::Block);
     }
 
     // A cursor move is a frame, for the cursor itself, and copies no

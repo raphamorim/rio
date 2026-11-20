@@ -2,6 +2,8 @@
 
 ## 0.6.0 (unreleased)
 
+- **A cursor shape change shows up right away.** DECSCUSR (nvim and fish's vi mode switching between a block and a beam) and the blinking mode (`?12h`/`?12l`) changed the cursor without marking anything to draw, so the old shape stayed until the cursor moved or text changed. They are now damage on the terminal that sent them, like hiding or showing the cursor, so the next frame draws the new cursor, in a split too. With [@alezunino](https://github.com/alezunino) ([#2114](https://github.com/raphamorim/rio/pull/2114)).
+
 - **`working-dir` resolves like Ghostty's `working-directory`.** `"home"` and a leading `~` (`"~"`, `"~/projects"`) are the home directory, and `"inherit"` the current one, on every platform; `~` used to be passed on literally and failed the spawn. A directory a shell can't be started in (missing, not a directory, or one you can't open) now starts it in the current directory with a warning in the window, instead of failing. With `use-fork`, the default on Linux and BSD, the setting was ignored entirely; shells now start there too. Under Flatpak the host checks the directory, since it may see ones the sandbox can't ([#1747](https://github.com/raphamorim/rio/pull/1747)).
 
 - **Native tabs in the unified titlebar are the default on macOS.** `navigation.mode` now defaults to `"NativeTab"` there and `window.macos-use-unified-titlebar` to `true`, so new tabs are macOS tabs next to the traffic lights. Set `macos-use-unified-titlebar = false` under `[window]` for AppKit's tab row below the titlebar, or `mode = "Tab"` under `[navigation]` for Rio's own tab strip. Other platforms keep `"Tab"` ([#2112](https://github.com/raphamorim/rio/pull/2112)).
