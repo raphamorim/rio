@@ -2585,6 +2585,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
         // Restore the original modifiers
         route.window.screen.set_modifiers(original_modifiers);
+
+        // As for a key from the keyboard: `process_key_event` only marks
+        // what changed. A menu paste held for confirmation writes nothing
+        // to the shell, so no output would redraw the dialog.
+        route.request_redraw();
     }
 
     // Emitted when the event loop is being shut down.
