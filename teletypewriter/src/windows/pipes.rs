@@ -38,12 +38,12 @@ pub struct EventedAnonRead {
 }
 
 /// Wakes a worker that `done` was set for, out of its park or out of
-/// its read or write of the pipe, until it has ended. Neither an unpark
-/// nor a cancel is kept for a thread that is only on its way to the
-/// pipe, so one of each could leave it there for good.
+/// its read or write of the pipe, until it has ended. An unpark is kept
+/// for a thread that is yet to park, but a cancel is not kept for one
+/// that is only on its way to the pipe, so the cancel is repeated.
 fn stop_worker(thread: &JoinHandle<()>) {
+    thread.thread().unpark();
     while !thread.is_finished() {
-        thread.thread().unpark();
         unsafe {
             CancelSynchronousIo(thread.as_raw_handle());
         }
@@ -417,8 +417,8 @@ impl Drop for EventedAnonWrite {
         };
 
         // Stop the writer thread, which waits either for contents or in
-        // a write to a pipe nobody reads: a child that takes no input
-        // leaves the pipe full, and that write never returns.
+        // a write to a full pipe that nobody reads, which never
+        // returns.
         stop_worker(&thread);
 
         thread
@@ -546,21 +546,29 @@ mod tests {
         let (host, conin) = miow::pipe::anonymous(0).unwrap();
         let mut writer = EventedAnonWrite::new(conin);
 
-        // Written until the ring stays full, which it only does once
-        // the worker no longer takes from it: it is then in a write the
-        // pipe has no room for.
+        // Written until the ring stays full after the worker took from
+        // it, which it only does once the worker takes no more: it is
+        // then in a write the pipe has no room for.
         let chunk = [0u8; 65536];
         let mut sent = 0usize;
+        let mut waits = 0;
         let mut full_for = 0;
         while full_for < 200 {
             sent += writer.write(&chunk).unwrap();
             assert!(sent < 32 << 20, "the pipe took all that was written");
-            if writer.producer.is_full() {
-                full_for += 1;
-                std::thread::sleep(Duration::from_millis(1));
-            } else {
+            if !writer.producer.is_full() {
                 full_for = 0;
+                continue;
             }
+            // The first 65536 bytes fill the ring with no help from
+            // the worker; more than that were sent only if it took
+            // some.
+            if sent > 65536 {
+                full_for += 1;
+            }
+            waits += 1;
+            assert!(waits < 20_000, "the worker took nothing from the ring");
+            std::thread::sleep(Duration::from_millis(1));
         }
 
         let (tx, rx) = mpsc::channel();
