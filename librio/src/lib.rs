@@ -925,7 +925,7 @@ impl Surface {
     /// control bytes as spaces so it can't end the bracket or act as tty
     /// input, between the bracketed paste markers when the program asked
     /// for them (mode 2004) with its line endings as they are, and
-    /// otherwise with every line break as CR, what Enter sends.
+    /// otherwise with LF as CR, what Enter sends.
     pub fn paste(&self, text: &str) {
         if text.is_empty() {
             return;

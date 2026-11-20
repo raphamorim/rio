@@ -3743,8 +3743,7 @@ impl Screen<'_> {
         } else {
             let payload = if bracketed {
                 // The program can't tell a paste from typing: control
-                // bytes become spaces and a line break is what Enter
-                // sends.
+                // bytes become spaces and LF is what Enter sends.
                 rio_backend::paste::encode(text, false)
             } else {
                 // When we explicitly disable bracketed paste don't manipulate with the input,
