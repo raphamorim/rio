@@ -274,6 +274,16 @@ fn on_touch_end(
             *touch_purpose = Default::default();
             route.window.screen.mouse.click_state = ClickState::None;
             route.window.screen.mouse.left_button_state = ElementState::Released;
+            // The touch ends like a mouse release: the selection it
+            // leaves is copied.
+            if route.window.screen.mouse.take_press(MouseButton::Left)
+                == crate::mouse::PressTarget::Grid
+            {
+                route
+                    .window
+                    .screen
+                    .copy_selection_on_release(clipboard, copy_on_select);
+            }
             tracing::info!("select end");
         }
         // Reset touch state on scroll finish.
@@ -282,16 +292,5 @@ fn on_touch_end(
             tracing::info!("scroll end");
         }
         TouchPurpose::None => (),
-    }
-
-    // A touch that selected ends like a mouse release: the selection
-    // it leaves is copied.
-    if route.window.screen.mouse.take_press(MouseButton::Left)
-        == crate::mouse::PressTarget::Grid
-    {
-        route
-            .window
-            .screen
-            .copy_selection_on_release(clipboard, copy_on_select);
     }
 }

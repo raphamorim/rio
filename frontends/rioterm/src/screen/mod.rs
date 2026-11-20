@@ -3467,7 +3467,10 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn mouse_report(&mut self, button: u8, state: ElementState) {
+    /// Report a press, release or motion to the application; whether
+    /// anything was sent. Nothing is for a pointer in the scrollback,
+    /// nor for a release or a motion under X10.
+    pub fn mouse_report(&mut self, button: u8, state: ElementState) -> bool {
         let terminal = self.ctx().current().terminal.lock();
         let display_offset = terminal.display_offset();
         let mode = terminal.mode();
@@ -3477,7 +3480,7 @@ impl Screen<'_> {
 
         // Assure the mouse pos is not in the scrollback.
         if pos.row < 0 {
-            return;
+            return false;
         }
 
         // X10 reports presses of the left, middle and right buttons only, and
@@ -3487,15 +3490,15 @@ impl Screen<'_> {
         // dropped rather than falling back to local scrolling, since the
         // protocol still owns the wheel while it is active.
         if mode.contains(Mode::MOUSE_REPORT_X10) {
-            if state == ElementState::Pressed && button <= 2 {
-                if mode.contains(Mode::SGR_MOUSE) {
-                    self.sgr_mouse_report(pos, button, state);
-                } else {
-                    self.normal_mouse_report(pos, button);
-                }
+            if state != ElementState::Pressed || button > 2 {
+                return false;
             }
-
-            return;
+            if mode.contains(Mode::SGR_MOUSE) {
+                self.sgr_mouse_report(pos, button, state);
+            } else {
+                self.normal_mouse_report(pos, button);
+            }
+            return true;
         }
 
         // Calculate modifiers value.
@@ -3519,6 +3522,7 @@ impl Screen<'_> {
         } else {
             self.normal_mouse_report(pos, button + mods);
         }
+        true
     }
 
     #[inline]

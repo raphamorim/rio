@@ -1682,14 +1682,19 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 return;
                             };
 
-                            route
+                            // The press lands with the application only
+                            // when it was sent: one in the scrollback is
+                            // dropped, and its release must not follow it.
+                            if route
                                 .window
                                 .screen
-                                .mouse_report(code, ElementState::Pressed);
-                            route.window.screen.mouse.press_lands(
-                                button,
-                                crate::mouse::PressTarget::Application,
-                            );
+                                .mouse_report(code, ElementState::Pressed)
+                            {
+                                route.window.screen.mouse.press_lands(
+                                    button,
+                                    crate::mouse::PressTarget::Application,
+                                );
+                            }
 
                             route.window.screen.process_mouse_bindings(
                                 button,
@@ -2057,13 +2062,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 let was_on_border = route.window.screen.mouse.on_border;
                 route.window.screen.mouse.on_border = false;
 
-                let lmb_pressed =
-                    route.window.screen.mouse.left_button_state == ElementState::Pressed;
-                let rmb_pressed =
-                    route.window.screen.mouse.right_button_state == ElementState::Pressed;
-
+                // A selection drag near the top or bottom edge scrolls.
                 let has_selection = !route.window.screen.selection_is_empty();
-                if has_selection && (lmb_pressed || rmb_pressed) {
+                if has_selection && route.window.screen.mouse.is_selecting() {
                     // Only start the timer when the mouse enters the scroll
                     // zone. Once running, the tick reads mouse.raw_y each
                     // iteration so it keeps scrolling after CursorMoved
