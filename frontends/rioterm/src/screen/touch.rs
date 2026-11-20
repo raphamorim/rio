@@ -198,6 +198,13 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
             let y = touch.location.y.clamp(0.0, layout.height.into());
             route.window.screen.mouse.x = x;
             route.window.screen.mouse.y = y;
+            // The finger extends the selection the touch started, as
+            // a mouse drag does.
+            let side = route.window.screen.side_by_pos(x);
+            let pos = route.window.screen.mouse_position(0);
+            if route.window.screen.update_selection(pos, side) {
+                route.window.screen.mouse.selection_changed();
+            }
             tracing::info!("select motion");
         }
         TouchPurpose::Invalid(_) => (),
@@ -274,7 +281,7 @@ fn on_touch_end(
     // A touch ends like a mouse release: the selection it made, by a
     // drag or by the tap above, is copied; a tap's fresh selection is
     // empty and copies nothing.
-    if std::mem::take(&mut route.window.screen.mouse.selection_gesture) {
+    if route.window.screen.mouse.take_selection_gesture() {
         route
             .window
             .screen

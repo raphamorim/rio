@@ -1498,25 +1498,23 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                     if state == ElementState::Pressed {
                         let _ = route.window.screen.take_chrome_press();
-                    } else if state == ElementState::Released
-                        && button == MouseButton::Right
-                    {
+                    } else {
                         route.window.screen.mouse.release_lost(button);
-                    } else if state == ElementState::Released
-                        && button == MouseButton::Left
-                    {
-                        route.window.screen.mouse.release_lost(button);
-                        // A release swallowed here must also drop the hint
-                        // latch, or a later chrome-consumed press would
-                        // release against a hint it never landed on.
-                        route.window.screen.mouse.hint_click_latched = None;
-                        if let Some(ref mut island) = route.window.screen.renderer.island
-                        {
-                            island.cancel_drag();
-                        }
-                        route.window.screen.renderer.scrollbar.end_drag();
-                        if route.window.screen.context_manager.end_border_drag() {
-                            route.window.winit_window.set_cursor(CursorIcon::Default);
+                        if button == MouseButton::Left {
+                            // A release swallowed here must also drop the
+                            // hint latch, or a later chrome-consumed press
+                            // would release against a hint it never landed
+                            // on.
+                            route.window.screen.mouse.hint_click_latched = None;
+                            if let Some(ref mut island) =
+                                route.window.screen.renderer.island
+                            {
+                                island.cancel_drag();
+                            }
+                            route.window.screen.renderer.scrollbar.end_drag();
+                            if route.window.screen.context_manager.end_border_drag() {
+                                route.window.winit_window.set_cursor(CursorIcon::Default);
+                            }
                         }
                     }
                     return;
@@ -1526,18 +1524,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     route.window.winit_window.set_cursor_visible(true);
                 }
 
-                match button {
-                    MouseButton::Left => {
-                        route.window.screen.mouse.left_button_state = state
-                    }
-                    MouseButton::Middle => {
-                        route.window.screen.mouse.middle_button_state = state
-                    }
-                    MouseButton::Right => {
-                        route.window.screen.mouse.right_button_state = state
-                    }
-                    _ => (),
-                }
+                route.window.screen.mouse.set_button_state(button, state);
 
                 match state {
                     ElementState::Pressed => {
@@ -1690,14 +1677,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             // Process mouse press before bindings to update the `click_state`.
                             route.window.screen.mouse.click_state = ClickState::None;
 
-                            let code = match button {
-                                MouseButton::Left => 0,
-                                MouseButton::Middle => 1,
-                                MouseButton::Right => 2,
-                                // Can't properly report more than three buttons..
-                                MouseButton::Back
-                                | MouseButton::Forward
-                                | MouseButton::Other(_) => return,
+                            // The protocols carry three buttons.
+                            let Some(code) = crate::mouse::report_code(button) else {
+                                return;
                             };
 
                             route
@@ -1734,9 +1716,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // the next.
                         let selection_gesture =
                             matches!(button, MouseButton::Left | MouseButton::Right)
-                                && std::mem::take(
-                                    &mut route.window.screen.mouse.selection_gesture,
-                                );
+                                && route.window.screen.mouse.take_selection_gesture();
                         // Whether the press of this button was reported to
                         // the application; taken here for the same reason.
                         let reported_press =
@@ -1796,19 +1776,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // without its press. A press reported to a program
                         // that has left mouse mode since gets no release.
                         if reported_press && route.window.screen.mouse_mode() {
-                            let code = match button {
-                                MouseButton::Left => 0,
-                                MouseButton::Middle => 1,
-                                MouseButton::Right => 2,
-                                // Can't properly report more than three buttons.
-                                MouseButton::Back
-                                | MouseButton::Forward
-                                | MouseButton::Other(_) => return,
-                            };
-                            route
-                                .window
-                                .screen
-                                .mouse_report(code, ElementState::Released);
+                            if let Some(code) = crate::mouse::report_code(button) {
+                                route
+                                    .window
+                                    .screen
+                                    .mouse_report(code, ElementState::Released);
+                            }
                             return;
                         }
 
@@ -2133,11 +2106,16 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                // Skip hint/hyperlink highlighting during active selection
-                // drag to avoid unnecessary terminal locks and regex matching.
-                let is_selecting = (lmb_pressed || rmb_pressed)
-                    && (route.window.screen.modifiers.state().shift_key()
-                        || !route.window.screen.mouse_mode());
+                // A held button whose press the application was not
+                // told about is selecting, whatever the modifiers and the
+                // mode say now: the drag goes where the press went. Hint
+                // and hyperlink highlighting waits while it does, which
+                // saves terminal locks and regex matching.
+                let is_selecting = {
+                    let mouse = &route.window.screen.mouse;
+                    (lmb_pressed && !mouse.is_press_reported(MouseButton::Left))
+                        || (rmb_pressed && !mouse.is_press_reported(MouseButton::Right))
+                };
 
                 if !is_selecting {
                     let hint_changed = route.window.screen.update_highlighted_hints();
@@ -2155,25 +2133,27 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.mouse.square_side = square_side;
 
                 if is_selecting {
-                    route.window.screen.update_selection(point, square_side);
+                    if route.window.screen.update_selection(point, square_side) {
+                        route.window.screen.mouse.selection_changed();
+                    }
                     route.window.screen.context_manager.request_render();
                 } else if cell_changed && route.window.screen.has_mouse_motion_and_drag()
                 {
-                    if lmb_pressed {
-                        // A latched hint click hides its press and release
-                        // from the application; a drag report leaking out
-                        // mid-click would arrive with no press around it.
-                        if route.window.screen.mouse.hint_click_latched.is_none() {
-                            route.window.screen.mouse_report(32, ElementState::Pressed);
-                        }
-                    } else if route.window.screen.mouse.middle_button_state
-                        == ElementState::Pressed
-                    {
-                        route.window.screen.mouse_report(33, ElementState::Pressed);
-                    } else if route.window.screen.mouse.right_button_state
-                        == ElementState::Pressed
-                    {
-                        route.window.screen.mouse_report(34, ElementState::Pressed);
+                    // A drag is reported for a button whose press was,
+                    // and for no other: the application never sees a
+                    // drag with no press around it, not from a hint click
+                    // (never reported) nor from a selection.
+                    let mouse = &route.window.screen.mouse;
+                    let dragging =
+                        [MouseButton::Left, MouseButton::Middle, MouseButton::Right]
+                            .into_iter()
+                            .find(|&button| mouse.is_press_reported(button))
+                            .and_then(crate::mouse::report_code);
+                    if let Some(code) = dragging {
+                        route
+                            .window
+                            .screen
+                            .mouse_report(32 + code, ElementState::Pressed);
                     } else if route.window.screen.has_mouse_motion() {
                         route.window.screen.mouse_report(35, ElementState::Pressed);
                     }

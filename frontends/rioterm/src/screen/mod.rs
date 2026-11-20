@@ -1971,9 +1971,6 @@ impl Screen<'_> {
 
     #[inline]
     fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
-        // The selection changes here: the press under way, if one is,
-        // has made it, and its release copies it.
-        self.mouse.selection_gesture = true;
         let current = self.context_manager.current_mut();
         let mut terminal = current.terminal.lock();
         let selection = Selection::new(ty, point, side);
@@ -2030,16 +2027,16 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn update_selection(&mut self, mut pos: Pos, side: Side) {
+    /// Extend the selection to `pos`, if there is one; whether there
+    /// was.
+    pub fn update_selection(&mut self, mut pos: Pos, side: Side) -> bool {
         let is_search_active = self.search_active();
         let current = self.context_manager.current_mut();
         let mut terminal = current.terminal.lock();
         let mut selection = match terminal.selection.take() {
             Some(selection) => selection,
-            None => return,
+            None => return false,
         };
-        // A selection exists and this motion changes it.
-        self.mouse.selection_gesture = true;
 
         // Treat motion over message bar like motion over the last line.
         pos.row = std::cmp::min(pos.row, terminal.bottommost_line());
@@ -2062,6 +2059,7 @@ impl Screen<'_> {
 
         // Request render to ensure it shows immediately
         self.context_manager.request_render();
+        true
     }
 
     #[inline]
@@ -2498,7 +2496,9 @@ impl Screen<'_> {
         let display_offset = self.display_offset();
         let point = self.mouse_position(display_offset);
         let side = self.mouse.square_side;
-        self.update_selection(point, side);
+        if self.update_selection(point, side) {
+            self.mouse.selection_changed();
+        }
     }
 
     #[inline]
@@ -3160,6 +3160,13 @@ impl Screen<'_> {
     pub fn on_left_click(&mut self, point: Pos) {
         let side = self.mouse.square_side;
 
+        // Every click below changes the selection, and the release of
+        // the press that made it, or the touch's end, copies it. The
+        // keyboard paths that change the selection (vi mode, search)
+        // are not clicks and leave no gesture.
+        if self.mouse.click_state != ClickState::None {
+            self.mouse.selection_changed();
+        }
         match self.mouse.click_state {
             ClickState::Click => {
                 // If Shift is pressed and there's an existing selection, expand it
@@ -3572,7 +3579,7 @@ impl Screen<'_> {
                     self.mark_dirty();
                 }
             }
-            self.mouse.releases_lost();
+            self.mouse.focus_lost();
         }
 
         // Which pane, if any, is focused from a program's view is the

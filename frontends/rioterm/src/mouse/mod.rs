@@ -51,19 +51,19 @@ pub struct Mouse {
     /// on the same hint.
     pub hint_click_latched: Option<crate::hints::HintMatch>,
     /// The press held now has made or changed the selection: a click
-    /// that started one, a drag that extended it. Set where the
-    /// selection changes, cleared by every left or right press, taken
-    /// by the release, which copies the selection only then. A release
-    /// that follows no such gesture (a right click, a click on a tab)
-    /// finds whatever was selected earlier, and copying that would
-    /// replace what another application has put in the primary
-    /// selection since.
-    pub selection_gesture: bool,
+    /// that started one, a drag that extended it. Set by the pointer
+    /// paths that change the selection, cleared by every left or right
+    /// press, taken by the release, which copies the selection only
+    /// then. A release that follows no such gesture (a right click, a
+    /// click on a tab) finds whatever was selected earlier, and
+    /// copying that would replace what another application has put in
+    /// the primary selection since.
+    selection_gesture: bool,
     /// The buttons whose press was reported to the application, one
-    /// bit each. Their release is reported too, whatever the modifiers
-    /// say then, so the application never sees one without the other,
-    /// and the release of a press that made a selection is never
-    /// reported.
+    /// bit each, until their release is reported too. The release and
+    /// the drag go where the press went, whatever the modifiers say
+    /// then, so the application never sees one without the other, and
+    /// a press that made a selection is never reported.
     reported_presses: u8,
 }
 
@@ -108,6 +108,16 @@ impl Mouse {
         self.divider = divider;
     }
 
+    /// `button` is pressed or released.
+    pub fn set_button_state(&mut self, button: MouseButton, state: ElementState) {
+        match button {
+            MouseButton::Left => self.left_button_state = state,
+            MouseButton::Middle => self.middle_button_state = state,
+            MouseButton::Right => self.right_button_state = state,
+            _ => {}
+        }
+    }
+
     /// A left or right press begins. Nothing an earlier press left
     /// behind carries into it: not a selection gesture whose release
     /// was lost, not a reported press.
@@ -118,53 +128,75 @@ impl Mouse {
         }
     }
 
+    /// The pointer changed the selection: the press under way has
+    /// made it, and its release copies it.
+    pub fn selection_changed(&mut self) {
+        self.selection_gesture = true;
+    }
+
+    /// Whether the press that ends made or changed the selection;
+    /// asked once, by its release.
+    pub fn take_selection_gesture(&mut self) -> bool {
+        std::mem::take(&mut self.selection_gesture)
+    }
+
     /// The press of `button` was reported to the application.
     pub fn press_reported(&mut self, button: MouseButton) {
         self.reported_presses |= button_bit(button);
     }
 
+    /// Whether the press of `button` was reported and its release not
+    /// yet.
+    pub fn is_press_reported(&self, button: MouseButton) -> bool {
+        self.reported_presses & button_bit(button) != 0
+    }
+
     /// Whether the press of `button` was reported; asked once, by its
     /// release.
     pub fn take_reported_press(&mut self, button: MouseButton) -> bool {
-        let bit = button_bit(button);
-        let reported = self.reported_presses & bit != 0;
-        self.reported_presses &= !bit;
+        let reported = self.is_press_reported(button);
+        self.reported_presses &= !button_bit(button);
         reported
     }
 
-    /// The press of `button` ends without its release reaching the
-    /// terminal: a dialog or another route took the pointer. The
-    /// button reads released, and the selection gesture goes with it,
-    /// or the next release would copy whatever selection the lost
-    /// press left behind.
+    /// The release of `button` arrived where the terminal could not
+    /// act on it: a dialog or another route took the pointer. The
+    /// button reads released, its reported press is over, and the
+    /// selection gesture goes with it, or the next release would copy
+    /// whatever selection the lost press left behind.
     pub fn release_lost(&mut self, button: MouseButton) {
-        match button {
-            MouseButton::Left => self.left_button_state = ElementState::Released,
-            MouseButton::Middle => self.middle_button_state = ElementState::Released,
-            MouseButton::Right => self.right_button_state = ElementState::Released,
-            _ => {}
-        }
+        self.set_button_state(button, ElementState::Released);
         self.reported_presses &= !button_bit(button);
         self.selection_gesture = false;
     }
 
-    /// Every press ends without a release: the window lost focus.
-    pub fn releases_lost(&mut self) {
+    /// The window lost focus: every button reads released, or the
+    /// next motion after refocus would read as a held button. A
+    /// release that still arrives is reported and copies as usual, so
+    /// the reported presses and the gesture stay; one that never
+    /// arrives is forgotten by the next press of its button.
+    pub fn focus_lost(&mut self) {
         for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
-            self.release_lost(button);
+            self.set_button_state(button, ElementState::Released);
         }
+    }
+}
+
+/// The code a press or release of `button` is reported with; none
+/// for the buttons the protocols cannot carry.
+pub fn report_code(button: MouseButton) -> Option<u8> {
+    match button {
+        MouseButton::Left => Some(0),
+        MouseButton::Middle => Some(1),
+        MouseButton::Right => Some(2),
+        _ => None,
     }
 }
 
 /// The bit of `button` in `Mouse::reported_presses`; none for the
 /// buttons that are never reported.
 fn button_bit(button: MouseButton) -> u8 {
-    match button {
-        MouseButton::Left => 1,
-        MouseButton::Middle => 2,
-        MouseButton::Right => 4,
-        _ => 0,
-    }
+    report_code(button).map_or(0, |code| 1 << code)
 }
 
 /// Map a physical-pixel cursor position to a terminal grid `Pos`.
@@ -250,30 +282,43 @@ pub fn calculate_side_by_pos(
 pub mod test {
     use super::*;
 
-    // A press whose release never arrives (focus lost mid drag, a
-    // dialog took the pointer) leaves no gesture behind, or the next
-    // release would copy a selection it did not make.
+    // A release that arrived where the terminal could not act on it
+    // (a dialog took the pointer) ends that button's press entirely:
+    // no gesture to copy on the next release, no release to report.
     #[test]
-    fn a_lost_release_drops_the_selection_gesture() {
-        let mut mouse = Mouse {
-            left_button_state: ElementState::Pressed,
-            right_button_state: ElementState::Pressed,
-            selection_gesture: true,
-            ..Default::default()
-        };
+    fn a_lost_release_ends_the_press() {
+        let mut mouse = Mouse::default();
+        mouse.set_button_state(MouseButton::Left, ElementState::Pressed);
+        mouse.set_button_state(MouseButton::Right, ElementState::Pressed);
+        mouse.selection_changed();
         mouse.press_reported(MouseButton::Right);
+
         mouse.release_lost(MouseButton::Right);
         assert_eq!(mouse.right_button_state, ElementState::Released);
         assert_eq!(mouse.left_button_state, ElementState::Pressed);
-        assert!(!mouse.selection_gesture);
+        assert!(!mouse.take_selection_gesture());
         assert!(!mouse.take_reported_press(MouseButton::Right));
+    }
 
-        mouse.selection_gesture = true;
-        mouse.press_reported(MouseButton::Left);
-        mouse.releases_lost();
+    // Focus loss releases every button, but the release may still
+    // arrive: it is reported and copies as usual. A press of the
+    // button forgets it instead.
+    #[test]
+    fn focus_loss_releases_the_buttons_and_keeps_the_press_for_its_release() {
+        let mut mouse = Mouse::default();
+        for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
+            mouse.set_button_state(button, ElementState::Pressed);
+        }
+        mouse.selection_changed();
+        mouse.press_reported(MouseButton::Middle);
+
+        mouse.focus_lost();
         assert_eq!(mouse.left_button_state, ElementState::Released);
-        assert!(!mouse.selection_gesture);
-        assert!(!mouse.take_reported_press(MouseButton::Left));
+        assert_eq!(mouse.middle_button_state, ElementState::Released);
+        assert_eq!(mouse.right_button_state, ElementState::Released);
+        assert!(mouse.is_press_reported(MouseButton::Middle));
+        assert!(mouse.take_selection_gesture(), "the release still copies");
+        assert!(mouse.take_reported_press(MouseButton::Middle));
     }
 
     // A new press starts clean: the gesture of the press before it is
@@ -281,38 +326,57 @@ pub mod test {
     // reported press stays, since that press is still held.
     #[test]
     fn a_press_leaves_nothing_of_the_last_one_behind() {
-        let mut mouse = Mouse {
-            selection_gesture: true,
-            ..Default::default()
-        };
+        let mut mouse = Mouse::default();
+        mouse.selection_changed();
         mouse.press_reported(MouseButton::Left);
 
         mouse.begin_press(MouseButton::Right);
-        assert!(!mouse.selection_gesture, "a right press drops the gesture");
         assert!(
-            mouse.take_reported_press(MouseButton::Left),
+            !mouse.take_selection_gesture(),
+            "a right press drops the gesture"
+        );
+        assert!(
+            mouse.is_press_reported(MouseButton::Left),
             "the left press is still held"
         );
 
-        mouse.press_reported(MouseButton::Left);
         mouse.begin_press(MouseButton::Left);
-        assert!(!mouse.take_reported_press(MouseButton::Left));
+        assert!(!mouse.is_press_reported(MouseButton::Left));
 
-        mouse.selection_gesture = true;
+        mouse.selection_changed();
         mouse.begin_press(MouseButton::Middle);
-        assert!(mouse.selection_gesture, "a middle press is not a selection");
+        assert!(
+            mouse.take_selection_gesture(),
+            "a middle press is not a selection"
+        );
     }
 
     // The release asks once whether its press was reported, so a
-    // reported press is reported released exactly once.
+    // reported press is reported released exactly once; the drag in
+    // between may ask as often as it moves.
     #[test]
     fn a_reported_press_is_taken_once() {
         let mut mouse = Mouse::default();
         assert!(!mouse.take_reported_press(MouseButton::Left));
         mouse.press_reported(MouseButton::Left);
+        assert!(mouse.is_press_reported(MouseButton::Left));
+        assert!(mouse.is_press_reported(MouseButton::Left));
         assert!(!mouse.take_reported_press(MouseButton::Right));
         assert!(mouse.take_reported_press(MouseButton::Left));
         assert!(!mouse.take_reported_press(MouseButton::Left));
+    }
+
+    // The buttons the protocols can carry have a code and a bit; the
+    // others have neither, so they are never reported or remembered.
+    #[test]
+    fn only_reportable_buttons_have_a_code() {
+        assert_eq!(report_code(MouseButton::Left), Some(0));
+        assert_eq!(report_code(MouseButton::Middle), Some(1));
+        assert_eq!(report_code(MouseButton::Right), Some(2));
+        assert_eq!(report_code(MouseButton::Back), None);
+        let mut mouse = Mouse::default();
+        mouse.press_reported(MouseButton::Forward);
+        assert!(!mouse.is_press_reported(MouseButton::Forward));
     }
 
     fn mk_mouse(x: f64, y: f64) -> Mouse {
