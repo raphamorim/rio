@@ -30,6 +30,9 @@ dev-debug-wayland:
 dev-debug-x11:
 	RIO_LOG_LEVEL=debug cargo run -p rioterm --no-default-features --features=x11
 
+run-gtk:
+	cargo run -p rioterm-gtk --release
+
 run-wasm:
 	cargo build -p rioterm --target wasm32-unknown-unknown --lib
 	cargo run -p rioterm-wasm
