@@ -3,7 +3,6 @@ use corcovado::{
     event::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token,
 };
 use miow::pipe::{AnonRead, AnonWrite};
-use parking_lot::{Condvar, Mutex};
 use windows_sys::Win32::System::IO::CancelSynchronousIo;
 
 use std::io;
@@ -13,16 +12,14 @@ use std::sync::{
     mpsc::{channel, Receiver, TryRecvError},
     Arc,
 };
-use std::thread::{spawn, JoinHandle};
-
-struct WaitTag {}
+use std::thread::{park, spawn, JoinHandle};
 
 struct EventedAnonReadInner {
     registration: Registration,
     readiness: SetReadiness,
     done: AtomicBool,
-    sig_buffer_not_full: Condvar,
-    wait_tag: Mutex<WaitTag>,
+    // What the pipe still gives is thrown away, not put in the ring
+    discard: AtomicBool,
 }
 
 /// Wraps an AnonRead pipe so that it can be read asynchronously using mio.
@@ -40,6 +37,22 @@ pub struct EventedAnonRead {
     consumer: SpscBufferReader,
     inner: Arc<EventedAnonReadInner>,
     error_receiver: Receiver<String>,
+    // The worker's error, kept until the ring it filled is read
+    ended: Option<String>,
+}
+
+/// Wakes a worker that `done` was set for, out of its park or out of
+/// its read or write of the pipe, until it has ended. An unpark is kept
+/// for a thread that is yet to park, but a cancel is not kept for one
+/// that is only on its way to the pipe, so the cancel is repeated.
+fn stop_worker(thread: &JoinHandle<()>) {
+    thread.thread().unpark();
+    while !thread.is_finished() {
+        unsafe {
+            CancelSynchronousIo(thread.as_raw_handle());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
 }
 
 // Helper to send an error string from the worker threads
@@ -65,17 +78,13 @@ impl EventedAnonRead {
 
         let done = AtomicBool::new(false);
 
-        let sig_buffer_not_full = Condvar::new();
-        let wait_tag = Mutex::new(WaitTag {});
-
         let (error_sender, error_receiver) = channel();
 
         let inner = Arc::new(EventedAnonReadInner {
             registration,
             readiness,
             done,
-            sig_buffer_not_full,
-            wait_tag,
+            discard: AtomicBool::new(false),
         });
 
         let thread = {
@@ -111,23 +120,40 @@ impl EventedAnonRead {
                     // Write from the temp buffer into the producer
                     let mut written = 0usize;
                     while written < nbytes {
-                        // Wait for buffer to clear if need be.
-                        if producer.is_full() {
-                            let mut wait_tag = inner.wait_tag.lock();
-                            inner.sig_buffer_not_full.wait(&mut wait_tag);
+                        // Wait for buffer to clear if need be. An
+                        // unpark is kept until the next park, so a read
+                        // that lands between the look at the ring and
+                        // the park still wakes this thread.
+                        while producer.is_full() {
                             if inner.done.load(Ordering::SeqCst) {
                                 return;
                             }
+                            if inner.discard.load(Ordering::SeqCst) {
+                                break;
+                            }
+                            park();
+                        }
+
+                        // Nobody reads the ring any more: the pipe is
+                        // still emptied, so its other end is not held
+                        // up, and what it gave is dropped.
+                        if inner.discard.load(Ordering::SeqCst) {
+                            break;
                         }
 
                         written += producer.write_from_slice(&tmp_buf[written..nbytes]);
 
-                        if !inner.readiness.readiness().is_readable() {
-                            try_or_send!(
-                                inner.readiness.set_readiness(Ready::readable()),
-                                error_sender
-                            );
-                        }
+                        // Set whatever it reads now. `read` clears it
+                        // and then looks at the ring again; a look at
+                        // the readiness from here could be a stale one,
+                        // and both sides would then miss each other.
+                        // Two swaps of the readiness are in order, and
+                        // the later side sees what the earlier did to
+                        // the ring before its own.
+                        try_or_send!(
+                            inner.readiness.set_readiness(Ready::readable()),
+                            error_sender
+                        );
                     }
                 }
             })
@@ -138,44 +164,96 @@ impl EventedAnonRead {
             consumer,
             inner,
             error_receiver,
+            ended: None,
+        }
+    }
+}
+
+impl EventedAnonRead {
+    /// The pipe is read to its end from here on and what it gives is
+    /// thrown away, for a reader nothing will be read from again. The
+    /// worker otherwise stops at a full ring, and the pipe's other end
+    /// waits for it: the console host, which the close of the
+    /// pseudoconsole waits for in turn.
+    pub fn discard(&self) {
+        self.inner.discard.store(true, Ordering::SeqCst);
+        if let Some(thread) = &self.thread {
+            thread.thread().unpark();
+        }
+    }
+
+    /// Takes note of the worker's end, which it reports once, after
+    /// the last bytes it put in the ring.
+    fn look_for_end(&mut self) {
+        if self.ended.is_some() {
+            return;
+        }
+        match self.error_receiver.try_recv() {
+            Ok(err) => self.ended = Some(err),
+            Err(TryRecvError::Disconnected) => self.ended = Some(String::new()),
+            Err(TryRecvError::Empty) => {}
         }
     }
 }
 
 impl io::Read for EventedAnonRead {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // Nothing can be read into no room, whatever state the pipe is
+        // in, and that is not for this call to report.
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
         if self.thread.is_none() {
             return Err(io::Error::new(io::ErrorKind::BrokenPipe, ""));
         }
 
-        match self.error_receiver.try_recv() {
-            Ok(err) => {
-                // Other thread will be closing
-                self.thread.take().unwrap().join().unwrap();
-                return Err(io::Error::new(io::ErrorKind::BrokenPipe, err));
-            }
-            Err(TryRecvError::Disconnected) => {
-                return Err(io::Error::new(io::ErrorKind::BrokenPipe, ""))
-            }
-            Err(TryRecvError::Empty) => {}
-        }
+        // Looked for before the ring is read: the worker ends after its
+        // last write to the ring, so once the end is seen here the ring
+        // gets no more, and what it holds is read before the end is
+        // returned. Returned first, the end would discard the last of
+        // the output.
+        self.look_for_end();
 
         let nbytes = self.consumer.read_to_slice(buf);
 
         if self.consumer.is_empty() {
+            if self.ended.is_some() {
+                if nbytes == 0 {
+                    // The worker is closing, or has closed
+                    if let Some(thread) = self.thread.take() {
+                        let _ = thread.join();
+                    }
+                    let err = self.ended.take().unwrap_or_default();
+                    return Err(io::Error::new(io::ErrorKind::BrokenPipe, err));
+                }
+                // Left readable, for the read that returns the end.
+                return Ok(nbytes);
+            }
+
             self.inner.readiness.set_readiness(Ready::empty())?;
 
             // Possible race: the consumer may think the queue is empty but by the time
-            // the readiness is set the producer thread may have written data
+            // the readiness is set the producer thread may have written data, or
+            // have ended, which it also says by a readiness that was just undone
             //
             // We avoid the race by re-checking the queue is empty like this, and undo the
             // readiness setting if necessary.
-            if !self.consumer.is_empty() {
+            self.look_for_end();
+            if !self.consumer.is_empty() || self.ended.is_some() {
                 self.inner.readiness.set_readiness(Ready::readable())?;
             }
         }
 
-        self.inner.sig_buffer_not_full.notify_one();
+        if let Some(thread) = &self.thread {
+            thread.thread().unpark();
+        }
+
+        // An empty ring is not the end of the pipe, which `Ok(0)` would
+        // say it is: there is nothing to read yet.
+        if nbytes == 0 {
+            return Err(io::ErrorKind::WouldBlock.into());
+        }
         Ok(nbytes)
     }
 }
@@ -210,14 +288,15 @@ impl Drop for EventedAnonRead {
     fn drop(&mut self) {
         self.inner.done.store(true, Ordering::SeqCst);
 
-        self.inner.sig_buffer_not_full.notify_one();
+        // A read that returned the worker's error has already joined
+        // it: the pipe ended, as it does when the console host exits.
+        let Some(thread) = self.thread.take() else {
+            return;
+        };
 
-        let thread = self.thread.take().unwrap();
-
-        // Stop reader thread waiting for pipe contents
-        unsafe {
-            CancelSynchronousIo(thread.as_raw_handle());
-        }
+        // Stop reader thread waiting for room in the ring, or for pipe
+        // contents
+        stop_worker(&thread);
 
         thread
             .join()
@@ -229,8 +308,6 @@ struct EventedAnonWriteInner {
     registration: Registration,
     readiness: SetReadiness,
     done: AtomicBool,
-    sig_buffer_not_empty: Condvar,
-    wait_tag: Mutex<WaitTag>,
 }
 
 /// Wraps an AnonWrite pipe so that it can be written asynchronously using mio.
@@ -258,15 +335,10 @@ impl EventedAnonWrite {
 
         let done = AtomicBool::new(false);
 
-        let sig_buffer_not_empty = Condvar::new();
-        let wait_tag = Mutex::new(WaitTag {});
-
         let inner = Arc::new(EventedAnonWriteInner {
             registration,
             readiness,
             done,
-            sig_buffer_not_empty,
-            wait_tag,
         });
 
         let (error_sender, error_receiver) = channel();
@@ -290,25 +362,31 @@ impl EventedAnonWrite {
                         return;
                     }
 
-                    // Read into temp buffer while holding the lock
+                    // Read into temp buffer
                     let nbytes = {
-                        // Wait for buffer to have contents
-                        if consumer.is_empty() {
-                            let mut wait_tag = inner.wait_tag.lock();
-                            inner.sig_buffer_not_empty.wait(&mut wait_tag);
+                        // Wait for buffer to have contents. An unpark
+                        // is kept until the next park, so a write that
+                        // lands between the look at the ring and the
+                        // park still wakes this thread. Were it lost,
+                        // its bytes would stay in the ring until the
+                        // next write: a key pressed and not delivered
+                        // until another one was.
+                        while consumer.is_empty() {
                             if inner.done.load(Ordering::SeqCst) {
                                 return;
                             }
+                            park();
                         }
 
                         let nbytes = consumer.read_to_slice(&mut tmp_buf);
 
-                        if !inner.readiness.readiness().is_writable() {
-                            try_or_send!(
-                                inner.readiness.set_readiness(Ready::writable()),
-                                error_sender
-                            );
-                        }
+                        // Set whatever it reads now, as the reader's
+                        // worker does and for the same reason: `write`
+                        // clears it and then looks at the ring again.
+                        try_or_send!(
+                            inner.readiness.set_readiness(Ready::writable()),
+                            error_sender
+                        );
 
                         nbytes
                     };
@@ -365,7 +443,9 @@ impl io::Write for EventedAnonWrite {
             }
         }
 
-        self.inner.sig_buffer_not_empty.notify_one();
+        if let Some(thread) = &self.thread {
+            thread.thread().unpark();
+        }
         Ok(nbytes)
     }
 
@@ -404,13 +484,290 @@ impl Drop for EventedAnonWrite {
     fn drop(&mut self) {
         self.inner.done.store(true, Ordering::SeqCst);
 
-        // Stop the writer thread waiting for contents
-        self.inner.sig_buffer_not_empty.notify_one();
+        // A write that returned the worker's error has already joined
+        // it.
+        let Some(thread) = self.thread.take() else {
+            return;
+        };
 
-        self.thread
-            .take()
-            .unwrap()
+        // Stop the writer thread, which waits either for contents or in
+        // a write to a full pipe that nobody reads, which never
+        // returns.
+        stop_worker(&thread);
+
+        thread
             .join()
             .expect("Could not close EventedAnonWrite worker");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// Each write reaches the pipe on its own. The next one is made as
+    /// soon as the last arrived, when the worker is on its way to sleep
+    /// on an empty ring; a write whose wakeup is lost there would stay
+    /// in the ring, since no other write follows it.
+    #[test]
+    fn a_write_reaches_the_pipe_without_a_second_one() {
+        let (mut pipe, conin) = miow::pipe::anonymous(0).unwrap();
+        let mut writer = EventedAnonWrite::new(conin);
+
+        let (tx, rx) = mpsc::channel();
+        let reader = spawn(move || {
+            let mut byte = [0u8; 1];
+            while let Ok(1) = pipe.read(&mut byte) {
+                if tx.send(byte[0]).is_err() {
+                    return;
+                }
+            }
+        });
+
+        for i in 0..20_000u32 {
+            let byte = i as u8;
+            assert_eq!(writer.write(&[byte]).unwrap(), 1);
+            let got = rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the write was left in the ring");
+            assert_eq!(got, byte);
+        }
+
+        // Dropping the writer joins its worker and closes the pipe,
+        // which ends the reader.
+        drop(writer);
+        reader.join().unwrap();
+    }
+
+    /// A reader whose pipe ended, and that said so from `read`, has
+    /// joined its worker by then, and is dropped without a panic.
+    #[test]
+    fn a_reader_is_dropped_after_its_pipe_ended() {
+        let (conout, host) = miow::pipe::anonymous(0).unwrap();
+        let mut reader = EventedAnonRead::new(conout);
+        drop(host);
+
+        let mut buf = [0u8; 16];
+        let mut tries = 0;
+        let err = loop {
+            match reader.read(&mut buf) {
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                    tries += 1;
+                    assert!(tries < 10_000, "the end of the pipe was not reported");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Ok(nbytes) => panic!("{nbytes} bytes read from an empty pipe"),
+                Err(err) => break err,
+            }
+        };
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+
+        drop(reader);
+    }
+
+    /// What was written to the pipe before it ended is read before
+    /// the end is, though the worker reported the end long before.
+    #[test]
+    fn a_reader_returns_the_last_bytes_before_the_end_of_its_pipe() {
+        let (conout, mut host) = miow::pipe::anonymous(0).unwrap();
+        let mut reader = EventedAnonRead::new(conout);
+        host.write_all(b"last").unwrap();
+        drop(host);
+        std::thread::sleep(Duration::from_millis(200));
+
+        let mut got = Vec::new();
+        let mut buf = [0u8; 3];
+        let mut tries = 0;
+        let err = loop {
+            match reader.read(&mut buf) {
+                Ok(nbytes) => {
+                    assert_ne!(nbytes, 0, "an empty read is not said by Ok(0)");
+                    got.extend_from_slice(&buf[..nbytes]);
+                }
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                    tries += 1;
+                    assert!(tries < 10_000, "the end of the pipe was not reported");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Err(err) => break err,
+            }
+        };
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(got, b"last");
+    }
+
+    /// A pipe with nothing to read says so by `WouldBlock`. A buffer
+    /// with no room gets `Ok(0)` in every state of the pipe.
+    #[test]
+    fn a_reader_with_nothing_to_read_would_block() {
+        let (conout, mut host) = miow::pipe::anonymous(0).unwrap();
+        let mut reader = EventedAnonRead::new(conout);
+
+        let mut buf = [0u8; 16];
+        let err = reader.read(&mut buf).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
+
+        host.write_all(b"some").unwrap();
+        let mut tries = 0;
+        let nbytes = loop {
+            match reader.read(&mut buf) {
+                Ok(nbytes) => break nbytes,
+                Err(err) => {
+                    assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
+                    tries += 1;
+                    assert!(tries < 10_000, "the bytes did not arrive");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+        };
+        assert_eq!(&buf[..nbytes], b"some");
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
+
+        // The end of the pipe is not taken by a read with no room.
+        drop(host);
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
+        let mut tries = 0;
+        let err = loop {
+            match reader.read(&mut buf) {
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                    tries += 1;
+                    assert!(tries < 10_000, "the end of the pipe was not reported");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Ok(nbytes) => panic!("{nbytes} bytes read from an empty pipe"),
+                Err(err) => break err,
+            }
+        };
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
+    }
+
+    /// A reader told to discard keeps its pipe empty with nobody
+    /// reading the ring: far more than the ring and the worker hold
+    /// is written to the pipe, and every write returns.
+    #[test]
+    fn a_discarding_reader_does_not_hold_up_its_pipe() {
+        let (conout, mut host) = miow::pipe::anonymous(0).unwrap();
+        let reader = EventedAnonRead::new(conout);
+        reader.discard();
+
+        let (tx, rx) = mpsc::channel();
+        let writer = spawn(move || {
+            let chunk = [0u8; 65536];
+            for _ in 0..16 {
+                if host.write_all(&chunk).is_err() {
+                    return;
+                }
+            }
+            let _ = tx.send(());
+        });
+        let taken = rx.recv_timeout(Duration::from_secs(10));
+
+        // Dropped before the verdict, so a writer still stuck in a
+        // write is let go by the end of its pipe.
+        drop(reader);
+        writer.join().unwrap();
+        taken.expect("a write to the pipe waited for the ring to be read");
+    }
+
+    /// A reader is dropped at once, when its worker may not have got
+    /// to its read yet, with a pipe nothing is written to: a single
+    /// cancel that came before the read would leave it there.
+    #[test]
+    fn a_reader_is_dropped_before_its_worker_reads() {
+        for _ in 0..200 {
+            let (conout, host) = miow::pipe::anonymous(0).unwrap();
+
+            // The thread that drops it is started first, so the drop
+            // comes as soon after the worker's start as it can.
+            let (to_dropper, reader) = mpsc::channel::<EventedAnonRead>();
+            let (tx, rx) = mpsc::channel();
+            let dropper = spawn(move || {
+                drop(reader.recv().unwrap());
+                let _ = tx.send(());
+            });
+            to_dropper.send(EventedAnonRead::new(conout)).unwrap();
+
+            rx.recv_timeout(Duration::from_secs(10))
+                .expect("the drop waited for a read of an idle pipe");
+            dropper.join().unwrap();
+
+            // Only now does the pipe lose its writer.
+            drop(host);
+        }
+    }
+
+    /// A writer whose pipe has no reader any more, and that said so
+    /// from `write`, is dropped without a panic as well.
+    #[test]
+    fn a_writer_is_dropped_after_its_pipe_ended() {
+        let (host, conin) = miow::pipe::anonymous(0).unwrap();
+        let mut writer = EventedAnonWrite::new(conin);
+        drop(host);
+
+        let mut tries = 0;
+        let err = loop {
+            match writer.write(&[0]) {
+                Ok(_nbytes) => {
+                    tries += 1;
+                    assert!(tries < 10_000, "the end of the pipe was not reported");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Err(err) => break err,
+            }
+        };
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+
+        drop(writer);
+    }
+
+    /// A writer whose worker is in a write that nobody reads is still
+    /// dropped: the write is cancelled, not waited for.
+    #[test]
+    fn a_writer_is_dropped_while_its_pipe_is_full() {
+        let (host, conin) = miow::pipe::anonymous(0).unwrap();
+        let mut writer = EventedAnonWrite::new(conin);
+
+        // Written until the ring stays full after the worker took from
+        // it, which it only does once the worker takes no more: it is
+        // then in a write the pipe has no room for.
+        let chunk = [0u8; 65536];
+        let mut sent = 0usize;
+        let mut waits = 0;
+        let mut full_for = 0;
+        while full_for < 200 {
+            sent += writer.write(&chunk).unwrap();
+            assert!(sent < 32 << 20, "the pipe took all that was written");
+            if !writer.producer.is_full() {
+                full_for = 0;
+                continue;
+            }
+            // The first 65536 bytes fill the ring with no help from
+            // the worker; more than that were sent only if it took
+            // some.
+            if sent > 65536 {
+                full_for += 1;
+            }
+            waits += 1;
+            assert!(waits < 20_000, "the worker took nothing from the ring");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+
+        let (tx, rx) = mpsc::channel();
+        let dropper = spawn(move || {
+            drop(writer);
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(Duration::from_secs(10))
+            .expect("the drop waited for a write nobody reads");
+        dropper.join().unwrap();
+
+        // Only now does the pipe lose its reader.
+        drop(host);
     }
 }

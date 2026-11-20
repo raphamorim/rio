@@ -4742,7 +4742,6 @@ dependencies = [
  "dirs",
  "libc",
  "miow 0.6.1",
- "parking_lot",
  "signal-hook",
  "tracing",
  "windows-sys 0.59.0",

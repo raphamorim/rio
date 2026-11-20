@@ -100,8 +100,8 @@ const READ_BUDGET: usize = READ_CHUNK * 4;
 #[derive(Debug, PartialEq, Eq)]
 enum ReadOutcome {
     Idle,
-    /// On Unix the other side of the pty is closed. On Windows the
-    /// ConPTY ring is momentarily empty.
+    /// The other side of the pty is closed. Unix only: the ConPTY
+    /// pipe ends as an error, and its empty ring is `Idle`.
     Closed,
     Budget,
 }
@@ -609,13 +609,13 @@ where
             // parsing budgets, limiting continuously available output to 100 ms
             // between batches (terminal lock waits can extend this interval).
             let deadline = Instant::now() + std::time::Duration::from_millis(100);
-            // Windows Closed means the ConPTY ring is momentarily empty
-            // (never WouldBlock, and no real EOF exists until the drain's
-            // own shutdown closes the pseudoconsole), while the pump
-            // thread delivers final output after the exit event. Retry it
-            // through a short quiet window, refreshed by each batch of
-            // data, so a close is not taxed the full deadline. Unix
-            // Closed is a real EOF and ends the drain at once.
+            // Windows Idle means the ConPTY ring is momentarily empty
+            // (no real EOF exists until the pseudoconsole is closed),
+            // while the pump thread delivers final output after the
+            // exit event. Retry it through a short quiet window,
+            // refreshed by each batch of data, so a close is not taxed
+            // the full deadline. Unix Idle and Closed end the drain at
+            // once.
             let quiet = std::time::Duration::from_millis(25);
             let mut quiet_deadline = Instant::now() + quiet;
             loop {
@@ -624,7 +624,7 @@ where
                         quiet_deadline = Instant::now() + quiet;
                         continue;
                     }
-                    Ok(ReadOutcome::Closed)
+                    Ok(ReadOutcome::Idle)
                         if cfg!(windows)
                             && Instant::now() < deadline
                             && Instant::now() < quiet_deadline =>

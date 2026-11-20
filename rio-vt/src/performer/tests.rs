@@ -675,6 +675,37 @@ fn read_failure_shuts_down_pty_and_finishes_pending_sync() {
     );
 }
 
+/// The machine after a drain that followed the child's exit, over a
+/// PTY with nothing to read at first: `before_read` gets the ordinal
+/// of each read and what it sends is the next thing read.
+#[cfg(windows)]
+fn drain_fed_by(
+    mut before_read: impl FnMut(usize, &mpsc::Sender<Vec<u8>>) + Send + 'static,
+) -> Machine<TestPty, VoidListener> {
+    let (feed_tx, feed) = mpsc::channel();
+    let mut pty = test_pty(Vec::new(), Some(ErrorKind::WouldBlock));
+    pty.feed = Some(feed);
+    pty.before_read = Some(Box::new(move |read| before_read(read, &feed_tx)));
+    let (registration, readiness) = corcovado::Registration::new2();
+    pty.child = Some(registration);
+    readiness.set_readiness(Ready::readable()).unwrap();
+    let (machine, _) = machine_with(pty).spawn().join().unwrap();
+    machine
+}
+
+/// On Windows the pump thread delivers the last output after the exit
+/// event, so a drain that finds nothing to read asks again.
+#[cfg(windows)]
+#[test]
+fn the_drain_waits_for_output_that_comes_after_an_empty_read() {
+    let machine = drain_fed_by(|read, feed| {
+        if read == 2 {
+            feed.send(b"final output".to_vec()).unwrap();
+        }
+    });
+    assert_eq!(first_line(&machine, 12), "final output");
+}
+
 #[derive(Clone)]
 struct ExitObserver {
     terminal: Arc<std::sync::Mutex<std::sync::Weak<TerminalLock<Crosswords<Self>>>>>,
