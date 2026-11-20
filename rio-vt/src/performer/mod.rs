@@ -593,6 +593,9 @@ where
                                         status,
                                     )) = self.pty.next_child_event()
                                     {
+                                        tracing::debug!(
+                                            "PTY read failed after the child exited: {err}"
+                                        );
                                         return Ok(ExitReason::ChildExited(status));
                                     }
                                     return Err(err);
