@@ -15,7 +15,7 @@ use crate::bindings::{
     ViAction,
 };
 use crate::context;
-use crate::context::renderable::{Cursor, RenderableContent};
+use crate::context::renderable::RenderableContent;
 use crate::context::{next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
@@ -35,7 +35,7 @@ use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::layout::Margin;
 use rio_backend::config::renderer::Backend;
-use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
+use rio_backend::crosswords::pos::{Boundary, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::{ClickState, EventProxy, SearchState};
@@ -283,6 +283,8 @@ impl Screen<'_> {
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
+            cursor_shape: config.cursor.shape,
+            cursor_blinking: config.cursor.blinking,
         };
 
         let rich_text_id = next_rich_text_id();
@@ -313,14 +315,7 @@ impl Screen<'_> {
             margin,
         );
 
-        let cursor = Cursor {
-            content: config.cursor.shape.into(),
-            state: CursorState::new(config.cursor.shape.into()),
-        };
-
         let context_manager = context::ContextManager::start(
-            // config.cursor.blinking
-            (&cursor, config.cursor.blinking),
             event_proxy,
             window_id.into(),
             rich_text_id,
@@ -643,6 +638,9 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard.clone();
+        // New terminals take the reloaded cursor defaults.
+        self.context_manager.config.cursor_shape = config.cursor.shape;
+        self.context_manager.config.cursor_blinking = config.cursor.blinking;
         self.context_manager.config.title = config.title.clone();
 
         // Re-evaluate the opaque flag — toggling `window.opacity` /
@@ -4745,7 +4743,6 @@ impl Screen<'_> {
         // In case the configuration of blinking cursor is enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
         if self.renderer.is_window_focused
-            && self.renderer.config_has_blinking_enabled
             && self.selection_is_empty()
             && self
                 .context_manager

@@ -173,7 +173,6 @@ pub struct Renderer {
     /// `set_background_color`. Lets the per-frame "derive bg from
     /// active panel's OSC state" loop avoid redundant resyncs.
     last_window_bg: Option<rio_backend::sugarloaf::Color>,
-    pub config_has_blinking_enabled: bool,
     /// Where shaping breaks runs beyond what the content forces; the
     /// row builder gets the cursor column only when the break at the
     /// cursor is on.
@@ -251,7 +250,6 @@ impl Renderer {
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
-            config_has_blinking_enabled: config.cursor.blinking,
             cursor_shaping_break: config.fonts.cursor_shaping_break,
             is_window_focused: true,
             ignore_selection_fg_color: config.ignore_selection_fg_color,

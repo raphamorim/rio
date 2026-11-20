@@ -562,6 +562,11 @@ where
     /// Whether the cursor blinks by default: what `CSI 0 SP q` and a
     /// reset go back to, with `default_cursor_shape`.
     pub default_blinking_cursor: bool,
+    /// The user chose the default blink, so mode 12 (`?12h`/`?12l`) is
+    /// ignored, as in Ghostty: a program using it could otherwise stop
+    /// the blink for good, mode 12 having no way back to the default.
+    /// DECSCUSR, which has one, still applies.
+    ignore_blink_mode: bool,
     /// Whether the cursor still follows the defaults: no program chose a
     /// style since the last `CSI 0 SP q` or reset. Only then does a new
     /// default (a config reload) change the cursor on screen, as in
@@ -681,6 +686,7 @@ impl<U: EventListener> Crosswords<U> {
             cursor_shape,
             blinking_cursor: false,
             default_blinking_cursor: false,
+            ignore_blink_mode: false,
             cursor_is_default: true,
             window_id,
             route_id,
@@ -1455,10 +1461,19 @@ impl<U: EventListener> Crosswords<U> {
     /// Set the default cursor style, from the config. The cursor on
     /// screen takes it only while it follows the defaults: a style a
     /// program chose (an insert-mode beam) stays until it selects the
-    /// default again, which then is the new one.
-    pub fn set_default_cursor_style(&mut self, shape: CursorShape, blinking: bool) {
+    /// default again, which then is the new one. `blinking` unset is a
+    /// steady cursor that programs are free to make blink; set, as
+    /// Ghostty's `cursor-style-blink`, it is the default and mode 12 is
+    /// ignored.
+    pub fn set_default_cursor_style(
+        &mut self,
+        shape: CursorShape,
+        blinking: Option<bool>,
+    ) {
         self.default_cursor_shape = shape;
-        self.default_blinking_cursor = blinking;
+        self.default_blinking_cursor = blinking.unwrap_or(false);
+        self.ignore_blink_mode = blinking.is_some();
+        let blinking = self.default_blinking_cursor;
         if self.cursor_is_default {
             self.show_cursor_style(shape, blinking);
         }
@@ -3404,7 +3419,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::LineWrap => self.mode.insert(Mode::LINE_WRAP),
             NamedPrivateMode::Origin => self.mode.insert(Mode::ORIGIN),
             NamedPrivateMode::ColumnMode => self.deccolm(),
-            NamedPrivateMode::BlinkingCursor => {
+            NamedPrivateMode::BlinkingCursor if !self.ignore_blink_mode => {
                 if !self.blinking_cursor {
                     self.blinking_cursor = true;
                     self.damage_cursor_appearance();
@@ -3412,6 +3427,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
+            NamedPrivateMode::BlinkingCursor => {}
             NamedPrivateMode::GraphemeCluster => self.mode.insert(Mode::GRAPHEME_CLUSTER),
             NamedPrivateMode::SyncUpdate => {
                 self.mode.insert(Mode::SYNC_UPDATE);
@@ -3484,7 +3500,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::LineWrap => self.mode.remove(Mode::LINE_WRAP),
             NamedPrivateMode::Origin => self.mode.remove(Mode::ORIGIN),
             NamedPrivateMode::ColumnMode => self.deccolm(),
-            NamedPrivateMode::BlinkingCursor => {
+            NamedPrivateMode::BlinkingCursor if !self.ignore_blink_mode => {
                 if self.blinking_cursor {
                     self.blinking_cursor = false;
                     self.damage_cursor_appearance();
@@ -3492,6 +3508,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
+            NamedPrivateMode::BlinkingCursor => {}
             NamedPrivateMode::GraphemeCluster => self.mode.remove(Mode::GRAPHEME_CLUSTER),
             NamedPrivateMode::SyncUpdate => self.end_sync_update(),
         }
@@ -7424,7 +7441,7 @@ mod tests {
     fn the_default_cursor_style_includes_its_blink() {
         let mut cw = make_crosswords();
         let mut parser = crate::performer::handler::Processor::default();
-        cw.set_default_cursor_style(CursorShape::Underline, true);
+        cw.set_default_cursor_style(CursorShape::Underline, Some(true));
         assert_eq!(
             (cw.cursor_shape, cw.blinking_cursor),
             (CursorShape::Underline, true)
@@ -7447,6 +7464,49 @@ mod tests {
         );
     }
 
+    // With no blink configured the cursor is steady, and programs may
+    // make it blink: mode 12 is obeyed.
+    #[test]
+    fn unconfigured_blinking_is_steady_and_follows_mode_12() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.set_default_cursor_style(CursorShape::Block, None);
+        assert!(!cw.blinking_cursor, "steady by default");
+        parser.advance(&mut cw, b"\x1b[?12h");
+        assert!(cw.blinking_cursor, "mode 12 is obeyed");
+        parser.advance(&mut cw, b"\x1b[?12l");
+        assert!(!cw.blinking_cursor);
+        parser.advance(&mut cw, b"\x1b[1 q\x1b[0 q");
+        assert!(!cw.blinking_cursor, "the default is steady");
+    }
+
+    // A configured blink is the default and mode 12 is ignored, as
+    // Ghostty does for `cursor-style-blink`: mode 12 has no way back to
+    // the default. DECSCUSR, which has one, still applies.
+    #[test]
+    fn a_configured_blink_ignores_mode_12() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.set_default_cursor_style(CursorShape::Block, Some(false));
+        assert!(!cw.blinking_cursor);
+        cw.reset_damage();
+        parser.advance(&mut cw, b"\x1b[?12h");
+        assert!(!cw.blinking_cursor, "mode 12 is ignored");
+        assert_eq!(cw.peek_damage_event(), None, "nothing changed");
+        parser.advance(&mut cw, b"\x1b[1 q");
+        assert!(cw.blinking_cursor, "DECSCUSR still applies");
+        parser.advance(&mut cw, b"\x1b[0 q");
+        assert!(!cw.blinking_cursor, "back to the configured steady cursor");
+
+        cw.set_default_cursor_style(CursorShape::Block, Some(true));
+        assert!(
+            cw.blinking_cursor,
+            "following the defaults, it takes the new one"
+        );
+        parser.advance(&mut cw, b"\x1b[?12l");
+        assert!(cw.blinking_cursor, "mode 12 is ignored either way");
+    }
+
     // A new default (a config reload) shows only while the cursor follows
     // the defaults, as in Ghostty: a program's chosen style stays until it
     // selects the default, which is then the new one.
@@ -7457,7 +7517,7 @@ mod tests {
         let mut parser = crate::performer::handler::Processor::default();
         parser.advance(&mut cw, b"\x1b[6 q");
         cw.reset_damage();
-        cw.set_default_cursor_style(CursorShape::Underline, false);
+        cw.set_default_cursor_style(CursorShape::Underline, Some(false));
         assert_eq!(
             cw.cursor_shape,
             CursorShape::Beam,
@@ -7469,7 +7529,7 @@ mod tests {
         assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
         cw.reset_damage();
         // Following the defaults again, the next one shows right away.
-        cw.set_default_cursor_style(CursorShape::Block, false);
+        cw.set_default_cursor_style(CursorShape::Block, Some(false));
         assert_eq!(cw.cursor_shape, CursorShape::Block);
         assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
     }
