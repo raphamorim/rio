@@ -98,6 +98,16 @@ impl Mouse {
         self.multiplier = multiplier;
         self.divider = divider;
     }
+
+    /// The left press being held ends without its release reaching the
+    /// terminal: the window lost focus, a dialog or another route took
+    /// the pointer. The button reads released and the selection
+    /// gesture goes with it, or the next release would copy whatever
+    /// selection the lost press left behind.
+    pub fn release_lost(&mut self) {
+        self.left_button_state = ElementState::Released;
+        self.selection_gesture = false;
+    }
 }
 
 /// Map a physical-pixel cursor position to a terminal grid `Pos`.
@@ -182,6 +192,21 @@ pub fn calculate_side_by_pos(
 #[cfg(test)]
 pub mod test {
     use super::*;
+
+    // A press whose release never arrives (focus lost mid drag, a
+    // dialog took the pointer) leaves no gesture behind, or the next
+    // release would copy a selection it did not make.
+    #[test]
+    fn a_lost_release_drops_the_selection_gesture() {
+        let mut mouse = Mouse {
+            left_button_state: ElementState::Pressed,
+            selection_gesture: true,
+            ..Default::default()
+        };
+        mouse.release_lost();
+        assert_eq!(mouse.left_button_state, ElementState::Released);
+        assert!(!mouse.selection_gesture);
+    }
 
     fn mk_mouse(x: f64, y: f64) -> Mouse {
         Mouse {

@@ -1501,8 +1501,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     } else if state == ElementState::Released
                         && button == MouseButton::Left
                     {
-                        route.window.screen.mouse.left_button_state =
-                            ElementState::Released;
+                        route.window.screen.mouse.release_lost();
                         // A release swallowed here must also drop the hint
                         // latch, or a later chrome-consumed press would
                         // release against a hint it never landed on.
@@ -2359,7 +2358,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 // included, or the next motion after refocus would read
                 // as a held button.
                 if !focused && route.window.screen.context_manager.end_border_drag() {
-                    route.window.screen.mouse.left_button_state = ElementState::Released;
+                    route.window.screen.mouse.release_lost();
                     route.window.screen.mouse.hint_click_latched = None;
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                 }

@@ -3545,7 +3545,7 @@ impl Screen<'_> {
                     self.mark_dirty();
                 }
             }
-            self.mouse.left_button_state = ElementState::Released;
+            self.mouse.release_lost();
         }
 
         // Which pane, if any, is focused from a program's view is the
