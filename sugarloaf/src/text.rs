@@ -74,11 +74,11 @@ struct ShapedRun {
     size_bucket: u16,
     synthetic_bold: bool,
     synthetic_italic: bool,
-    /// `wght` axis value to apply when rasterizing this run's glyphs
-    /// (variable-font fallback faces only). On macOS the variation is
-    /// already baked into the CTFont handle, so this stays unused.
+    /// The face's instance as normalized coordinates, applied when
+    /// rasterizing this run's glyphs; unused on macOS, where variations
+    /// are baked into the handle.
     #[cfg(not(target_os = "macos"))]
-    wght_variation: Option<f32>,
+    coords: std::sync::Arc<[i16]>,
     ascent_px: i16,
     glyphs: Vec<ShapedGlyph>,
 }
@@ -155,7 +155,9 @@ pub struct Text {
     font_resolve: FxHashMap<(char, u8), (u32, bool)>,
     synthesis_cache: FxHashMap<u32, (bool, bool)>,
     #[cfg(not(target_os = "macos"))]
-    wght_variation_cache: FxHashMap<u32, Option<f32>>,
+    /// Each face's instance as normalized coordinates; see
+    /// [`crate::font::normalized_coords`].
+    variations_cache: FxHashMap<u32, std::sync::Arc<[i16]>>,
     ascent_cache: FxHashMap<(u32, u16), i16>,
     shape_cache: FxHashMap<u64, ShapedRun>,
 
@@ -186,7 +188,7 @@ impl Text {
             font_resolve: FxHashMap::default(),
             synthesis_cache: FxHashMap::default(),
             #[cfg(not(target_os = "macos"))]
-            wght_variation_cache: FxHashMap::default(),
+            variations_cache: FxHashMap::default(),
             ascent_cache: FxHashMap::default(),
             shape_cache: FxHashMap::default(),
             #[cfg(target_os = "macos")]
@@ -217,6 +219,47 @@ impl Text {
             atlas_grayscale: crate::grid::cpu::CpuGridAtlas::new_grayscale(),
             atlas_color: crate::grid::cpu::CpuGridAtlas::new_color(),
         });
+    }
+
+    /// Switch to a reloaded font library. Every cache here is keyed by
+    /// font id or holds the old library's handles and glyphs, so all of
+    /// them go: resolutions, synthesis flags, ascents, shaped runs, the
+    /// handles, and the rasterized glyphs in the atlases. Without this
+    /// a label seen before the reload kept shaping with the old font.
+    pub fn set_fonts(&mut self, font_library: &FontLibrary) {
+        self.font_library = font_library.clone();
+        // Instances recorded against the old atlases go too, so this
+        // does not rely on every caller presenting first.
+        self.instances.clear();
+        self.font_resolve.clear();
+        self.synthesis_cache.clear();
+        #[cfg(not(target_os = "macos"))]
+        self.variations_cache.clear();
+        self.ascent_cache.clear();
+        self.shape_cache.clear();
+        #[cfg(target_os = "macos")]
+        self.handle_cache.clear();
+        #[cfg(not(target_os = "macos"))]
+        self.font_data_cache.clear();
+        #[cfg(target_os = "macos")]
+        if let Some(state) = self.metal.as_mut() {
+            state.atlas_grayscale.clear();
+            state.atlas_color.clear();
+        }
+        #[cfg(all(feature = "wgpu", not(target_os = "macos")))]
+        if let Some(state) = self.wgpu.as_mut() {
+            state.atlas_grayscale.clear();
+            state.atlas_color.clear();
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(state) = self.vulkan.as_mut() {
+            state.atlas_grayscale.clear();
+            state.atlas_color.clear();
+        }
+        if let Some(state) = self.cpu.as_mut() {
+            state.atlas_grayscale.clear();
+            state.atlas_color.clear();
+        }
     }
 
     /// Update the scale factor used to convert caller-supplied
@@ -292,8 +335,7 @@ impl Text {
                     FontStyle::Normal
                 };
                 ss.font_attrs = Attributes::new(Stretch::NORMAL, weight, fstyle);
-                let resolved =
-                    self.font_library.resolve_font_for_char(first_ch, &ss, None);
+                let resolved = self.font_library.resolve_font_for_char(first_ch, &ss);
                 let v = (resolved.0 as u32, resolved.1);
                 e.insert(v);
                 v
@@ -349,9 +391,8 @@ impl Text {
         };
 
         #[cfg(not(target_os = "macos"))]
-        let (glyphs, ascent_px, wght_variation) = {
+        let (glyphs, ascent_px, coords) = {
             use swash::FontRef;
-            use swash::Setting;
 
             // Pull (or cache) the font bytes + offset + key once per
             // font_id to avoid the RwLock read-lock per shape.
@@ -367,37 +408,25 @@ impl Text {
                 key: font_entry.2,
             };
 
-            // `wght` axis value to apply to the face (variable-font
-            // fallback slots only — `None` for normal fonts).
-            let wght = match self.wght_variation_cache.entry(font_id) {
-                std::collections::hash_map::Entry::Occupied(e) => *e.get(),
-                std::collections::hash_map::Entry::Vacant(e) => {
+            // The face's instance (empty for the default, and for normal
+            // fonts).
+            let coords = self
+                .variations_cache
+                .entry(font_id)
+                .or_insert_with(|| {
                     let lib = self.font_library.inner.read();
-                    let v = lib.get(&(font_id as usize)).wght_variation;
-                    *e.insert(v)
-                }
-            };
-            // wght axis tag as a swash u32 Tag — 'w','g','h','t' big-endian.
-            const WGHT_TAG: swash::Tag = u32::from_be_bytes(*b"wght");
-            let wght_var = wght.map(|v| Setting {
-                tag: WGHT_TAG,
-                value: v,
-            });
-            let var_slice: &[Setting<f32>] = match wght_var {
-                Some(ref s) => std::slice::from_ref(s),
-                None => &[],
-            };
+                    let variations = &lib.get(&(font_id as usize)).variations;
+                    crate::font::normalized_coords(&font_ref, variations).into()
+                })
+                .clone();
 
-            // Ascent — via swash metrics scaled to device-px size.
-            // `metrics` wants normalized variation coords (`&[i16]`),
-            // not `&[Setting<f32>]`. Variations barely affect vertical
-            // metrics in practice, so pass `&[]` here — same pattern
-            // every other `metrics()` call in the crate uses.
+            // Ascent — via swash metrics scaled to device-px size, at the
+            // face's instance.
             let ascent_px = *self
                 .ascent_cache
                 .entry((font_id, size_bucket))
                 .or_insert_with(|| {
-                    let m = font_ref.metrics(&[]).scale(size_u16 as f32);
+                    let m = font_ref.metrics(&coords).scale(size_u16 as f32);
                     m.ascent.round().clamp(i16::MIN as f32, i16::MAX as f32) as i16
                 });
 
@@ -407,7 +436,7 @@ impl Text {
                 .shape_ctx
                 .builder(font_ref)
                 .size(size_u16 as f32)
-                .variations(var_slice.iter().copied())
+                .normalized_coords(coords.iter())
                 .build();
             shaper.add_str(text);
             let mut glyphs: Vec<ShapedGlyph> = Vec::new();
@@ -423,7 +452,7 @@ impl Text {
                     });
                 }
             });
-            (glyphs, ascent_px, wght)
+            (glyphs, ascent_px, coords)
         };
 
         let run = ShapedRun {
@@ -433,7 +462,7 @@ impl Text {
             synthetic_bold,
             synthetic_italic,
             #[cfg(not(target_os = "macos"))]
-            wght_variation,
+            coords,
             ascent_px,
             glyphs,
         };
@@ -590,7 +619,7 @@ impl Text {
                     run.synthetic_bold,
                     run.synthetic_italic,
                     self.font_library.inner.read().hinting,
-                    run.wght_variation,
+                    &run.coords,
                 )?;
                 let is_color = raw.is_color;
                 let raster = crate::grid::RasterizedGlyph {
@@ -635,7 +664,7 @@ impl Text {
                     run.synthetic_bold,
                     run.synthetic_italic,
                     self.font_library.inner.read().hinting,
-                    run.wght_variation,
+                    &run.coords,
                 )?;
                 let is_color = raw.is_color;
 
@@ -722,7 +751,7 @@ impl Text {
                 run.synthetic_bold,
                 run.synthetic_italic,
                 self.font_library.inner.read().hinting,
-                run.wght_variation,
+                &run.coords,
             )?;
             (
                 raw.width,
@@ -1209,14 +1238,14 @@ fn rasterize_swash_glyph(
     synthetic_bold: bool,
     synthetic_italic: bool,
     hint: bool,
-    wght_variation: Option<f32>,
+    coords: &[i16],
 ) -> Option<SwashRawGlyph> {
     use swash::scale::{
         image::{Content, Image as GlyphImage},
-        Render, Source, StrikeWith,
+        Render, Source,
     };
     use swash::zeno::{Angle, Format, Transform};
-    use swash::{FontRef, Setting};
+    use swash::FontRef;
 
     let font_ref = FontRef {
         data: font_entry.0.as_ref(),
@@ -1224,31 +1253,21 @@ fn rasterize_swash_glyph(
         key: font_entry.2,
     };
 
-    // wght axis tag — variable-font fallback faces use this to pick the
-    // right outlines (regular vs. bold) from a single source file.
-    const WGHT_TAG: swash::Tag = u32::from_be_bytes(*b"wght");
-    let wght_var = wght_variation.map(|v| Setting {
-        tag: WGHT_TAG,
-        value: v,
-    });
-    let var_slice: &[Setting<f32>] = match wght_var {
-        Some(ref s) => std::slice::from_ref(s),
-        None => &[],
-    };
-
+    // The instance's outlines. Replacing the context's coordinates, not
+    // adding to them: see `crate::font::normalized_coords`.
     let mut scaler = scale_ctx
         .builder(font_ref)
         .hint(hint)
         .size(size_px)
-        .variations(var_slice.iter().copied())
+        .normalized_coords(coords.iter())
         .build();
 
+    let sources: &[Source] =
+        match crate::font::select_color_bitmap(font_ref, glyph_id, size_px) {
+            Some(bitmap) => &[Source::ColorOutline(0), bitmap, Source::Outline],
+            None => &[Source::ColorOutline(0), Source::Outline],
+        };
     let mut image = GlyphImage::new();
-    let sources: &[Source] = &[
-        Source::ColorOutline(0),
-        Source::ColorBitmap(StrikeWith::BestFit),
-        Source::Outline,
-    ];
     let embolden_amount = if synthetic_bold {
         (size_px / 14.0).max(1.0)
     } else {
@@ -1271,6 +1290,7 @@ fn rasterize_swash_glyph(
         return None;
     }
 
+    crate::font::normalize_color_bitmap(&mut image);
     let is_color = image.content == Content::Color;
     Some(SwashRawGlyph {
         width: image.placement.width,
@@ -1896,33 +1916,9 @@ impl Drop for TextVulkanState {
     }
 }
 
-//  CPU blit helpers for `Text::render_cpu`. Same blend model as
-//  `grid::cpu`: premultiplied source-over against an opaque
-//  `0x00RRGGBB` destination.
-
-#[inline]
-fn pack_opaque(r: u8, g: u8, b: u8) -> u32 {
-    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
-}
-
-#[inline]
-fn blend_premul_over(src: [u8; 4], dst: u32) -> u32 {
-    let sa = src[3] as u32;
-    if sa == 0 {
-        return dst;
-    }
-    if sa == 255 {
-        return pack_opaque(src[0], src[1], src[2]);
-    }
-    let inv = 255 - sa;
-    let dr = (dst >> 16) & 0xff;
-    let dg = (dst >> 8) & 0xff;
-    let db = dst & 0xff;
-    let or = src[0] as u32 + (dr * inv + 127) / 255;
-    let og = src[1] as u32 + (dg * inv + 127) / 255;
-    let ob = src[2] as u32 + (db * inv + 127) / 255;
-    pack_opaque(or.min(255) as u8, og.min(255) as u8, ob.min(255) as u8)
-}
+//  CPU blit path for `Text::render_cpu`: premultiplied source-over into
+//  the shared `0xAARRGGBB` framebuffer (see `crate::premul`).
+use crate::premul::blend_premul_over;
 
 #[allow(clippy::too_many_arguments)]
 fn blit_text_mask(
@@ -2031,5 +2027,79 @@ fn blit_text_color(
             let idx = buf_row + (dst_x as usize);
             buf[idx] = blend_premul_over(src, buf[idx]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The scale context is shared by every face: a face pinning nothing
+    /// is still drawn at its default instance right after a Bold glyph.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn rasterizing_after_a_bold_glyph_draws_the_regular_one() {
+        let data = crate::font::SharedData::new(
+            crate::font::constants::FONT_CASCADIA_CODE_NF.to_vec(),
+        );
+        let font = swash::FontRef::from_index(data.as_ref(), 0).expect("bundled font");
+        let entry = (data.clone(), font.offset, font.key);
+        let glyph = font.charmap().map('a');
+        let wght = u32::from_be_bytes(*b"wght");
+        let bold = crate::font::normalized_coords(&font, &[(wght, 700.0)]);
+        let draw = |ctx: &mut swash::scale::ScaleContext, coords: &[i16]| {
+            rasterize_swash_glyph(ctx, &entry, glyph, 32.0, false, false, true, coords)
+                .expect("glyph")
+                .bytes
+        };
+        let regular = draw(&mut swash::scale::ScaleContext::new(), &[]);
+        let mut shared = swash::scale::ScaleContext::new();
+        assert_ne!(draw(&mut shared, &bold[..]), regular);
+        assert_eq!(draw(&mut shared, &[]), regular);
+    }
+
+    // A font reload hands the UI text renderer a new library. Every
+    // cache keyed by the old library's font ids or holding its handles
+    // and glyphs must go with it, or labels seen before the reload keep
+    // shaping and rasterizing with the old font.
+    #[test]
+    fn set_fonts_drops_every_cache_and_adopts_the_new_library() {
+        let old = FontLibrary::default();
+        let mut text = Text::new(&old);
+        text.init_cpu();
+        let width = text.draw(0.0, 0.0, "Tab title", &DrawOpts::default());
+        assert!(width > 0.0);
+        assert!(!text.shape_cache.is_empty());
+        assert!(!text.ascent_cache.is_empty());
+        assert!(!text.font_resolve.is_empty());
+        #[cfg(target_os = "macos")]
+        assert!(!text.handle_cache.is_empty());
+
+        let new = FontLibrary::default();
+        text.set_fonts(&new);
+
+        assert!(
+            text.instances.is_empty(),
+            "recorded instances went with the atlases"
+        );
+        assert!(std::sync::Arc::ptr_eq(&text.font_library.inner, &new.inner));
+        assert!(!std::sync::Arc::ptr_eq(
+            &text.font_library.inner,
+            &old.inner
+        ));
+        assert!(text.shape_cache.is_empty());
+        assert!(text.ascent_cache.is_empty());
+        assert!(text.font_resolve.is_empty());
+        assert!(text.synthesis_cache.is_empty());
+        #[cfg(target_os = "macos")]
+        assert!(text.handle_cache.is_empty());
+        #[cfg(not(target_os = "macos"))]
+        assert!(text.font_data_cache.is_empty());
+
+        // The renderer works again from scratch with the new library.
+        text.clear();
+        let again = text.draw(0.0, 0.0, "Tab title", &DrawOpts::default());
+        assert_eq!(again, width);
+        assert!(!text.shape_cache.is_empty());
     }
 }

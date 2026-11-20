@@ -2,11 +2,16 @@ name: Nix Build
 
 on:
   workflow_dispatch:
+  # PRs build the flake only when they touch what the flake consumes;
+  # every merge to main still builds it against the full tree, so a
+  # regression from ordinary Rust changes is caught one merge later
+  # instead of charging every PR push ~10-30 min.
   pull_request:
     paths:
-      - '**/*.rs'
-      - '**/Cargo.toml'
-      - '**/Cargo.lock'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'pkgRio.nix'
+      - 'Cargo.lock'
       - '.github/workflows/nix-build.yml'
   push:
     branches:
@@ -15,15 +20,38 @@ on:
       - '**/*.rs'
       - '**/Cargo.toml'
       - '**/Cargo.lock'
+      - 'flake.nix'
+      - 'flake.lock'
+      - 'pkgRio.nix'
       - '.github/workflows/nix-build.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
 
 jobs:
   lints:
     name: Build
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        # Both Linux arches so the cachix cache serves x86_64 users too,
+        # not just the arm runner's own architecture.
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      # Binary cache, both directions: substitutes previously-built paths
+      # for CI, and flake users get rioterm.cachix.org as a substituter
+      # (the flake's nixConfig offers it) so `nix run` is a download.
+      # Only main builds are pushed.
+      - uses: cachix/cachix-action@v17
+        with:
+          name: rioterm
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ github.event_name == 'pull_request' }}
       - uses: DeterminateSystems/flake-checker-action@main
       - run: nix build --max-jobs auto --build-max-jobs auto --print-build-logs

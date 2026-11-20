@@ -97,6 +97,18 @@ fn get_logical_key_char(ns_event: &NSEvent, modifierless_chars: &str) -> Key {
     Key::Character(SmolStr::new(string))
 }
 
+/// AppKit reports keypad Enter as ETX (0x03), the same byte as Ctrl+C, so it
+/// is reported as the carriage return of Return instead.
+fn key_text(physical_key: PhysicalKey, characters: &str) -> SmolStr {
+    let text = match physical_key {
+        PhysicalKey::Code(KeyCode::NumpadEnter) if characters == "\u{3}" => {
+            Key::Named(NamedKey::Enter).to_text()
+        }
+        _ => None,
+    };
+    SmolStr::new(text.unwrap_or(characters))
+}
+
 /// Create `KeyEvent` for the given `NSEvent`.
 ///
 /// This function shouldn't be called when the IME input is in process.
@@ -133,7 +145,7 @@ pub(crate) fn create_key_event(
                 // The key may be one of the funky function keys
                 physical_key = extra_function_key_to_code(scancode, &characters);
             }
-            Some(SmolStr::new(characters))
+            Some(key_text(physical_key, &characters))
         }
     };
 
@@ -682,4 +694,18 @@ pub(crate) fn scancode_to_physicalkey(scancode: u32) -> PhysicalKey {
         0x7f => KeyCode::Power, // On 10.7 and 10.8 only
         _ => return PhysicalKey::Unidentified(NativeKeyCode::MacOS(scancode as u16)),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keypad_enter_etx_reads_as_return() {
+        let enter = PhysicalKey::Code(KeyCode::NumpadEnter);
+        assert_eq!(key_text(enter, "\u{3}"), "\r");
+        assert_eq!(key_text(enter, "\r"), "\r");
+        assert_eq!(key_text(PhysicalKey::Code(KeyCode::KeyC), "\u{3}"), "\u{3}");
+        assert_eq!(key_text(PhysicalKey::Code(KeyCode::Enter), "\r"), "\r");
+    }
 }

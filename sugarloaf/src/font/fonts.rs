@@ -3,7 +3,7 @@ use serde::de::{self, Deserializer, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 use std::fmt;
 
-/// Per-slot font style override. Mirrors Ghostty's `FontStyle` enum:
+/// Per-slot font style override:
 ///   - `Default`: let font discovery pick the face implied by the slot
 ///     (regular / bold / italic / bold+italic traits).
 ///   - `Disabled`: skip this slot entirely; the regular face is reused
@@ -136,6 +136,14 @@ pub struct SugarloafFonts {
     pub hinting: bool,
     #[serde(default = "Option::default")]
     pub features: Option<Vec<String>>,
+    /// Break shaping runs around the cursor cell, so a ligature under
+    /// the cursor shows its characters one by one while editing. A run
+    /// is a stretch of text shaped together, which is how ligatures
+    /// form; text on either side of a break is shaped apart. On by
+    /// default. Off, the cursor never changes how a row is shaped and
+    /// a cursor move never rebuilds a row.
+    #[serde(default = "default_bool_true", rename = "cursor-shaping-break")]
+    pub cursor_shaping_break: bool,
     #[serde(default = "Option::default")]
     pub family: Option<String>,
     #[serde(default)]
@@ -170,6 +178,7 @@ impl Default for SugarloafFonts {
     fn default() -> SugarloafFonts {
         SugarloafFonts {
             features: None,
+            cursor_shaping_break: true,
             hinting: true,
             size: default_font_size(),
             family: None,

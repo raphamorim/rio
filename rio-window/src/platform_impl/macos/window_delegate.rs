@@ -29,7 +29,7 @@ use super::cursor::cursor_from_icon;
 use super::display_link::{DisplayLink, DisplayLinkSupport};
 use super::monitor::{self, flip_window_screen_coordinates, get_display_id};
 use super::view::WinitView;
-use super::window::WinitWindow;
+use super::window::{WinitWindow, WinitWindowState};
 use super::{ffi, Fullscreen, MonitorHandle, OsError, WindowId};
 use crate::dpi::{
     LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Position, Size,
@@ -243,6 +243,7 @@ declare_class!(
             // TODO: center the cursor if the window had mouse grab when it
             // lost focus
             self.queue_event(WindowEvent::Focused(true));
+            self.update_integrated_titlebar_background(true);
             // Reapply traffic light positioning when window becomes active
             self.move_traffic_light();
         }
@@ -260,6 +261,7 @@ declare_class!(
             self.view().reset_modifiers();
 
             self.queue_event(WindowEvent::Focused(false));
+            self.update_integrated_titlebar_background(false);
         }
 
         /// Invoked when before enter fullscreen
@@ -424,6 +426,13 @@ declare_class!(
             } else {
                 tracing::info!("Display link reinitialized for new screen");
             }
+
+            // The new screen may carry a different backing scale, and
+            // AppKit does not reliably pair this notification with
+            // windowDidChangeBackingProperties: (ordered-out windows,
+            // wake-time display reshuffles). Re-run the scale check; the
+            // numeric de-dupe makes it a no-op when nothing changed.
+            self.queue_static_scale_factor_changed_event();
         }
     }
 
@@ -589,9 +598,18 @@ fn new_window(
             masks |= NSWindowStyleMask::FullSizeContentView;
         }
 
+        let integrate_native_tabs = attrs.platform_specific.unified_titlebar
+            && attrs.platform_specific.tabbing_identifier.is_some()
+            && super::glass::GlassEffect::class_available();
         let window: Option<Retained<WinitWindow>> = unsafe {
             msg_send_id![
-                super(mtm.alloc().set_ivars(())),
+                super(mtm.alloc().set_ivars(WinitWindowState {
+                    integrate_native_tabs,
+                    native_tab_constraints: RefCell::new(Vec::new()),
+                    integrated_titlebar_glass: RefCell::new(None),
+                    observed_tab_bar: RefCell::new(None),
+                    title_hidden_for_tabs: Cell::new(false),
+                })),
                 initWithContentRect: frame,
                 styleMask: masks,
                 backing: NSBackingStoreType::NSBackingStoreBuffered,
@@ -645,7 +663,13 @@ fn new_window(
                 // The toolbar style is ignored if there is no toolbar, so it is
                 // necessary to add one.
                 window.setToolbar(Some(&NSToolbar::new(mtm)));
-                window.setToolbarStyle(NSWindowToolbarStyle::Unified);
+                // The title is hidden only while the tab bar is in the
+                // titlebar, so a lone window keeps it.
+                window.setToolbarStyle(if integrate_native_tabs {
+                    NSWindowToolbarStyle::UnifiedCompact
+                } else {
+                    NSWindowToolbarStyle::Unified
+                });
             }
         }
 
@@ -711,6 +735,17 @@ fn new_window(
 }
 
 impl WindowDelegate {
+    fn update_integrated_titlebar_background(&self, active: bool) {
+        if !self.window().uses_integrated_native_tabs() {
+            return;
+        }
+
+        self.window().set_integrated_titlebar_background(
+            &self.ivars().background_color.borrow(),
+            active,
+        );
+    }
+
     pub(super) fn new(
         app_delegate: &ApplicationDelegate,
         attrs: WindowAttributes,
@@ -756,7 +791,7 @@ impl WindowDelegate {
             _ => NSSize::new(1., 1.),
         };
 
-        let scale_factor = window.backingScaleFactor() as _;
+        let scale_factor = window.backingScaleFactor() as f64;
 
         let current_theme = match attrs.preferred_theme {
             Some(theme) => Some(theme),
@@ -768,7 +803,11 @@ impl WindowDelegate {
             window: window.retain(),
             current_theme: Cell::new(current_theme),
             previous_position: Cell::new(None),
-            previous_scale_factor: Cell::new(scale_factor),
+            // 1.0, not the current scale: the synthesized startup event
+            // below must survive the equality guard in
+            // queue_static_scale_factor_changed_event, otherwise a window
+            // created on a HiDPI display never reports its scale.
+            previous_scale_factor: Cell::new(1.0),
             resize_increments: Cell::new(resize_increments),
             decorations: Cell::new(attrs.decorations),
             resizable: Cell::new(attrs.resizable),
@@ -902,7 +941,7 @@ impl WindowDelegate {
             .queue_window_event(self.window().id(), event);
     }
 
-    fn queue_static_scale_factor_changed_event(&self) {
+    pub(crate) fn queue_static_scale_factor_changed_event(&self) {
         let scale_factor = self.scale_factor();
         if scale_factor == self.ivars().previous_scale_factor.get() {
             return;
@@ -1083,10 +1122,20 @@ impl WindowDelegate {
             // doesn't paint past them. `_cornerRadius` is a private
             // selector — gated on `respondsToSelector:` so it
             // degrades gracefully if Apple ever removes / renames it.
-            if let Some(radius) = self.window_corner_radius() {
+            if self.window().uses_integrated_native_tabs() {
+                // The content view starts below the unified titlebar. Giving it
+                // the window's full radius creates a second pair of rounded
+                // corners at that internal boundary.
+                glass.set_corner_radius(0.0);
+            } else if let Some(radius) = self.window_corner_radius() {
                 glass.set_corner_radius(radius);
             }
         }
+        self.window().install_or_update_integrated_titlebar_glass(
+            style,
+            &self.ivars().background_color.borrow(),
+            self.ivars().glass_opacity.get(),
+        );
     }
 
     /// Query the host `NSWindow`'s rounded-corner radius via the
@@ -1122,7 +1171,14 @@ impl WindowDelegate {
         // borrow is held across the AppKit `setContentView` call
         // below — same re-entrancy concern as `install_or_update_glass`.
         let glass = self.ivars().glass_effect.borrow_mut().take();
-        let Some(glass) = glass else { return };
+        self.window().uninstall_integrated_titlebar_glass();
+        let Some(glass) = glass else {
+            self.window().set_integrated_titlebar_background(
+                &self.ivars().background_color.borrow(),
+                self.window().isKeyWindow(),
+            );
+            return;
+        };
 
         let window = self.window();
         if let Some(view) = glass.content_view() {
@@ -1133,6 +1189,10 @@ impl WindowDelegate {
         }
         // glass drops here; AppKit releases the NSGlassEffectView.
         drop(glass);
+        self.window().set_integrated_titlebar_background(
+            &self.ivars().background_color.borrow(),
+            self.window().isKeyWindow(),
+        );
     }
 
     pub fn set_visible(&self, visible: bool) {
@@ -2181,6 +2241,14 @@ impl WindowExtMacOS for WindowDelegate {
         let mut background_color = self.ivars().background_color.borrow_mut();
         *background_color = color_value.clone();
         self.window().setBackgroundColor(Some(&color_value));
+        self.window().set_integrated_titlebar_background(
+            &color_value,
+            self.window().isKeyWindow(),
+        );
+        self.window().update_integrated_titlebar_glass_tint(
+            &color_value,
+            self.ivars().glass_opacity.get(),
+        );
     }
 
     #[inline]
@@ -2246,6 +2314,14 @@ impl WindowExtMacOS for WindowDelegate {
         self.view().option_as_alt()
     }
 
+    fn set_forward_to_ime_modifier_mask(&self, mask: crate::keyboard::ModifiersState) {
+        self.view().set_forward_to_ime_modifier_mask(mask);
+    }
+
+    fn forward_to_ime_modifier_mask(&self) -> crate::keyboard::ModifiersState {
+        self.view().forward_to_ime_modifier_mask()
+    }
+
     fn set_unified_titlebar(&self, unified_titlebar: bool) {
         let window = self.window();
         if unified_titlebar {
@@ -2297,6 +2373,10 @@ impl WindowExtMacOS for WindowDelegate {
                 clamped,
             );
         }
+        self.window().update_integrated_titlebar_glass_tint(
+            &self.ivars().background_color.borrow(),
+            clamped,
+        );
     }
 }
 

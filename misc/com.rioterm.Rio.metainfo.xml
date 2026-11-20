@@ -62,6 +62,106 @@
   </screenshots>
 
   <releases>
+    <release version="0.6.0" date="2026-11-16">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.6.0</url>
+    </release>
+    <release version="0.5.32" date="2026-11-15">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.32</url>
+    </release>
+    <release version="0.5.31" date="2026-11-13">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.31</url>
+    </release>
+    <release version="0.5.30" date="2026-11-12">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.30</url>
+    </release>
+    <release version="0.5.29" date="2026-11-01">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.29</url>
+    </release>
+    <release version="0.5.28" date="2026-09-17">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.28</url>
+    </release>
+    <release version="0.5.27" date="2026-08-30">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.27</url>
+    </release>
+    <release version="0.5.26" date="2026-08-23">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.26</url>
+    </release>
+    <release version="0.5.25" date="2026-08-15">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.25</url>
+    </release>
+    <release version="0.5.24" date="2026-08-13">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.24</url>
+    </release>
+    <release version="0.5.23" date="2026-08-12">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.23</url>
+    </release>
+    <release version="0.5.22" date="2026-08-12">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.22</url>
+    </release>
+    <release version="0.5.21" date="2026-08-12">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.21</url>
+    </release>
+    <release version="0.5.20" date="2026-08-12">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.20</url>
+    </release>
+    <release version="0.5.19" date="2026-08-07">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.19</url>
+    </release>
+    <release version="0.5.18" date="2026-08-07">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.18</url>
+    </release>
+    <release version="0.5.17" date="2026-08-06"/>
+    <release version="0.5.16" date="2026-08-06">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.16</url>
+    </release>
+    <release version="0.5.15" date="2026-08-06">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.15</url>
+    </release>
+    <release version="0.5.14" date="2026-08-05">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.14</url>
+    </release>
+    <release version="0.5.13" date="2026-08-05">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.13</url>
+    </release>
+    <release version="0.5.12" date="2026-08-05">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.12</url>
+    </release>
+    <release version="0.5.11" date="2026-08-05">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.11</url>
+    </release>
+    <release version="0.5.10" date="2026-08-04">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.10</url>
+    </release>
+    <release version="0.5.9" date="2026-08-04">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.9</url>
+    </release>
+    <release version="0.5.8" date="2026-08-04">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.8</url>
+    </release>
+    <release version="0.5.7" date="2026-08-03">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.7</url>
+    </release>
+    <release version="0.5.6" date="2026-08-03">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.6</url>
+    </release>
+    <release version="0.5.5" date="2026-08-01">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.5</url>
+    </release>
+    <release version="0.5.4" date="2026-08-01">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.4</url>
+    </release>
+    <release version="0.5.3" date="2026-07-31">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.3</url>
+    </release>
+    <release version="0.5.2" date="2026-07-28">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.2</url>
+    </release>
+    <release version="0.5.1" date="2026-07-28">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.1</url>
+    </release>
+    <release version="0.5.0" date="2026-07-27">
+      <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.5.0</url>
+    </release>
     <release version="0.4.12" date="2026-07-22">
       <url type="details">https://github.com/raphamorim/rio/releases/tag/v0.4.12</url>
     </release>

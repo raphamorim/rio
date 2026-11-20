@@ -10,7 +10,9 @@
 //   * Linear + radial gradients are handled correctly, including the
 //     3-point → 2-point projection COLR v1 requires (porting the
 //     math from skrifa/color/traversal.rs).
-//   * Sweep gradients degrade to the first stop's solid colour.
+//   * Sweep gradients use tiny-skia's sweep shader. Glyph Protocol
+//     v1.16 says a terminal must reject a paint it can't draw rather
+//     than substitute one, so there is no fallback colour here.
 //   * Variable-font coordinates render at the default instance.
 //   * Composite modes beyond the painter's-algorithm `SrcOver` map
 //     through `CompositeMode → BlendMode`; tiny-skia implements the
@@ -23,17 +25,18 @@
 
 use ttf_parser::colr::{
     ClipBox, CompositeMode, GradientExtend, LinearGradient as TtfLinear, Paint, Painter,
-    RadialGradient as TtfRadial,
+    RadialGradient as TtfRadial, SweepGradient as TtfSweep,
 };
 use ttf_parser::{GlyphId, RgbaColor, Transform as TtfTransform};
 
 use tiny_skia::{
     BlendMode, Color, FillRule, GradientStop, LinearGradient, Mask, Paint as SkPaint,
     Path, PathBuilder, Pixmap, PixmapPaint, Point, RadialGradient, Rect, Shader,
-    SpreadMode, Transform,
+    SpreadMode, SweepGradient, Transform,
 };
 
 use crate::font::glyf_decode;
+use rio_graphics::glyph_layout::{GlyphLayout, SpanPlacement};
 
 /// Bitmap + placement metadata produced by [`rasterize_payload`] (and
 /// internally by [`rasterize`]). `is_color` distinguishes the two
@@ -45,12 +48,6 @@ pub struct RasterizedPayload {
     pub data: Vec<u8>,
     pub width: u16,
     pub height: u16,
-    /// Pixel offset from the cell's pen position to the bitmap's
-    /// left edge.
-    pub left: i32,
-    /// Pixel offset from the baseline to the bitmap's top edge
-    /// (positive = baseline below the top).
-    pub top: i32,
     pub is_color: bool,
 }
 
@@ -59,19 +56,50 @@ pub struct RasterizedPayload {
 /// output) and the colour `colrv0`/`colrv1` paths through the COLR
 /// painter graph (RGBA8 output). Returns `None` on malformed payload
 /// or degenerate sizing.
+///
+/// `cell_width_px` is the declared render span (1 or 2 cell widths),
+/// and the bitmap is always exactly that span by `cell_height_px`.
+/// `baseline_px` is the text baseline measured from the top of the
+/// cell, used by `align=_,baseline`. See [`SpanPlacement`].
 pub fn rasterize_payload(
     payload: &crate::font::glyph_registry::StoredPayload,
     upm: u16,
-    pixel_size: u16,
+    cell_width_px: u16,
+    cell_height_px: u16,
     foreground_rgba: [u8; 4],
+    layout: &GlyphLayout,
+    baseline_px: f32,
 ) -> Option<RasterizedPayload> {
     use crate::font::glyph_registry::StoredPayload;
     match payload {
-        StoredPayload::Glyf { glyf } => rasterize_mono(glyf, upm, pixel_size),
+        StoredPayload::Glyf { glyf } => rasterize_mono(
+            glyf,
+            upm,
+            cell_width_px,
+            cell_height_px,
+            layout,
+            baseline_px,
+        ),
         StoredPayload::ColrV0 { glyphs, colr, cpal }
-        | StoredPayload::ColrV1 { glyphs, colr, cpal } => {
-            rasterize(glyphs, colr, cpal, upm, pixel_size, foreground_rgba)
-        }
+        | StoredPayload::ColrV1 { glyphs, colr, cpal } => rasterize(
+            glyphs,
+            colr,
+            cpal,
+            upm,
+            cell_width_px,
+            cell_height_px,
+            foreground_rgba,
+            layout,
+            baseline_px,
+        ),
+        StoredPayload::Vector { glyph } => rasterize_vector(
+            glyph,
+            cell_width_px,
+            cell_height_px,
+            foreground_rgba,
+            layout,
+            baseline_px,
+        ),
     }
 }
 
@@ -79,19 +107,42 @@ pub fn rasterize_payload(
 /// mask sized to fit `pixel_size`. The atlas-bound caller uploads
 /// the bytes straight into the grayscale atlas, same shape as the
 /// swash/CT mono path produces.
-fn rasterize_mono(glyf: &[u8], upm: u16, pixel_size: u16) -> Option<RasterizedPayload> {
-    if pixel_size == 0 || upm == 0 {
-        return None;
-    }
-
+fn rasterize_mono(
+    glyf: &[u8],
+    upm: u16,
+    cell_width_px: u16,
+    cell_height_px: u16,
+    layout: &GlyphLayout,
+    baseline_px: f32,
+) -> Option<RasterizedPayload> {
     let outline = glyf_decode::decode(glyf).ok()?;
-    let scale = pixel_size as f32 / upm as f32;
 
-    let pad = 1.0_f32;
-    let pix_w = (((outline.x_max - outline.x_min) as f32 * scale).ceil() + pad * 2.0)
-        .max(1.0) as u32;
-    let pix_h = (((outline.y_max - outline.y_min) as f32 * scale).ceil() + pad * 2.0)
-        .max(1.0) as u32;
+    let span = SpanPlacement::new(
+        layout,
+        upm,
+        cell_width_px,
+        cell_height_px,
+        baseline_px,
+        || {
+            Some([
+                outline.x_min as f32,
+                outline.y_min as f32,
+                outline.x_max as f32,
+                outline.y_max as f32,
+            ])
+        },
+    )?;
+    let (pix_w, pix_h) = (cell_width_px as u32, cell_height_px as u32);
+    // `Outline::walk` (below) is Y-down from the bbox top, hence the
+    // `y_max` shift.
+    let ctm = Transform::from_row(
+        span.sx,
+        0.0,
+        0.0,
+        span.sy,
+        span.tx,
+        span.ty - outline.y_max as f32 * span.sy,
+    );
 
     // `glyf_decode::Outline::walk` flips Y so its output is Y-down
     // with origin at the top of the bbox (y=0 → top, y increases
@@ -116,18 +167,6 @@ fn rasterize_mono(glyf: &[u8], upm: u16, pixel_size: u16) -> Option<RasterizedPa
     let path = pb.finish()?;
 
     let mut pixmap = Pixmap::new(pix_w, pix_h)?;
-    // X: shift so design `x_min` lands at pixel `pad`.
-    // Y: walk already puts the bbox top at y=0, so a flat `pad`
-    // offset places the top of the glyph one px below the pixmap
-    // top edge.
-    let ctm = Transform::from_row(
-        scale,
-        0.0,
-        0.0,
-        scale,
-        pad - outline.x_min as f32 * scale,
-        pad,
-    );
     let mut paint = SkPaint::default();
     paint.set_color_rgba8(0xFF, 0xFF, 0xFF, 0xFF);
     paint.anti_alias = true;
@@ -137,44 +176,256 @@ fn rasterize_mono(glyf: &[u8], upm: u16, pixel_size: u16) -> Option<RasterizedPa
     // the alpha channel (which equals R/G/B since we filled white).
     let data: Vec<u8> = pixmap.pixels().iter().map(|p| p.alpha()).collect();
 
-    // Placement: `floor` left and `ceil` top to expand outward by a
-    // sub-pixel and avoid clipping anti-aliased edges, matching the
-    // COLR rasteriser's convention. The bitmap's top edge sits at
-    // design-unit `y_max` in baseline-up convention.
-    let left = (outline.x_min as f32 * scale - pad).floor() as i32;
-    let top = (outline.y_max as f32 * scale + pad).ceil() as i32;
-
     Some(RasterizedPayload {
         data,
         width: pix_w as u16,
         height: pix_h as u16,
-        left,
-        top,
         is_color: false,
     })
 }
 
-/// Rasterise a COLR glyph to RGBA. Returns `None` when COLR/CPAL is
-/// malformed, when the base-glyph outline is empty, or when tiny-skia
-/// rejects a degenerate configuration (e.g. zero pixmap size).
-pub(super) fn rasterize(
-    glyphs: &[Vec<u8>],
-    colr_bytes: &[u8],
-    cpal_bytes: &[u8],
-    upm: u16,
-    pixel_size: u16,
-    foreground: [u8; 4],
+/// Draw a `fmt=vg` glyph. The viewBox is the extent, placed by `fit`
+/// and `align` (no baseline, so the baseline is unused). A glyph whose colours are all
+/// the foreground, gradient stops included, becomes an A8 mask (layer
+/// alphas composite into its coverage) so the grid tints it like
+/// `glyf`; any fixed colour makes it RGBA with the foreground resolved
+/// now. A clip layer turns into a mask that the next layers draw
+/// through.
+fn rasterize_vector(
+    glyph: &rio_graphics::glyph_vector::VectorGlyph,
+    cell_width_px: u16,
+    cell_height_px: u16,
+    foreground_rgba: [u8; 4],
+    layout: &GlyphLayout,
+    baseline_px: f32,
 ) -> Option<RasterizedPayload> {
-    if pixel_size == 0 || upm == 0 {
-        return None;
+    use rio_graphics::glyph_vector::{LayerOp, Segment};
+
+    let vb = glyph.view_box;
+    // Path data is Y-down; the placement works in Y-up design units, so
+    // the viewBox's vertical range [y, y + h] becomes [-(y + h), -y].
+    let span = SpanPlacement::for_extent(
+        layout,
+        [vb.x, vb.w, -(vb.y + vb.h), vb.h],
+        None,
+        cell_width_px,
+        cell_height_px,
+        baseline_px,
+    )?;
+    // A design point (x, -vy) lands on (tx + x * sx, ty + vy * sy).
+    let ctm = Transform::from_row(span.sx, 0.0, 0.0, span.sy, span.tx, span.ty);
+
+    let monochrome = glyph.is_monochrome();
+    let (pix_w, pix_h) = (cell_width_px as u32, cell_height_px as u32);
+    let mut pixmap = Pixmap::new(pix_w, pix_h)?;
+    // The clip in force and how many more layers it covers.
+    let mut clip: Option<(Mask, usize)> = None;
+    for layer in &glyph.layers {
+        let mut pb = PathBuilder::new();
+        for segment in &layer.segments {
+            match *segment {
+                Segment::MoveTo(x, y) => pb.move_to(x, y),
+                Segment::LineTo(x, y) => pb.line_to(x, y),
+                Segment::QuadTo(cx, cy, x, y) => pb.quad_to(cx, cy, x, y),
+                Segment::CubicTo(c1x, c1y, c2x, c2y, x, y) => {
+                    pb.cubic_to(c1x, c1y, c2x, c2y, x, y)
+                }
+                Segment::Close => pb.close(),
+            }
+        }
+        // A path that is only a degenerate line has no area: drawn, it
+        // shows nothing; as a clip, it hides everything it covers.
+        let path = pb.finish();
+        // The layer's own matrix, then the placement. A gradient on the
+        // layer is in the path's coordinates, so it follows too.
+        let ctm = match layer.transform {
+            Some([a, b, c, d, e, f]) => {
+                ctm.pre_concat(Transform::from_row(a, b, c, d, e, f))
+            }
+            None => ctm,
+        };
+
+        if let LayerOp::Clip { rule, count } = &layer.op {
+            let mut mask = Mask::new(pix_w, pix_h)?;
+            if let Some(path) = &path {
+                mask.fill_path(path, fill_rule(*rule), true, ctm);
+            }
+            clip = Some((mask, *count));
+            continue;
+        }
+
+        if let Some(path) = &path {
+            let mask = clip.as_ref().map(|(mask, _)| mask);
+            match &layer.op {
+                LayerOp::Fill { rule, color } => {
+                    let paint = vector_paint(color, monochrome, foreground_rgba);
+                    pixmap.fill_path(path, &paint, fill_rule(*rule), ctm, mask);
+                }
+                LayerOp::Stroke { style, color } => {
+                    use rio_graphics::glyph_vector::{LineCap, LineJoin};
+                    let paint = vector_paint(color, monochrome, foreground_rgba);
+                    let stroke = tiny_skia::Stroke {
+                        width: style.width,
+                        line_cap: match style.cap {
+                            LineCap::Round => tiny_skia::LineCap::Round,
+                            LineCap::Butt => tiny_skia::LineCap::Butt,
+                            LineCap::Square => tiny_skia::LineCap::Square,
+                        },
+                        line_join: match style.join {
+                            LineJoin::Round => tiny_skia::LineJoin::Round,
+                            LineJoin::Bevel => tiny_skia::LineJoin::Bevel,
+                            LineJoin::Miter => tiny_skia::LineJoin::Miter,
+                        },
+                        miter_limit: style.miter_limit,
+                        ..tiny_skia::Stroke::default()
+                    };
+                    pixmap.stroke_path(path, &paint, &stroke, ctm, mask);
+                }
+                LayerOp::Clip { .. } => unreachable!("handled above"),
+            }
+        }
+        if let Some((_, left)) = &mut clip {
+            *left -= 1;
+            if *left == 0 {
+                clip = None;
+            }
+        }
     }
 
-    // ttf-parser's `colr::Table::parse` requires a non-empty CPAL
-    // slice, even for v1 fonts that make no palette lookups. If the
-    // container ships an empty CPAL (legal for v1-only paints), feed
-    // the parser a zero-entry placeholder.
-    const EMPTY_CPAL: [u8; 12] = [
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C,
+    let data = if monochrome {
+        pixmap.pixels().iter().map(|p| p.alpha()).collect()
+    } else {
+        pixmap_to_rgba(&pixmap)
+    };
+    Some(RasterizedPayload {
+        data,
+        width: pix_w as u16,
+        height: pix_h as u16,
+        is_color: !monochrome,
+    })
+}
+
+fn fill_rule(rule: rio_graphics::glyph_vector::FillRule) -> FillRule {
+    match rule {
+        rio_graphics::glyph_vector::FillRule::NonZero => FillRule::Winding,
+        rio_graphics::glyph_vector::FillRule::EvenOdd => FillRule::EvenOdd,
+    }
+}
+
+/// A solid colour as drawn: for a monochrome glyph the foreground is
+/// white with its alpha, which becomes the mask's coverage; otherwise
+/// the foreground is resolved now. In such a mixed glyph `fg` is the
+/// foreground as an opaque colour (spec §8.9.1): only `fg@<alpha>`
+/// makes it translucent, so `K + fg·F` compositing at draw time stays
+/// exact. An all-foreground glyph is a mask the grid tints like text,
+/// foreground alpha included.
+fn vector_solid(
+    solid: &rio_graphics::glyph_vector::Solid,
+    monochrome: bool,
+    foreground_rgba: [u8; 4],
+) -> [u8; 4] {
+    use rio_graphics::glyph_vector::Solid;
+    match *solid {
+        Solid::Foreground { alpha } if monochrome => [0xFF, 0xFF, 0xFF, alpha],
+        Solid::Foreground { alpha } => {
+            let [r, g, b, _] = foreground_rgba;
+            [r, g, b, alpha]
+        }
+        Solid::Rgba(rgba) => rgba,
+    }
+}
+
+fn vector_paint(
+    color: &rio_graphics::glyph_vector::LayerColor,
+    monochrome: bool,
+    foreground_rgba: [u8; 4],
+) -> SkPaint<'static> {
+    use rio_graphics::glyph_vector::{GradientShape, LayerColor, Spread};
+    let rgba = |c: [u8; 4]| Color::from_rgba8(c[0], c[1], c[2], c[3]);
+    let mut paint = SkPaint {
+        anti_alias: true,
+        ..SkPaint::default()
+    };
+    match color {
+        LayerColor::Solid(solid) => {
+            let [r, g, b, a] = vector_solid(solid, monochrome, foreground_rgba);
+            paint.set_color_rgba8(r, g, b, a);
+        }
+        LayerColor::Gradient(gradient) => {
+            let stops: Vec<GradientStop> = gradient
+                .stops
+                .iter()
+                .map(|stop| {
+                    GradientStop::new(
+                        stop.offset,
+                        rgba(vector_solid(&stop.color, monochrome, foreground_rgba)),
+                    )
+                })
+                .collect();
+            let spread = match gradient.spread {
+                Spread::Pad => SpreadMode::Pad,
+                Spread::Reflect => SpreadMode::Reflect,
+                Spread::Repeat => SpreadMode::Repeat,
+            };
+            let [a, b, c, d, e, f] = gradient.transform;
+            let transform = Transform::from_row(a, b, c, d, e, f);
+            let last = gradient
+                .stops
+                .last()
+                .map(|stop| rgba(vector_solid(&stop.color, monochrome, foreground_rgba)));
+            let shader = match gradient.shape {
+                GradientShape::Linear { x1, y1, x2, y2 } => LinearGradient::new(
+                    Point::from_xy(x1, y1),
+                    Point::from_xy(x2, y2),
+                    stops,
+                    spread,
+                    transform,
+                ),
+                GradientShape::Radial {
+                    fx,
+                    fy,
+                    fr,
+                    cx,
+                    cy,
+                    r,
+                } => RadialGradient::new(
+                    Point::from_xy(fx, fy),
+                    fr,
+                    Point::from_xy(cx, cy),
+                    r,
+                    stops,
+                    spread,
+                    transform,
+                ),
+            };
+            // A gradient with no extent (both points or circles the
+            // same) paints its last stop, as SVG does.
+            paint.shader = shader
+                .or_else(|| last.map(Shader::SolidColor))
+                .unwrap_or(Shader::SolidColor(Color::TRANSPARENT));
+        }
+    }
+    paint
+}
+
+/// Parse a colour container's `COLR` table against its `CPAL`.
+///
+/// A container may ship no CPAL (legal for v1 paints that only use
+/// direct or foreground colours), but `cpal::Table::parse` rejects
+/// anything without at least one palette. Feed it the smallest valid
+/// table: one palette holding no colours. Foreground paints never
+/// consult it, and a real palette lookup still fails.
+fn parse_colr<'a>(
+    colr_bytes: &'a [u8],
+    cpal_bytes: &'a [u8],
+) -> Option<ttf_parser::colr::Table<'a>> {
+    const EMPTY_CPAL: [u8; 14] = [
+        0x00, 0x00, // version
+        0x00, 0x00, // numPaletteEntries
+        0x00, 0x01, // numPalettes
+        0x00, 0x00, // numColorRecords
+        0x00, 0x00, 0x00, 0x0E, // colorRecordsArrayOffset
+        0x00, 0x00, // colorRecordIndices[0]
     ];
     let cpal_source: &[u8] = if cpal_bytes.is_empty() {
         &EMPTY_CPAL
@@ -182,55 +433,124 @@ pub(super) fn rasterize(
         cpal_bytes
     };
     let cpal = ttf_parser::cpal::Table::parse(cpal_source)?;
-    let colr = ttf_parser::colr::Table::parse(cpal, colr_bytes)?;
+    ttf_parser::colr::Table::parse(cpal, colr_bytes)
+}
+
+/// Records every colour a paint graph asks for, drawing nothing.
+#[derive(Default)]
+struct PaintedColors(Vec<RgbaColor>);
+
+impl<'a> Painter<'a> for PaintedColors {
+    fn outline_glyph(&mut self, _: GlyphId) {}
+    fn paint(&mut self, paint: Paint<'a>) {
+        match paint {
+            Paint::Solid(color) => self.0.push(color),
+            Paint::LinearGradient(g) => self.0.extend(g.stops(0, &[]).map(|s| s.color)),
+            Paint::RadialGradient(g) => self.0.extend(g.stops(0, &[]).map(|s| s.color)),
+            Paint::SweepGradient(g) => self.0.extend(g.stops(0, &[]).map(|s| s.color)),
+        }
+    }
+    fn push_clip(&mut self) {}
+    fn push_clip_box(&mut self, _: ClipBox) {}
+    fn pop_clip(&mut self) {}
+    fn push_layer(&mut self, _: CompositeMode) {}
+    fn pop_layer(&mut self) {}
+    fn push_transform(&mut self, _: TtfTransform) {}
+    fn pop_transform(&mut self) {}
+}
+
+/// Whether a payload's pixels depend on the foreground colour. Walks the
+/// paint graph under two different foregrounds: a graph that references
+/// the foreground asks for different colours, whatever the cell size.
+/// Alpha masks take their colour at draw time, so they don't.
+pub fn payload_uses_foreground(
+    payload: &crate::font::glyph_registry::StoredPayload,
+) -> bool {
+    use crate::font::glyph_registry::StoredPayload;
+    let (glyphs, colr, cpal) = match payload {
+        StoredPayload::Glyf { .. } => return false,
+        // An all-foreground vector glyph is an alpha mask tinted at draw
+        // time; one with fixed colours bakes the foreground in.
+        StoredPayload::Vector { glyph } => {
+            return !glyph.is_monochrome() && glyph.uses_foreground()
+        }
+        StoredPayload::ColrV0 { glyphs, colr, cpal }
+        | StoredPayload::ColrV1 { glyphs, colr, cpal } => (glyphs, colr, cpal),
+    };
+    let (Some(table), Some(base_gid)) =
+        (parse_colr(colr, cpal), first_base_glyph_id(colr, glyphs))
+    else {
+        return false;
+    };
+    let colors_under = |foreground| {
+        let mut painted = PaintedColors::default();
+        table
+            .paint(GlyphId(base_gid), 0, &mut painted, &[], foreground)
+            .map(|()| painted.0)
+    };
+    colors_under(RgbaColor::new(0, 0, 0, 255))
+        != colors_under(RgbaColor::new(255, 255, 255, 255))
+}
+
+/// Rasterise a COLR glyph to RGBA. Returns `None` when COLR/CPAL is
+/// malformed, when the base-glyph outline is empty, or when tiny-skia
+/// rejects a degenerate configuration (e.g. zero pixmap size).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn rasterize(
+    glyphs: &[Vec<u8>],
+    colr_bytes: &[u8],
+    cpal_bytes: &[u8],
+    upm: u16,
+    cell_width_px: u16,
+    cell_height_px: u16,
+    foreground: [u8; 4],
+    layout: &GlyphLayout,
+    baseline_px: f32,
+) -> Option<RasterizedPayload> {
+    // Cheap guard before the COLR parse.
+    if upm == 0 || cell_width_px == 0 || cell_height_px == 0 {
+        return None;
+    }
+
+    let colr = parse_colr(colr_bytes, cpal_bytes)?;
     let base_gid = first_base_glyph_id(colr_bytes, glyphs)?;
 
-    // Prefer the COLR ClipBox — authoritative per the OpenType spec,
-    // and required for emoji fonts (Noto Color Emoji, etc.) whose base
-    // glyphs are empty wrappers that reference layer glyphs via the
-    // paint graph. Fall back to the base glyph's `glyf` bbox for fonts
-    // like Nabla that carry geometry on the base glyph. Pad 1 px each
-    // side so anti-aliased layer edges that drift slightly past the
-    // declared bbox (common in hand-authored fonts) aren't clipped.
-    //
-    // Widened to i32 immediately because a saturated ClipBox (e.g.
-    // `x_min = i16::MIN`, `x_max = i16::MAX`) would overflow on the
-    // `x_max - x_min` subtraction below if kept as i16 — wrapping in
-    // release and panicking in debug.
-    let (x_min, y_min, x_max, y_max): (i32, i32, i32, i32) =
-        match colr.clip_box(GlyphId(base_gid), &[]) {
-            Some(cb) => (
-                cb.x_min.floor() as i32,
-                cb.y_min.floor() as i32,
-                cb.x_max.ceil() as i32,
-                cb.y_max.ceil() as i32,
-            ),
-            None => {
-                let (a, b, c, d) = glyf_bbox(glyphs.get(base_gid as usize)?)?;
-                (a as i32, b as i32, c as i32, d as i32)
-            }
-        };
-    let scale = pixel_size as f32 / upm as f32;
-
-    let pad = 1.0_f32;
-    let pix_w = (((x_max - x_min) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
-    let pix_h = (((y_max - y_min) as f32 * scale).ceil() + pad * 2.0).max(1.0) as u32;
-
-    let base_pixmap = Pixmap::new(pix_w, pix_h)?;
+    // The outline's bounds, used only when the extent isn't declared.
+    // Prefer the COLR ClipBox: emoji fonts (Noto Color Emoji, etc.) have
+    // empty wrapper base glyphs that reference layers via the paint
+    // graph. Fall back to the base glyph's own points for fonts like
+    // Nabla that carry geometry on the base glyph.
+    let bounds = || match colr.clip_box(GlyphId(base_gid), &[]) {
+        Some(cb) => Some([
+            cb.x_min.floor(),
+            cb.y_min.floor(),
+            cb.x_max.ceil(),
+            cb.y_max.ceil(),
+        ]),
+        None => {
+            let glyph = glyphs.get(base_gid as usize)?;
+            let (x_min, y_min, x_max, y_max) = glyf_decode::bounds(glyph).ok()?;
+            Some([x_min as f32, y_min as f32, x_max as f32, y_max as f32])
+        }
+    };
+    let span = SpanPlacement::new(
+        layout,
+        upm,
+        cell_width_px,
+        cell_height_px,
+        baseline_px,
+        bounds,
+    )?;
+    let (pix_w, pix_h) = (cell_width_px as u32, cell_height_px as u32);
 
     // Font units (y-up, origin at baseline) → pixmap pixels (y-down,
     // origin at top-left). The identity-sized glyph outline in the
     // painter gets this transform applied before drawing.
     // Matrix [sx, ky, kx, sy, tx, ty] applies (x,y) as
     //   (sx*x + kx*y + tx, ky*x + sy*y + ty).
-    let base_ctm = Transform::from_row(
-        scale,
-        0.0,
-        0.0,
-        -scale,
-        -(x_min as f32) * scale + pad,
-        (y_max as f32) * scale + pad,
-    );
+    let base_ctm = Transform::from_row(span.sx, 0.0, 0.0, -span.sy, span.tx, span.ty);
+
+    let base_pixmap = Pixmap::new(pix_w, pix_h)?;
 
     let mut raster = ColorRaster {
         layers: vec![Layer {
@@ -253,8 +573,6 @@ pub(super) fn rasterize(
         data: pixmap_to_rgba(&final_pixmap),
         width: pix_w as u16,
         height: pix_h as u16,
-        left: (x_min as f32 * scale - pad).floor() as i32,
-        top: (y_max as f32 * scale + pad).ceil() as i32,
         is_color: true,
     })
 }
@@ -342,13 +660,9 @@ impl<'a> Painter<'a> for ColorRaster<'a> {
                 }
             }
             Paint::SweepGradient(sg) => {
-                // Sweep gradients don't map to tiny-skia (no sweep
-                // shader). Degrade to the first stop's solid colour.
-                // Nabla doesn't use sweeps; extending later means
-                // writing a custom per-pixel shader.
-                if let Some(first) = sg.stops(0, &[]).next() {
+                if let Some(shader) = sweep_gradient_shader(&sg) {
                     let p = SkPaint {
-                        shader: Shader::SolidColor(rgba_to_color(first.color)),
+                        shader,
                         anti_alias: true,
                         ..SkPaint::default()
                     };
@@ -540,17 +854,6 @@ fn first_base_glyph_id(colr: &[u8], glyphs: &[Vec<u8>]) -> Option<u16> {
     first_gid
 }
 
-fn glyf_bbox(bytes: &[u8]) -> Option<(i16, i16, i16, i16)> {
-    if bytes.len() < 10 {
-        return None;
-    }
-    let xmin = i16::from_be_bytes([bytes[2], bytes[3]]);
-    let ymin = i16::from_be_bytes([bytes[4], bytes[5]]);
-    let xmax = i16::from_be_bytes([bytes[6], bytes[7]]);
-    let ymax = i16::from_be_bytes([bytes[8], bytes[9]]);
-    Some((xmin, ymin, xmax, ymax))
-}
-
 /// Decode a glyf simple-glyph record into an unscaled, Y-up
 /// design-unit `Path`. The painter's CTM is responsible for the
 /// scale + Y-flip at draw time.
@@ -716,6 +1019,45 @@ fn radial_gradient_shader(rg: &TtfRadial<'_>) -> Option<Shader<'static>> {
     )
 }
 
+/// COLR v1 angles are F2DOT14 with 1.0 meaning 180°, counter-clockwise
+/// in the glyph's Y-up space; tiny-skia takes degrees, and with the
+/// Y flip in the CTM its angles run the same way. tiny-skia wants
+/// start ≤ end, so a sweep that runs backwards swaps its angles and
+/// mirrors its stops, which paints the same colour at every angle.
+fn sweep_gradient_shader(sg: &TtfSweep<'_>) -> Option<Shader<'static>> {
+    let mut stops = collect_stops(sg.stops(0, &[]));
+    if stops.len() < 2 {
+        return stops.into_iter().next().map(|(_, c)| Shader::SolidColor(c));
+    }
+    let (mut start, mut end) = (sg.start_angle * 180.0, sg.end_angle * 180.0);
+    if start > end {
+        std::mem::swap(&mut start, &mut end);
+        for stop in &mut stops {
+            stop.0 = 1.0 - stop.0;
+        }
+        stops.reverse();
+    }
+    // tiny-skia 0.12 applies the angle scale and offset only when both
+    // are non-trivial (`scale != 1.0 && bias != 0.0`), so a sweep that
+    // starts at exactly 0° ignores its end angle, and one spanning
+    // exactly 360° ignores its start. Nudging the angle by a thousandth
+    // of a degree makes it apply them; the error can't be seen.
+    const NUDGE: f32 = 1e-3;
+    if start == 0.0 && end != 360.0 {
+        start = NUDGE;
+    } else if start != 0.0 && end - start == 360.0 {
+        end += NUDGE;
+    }
+    SweepGradient::new(
+        Point::from_xy(sg.center_x, sg.center_y),
+        start,
+        end,
+        stops_to_tiny_skia(&stops),
+        extend_to_spread(sg.extend),
+        Transform::identity(),
+    )
+}
+
 fn composite_mode_to_blend(mode: CompositeMode) -> BlendMode {
     use CompositeMode::*;
     match mode {
@@ -769,23 +1111,516 @@ fn intersect_masks(dst: &mut Mask, src: &Mask) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::font::glyph_registry::{GlyphAlignH, GlyphAlignV, GlyphSize};
+
+    mod vector_format {
+        use super::*;
+        use crate::font::glyph_registry::StoredPayload;
+        use rio_graphics::glyph_vector::{parse, parse_view_box, Fit};
+
+        const FG: [u8; 4] = [10, 200, 30, 255];
+
+        fn draw(vb: &str, text: &str, w: u16, h: u16) -> RasterizedPayload {
+            draw_placed(vb, text, w, h, &GlyphLayout::default())
+        }
+
+        fn draw_placed(
+            vb: &str,
+            text: &str,
+            w: u16,
+            h: u16,
+            layout: &GlyphLayout,
+        ) -> RasterizedPayload {
+            let fit = match layout.size {
+                rio_graphics::glyph_layout::GlyphSize::Cover => Fit::Cover,
+                rio_graphics::glyph_layout::GlyphSize::Stretch => Fit::Stretch,
+                _ => Fit::Contain,
+            };
+            let glyph =
+                parse(text.as_bytes(), parse_view_box(vb.as_bytes()).unwrap(), fit)
+                    .expect("payload parses");
+            rasterize_payload(
+                &StoredPayload::Vector { glyph },
+                1000,
+                w,
+                h,
+                FG,
+                layout,
+                0.0,
+            )
+            .expect("draws")
+        }
+
+        #[test]
+        fn gradients_interpolate_unpremultiplied_like_svg() {
+            // Transparent red to opaque blue. SVG interpolates straight
+            // (non-premultiplied) colour, so halfway is half-transparent
+            // purple: some red is left. Premultiplied interpolation, as
+            // in CSS and canvas, would leave none.
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 24 0 / 0 #ff000000 / 1 #0000ffff):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            let [red, _, blue, a] = rgba_at(&r, 12, 12);
+            assert!((110..=145).contains(&a), "half alpha: {a}");
+            // Premultiplied pixels: straight purple at half alpha is
+            // about (64, 0, 64).
+            assert!(red > 40 && blue > 40, "red {red} blue {blue}");
+        }
+
+        #[test]
+        fn fg_is_opaque_where_it_mixes_with_fixed_colours() {
+            // A glyph mixing `fg` with a fixed colour resolves the
+            // foreground into RGBA. A translucent foreground colour
+            // doesn't make `fg` translucent; only `fg@<alpha>` does.
+            let glyph = parse(
+                b"fill=nonzero,fg:M0 0h12v24H0Z|fill=nonzero,fg@0.5:M12 0h6v24h-6Z|fill=nonzero,#ff0000:M18 0h6v24h-6Z",
+                parse_view_box(b"0,0,24,24").unwrap(),
+                Fit::Contain,
+            )
+            .unwrap();
+            let r = rasterize_payload(
+                &StoredPayload::Vector { glyph },
+                1000,
+                24,
+                24,
+                [10, 200, 30, 128],
+                &GlyphLayout::default(),
+                0.0,
+            )
+            .unwrap();
+            assert!(r.is_color);
+            assert_eq!(rgba_at(&r, 4, 12)[3], 255);
+            assert!((120..=135).contains(&rgba_at(&r, 15, 12)[3]));
+
+            // An all-foreground glyph is a coverage mask the grid tints
+            // like text, foreground alpha and all, so the mask itself
+            // doesn't depend on it.
+            let mono = parse(
+                b"fill=nonzero,fg:M0 0h24v24H0Z",
+                parse_view_box(b"0,0,24,24").unwrap(),
+                Fit::Contain,
+            )
+            .unwrap();
+            let r = rasterize_payload(
+                &StoredPayload::Vector { glyph: mono },
+                1000,
+                24,
+                24,
+                [10, 200, 30, 128],
+                &GlyphLayout::default(),
+                0.0,
+            )
+            .unwrap();
+            assert!(!r.is_color);
+            assert_eq!(alpha(&r, 12, 12), 255);
+        }
+
+        /// Rows of a 20x40 cell that have any ink.
+        fn inked_rows(r: &RasterizedPayload) -> std::ops::Range<usize> {
+            let rows: Vec<usize> = (0..r.height as usize)
+                .filter(|&y| (0..r.width as usize).any(|x| alpha(r, x, y) > 0))
+                .collect();
+            rows[0]..rows[rows.len() - 1] + 1
+        }
+
+        #[test]
+        fn fit_and_align_place_the_view_box_in_the_cell() {
+            use rio_graphics::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphSize};
+            // A 2:1 viewBox filled edge to edge, in a 1:2 cell.
+            let full = "fill=nonzero,fg:M0 0h24v12H0Z";
+            let at = |size, align_h, align_v| {
+                draw_placed(
+                    "0,0,24,12",
+                    full,
+                    20,
+                    40,
+                    &GlyphLayout {
+                        size,
+                        align_h,
+                        align_v,
+                        ..GlyphLayout::default()
+                    },
+                )
+            };
+            // contain: 20x10, centred by default.
+            let r = at(GlyphSize::Contain, GlyphAlignH::Center, GlyphAlignV::Center);
+            assert_eq!(inked_rows(&r), 15..25);
+            // The parser maps vg's Y-down `start` (top) to `End` and
+            // `end` (bottom) to `Start`; these are what they draw.
+            let top = at(GlyphSize::Contain, GlyphAlignH::Center, GlyphAlignV::End);
+            assert_eq!(inked_rows(&top), 0..10);
+            let bottom = at(GlyphSize::Contain, GlyphAlignH::Center, GlyphAlignV::Start);
+            assert_eq!(inked_rows(&bottom), 30..40);
+            // stretch fills the cell; cover overflows and is clipped to it.
+            let r = at(GlyphSize::Stretch, GlyphAlignH::Center, GlyphAlignV::Center);
+            assert_eq!(inked_rows(&r), 0..40);
+            assert!((0..20).all(|x| alpha(&r, x, 0) > 0 && alpha(&r, x, 39) > 0));
+            let r = at(GlyphSize::Cover, GlyphAlignH::Start, GlyphAlignV::Center);
+            assert_eq!(inked_rows(&r), 0..40);
+        }
+
+        #[test]
+        fn cover_with_horizontal_align_picks_the_visible_part() {
+            use rio_graphics::glyph_layout::{GlyphAlignH, GlyphAlignV, GlyphSize};
+            // Left half one colour, right half another: under cover in
+            // a narrow cell only one half shows, picked by `align`.
+            let halves =
+                "fill=nonzero,#ff0000:M0 0h12v12H0Z|fill=nonzero,#0000ff:M12 0h12v12H12Z";
+            let at = |align_h| {
+                draw_placed(
+                    "0,0,24,12",
+                    halves,
+                    20,
+                    40,
+                    &GlyphLayout {
+                        size: GlyphSize::Cover,
+                        align_h,
+                        align_v: GlyphAlignV::Center,
+                        ..GlyphLayout::default()
+                    },
+                )
+            };
+            let red = |r: &RasterizedPayload| rgba_at(r, 10, 20)[0] > 200;
+            assert!(red(&at(GlyphAlignH::Start)), "left half at the start");
+            assert!(!red(&at(GlyphAlignH::End)), "right half at the end");
+        }
+
+        fn alpha(r: &RasterizedPayload, x: usize, y: usize) -> u8 {
+            if r.is_color {
+                r.data[(y * r.width as usize + x) * 4 + 3]
+            } else {
+                r.data[y * r.width as usize + x]
+            }
+        }
+
+        #[test]
+        fn foreground_fill_is_an_alpha_mask() {
+            // A 24-unit box contained and centred in a 20x40 cell: 20 px
+            // square from y = 10 to 30.
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M0 0h24v24H0Z", 20, 40);
+            assert!(!r.is_color);
+            assert_eq!((r.width, r.height), (20, 40));
+            assert_eq!(alpha(&r, 10, 20), 255);
+            assert_eq!(alpha(&r, 10, 5), 0, "above the contained square");
+            assert_eq!(alpha(&r, 10, 35), 0, "below it");
+        }
+
+        #[test]
+        fn even_odd_cuts_a_hole_and_nonzero_does_not() {
+            let rings = "M0 0h24v24H0ZM6 6h12v12H6Z";
+            let evenodd = draw("0,0,24,24", &format!("fill=evenodd,fg:{rings}"), 24, 24);
+            let nonzero = draw("0,0,24,24", &format!("fill=nonzero,fg:{rings}"), 24, 24);
+            assert_eq!(alpha(&evenodd, 12, 12), 0);
+            assert_eq!(alpha(&nonzero, 12, 12), 255);
+            assert_eq!(alpha(&evenodd, 2, 2), 255);
+        }
+
+        #[test]
+        fn strokes_are_round_and_scale_with_the_glyph() {
+            // A 4-unit line across the middle of a 24-unit box at 1:1.
+            let r = draw("0,0,24,24", "stroke=4,fg:M6 12h12", 24, 24);
+            assert_eq!(alpha(&r, 12, 12), 255);
+            assert_eq!(alpha(&r, 12, 5), 0);
+            // The round cap reaches past the end point by half the width.
+            assert!(alpha(&r, 19, 12) > 0);
+            assert_eq!(alpha(&r, 12, 17), 0);
+        }
+
+        #[test]
+        fn foreground_alpha_composites_into_the_mask() {
+            let r = draw("0,0,24,24", "fill=nonzero,fg@0.2:M0 0h24v24H0Z", 24, 24);
+            assert!(!r.is_color);
+            assert_eq!(alpha(&r, 12, 12), 51);
+        }
+
+        #[test]
+        fn a_fixed_colour_makes_it_rgba_with_the_foreground_resolved() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M0 0h12v24H0Z|fill=nonzero,#ff000080:M12 0h12v24H12Z",
+                24,
+                24,
+            );
+            assert!(r.is_color);
+            let px = |x: usize, y: usize| {
+                let i = (y * 24 + x) * 4;
+                [r.data[i], r.data[i + 1], r.data[i + 2], r.data[i + 3]]
+            };
+            assert_eq!(px(6, 12), FG);
+            // Half-transparent red, premultiplied as the colour atlas
+            // takes it.
+            assert_eq!(px(18, 12)[3], 128);
+            assert!(px(18, 12)[0] >= 127 && px(18, 12)[1] == 0);
+        }
+
+        #[test]
+        fn a_negative_view_box_origin_is_honoured() {
+            // Material Symbols: y runs from -960 to 0.
+            let r = draw(
+                "0,-960,960,960",
+                "fill=nonzero,fg:M0-960h480v960H0Z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 6, 12), 255, "left half filled");
+            assert_eq!(alpha(&r, 18, 12), 0, "right half empty");
+        }
+
+        #[test]
+        fn y_points_down_as_in_svg() {
+            // Every other test is symmetric top to bottom; this one would
+            // catch a flipped glyph.
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M0 0h24v8H0Z", 24, 24);
+            assert_eq!(alpha(&r, 12, 3), 255, "top band filled");
+            assert_eq!(alpha(&r, 12, 20), 0, "bottom empty");
+            // Same with the box shifted, so the origin isn't at a corner.
+            let r = draw(
+                "100,-50,24,24",
+                "fill=nonzero,fg:M100 -50h24v8h-24Z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 12, 3), 255);
+            assert_eq!(alpha(&r, 12, 20), 0);
+        }
+
+        #[test]
+        fn implicit_linetos_draw_the_shape() {
+            // A triangle given as one moveto with extra pairs.
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M2 2 22 2 2 22Z", 24, 24);
+            assert_eq!(alpha(&r, 5, 5), 255);
+            assert_eq!(alpha(&r, 19, 19), 0);
+        }
+
+        #[test]
+        fn a_relative_move_after_close_starts_from_the_subpath() {
+            // After `z` the pen is back at (2, 2), so `m12 0` lands at
+            // (14, 2), not below the first square.
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 2h6v6h-6zm12 0h6v6h-6z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 5, 5), 255);
+            assert_eq!(alpha(&r, 17, 5), 255);
+            assert_eq!(alpha(&r, 17, 13), 0);
+        }
+
+        #[test]
+        fn drawing_after_close_reopens_the_subpath() {
+            // `z` then `l` with no moveto: a second triangle from (2, 2).
+            let r = draw("0,0,24,24", "fill=nonzero,fg:M2 2h8v8zl0 20h20z", 24, 24);
+            assert_eq!(alpha(&r, 8, 4), 255, "first triangle");
+            assert_eq!(alpha(&r, 4, 18), 255, "second, from the start point");
+        }
+
+        #[test]
+        fn arc_sweep_picks_the_side() {
+            // Sweep 1 is the positive-angle direction: over the top in
+            // y-down coordinates. Packed flags draw the same arc.
+            let over = draw("0,0,24,24", "fill=nonzero,fg:M4 12a8 8 0 0116 0Z", 24, 24);
+            assert_eq!(alpha(&over, 12, 7), 255);
+            assert_eq!(alpha(&over, 12, 17), 0);
+            let under = draw("0,0,24,24", "fill=nonzero,fg:M4 12a8 8 0 0016 0Z", 24, 24);
+            assert_eq!(alpha(&under, 12, 7), 0);
+            assert_eq!(alpha(&under, 12, 17), 255);
+        }
+
+        #[test]
+        fn large_arc_takes_the_long_way() {
+            // Same endpoints and radius; the large arc covers the centre
+            // of the far circle, the small one doesn't reach it.
+            let large = draw("0,0,24,24", "fill=nonzero,fg:M6 6A8 8 0 1 0 18 6Z", 24, 24);
+            let small = draw("0,0,24,24", "fill=nonzero,fg:M6 6A8 8 0 0 0 18 6Z", 24, 24);
+            assert_eq!(alpha(&large, 12, 16), 255);
+            assert_eq!(alpha(&small, 12, 16), 0);
+        }
+
+        #[test]
+        fn shorthand_curves_draw_like_the_full_form() {
+            let full = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12C2 2 12 2 12 12C12 22 22 22 22 12Z",
+                24,
+                24,
+            );
+            let short = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12C2 2 12 2 12 12S22 22 22 12Z",
+                24,
+                24,
+            );
+            assert_eq!(full.data, short.data);
+            let quad = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12Q7 2 12 12Q17 22 22 12Z",
+                24,
+                24,
+            );
+            let quad_short = draw(
+                "0,0,24,24",
+                "fill=nonzero,fg:M2 12Q7 2 12 12T22 12Z",
+                24,
+                24,
+            );
+            assert_eq!(quad.data, quad_short.data);
+        }
+
+        fn rgba_at(r: &RasterizedPayload, x: usize, y: usize) -> [u8; 4] {
+            assert!(r.is_color);
+            let i = (y * r.width as usize + x) * 4;
+            [r.data[i], r.data[i + 1], r.data[i + 2], r.data[i + 3]]
+        }
+
+        #[test]
+        fn linear_gradient_runs_from_its_first_point() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 24 0 / 0 #ff0000 / 1 #0000ff):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            let left = rgba_at(&r, 1, 12);
+            let right = rgba_at(&r, 22, 12);
+            assert!(left[0] > 220 && left[2] < 35, "red on the left: {left:?}");
+            assert!(
+                right[2] > 220 && right[0] < 35,
+                "blue on the right: {right:?}"
+            );
+            // Same colour all the way down a column.
+            assert_eq!(rgba_at(&r, 12, 2), rgba_at(&r, 12, 21));
+        }
+
+        #[test]
+        fn radial_gradient_changes_from_the_centre_out() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,rad(12 12 0 12 12 12 / 0 #ffffff / 1 #000000):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            let centre = rgba_at(&r, 12, 12);
+            let edge = rgba_at(&r, 12, 1);
+            assert!(centre[0] > 220, "{centre:?}");
+            assert!(edge[0] < 40, "{edge:?}");
+            // Past the outer circle, pad keeps the last stop.
+            assert!(rgba_at(&r, 0, 0)[0] < 10);
+        }
+
+        #[test]
+        fn a_foreground_gradient_stays_an_alpha_mask() {
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 24 0 / 0 fg / 1 fg@0):M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            assert!(!r.is_color);
+            let (left, right) = (alpha(&r, 1, 12), alpha(&r, 22, 12));
+            assert!(left > 220 && right < 35, "{left} {right}");
+        }
+
+        #[test]
+        fn stroke_caps_reach_past_the_end_only_when_asked() {
+            // A 4-unit line from x=6 to x=18; the cap would reach x=20.
+            let at_cap = |cap: &str| {
+                let r = draw("0,0,24,24", &format!("stroke=4/{cap},fg:M6 12h12"), 24, 24);
+                alpha(&r, 19, 12)
+            };
+            assert_eq!(at_cap("butt"), 0);
+            assert!(at_cap("round") > 0);
+            assert_eq!(at_cap("square"), 255);
+        }
+
+        #[test]
+        fn a_clip_limits_only_the_layers_it_covers() {
+            // Clip the next layer to the left half; the layer after it
+            // draws the bottom band unclipped.
+            let r = draw(
+                "0,0,24,24",
+                "clip=1,nonzero:M0 0h12v24H0Z|fill=nonzero,fg:M0 0h24v12H0Z|fill=nonzero,fg:M0 18h24v6H0Z",
+                24,
+                24,
+            );
+            assert_eq!(alpha(&r, 4, 4), 255, "inside the clip");
+            assert_eq!(alpha(&r, 20, 4), 0, "outside the clip");
+            assert_eq!(alpha(&r, 20, 21), 255, "after the clip's range");
+        }
+
+        #[test]
+        fn a_layer_matrix_moves_the_path_and_its_gradient() {
+            // A left-half square with a red-to-blue gradient across it,
+            // moved 12 units right: the right half is filled, red at its
+            // left edge.
+            let r = draw(
+                "0,0,24,24",
+                "fill=nonzero,lin(0 0 12 0 / 0 #ff0000 / 1 #0000ff),m 1 0 0 1 12 0:M0 0h12v24H0Z",
+                24,
+                24,
+            );
+            assert_eq!(rgba_at(&r, 4, 12)[3], 0, "left half empty");
+            let near = rgba_at(&r, 13, 12);
+            let far = rgba_at(&r, 22, 12);
+            assert!(
+                near[0] > 200 && near[2] < 60,
+                "red near the left edge: {near:?}"
+            );
+            assert!(
+                far[2] > 200 && far[0] < 60,
+                "blue near the right edge: {far:?}"
+            );
+        }
+
+        #[test]
+        fn a_clip_with_no_area_hides_what_it_covers() {
+            let r = draw(
+                "0,0,24,24",
+                "clip=1,nonzero:M0 0h24|fill=nonzero,fg:M0 0h24v24H0Z",
+                24,
+                24,
+            );
+            assert!(r.data.iter().all(|&a| a == 0));
+        }
+
+        #[test]
+        fn foreground_tracking() {
+            let glyph = |text: &str| StoredPayload::Vector {
+                glyph: parse(
+                    text.as_bytes(),
+                    parse_view_box(b"0,0,24,24").unwrap(),
+                    Fit::Contain,
+                )
+                .unwrap(),
+            };
+            // Masks are tinted at draw time; only RGBA bakes it in.
+            assert!(!payload_uses_foreground(&glyph(
+                "fill=nonzero,fg:M0 0h4v4z"
+            )));
+            assert!(!payload_uses_foreground(&glyph(
+                "fill=nonzero,#ffffffff:M0 0h4v4z"
+            )));
+            assert!(payload_uses_foreground(&glyph(
+                "fill=nonzero,fg:M0 0h4v4z|fill=nonzero,#ffffffff:M8 8h4v4z"
+            )));
+        }
+    }
 
     /// Helper: vector dot product in 2D.
     fn dot(a: (f32, f32), b: (f32, f32)) -> f32 {
         a.0 * b.0 + a.1 * b.1
     }
 
-    /// Build a `glyf` simple-glyph whose bbox is the full `em_top × em_top`
-    /// square but whose inked region is just the top `strip_height` rows
-    /// (design Y from `em_top - strip_height` to `em_top`). The bbox in
-    /// the glyf header is authoritative — `glyf_decode` reads it directly
-    /// — so the rasterised pixmap will be em_top×em_top pixels with only
-    /// the top strip filled. That's what lets the test distinguish "top"
-    /// from "bottom" of the bitmap.
+    /// Build a `glyf` simple-glyph inked only across the top
+    /// `strip_height` rows of an `em_top` square (design Y from
+    /// `em_top - strip_height` to `em_top`).
     fn glyf_top_strip(em_top: i16, strip_height: i16) -> Vec<u8> {
         // glyf simple-glyph layout per OpenType:
         //   i16 numberOfContours
-        //   i16 xMin, yMin, xMax, yMax  (authoritative bbox — NOT derived from points)
+        //   i16 xMin, yMin, xMax, yMax
         //   u16 endPtsOfContours[numContours]
         //   u16 instructionLength
         //   u8  flags[numPoints]
@@ -793,11 +1628,8 @@ mod tests {
         let strip_bottom = em_top - strip_height;
         let mut v = Vec::new();
         v.extend_from_slice(&1i16.to_be_bytes()); // numberOfContours
-                                                  // Declare bbox as the full em — not just the inked strip — so
-                                                  // the rasterised pixmap has empty space below the strip we
-                                                  // can sample as "bottom".
         v.extend_from_slice(&0i16.to_be_bytes()); // xMin
-        v.extend_from_slice(&0i16.to_be_bytes()); // yMin
+        v.extend_from_slice(&strip_bottom.to_be_bytes()); // yMin
         v.extend_from_slice(&em_top.to_be_bytes()); // xMax
         v.extend_from_slice(&em_top.to_be_bytes()); // yMax
         v.extend_from_slice(&3u16.to_be_bytes()); // endPtsOfContours[0] = 3 (4 points)
@@ -825,7 +1657,12 @@ mod tests {
         // earlier (where the strip rendered at the bottom instead).
         let upm = 100i16;
         let bytes = glyf_top_strip(upm, upm / 4);
-        let r = rasterize_mono(&bytes, upm as u16, upm as u16)
+        let em = GlyphLayout {
+            aw: Some(upm as u16),
+            lh: Some(upm as u16),
+            ..Default::default()
+        };
+        let r = rasterize_mono(&bytes, upm as u16, upm as u16, upm as u16, &em, 0.0)
             .expect("rasterize succeeds for valid simple glyph");
 
         let w = r.width as usize;
@@ -853,10 +1690,477 @@ mod tests {
     }
 
     #[test]
-    fn rasterize_mono_rejects_zero_pixel_size() {
+    fn rasterize_mono_contains_outline_larger_than_em() {
+        // The outline bbox (200 design units) is twice the declared em
+        // (upm=100). Naive em-proportional scaling (min(cell)/upm) would
+        // render it at 2× the cell and bleed into the neighbour; the
+        // contain clamp keeps the pixmap within the cell on both axes.
+        let bytes = glyf_top_strip(200, 50);
+        let r = rasterize_mono(&bytes, 100, 20, 40, &GlyphLayout::default(), 0.0)
+            .expect("rasterizes");
+        assert_eq!((r.width, r.height), (20, 40));
+        // 20px wide at 0.1 px/unit: the whole span, not twice it.
+        assert_eq!(ink(&r.data, r.width).0, 0);
+        assert_eq!(ink(&r.data, r.width).1, 19);
+    }
+
+    #[test]
+    fn rasterize_mono_contains_hostile_upm() {
+        // upm=1 is wire-legal (only upm=0 is rejected by the parser).
+        // Under naive em-scaling, an outline spanning ~30000 design
+        // units at upm=1 would scale by 16/1 → a ~480000px-wide pixmap
+        // (multi-gigabyte allocation / DoS). The contain clamp bounds
+        // the raster to the cell regardless of upm or outline span, so
+        // the glyph rasterises safely instead.
+        let bytes = glyf_top_strip(30000, 7500);
+        let r = rasterize_mono(&bytes, 1, 16, 32, &GlyphLayout::default(), 0.0)
+            .expect("hostile upm should be contained, not rejected");
+        assert_eq!((r.width, r.height), (16, 32));
+        assert_eq!(ink(&r.data, r.width).1, 15);
+    }
+
+    /// A filled rectangle as a `glyf` simple glyph.
+    fn glyf_box(x_min: i16, y_min: i16, x_max: i16, y_max: i16) -> Vec<u8> {
+        let mut v = Vec::new();
+        for field in [1, x_min, y_min, x_max, y_max, 3, 0] {
+            v.extend_from_slice(&field.to_be_bytes());
+        }
+        v.extend_from_slice(&[0x01; 4]);
+        for delta in [x_min, x_max - x_min, 0, x_min - x_max] {
+            v.extend_from_slice(&delta.to_be_bytes());
+        }
+        for delta in [y_min, 0, y_max - y_min, 0] {
+            v.extend_from_slice(&delta.to_be_bytes());
+        }
+        v
+    }
+
+    /// Inclusive `(first_col, last_col, first_row, last_row)` of the
+    /// mostly-covered pixels.
+    fn ink(alpha: &[u8], width: u16) -> (usize, usize, usize, usize) {
+        let width = width as usize;
+        let inked = || alpha.iter().enumerate().filter(|(_, a)| **a >= 128);
+        let cols = || inked().map(|(i, _)| i % width);
+        let rows = || inked().map(|(i, _)| i / width);
+        (
+            cols().min().expect("some ink"),
+            cols().max().unwrap(),
+            rows().min().unwrap(),
+            rows().max().unwrap(),
+        )
+    }
+
+    fn place(glyf: &[u8], upm: u16, layout: GlyphLayout) -> Option<RasterizedPayload> {
+        rasterize_mono(glyf, upm, 10, 20, &layout, 15.0)
+    }
+
+    #[test]
+    fn layout_advance_fits_authored_advance_to_cell_on_baseline() {
+        // Departure Mono's shape: em 550, advance 350, cap 400.
+        let glyph = glyf_box(50, 0, 300, 400);
+        let layout = GlyphLayout {
+            aw: Some(350),
+            size: GlyphSize::Advance,
+            align_v: GlyphAlignV::Baseline,
+            ..Default::default()
+        };
+        let r = place(&glyph, 550, layout).unwrap();
+        assert_eq!((r.width, r.height), (10, 20));
+        // x: 50..300 at 10/350 px per unit; y: up from the baseline.
+        assert_eq!(ink(&r.data, r.width), (1, 8, 4, 14));
+        // `aw` alone sets the scale, so `upm` doesn't matter.
+        assert_eq!(place(&glyph, 350, layout).unwrap().data, r.data);
+    }
+
+    #[test]
+    fn layout_height_scales_by_line_height() {
+        let layout = GlyphLayout {
+            aw: Some(50),
+            lh: Some(100),
+            size: GlyphSize::Height,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 50, 100), 1000, layout).unwrap();
+        assert_eq!(ink(&r.data, r.width), (0, 9, 0, 19));
+    }
+
+    #[test]
+    fn layout_contain_stays_inside_the_span() {
+        let layout = GlyphLayout {
+            size: GlyphSize::Contain,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 100, 100), 100, layout).unwrap();
+        assert_eq!(r.width, 10);
+        // 10px square, centred in the 20px-tall cell.
+        assert_eq!(ink(&r.data, r.width), (0, 9, 5, 14));
+    }
+
+    #[test]
+    fn layout_cover_clips_to_the_span() {
+        let layout = GlyphLayout {
+            size: GlyphSize::Cover,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 100, 100), 100, layout).unwrap();
+        assert_eq!((r.width, r.height), (10, 20));
+        assert_eq!(ink(&r.data, r.width), (0, 9, 0, 19));
+    }
+
+    #[test]
+    fn layout_clips_vertical_overflow_to_the_cell() {
+        // One px per unit, 40 tall in a 20px cell, centred on lh=40.
+        let tall = GlyphLayout {
+            aw: Some(10),
+            lh: Some(40),
+            size: GlyphSize::Advance,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 10, 40), 10, tall).unwrap();
+        assert_eq!(r.height, 20);
+        assert_eq!(ink(&r.data, r.width), (0, 9, 0, 19));
+    }
+
+    #[test]
+    fn layout_stretch_fills_the_span_whatever_the_alignment() {
+        let layout = GlyphLayout {
+            size: GlyphSize::Stretch,
+            align_h: GlyphAlignH::End,
+            align_v: GlyphAlignV::Start,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 100, 100), 100, layout).unwrap();
+        assert_eq!(ink(&r.data, r.width), (0, 9, 0, 19));
+    }
+
+    #[test]
+    fn layout_pad_insets_the_span() {
+        let layout = GlyphLayout {
+            aw: Some(50),
+            lh: Some(50),
+            pad: [0.75, 0.5, 0.0, 0.0],
+            ..Default::default()
+        };
+        // The span shrinks to the bottom-left 5x5 pixels.
+        let r = place(&glyf_box(0, 0, 50, 50), 100, layout).unwrap();
+        assert_eq!(ink(&r.data, r.width), (0, 4, 15, 19));
+    }
+
+    #[test]
+    fn layout_alignment_anchors_the_authored_box() {
+        let vertical = |align_v| {
+            let layout = GlyphLayout {
+                size: GlyphSize::Contain,
+                align_v,
+                ..Default::default()
+            };
+            let r = place(&glyf_box(0, 0, 100, 100), 100, layout).unwrap();
+            ink(&r.data, r.width)
+        };
+        // A 10px square, pinned to the bottom or top of the 20px cell.
+        assert_eq!(vertical(GlyphAlignV::Start), (0, 9, 10, 19));
+        assert_eq!(vertical(GlyphAlignV::End), (0, 9, 0, 9));
+
+        let horizontal = |align_h| {
+            let layout = GlyphLayout {
+                aw: Some(20),
+                lh: Some(100),
+                align_h,
+                ..Default::default()
+            };
+            let r = place(&glyf_box(0, 0, 20, 100), 100, layout).unwrap();
+            let (first, last, _, _) = ink(&r.data, r.width);
+            (first, last)
+        };
+        // A 4px-wide box in the 10px span.
+        assert_eq!(horizontal(GlyphAlignH::Start), (0, 3));
+        assert_eq!(horizontal(GlyphAlignH::Center), (3, 6));
+        assert_eq!(horizontal(GlyphAlignH::End), (6, 9));
+    }
+
+    #[test]
+    fn layout_default_centres_an_outline_below_the_baseline() {
+        // y from -150 to 850 in a 1000-unit em: at the em cap of 0.01
+        // px/unit it is 10px tall and centred in the 20px cell.
+        let glyph = glyf_box(250, -150, 750, 850);
+        let r = place(&glyph, 1000, GlyphLayout::default()).unwrap();
+        let (_, _, first_row, last_row) = ink(&r.data, r.width);
+        assert_eq!((first_row, last_row), (5, 14));
+    }
+
+    #[test]
+    fn layout_undeclared_extent_ignores_a_lying_header() {
+        let mut lying = glyf_box(0, 0, 100, 100);
+        // Claim the outline is far smaller than it is.
+        lying[2..10].copy_from_slice(&[0, 40, 0, 40, 0, 41, 0, 41]);
+        let honest = place(&glyf_box(0, 0, 100, 100), 100, GlyphLayout::default());
+        let lied = place(&lying, 100, GlyphLayout::default());
+        assert_eq!(lied.unwrap().data, honest.unwrap().data);
+    }
+
+    #[test]
+    fn layout_undeclared_extent_keeps_a_set_in_proportion() {
+        // A small dot stays small: 0.01 px/unit, not grown to the span.
+        let dot = place(&glyf_box(400, 0, 600, 200), 1000, GlyphLayout::default());
+        let dot = dot.unwrap();
+        assert_eq!(ink(&dot.data, dot.width), (4, 5, 9, 10));
+    }
+
+    #[test]
+    fn layout_default_contains_an_undeclared_outline_in_its_span() {
+        // Twice as wide as the span and off-centre in its own em.
+        let r = place(&glyf_box(100, 0, 300, 120), 200, GlyphLayout::default()).unwrap();
+        assert_eq!(r.width, 10);
+        // 200x120 fits at 0.05 px/unit: 10x6, centred in the 20px cell.
+        assert_eq!(ink(&r.data, r.width), (0, 9, 7, 12));
+    }
+
+    #[test]
+    fn layout_ymin_positions_the_declared_extent() {
+        let extent = GlyphLayout {
+            aw: Some(10),
+            lh: Some(20),
+            ymin: Some(-5),
+            ..Default::default()
+        };
+        // 1 px/unit: an outline filling the extent fills the span.
+        let r = place(&glyf_box(0, -5, 10, 15), 1000, extent).unwrap();
+        assert_eq!(ink(&r.data, r.width), (0, 9, 0, 19));
+
+        // Without `ymin` the same outline is shoved down and clipped.
+        let unshifted = GlyphLayout {
+            ymin: None,
+            ..extent
+        };
+        let r = place(&glyf_box(0, -5, 10, 15), 1000, unshifted).unwrap();
+        assert_eq!(ink(&r.data, r.width), (0, 9, 5, 19));
+    }
+
+    #[test]
+    fn layout_declared_extent_ignores_each_outlines_own_bounds() {
+        let extent = GlyphLayout {
+            aw: Some(10),
+            lh: Some(20),
+            ymin: Some(-5),
+            ..Default::default()
+        };
+        // A small glyph stays where it was drawn inside the extent.
+        let r = place(&glyf_box(2, 0, 4, 5), 1000, extent).unwrap();
+        assert_eq!(ink(&r.data, r.width), (2, 3, 10, 14));
+    }
+
+    #[test]
+    fn layout_bounds_extreme_overflow_to_the_span() {
+        let layout = GlyphLayout {
+            aw: Some(1),
+            size: GlyphSize::Advance,
+            ..Default::default()
+        };
+        let r = place(&glyf_box(0, 0, 32000, 10), 1000, layout).unwrap();
+        assert_eq!((r.width, r.height), (10, 20));
+    }
+
+    /// COLR v1 painting glyph 0 in the foreground colour.
+    fn colr_v1_foreground() -> Vec<u8> {
+        let mut colr = build_colr_v1(&[0]);
+        // Point the base record (at 40) past the list, at PaintGlyph.
+        colr[40..44].copy_from_slice(&10u32.to_be_bytes());
+        colr.extend_from_slice(&[10, 0, 0, 6, 0, 0]); // PaintGlyph(gid 0)
+        colr.extend_from_slice(&[2, 0xFF, 0xFF, 0x40, 0x00]); // PaintSolid(fg)
+        colr
+    }
+
+    #[test]
+    fn colr_v1_sweep_gradient_is_drawn() {
+        // PaintGlyph(gid 0) over a PaintSweepGradient centred on a
+        // 350-unit square, from 0° to 180° (F2DOT14 1.0) counter-
+        // clockwise, the foreground fading from opaque to transparent.
+        let mut colr = build_colr_v1(&[0]);
+        colr[40..44].copy_from_slice(&10u32.to_be_bytes());
+        colr.extend_from_slice(&[10, 0, 0, 6, 0, 0]); // PaintGlyph(gid 0)
+        colr.extend_from_slice(&[8, 0, 0, 12]); // PaintSweepGradient, ColorLine at +12
+        colr.extend_from_slice(&175i16.to_be_bytes()); // centre x
+        colr.extend_from_slice(&175i16.to_be_bytes()); // centre y
+        colr.extend_from_slice(&0u16.to_be_bytes()); // start 0°
+        colr.extend_from_slice(&0x4000u16.to_be_bytes()); // end 180°
+        colr.extend_from_slice(&[0, 0, 2]); // ColorLine: pad, 2 stops
+        colr.extend_from_slice(&[0x00, 0x00, 0xFF, 0xFF, 0x40, 0x00]); // 0: fg, alpha 1
+        colr.extend_from_slice(&[0x40, 0x00, 0xFF, 0xFF, 0x00, 0x00]); // 1: fg, alpha 0
+        let r = rasterize(
+            &[glyf_box(0, 0, 350, 350)],
+            &colr,
+            &[],
+            350,
+            70,
+            70,
+            [255, 255, 255, 255],
+            &GlyphLayout::default(),
+            0.0,
+        )
+        .expect("draws");
+        // The square fills the 70 px cell, its centre at (35, 35), y down.
+        let alpha = |x: usize, y: usize| r.data[(y * 70 + x) * 4 + 3];
+        // Just above the centre on the right is near 0°: opaque.
+        assert!(alpha(60, 31) > 200, "{}", alpha(60, 31));
+        // Straight up is 90°: half way.
+        assert!((90..170).contains(&alpha(35, 5)), "{}", alpha(35, 5));
+        // Just above the centre on the left is near 180°: transparent.
+        assert!(alpha(10, 31) < 50, "{}", alpha(10, 31));
+        // Below the centre is past 180°, padded with the last stop.
+        assert_eq!(alpha(35, 60), 0);
+    }
+
+    fn rasterize_foreground(layout: &GlyphLayout) -> Option<RasterizedPayload> {
+        rasterize(
+            // Whole pixels at 35 units/px, so edges carry no coverage.
+            &[glyf_box(70, 0, 280, 350)],
+            &colr_v1_foreground(),
+            &[],
+            550,
+            10,
+            20,
+            [255, 255, 255, 255],
+            layout,
+            15.0,
+        )
+    }
+
+    fn alpha_of(rgba: &[u8]) -> Vec<u8> {
+        rgba.chunks(4).map(|pixel| pixel[3]).collect()
+    }
+
+    #[test]
+    fn colr_declared_extent_needs_no_base_glyph_bounds() {
+        // An empty wrapper base glyph painting layer glyph 1, no ClipList.
+        let glyphs = [Vec::new(), glyf_box(70, 0, 280, 350)];
+        let mut colr = colr_v1_foreground();
+        colr[49] = 1; // PaintGlyph's glyph id
+        let draw = |layout: &GlyphLayout| {
+            rasterize(
+                &glyphs,
+                &colr,
+                &[],
+                550,
+                10,
+                20,
+                [255, 255, 255, 255],
+                layout,
+                15.0,
+            )
+        };
+        let declared = GlyphLayout {
+            aw: Some(350),
+            size: GlyphSize::Advance,
+            align_v: GlyphAlignV::Baseline,
+            ..Default::default()
+        };
+        let r = draw(&declared).expect("a declared extent needs no bounds");
+        assert_eq!(ink(&alpha_of(&r.data), r.width), (2, 7, 5, 14));
+        // Without a declared extent there is nothing to place it by.
+        assert!(draw(&GlyphLayout::default()).is_none());
+    }
+
+    #[test]
+    fn colr_measures_a_hinted_base_glyph_it_never_paints() {
+        // A hinted monochrome base, unhinted layer, and no ClipList.
+        let mut hinted = glyf_box(70, 0, 280, 350);
+        hinted[12..14].copy_from_slice(&1u16.to_be_bytes());
+        hinted.insert(14, 0x00);
+        let glyphs = [hinted, glyf_box(70, 0, 280, 350)];
+        let mut colr = colr_v1_foreground();
+        colr[49] = 1; // PaintGlyph's glyph id
+        let r = rasterize(
+            &glyphs,
+            &colr,
+            &[],
+            550,
+            10,
+            20,
+            [255, 255, 255, 255],
+            &GlyphLayout::default(),
+            15.0,
+        )
+        .expect("the base glyph is only measured");
+        assert!(alpha_of(&r.data).iter().any(|alpha| *alpha >= 128));
+    }
+
+    #[test]
+    fn foreground_use_comes_from_the_paint_graph() {
+        use crate::font::glyph_registry::StoredPayload;
+
+        let glyphs = vec![glyf_box(70, 0, 280, 350)];
+        let foreground = StoredPayload::ColrV1 {
+            glyphs: glyphs.clone(),
+            colr: colr_v1_foreground(),
+            cpal: Vec::new(),
+        };
+        assert!(payload_uses_foreground(&foreground));
+
+        // The same graph painting palette entry 0 instead.
+        let mut palette_colr = colr_v1_foreground();
+        let solid = palette_colr.len() - 4;
+        palette_colr[solid..solid + 2].copy_from_slice(&[0, 0]);
+        let palette = StoredPayload::ColrV1 {
+            glyphs,
+            colr: palette_colr,
+            cpal: vec![0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 14, 0, 0, 0, 0, 0, 255],
+        };
+        assert!(!payload_uses_foreground(&palette));
+
+        assert!(!payload_uses_foreground(&StoredPayload::glyf(vec![1])));
+    }
+
+    #[test]
+    fn colr_without_cpal_renders_foreground_paints() {
+        let r = rasterize_foreground(&GlyphLayout::default())
+            .expect("spec §8.7 permits cpal_len = 0");
+        assert!(alpha_of(&r.data).iter().any(|alpha| *alpha >= 128));
+    }
+
+    #[test]
+    fn layout_applies_to_colr_with_the_same_orientation() {
+        let layout = GlyphLayout {
+            aw: Some(350),
+            size: GlyphSize::Advance,
+            align_v: GlyphAlignV::Baseline,
+            ..Default::default()
+        };
+        let r = rasterize_foreground(&layout).expect("colour glyph rasterizes");
+        assert_eq!(ink(&alpha_of(&r.data), r.width), (2, 7, 5, 14));
+    }
+
+    #[test]
+    fn rasterize_mono_rejects_zero_cell_or_upm() {
         let bytes = glyf_top_strip(100, 25);
-        assert!(rasterize_mono(&bytes, 100, 0).is_none());
-        assert!(rasterize_mono(&bytes, 0, 16).is_none());
+        assert!(
+            rasterize_mono(&bytes, 100, 0, 16, &GlyphLayout::default(), 0.0).is_none()
+        );
+        assert!(
+            rasterize_mono(&bytes, 100, 16, 0, &GlyphLayout::default(), 0.0).is_none()
+        );
+        assert!(
+            rasterize_mono(&bytes, 0, 16, 16, &GlyphLayout::default(), 0.0).is_none()
+        );
+    }
+
+    #[test]
+    fn rasterize_mono_fits_em_square_into_cell_box() {
+        // A full-em-wide strip spans the narrow cell axis exactly: the
+        // em square is contained in the cell, not font-size-wide.
+        let upm = 100i16;
+        let bytes = glyf_top_strip(upm, upm / 4);
+        let (cell_w, cell_h) = (10u16, 20u16);
+        let r = rasterize_mono(
+            &bytes,
+            upm as u16,
+            cell_w,
+            cell_h,
+            &GlyphLayout::default(),
+            0.0,
+        )
+        .expect("rasterize succeeds for valid simple glyph");
+        assert_eq!(r.width, cell_w);
+        assert_eq!(ink(&r.data, r.width).1, cell_w as usize - 1);
     }
 
     #[test]
@@ -928,25 +2232,6 @@ mod tests {
         let (p3x, p3y) = project_p3(p0, p1, p2).unwrap();
         assert!((p3x - p1.0).abs() < 1e-6);
         assert!((p3y - p1.1).abs() < 1e-6);
-    }
-
-    #[test]
-    fn glyf_bbox_reads_signed_bbox() {
-        // numContours=1 (0x0001), x_min=-100, y_min=-200, x_max=300, y_max=700.
-        let bytes = [
-            0x00, 0x01, // numContours
-            0xFF, 0x9C, // -100
-            0xFF, 0x38, // -200
-            0x01, 0x2C, // 300
-            0x02, 0xBC, // 700
-        ];
-        assert_eq!(glyf_bbox(&bytes), Some((-100, -200, 300, 700)));
-    }
-
-    #[test]
-    fn glyf_bbox_rejects_short_input() {
-        assert_eq!(glyf_bbox(&[]), None);
-        assert_eq!(glyf_bbox(&[0; 9]), None);
     }
 
     /// Build a minimal COLR v1 header + BaseGlyphList payload.

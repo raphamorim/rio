@@ -23,7 +23,8 @@ pub struct Pty {
     // `conout` before `backend` will cause a deadlock (with Conpty).
     backend: Backend,
     conout: ReadPipe,
-    conin: WritePipe,
+    /// The input pipe, until a writer thread takes it.
+    conin: Option<WritePipe>,
     read_token: corcovado::Token,
     write_token: corcovado::Token,
     child_event_token: corcovado::Token,
@@ -32,20 +33,30 @@ pub struct Pty {
 
 // Creates conpty instead of pty
 // Windows Pseudo Console (ConPTY)
+//
+// `env`, when given, is applied on top of the inherited environment,
+// overriding inherited variables of the same name. `None` inherits as-is.
+//
+// `shell` of `None` means no program was configured, and the default console
+// host is used.
 pub fn create_pty(
-    shell: &str,
+    shell: Option<&str>,
     args: Vec<String>,
     working_directory: &Option<String>,
+    env: Option<Vec<(String, String)>>,
     columns: u16,
     rows: u16,
 ) -> Result<Pty, std::io::Error> {
-    let exec = if !args.is_empty() {
-        let args = args.join(" ");
-        &format!("{shell} {args}")
-    } else {
-        shell
-    };
-    conpty::new(exec, working_directory, columns, rows)
+    let exec = shell.map(|shell| {
+        if args.is_empty() {
+            shell.to_string()
+        } else {
+            format!("{shell} {}", args.join(" "))
+        }
+    });
+    // A missing directory would fail CreateProcessW; `~` is the profile.
+    let working_directory = crate::resolve_working_dir(working_directory);
+    conpty::new(exec.as_deref(), &working_directory, env, columns, rows)
 }
 
 impl Pty {
@@ -58,7 +69,7 @@ impl Pty {
         Self {
             backend: backend.into(),
             conout: conout.into(),
-            conin: conin.into(),
+            conin: Some(conin.into()),
             read_token: 0.into(),
             write_token: 0.into(),
             child_event_token: 0.into(),
@@ -101,20 +112,13 @@ impl ProcessReadWrite for Pty {
                 poll_opts,
             )?
         }
-        if interest.is_writable() {
-            poll.register(
-                &self.conin,
-                self.write_token,
-                corcovado::Ready::writable(),
-                poll_opts,
-            )?
-        } else {
-            poll.register(
-                &self.conin,
-                self.write_token,
-                corcovado::Ready::empty(),
-                poll_opts,
-            )?
+        if let Some(conin) = &self.conin {
+            let interest = if interest.is_writable() {
+                corcovado::Ready::writable()
+            } else {
+                corcovado::Ready::empty()
+            };
+            poll.register(conin, self.write_token, interest, poll_opts)?
         }
 
         self.child_event_token = token.next().unwrap();
@@ -150,20 +154,13 @@ impl ProcessReadWrite for Pty {
                 poll_opts,
             )?;
         }
-        if interest.is_writable() {
-            poll.reregister(
-                &self.conin,
-                self.write_token,
-                corcovado::Ready::writable(),
-                poll_opts,
-            )?;
-        } else {
-            poll.reregister(
-                &self.conin,
-                self.write_token,
-                corcovado::Ready::empty(),
-                poll_opts,
-            )?;
+        if let Some(conin) = &self.conin {
+            let interest = if interest.is_writable() {
+                corcovado::Ready::writable()
+            } else {
+                corcovado::Ready::empty()
+            };
+            poll.reregister(conin, self.write_token, interest, poll_opts)?;
         }
 
         poll.reregister(
@@ -179,7 +176,9 @@ impl ProcessReadWrite for Pty {
     #[inline]
     fn deregister(&mut self, poll: &corcovado::Poll) -> io::Result<()> {
         poll.deregister(&self.conout)?;
-        poll.deregister(&self.conin)?;
+        if let Some(conin) = &self.conin {
+            poll.deregister(conin)?;
+        }
         poll.deregister(self.child_watcher.event_rx())?;
         Ok(())
     }
@@ -196,7 +195,9 @@ impl ProcessReadWrite for Pty {
 
     #[inline]
     fn writer(&mut self) -> &mut Self::Writer {
-        &mut self.conin
+        self.conin
+            .as_mut()
+            .expect("the write half was taken by the writer thread")
     }
 
     #[inline]
@@ -216,6 +217,14 @@ impl ProcessReadWrite for Pty {
 }
 
 impl EventedPty for Pty {
+    type WriteHalf = WritePipe;
+
+    fn write_half(&mut self) -> io::Result<WritePipe> {
+        self.conin.take().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::Other, "the write half was already taken")
+        })
+    }
+
     fn child_event_token(&self) -> corcovado::Token {
         self.child_event_token
     }
@@ -224,13 +233,13 @@ impl EventedPty for Pty {
         match self.child_watcher.event_rx().try_recv() {
             Ok(ev) => Some(ev),
             Err(TryRecvError::Empty) => None,
-            Err(TryRecvError::Disconnected) => Some(ChildEvent::Exited),
+            Err(TryRecvError::Disconnected) => Some(ChildEvent::Exited(None)),
         }
     }
 }
 
-fn cmdline(shell: &str) -> String {
-    if !shell.is_empty() {
+fn cmdline(shell: Option<&str>) -> String {
+    if let Some(shell) = shell.filter(|shell| !shell.is_empty()) {
         return shell.to_string();
     }
 

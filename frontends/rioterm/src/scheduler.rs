@@ -28,8 +28,8 @@ pub enum Topic {
     ScheduledRenderRoute,
     UpdateConfig,
     CursorBlinking,
-    UpdateTitles,
     SelectionScrolling,
+    ProgressTimeout,
 }
 
 /// Event scheduled to be emitted at a specific time.

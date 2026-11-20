@@ -10,13 +10,35 @@ use font_kit::source::SystemSource;
 pub struct ID {
     #[cfg(not(target_arch = "wasm32"))]
     handle: Option<font_kit::handle::Handle>,
+    /// What `Database::query` matched beyond the base face. Not on
+    /// macOS, where CoreText applies the instance itself.
+    #[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
+    pub(crate) matched: MatchedFace,
     // TODO: Fix wasm32
     #[cfg(target_arch = "wasm32")]
     _dummy: u32,
 }
 
+/// The named instance the query picked. Reopening a file by path+index
+/// only gives its default, so `FontData::from_data` replays these values.
+#[derive(Clone, Debug, Default)]
+pub struct MatchedFace {
+    /// Weight the match resolves to.
+    pub weight: f32,
+    /// Coordinates off their axis defaults (axis tag as big-endian `u32`).
+    pub coords: Vec<(u32, f32)>,
+}
+
 impl ID {
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
+    fn from_handle(handle: font_kit::handle::Handle, matched: MatchedFace) -> Self {
+        Self {
+            handle: Some(handle),
+            matched,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
     fn from_handle(handle: font_kit::handle::Handle) -> Self {
         Self {
             handle: Some(handle),
@@ -47,6 +69,9 @@ pub struct Query<'a> {
     pub weight: Weight,
     pub stretch: Stretch,
     pub style: Style,
+    /// Exact style name from `fonts.*.style = "Light"`; beats plain
+    /// weight/style matching.
+    pub style_name: Option<&'a str>,
 }
 
 /// Font family
@@ -165,6 +190,13 @@ struct FontCandidate {
     weight: Weight,
     stretch: Stretch,
     style: Style,
+    /// Instance coordinates the reopened base face cannot reproduce.
+    #[cfg(not(target_os = "macos"))]
+    instance: Option<Vec<(u32, f32)>>,
+    postscript: Option<String>,
+    /// The face's style name ("Light", "Semi Bold Italic"), for
+    /// `fonts.*.style`; see [`style_name`].
+    style_name: Option<String>,
 }
 
 /// Load every face of `family_name` from `source` into `candidates`.
@@ -197,20 +229,269 @@ fn family_candidates(
     for handle in family_handle.fonts() {
         if let Ok(font) = handle.load() {
             let props = font.properties();
+            let weight = Weight(props.weight.0 as u16);
+            #[cfg(not(target_os = "macos"))]
+            let (weight, instance) = recover_instance(&font, handle, weight);
+            let style_name = style_name(&font, handle);
             tracing::debug!(
                 "found candidate: weight={}, stretch={:?}, style={:?}",
-                props.weight.0,
+                weight.0,
                 props.stretch,
                 props.style
             );
             candidates.push(FontCandidate {
                 handle: handle.clone(),
-                weight: Weight(props.weight.0 as u16),
+                weight,
                 stretch: Stretch::from_font_kit(props.stretch),
                 style: Style::from_font_kit(props.style),
+                #[cfg(not(target_os = "macos"))]
+                instance,
+                postscript: font.postscript_name(),
+                style_name,
             });
         }
     }
+}
+
+/// The face's own style name, what fontconfig reports as `style` and
+/// CoreText matches `fonts.*.style` against. With fontconfig it is read
+/// from the face: a named instance's `fvar` subfamily name, else name ID
+/// 17 or 2. font_kit's full name can't stand in there, since FreeType
+/// reads it from the file and every instance shares it. DirectWrite and
+/// CoreText name each instance, so there it is the full name less the
+/// family.
+#[cfg(not(target_arch = "wasm32"))]
+fn style_name(
+    font: &font_kit::font::Font,
+    handle: &font_kit::handle::Handle,
+) -> Option<String> {
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        use font_kit::handle::Handle;
+        use skrifa::{string::StringId, MetadataProvider};
+        let (Handle::Path { font_index, .. } | Handle::Memory { font_index, .. }) =
+            handle;
+        let font_index = *font_index;
+        // The bytes `load` already read, as in `recover_instance`.
+        let data = font.copy_font_data()?;
+        let face = skrifa::FontRef::from_index(&data, font_index & 0xFFFF).ok()?;
+        let id = match font_index >> 16 {
+            0 => [
+                StringId::TYPOGRAPHIC_SUBFAMILY_NAME,
+                StringId::SUBFAMILY_NAME,
+            ]
+            .into_iter()
+            .find(|&id| face.localized_strings(id).english_or_first().is_some())?,
+            instance_id => skrifa::NamedInstanceCollection::new(&face)
+                .get(instance_id as usize - 1)?
+                .subfamily_name_id(),
+        };
+        Some(face.localized_strings(id).english_or_first()?.to_string())
+    }
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        let _ = handle;
+        let (full, family) = (font.full_name(), font.family_name());
+        let style = full.strip_prefix(family.as_str()).unwrap_or(&full).trim();
+        Some(if style.is_empty() { "Regular" } else { style }.to_owned())
+    }
+}
+
+/// The instance a pattern stands for, which reopening its file by path
+/// and index can't reproduce, and the weight it resolves to. fontconfig
+/// puts the 1-based `fvar` instance id in the high bits of `FC_INDEX`;
+/// DirectWrite keeps every instance at the base index and tells them
+/// apart only by their properties. (On macOS CoreText applies the
+/// instance itself.)
+#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
+fn recover_instance(
+    font: &font_kit::font::Font,
+    handle: &font_kit::handle::Handle,
+    weight: Weight,
+) -> (Weight, Option<Vec<(u32, f32)>>) {
+    let font_kit::handle::Handle::Path { font_index, .. } = handle else {
+        return (weight, None);
+    };
+    // The bytes `load` already read, not a second read of the file.
+    let Some(data) = font.copy_font_data() else {
+        return (weight, None);
+    };
+    let face = font_index & 0xFFFF;
+    match font_index >> 16 {
+        #[cfg(target_os = "windows")]
+        0 => {
+            let italic = font.properties().style != font_kit::properties::Style::Normal;
+            (weight, match_instance(&data, face, weight.0 as f32, italic))
+        }
+        // fontconfig's pattern for the variable font itself: its default
+        // instance, whose weight is `wght`'s default. font_kit reports
+        // `OS/2`'s for every face of the file, which can tie this face
+        // with the named instance of that weight and leave the choice
+        // to fontconfig's order (#1913).
+        #[cfg(not(target_os = "windows"))]
+        0 => {
+            let weight = default_wght(&data, face)
+                .map(|w| Weight(w.round().clamp(0.0, u16::MAX as f32) as u16))
+                .unwrap_or(weight);
+            (weight, None)
+        }
+        instance_id => {
+            let Some(coords) = named_instance_coords(&data, face, instance_id - 1) else {
+                return (weight, None);
+            };
+            let weight = fvar_wght(&coords)
+                .map(|w| Weight(w.round().clamp(0.0, u16::MAX as f32) as u16))
+                .unwrap_or(weight);
+            (weight, pin_coords(&coords))
+        }
+    }
+}
+
+/// Whether an axis at `value` makes text italic: `ital` turned on, or
+/// `slnt` leaning further than its default. The one rule for matching an
+/// instance and for the face loaded from it.
+pub(crate) fn leans_italic(tag: u32, value: f32, default: f32) -> bool {
+    match &tag.to_be_bytes() {
+        b"ital" => value > default + 0.5,
+        b"slnt" => value < default,
+        _ => false,
+    }
+}
+
+/// One instance axis: (tag big-endian `u32`, user coordinate, default).
+#[cfg(not(target_os = "macos"))]
+type AxisTriple = (u32, f32, f32);
+
+/// User-space coordinates of named instance `instance_index`, in axis
+/// order; `None` for static fonts or a bad index.
+#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
+fn named_instance_coords(
+    data: &[u8],
+    face_index: u32,
+    instance_index: u32,
+) -> Option<Vec<AxisTriple>> {
+    let font = skrifa::FontRef::from_index(data, face_index).ok()?;
+    let axes = skrifa::AxisCollection::new(&font);
+    let instance =
+        skrifa::NamedInstanceCollection::new(&font).get(instance_index as usize)?;
+    Some(instance_triples(&axes, &instance))
+}
+
+#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
+fn instance_triples(
+    axes: &skrifa::AxisCollection<'_>,
+    instance: &skrifa::NamedInstance<'_>,
+) -> Vec<AxisTriple> {
+    axes.iter()
+        .zip(instance.user_coords())
+        .map(|(axis, coord)| {
+            (
+                u32::from_be_bytes(axis.tag().to_be_bytes()),
+                coord,
+                axis.default_value(),
+            )
+        })
+        .collect()
+}
+
+/// The default of the face's `wght` axis; `None` for a static face.
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_arch = "wasm32")))]
+fn default_wght(data: &[u8], face_index: u32) -> Option<f32> {
+    let font = skrifa::FontRef::from_index(data, face_index).ok()?;
+    let wght = skrifa::Tag::new(b"wght");
+    skrifa::AxisCollection::new(&font)
+        .iter()
+        .find(|axis| axis.tag() == wght)
+        .map(|axis| axis.default_value())
+}
+
+/// The `wght` coordinate among `coords`, if the font has that axis.
+#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
+fn fvar_wght(coords: &[AxisTriple]) -> Option<f32> {
+    let wght = u32::from_be_bytes(*b"wght");
+    coords
+        .iter()
+        .find(|(tag, ..)| *tag == wght)
+        .map(|&(_, value, _)| value)
+}
+
+/// Only the coordinates off their axis default; `None` for the file
+/// default itself.
+#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
+fn pin_coords(coords: &[AxisTriple]) -> Option<Vec<(u32, f32)>> {
+    let pinned: Vec<(u32, f32)> = coords
+        .iter()
+        .filter(|(_, value, default)| (value - default).abs() > 0.01)
+        .map(|(tag, value, _)| (*tag, *value))
+        .collect();
+    (!pinned.is_empty()).then_some(pinned)
+}
+
+/// Whether coordinates lean on a slant/italic axis.
+#[cfg(target_os = "windows")]
+fn triple_italic(coords: &[AxisTriple]) -> bool {
+    coords
+        .iter()
+        .any(|&(tag, value, default)| leans_italic(tag, value, default))
+}
+
+/// The instance `want_wght`/`want_italic` describe. DirectWrite reports
+/// per-instance properties but keeps every instance at the base index.
+#[cfg(target_os = "windows")]
+fn match_instance(
+    data: &[u8],
+    face_index: u32,
+    want_wght: f32,
+    want_italic: bool,
+) -> Option<Vec<(u32, f32)>> {
+    let font = skrifa::FontRef::from_index(data, face_index).ok()?;
+    let axes = skrifa::AxisCollection::new(&font);
+    if axes.is_empty() {
+        return None;
+    }
+    let instances = skrifa::NamedInstanceCollection::new(&font);
+    let mut best: Option<(f32, Vec<AxisTriple>)> = None;
+    for i in 0..instances.len() {
+        let Some(instance) = instances.get(i) else {
+            continue;
+        };
+        let coords = instance_triples(&axes, &instance);
+        if triple_italic(&coords) != want_italic {
+            continue;
+        }
+        let dist = (fvar_wght(&coords).unwrap_or(want_wght) - want_wght).abs();
+        if best.as_ref().is_none_or(|(best_dist, _)| dist < *best_dist) {
+            best = Some((dist, coords));
+        }
+    }
+    pin_coords(best?.1.as_slice())
+}
+
+/// Exact style-name match, ignoring case, spaces and punctuation: the
+/// face's style name, or its PostScript name's suffix, so "ExtraLight"
+/// answers to "Extra Light" and to "JetBrainsMono-ExtraLight". Never a
+/// part of one: "Bold" is not "Semi Bold".
+#[cfg(not(target_arch = "wasm32"))]
+fn style_name_matches(cand: &FontCandidate, want: &str) -> bool {
+    fn normalize(s: &str) -> String {
+        s.chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    }
+    let want = normalize(want);
+    if want.is_empty() {
+        return false;
+    }
+    let suffix = cand
+        .postscript
+        .as_deref()
+        .and_then(|ps| ps.rsplit_once('-'))
+        .map(|(_, suffix)| suffix);
+    [cand.style_name.as_deref(), suffix]
+        .into_iter()
+        .flatten()
+        .any(|name| normalize(name) == want)
 }
 
 /// CSS-spec compliant font matching algorithm
@@ -473,10 +754,29 @@ impl Database {
 
             tracing::debug!("Total candidates found: {}", candidates.len());
 
-            // Step 3: apply CSS-spec matching algorithm to select the best face
-            if let Some(index) = find_best_match(&candidates, query) {
+            // Step 3: an exact style-name request wins over CSS matching.
+            let chosen = query.style_name.and_then(|want| {
+                let index = candidates
+                    .iter()
+                    .position(|c| style_name_matches(c, want))?;
+                tracing::debug!("style name '{want}' matched candidate {index}");
+                Some(index)
+            });
+            let chosen = chosen.or_else(|| find_best_match(&candidates, query));
+            if let Some(index) = chosen {
                 tracing::debug!("Best match selected at index {}", index);
-                return Some(ID::from_handle(candidates[index].handle.clone()));
+                let candidate = &candidates[index];
+                #[cfg(not(target_os = "macos"))]
+                let id = ID::from_handle(
+                    candidate.handle.clone(),
+                    MatchedFace {
+                        weight: candidate.weight.0 as f32,
+                        coords: candidate.instance.clone().unwrap_or_default(),
+                    },
+                );
+                #[cfg(target_os = "macos")]
+                let id = ID::from_handle(candidate.handle.clone());
+                return Some(id);
             } else {
                 tracing::debug!("No best match found from candidates");
             }
@@ -682,4 +982,66 @@ fn find_font_path_from_data(data: &[u8]) -> Option<PathBuf> {
         target_name
     );
     None
+}
+
+#[cfg(all(test, not(any(target_os = "macos", target_os = "windows"))))]
+mod tests {
+    /// Index 0 of a variable font is its default instance, reported at
+    /// `wght`'s default (Cascadia's is 400).
+    #[test]
+    fn the_default_face_weighs_its_wght_default() {
+        let data = crate::font::constants::FONT_CASCADIA_CODE_NF;
+        assert_eq!(super::default_wght(data, 0), Some(400.0));
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod style_name_tests {
+    use super::*;
+
+    fn candidate(postscript: Option<&str>, style_name: Option<&str>) -> FontCandidate {
+        FontCandidate {
+            handle: font_kit::handle::Handle::from_memory(std::sync::Arc::new(vec![]), 0),
+            weight: Weight::NORMAL,
+            stretch: Stretch::Normal,
+            style: Style::Normal,
+            #[cfg(not(target_os = "macos"))]
+            instance: None,
+            postscript: postscript.map(str::to_owned),
+            style_name: style_name.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_style_name_matches_exactly_ignoring_spelling() {
+        let light = candidate(Some("JetBrainsMono-ExtraLight"), Some("ExtraLight"));
+        assert!(style_name_matches(&light, "ExtraLight"));
+        assert!(style_name_matches(&light, "extra light"));
+        assert!(!style_name_matches(&light, "Light"));
+        assert!(!style_name_matches(&light, ""));
+        // Not only ASCII: a name without an English entry still matches.
+        assert!(style_name_matches(&candidate(None, Some("太字")), "太字"));
+    }
+
+    /// The style name is the whole name, never its last word.
+    #[test]
+    fn bold_is_not_semi_bold() {
+        let semibold = candidate(Some("Inter-SemiBold"), Some("Semi Bold"));
+        assert!(style_name_matches(&semibold, "SemiBold"));
+        assert!(!style_name_matches(&semibold, "Bold"));
+    }
+
+    /// Either name answers: a PostScript name without a style suffix
+    /// leaves the style name, and the other way around.
+    #[test]
+    fn either_name_answers() {
+        assert!(style_name_matches(
+            &candidate(Some("Iosevka"), Some("Medium")),
+            "Medium"
+        ));
+        assert!(style_name_matches(
+            &candidate(Some("Recursive-MonoCasualLight"), None),
+            "Mono Casual Light"
+        ));
+    }
 }

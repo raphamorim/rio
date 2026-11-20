@@ -51,6 +51,18 @@ Rio is a modern terminal emulator built with Rust and WebGPU that provides high 
 
 	Start window with specified title.
 
+*--title* _<TITLE>_
+
+	Set a fixed window title, ignoring titles set by the shell.
+
+*--hold*
+
+	Keep the window open after the command exits, until a key is pressed.
+
+*--app-id* _<APP_ID>_
+
+	Set the Wayland app_id or X11 WM_CLASS (Linux/BSD only).
+
 # CONFIGURATION
 
 Rio uses TOML format for configuration. The configuration file is automatically

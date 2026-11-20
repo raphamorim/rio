@@ -47,7 +47,9 @@ bytemuck = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 image_rs = { workspace = true }
-unicode-width = { workspace = true }
+rio-graphics = { workspace = true, features = ["glyph"] }
+rio-fonts = { workspace = true }
+rio-unicode = { workspace = true }
 guillotiere = "0.6.2"
 rustc-hash = { workspace = true }
 raw-window-handle = { workspace = true }
@@ -137,6 +139,7 @@ render = ["scale", "zeno/eval"]
 # librashader CRT/scanline filters.
 wgpu = [
     "dep:wgpu",
+    "rio-graphics/wgpu",
     "dep:librashader",
     "dep:librashader-common",
     "dep:librashader-presets",
@@ -297,3 +300,7 @@ web-sys = { version = "0.3.61", features = [
     "WebGl2RenderingContext",
     "CanvasRenderingContext2d",
 ] }
+
+[[bench]]
+name = "shape"
+harness = false

@@ -1,6 +1,9 @@
 pub mod bell;
 pub mod bindings;
-pub mod colors;
+pub mod command_finished;
+// `colors` and `ConfigError` moved to the `rio-vt` core crate; re-export
+// so `rio_backend::config::{colors, ConfigError}` keep resolving.
+pub use rio_vt::config::{colors, ConfigError};
 pub mod defaults;
 pub mod effects;
 pub mod hints;
@@ -16,6 +19,7 @@ pub mod window;
 use crate::ansi::CursorShape;
 use crate::config::bell::Bell;
 use crate::config::bindings::Bindings;
+use crate::config::command_finished::NotifyOnCommandFinish;
 use crate::config::defaults::*;
 use crate::config::hints::Hints;
 use crate::config::keyboard::Keyboard;
@@ -30,28 +34,94 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::PathBuf;
 use std::{default::Default, fs::File};
+#[cfg(feature = "renderer")]
 use sugarloaf::font::fonts::SugarloafFonts;
 use theme::{AdaptiveColors, AdaptiveTheme, AppearanceTheme, Theme};
 use tracing::warn;
 
-#[derive(Clone, Debug)]
-pub enum ConfigError {
-    ErrLoadingConfig(String),
-    ErrLoadingTheme(String),
-    PathNotFound,
-}
-
+/// `program` of `None` means no program was configured, so the user's default
+/// shell is used (and, on macOS, started as a login shell).
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Shell {
-    pub program: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_program",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub program: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
 }
 
+/// `program = ""` used to be how you asked for the default shell, so keep
+/// reading it as "nothing configured" rather than trying to spawn it.
+fn deserialize_program<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let program = Option::<String>::deserialize(deserializer)?;
+    Ok(program.filter(|program| !program.is_empty()))
+}
+
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Scroll {
+    #[serde(
+        default = "default_scroll_multiplier",
+        deserialize_with = "deserialize_scroll_multiplier"
+    )]
     pub multiplier: f64,
+    #[serde(
+        default = "default_scroll_divider",
+        deserialize_with = "deserialize_scroll_divider"
+    )]
     pub divider: f64,
+}
+
+fn default_scroll_multiplier() -> f64 {
+    Scroll::default().multiplier
+}
+
+fn default_scroll_divider() -> f64 {
+    Scroll::default().divider
+}
+
+/// Scroll input is scaled by `multiplier / divider`. Both are clamped to
+/// [0.01, 10000] so the ratio stays positive and finite; NaN falls back to
+/// the default.
+fn sanitize_scroll_factor(name: &str, value: f64, default: f64) -> f64 {
+    let sanitized = if value.is_nan() {
+        default
+    } else {
+        value.clamp(0.01, 10_000.0)
+    };
+    if sanitized != value {
+        warn!("scroll.{name} = {value} is out of range, using {sanitized}");
+    }
+    sanitized
+}
+
+fn deserialize_scroll_multiplier<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let multiplier = f64::deserialize(deserializer)?;
+    Ok(sanitize_scroll_factor(
+        "multiplier",
+        multiplier,
+        default_scroll_multiplier(),
+    ))
+}
+
+fn deserialize_scroll_divider<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let divider = f64::deserialize(deserializer)?;
+    Ok(sanitize_scroll_factor(
+        "divider",
+        divider,
+        default_scroll_divider(),
+    ))
 }
 
 impl Default for Scroll {
@@ -97,6 +167,11 @@ pub struct Config {
     pub platform: Platform,
     #[serde(default = "default_use_fork", rename = "use-fork")]
     pub use_fork: bool,
+    /// Inject rio's shell integration into spawned zsh and fish
+    /// shells, so the working directory reaches the terminal (OSC 7)
+    /// with no user setup.
+    #[serde(default = "default_bool_true", rename = "shell-integration")]
+    pub shell_integration: bool,
     #[serde(default = "Keyboard::default")]
     pub keyboard: Keyboard,
     #[serde(default = "Title::default")]
@@ -115,6 +190,7 @@ pub struct Config {
         rename = "adaptive-theme"
     )]
     pub adaptive_theme: Option<AdaptiveTheme>,
+    #[cfg(feature = "renderer")]
     #[serde(default = "SugarloafFonts::default")]
     pub fonts: SugarloafFonts,
     #[serde(default = "default_editor")]
@@ -144,6 +220,14 @@ pub struct Config {
     pub ignore_selection_fg_color: bool,
     #[serde(default = "default_bool_true", rename = "confirm-before-quit")]
     pub confirm_before_quit: bool,
+    /// Keep a pane open after its command exits, until a key is pressed.
+    #[serde(default = "bool::default")]
+    pub hold: bool,
+    /// Unicode grapheme clusters as the unit of cell layout (presets
+    /// DEC private mode 2027). A
+    /// program's DECSET/DECRST still wins at runtime.
+    #[serde(default = "default_bool_true", rename = "grapheme-clustering")]
+    pub grapheme_clustering: bool,
     #[serde(default = "bool::default", rename = "copy-on-select")]
     pub copy_on_select: bool,
     #[serde(
@@ -160,6 +244,11 @@ pub struct Config {
     pub hints: Hints,
     #[serde(default = "Bell::default")]
     pub bell: Bell,
+    #[serde(
+        default = "NotifyOnCommandFinish::default",
+        rename = "notify-on-command-finish"
+    )]
+    pub notify_on_command_finish: NotifyOnCommandFinish,
     #[serde(default = "default_bool_true", rename = "enable-scroll-bar")]
     pub enable_scroll_bar: bool,
     #[serde(
@@ -175,8 +264,13 @@ pub struct Config {
 pub struct CursorConfig {
     #[serde(default = "default_cursor")]
     pub shape: CursorShape,
-    #[serde(default = "bool::default")]
-    pub blinking: bool,
+    /// Whether the cursor blinks by default. Unset, it is steady, and
+    /// programs may make it blink (DECSCUSR and mode 12). Set, it is the
+    /// default, and mode 12 is ignored so a legacy program can't override
+    /// it for good; DECSCUSR still sets a style, and `CSI 0 SP q`
+    /// restores this.
+    #[serde(default)]
+    pub blinking: Option<bool>,
     #[serde(default = "default_cursor_interval", rename = "blinking-interval")]
     pub blinking_interval: u64,
 }
@@ -517,6 +611,7 @@ impl Config {
             if let Some(blur) = window_overwrite.blur {
                 self.window.blur = blur;
             }
+            #[cfg(feature = "renderer")]
             if let Some(bg_image) = &window_overwrite.background_image {
                 self.window.background_image = Some(bg_image.clone());
             }
@@ -646,6 +741,7 @@ impl Default for Config {
             title: Title::default(),
             developer: Developer::default(),
             env_vars: vec![],
+            #[cfg(feature = "renderer")]
             fonts: SugarloafFonts::default(),
             line_height: default_line_height(),
             navigation: Navigation::default(),
@@ -657,15 +753,19 @@ impl Default for Config {
             platform: Platform::default(),
             theme: String::default(),
             use_fork: default_use_fork(),
+            shell_integration: true,
             window: Window::default(),
             working_dir: default_working_dir(),
             ignore_selection_fg_color: false,
             confirm_before_quit: true,
+            hold: false,
+            grapheme_clustering: true,
             copy_on_select: false,
             hide_cursor_when_typing: false,
             draw_bold_text_with_light_colors: false,
             hints: Hints::default(),
             bell: Bell::default(),
+            notify_on_command_finish: NotifyOnCommandFinish::default(),
             enable_scroll_bar: true,
             scrollback_history_limit: default_scrollback_history_limit(),
             effects: effects::Effects::default(),
@@ -677,7 +777,7 @@ impl Default for CursorConfig {
     fn default() -> Self {
         Self {
             shape: default_cursor(),
-            blinking: false,
+            blinking: None,
             blinking_interval: default_cursor_interval(),
         }
     }
@@ -793,6 +893,41 @@ mod tests {
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
         assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_notify_on_command_finish_section() {
+        use crate::config::command_finished::{NotifyOnCommandFinish, NotifyWhen};
+
+        let config: Config = toml::from_str("").unwrap();
+        assert_eq!(
+            config.notify_on_command_finish,
+            NotifyOnCommandFinish {
+                when: NotifyWhen::Never,
+                bell: true,
+                notify: false,
+                after: 5000,
+            }
+        );
+
+        let config: Config = toml::from_str(
+            r#"
+            [notify-on-command-finish]
+            when = "unfocused"
+            notify = true
+            after = 250
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            config.notify_on_command_finish,
+            NotifyOnCommandFinish {
+                when: NotifyWhen::Unfocused,
+                bell: true,
+                notify: true,
+                after: 250,
+            }
+        );
     }
 
     #[test]
@@ -962,10 +1097,16 @@ mod tests {
 
             [fonts]
             size = 14.0
+            cursor-shaping-break = false
         "#,
         );
 
         assert_eq!(result.fonts.size, 14.0);
+        assert!(!result.fonts.cursor_shaping_break);
+        assert!(
+            Config::default().fonts.cursor_shaping_break,
+            "the break at the cursor is on unless turned off"
+        );
         assert_eq!(result.line_height, 2.0);
         assert_eq!(result.margin.top, 0.0);
         assert_eq!(result.margin.bottom, 0.0);
@@ -1122,6 +1263,19 @@ mod tests {
         );
     }
 
+    // `cursor.blinking` unset is a steady cursor programs may make blink;
+    // set, it is the user's choice.
+    #[test]
+    fn cursor_blinking_is_unset_unless_configured() {
+        assert_eq!(Config::default().cursor.blinking, None);
+        let unset: Config = toml::from_str("[cursor]\nshape = 'beam'\n").unwrap();
+        assert_eq!(unset.cursor.blinking, None);
+        let steady: Config = toml::from_str("[cursor]\nblinking = false\n").unwrap();
+        assert_eq!(steady.cursor.blinking, Some(false));
+        let blinking: Config = toml::from_str("[cursor]\nblinking = true\n").unwrap();
+        assert_eq!(blinking.cursor.blinking, Some(true));
+    }
+
     #[test]
     fn test_use_fork() {
         let result = create_temporary_config(
@@ -1155,8 +1309,21 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.shell.program, "/bin/fish");
+        assert_eq!(result.shell.program.as_deref(), Some("/bin/fish"));
         assert_eq!(result.shell.args, ["--hello"]);
+    }
+
+    #[test]
+    fn test_shell_empty_program_means_default() {
+        let result = create_temporary_config(
+            "change-shell-empty-program",
+            r#"
+            shell = { program = "", args = ["--login"] }
+        "#,
+        );
+
+        assert_eq!(result.shell.program, None);
+        assert_eq!(result.shell.args, ["--login"]);
     }
 
     #[test]
@@ -1168,7 +1335,7 @@ mod tests {
         "#,
         );
 
-        assert_eq!(result.shell.program, "/bin/fish");
+        assert_eq!(result.shell.program.as_deref(), Some("/bin/fish"));
         assert_eq!(result.shell.args, Vec::<&str>::new());
     }
 
@@ -1243,6 +1410,48 @@ mod tests {
         assert_eq!(result.window.colorspace, window::Colorspace::DisplayP3);
     }
 
+    fn scroll_config(prefix: &str, scroll: &str) -> Scroll {
+        create_temporary_config(prefix, &format!("[scroll]\n{scroll}")).scroll
+    }
+
+    #[test]
+    fn test_scroll_values_are_kept_when_valid() {
+        let scroll = scroll_config("scroll-valid", "multiplier = 5.0\ndivider = 2.0");
+        assert_eq!((scroll.multiplier, scroll.divider), (5.0, 2.0));
+    }
+
+    #[test]
+    fn test_scroll_values_are_clamped() {
+        let scroll = scroll_config("scroll-zero", "multiplier = 0.0\ndivider = 0.0");
+        assert_eq!((scroll.multiplier, scroll.divider), (0.01, 0.01));
+
+        let scroll =
+            scroll_config("scroll-negative", "multiplier = -3.0\ndivider = -1.0");
+        assert_eq!((scroll.multiplier, scroll.divider), (0.01, 0.01));
+
+        let scroll =
+            scroll_config("scroll-extreme", "multiplier = 1e300\ndivider = 1e-320");
+        assert_eq!((scroll.multiplier, scroll.divider), (10_000.0, 0.01));
+
+        let scroll = scroll_config("scroll-inf", "multiplier = inf\ndivider = -inf");
+        assert_eq!((scroll.multiplier, scroll.divider), (10_000.0, 0.01));
+    }
+
+    #[test]
+    fn test_scroll_nan_falls_back_to_default() {
+        let scroll = scroll_config("scroll-nan", "multiplier = nan\ndivider = nan");
+        assert_eq!(scroll, Scroll::default());
+    }
+
+    #[test]
+    fn test_scroll_partial_table_keeps_other_default() {
+        let scroll = scroll_config("scroll-partial-divider", "divider = 2.0");
+        assert_eq!((scroll.multiplier, scroll.divider), (3.0, 2.0));
+
+        let scroll = scroll_config("scroll-partial-multiplier", "multiplier = 5.0");
+        assert_eq!((scroll.multiplier, scroll.divider), (5.0, 1.0));
+    }
+
     #[test]
     fn test_scrollback_history_limit_default() {
         let result = create_temporary_config(
@@ -1313,8 +1522,8 @@ mod tests {
         "#,
         );
 
-        // Default is sRGB on every platform — same semantics as ghostty's
-        // `window-colorspace` default. `[window] colorspace` describes how
+        // Default is sRGB on every platform. `[window] colorspace`
+        // describes how
         // input color bytes are *interpreted*, not the surface gamut.
         assert_eq!(result.window.colorspace, window::Colorspace::Srgb);
     }
@@ -1429,7 +1638,7 @@ mod tests {
         result.overwrite_based_on_platform();
 
         // Shell should be completely replaced
-        assert_eq!(result.shell.program, "/bin/zsh");
+        assert_eq!(result.shell.program.as_deref(), Some("/bin/zsh"));
         assert_eq!(result.shell.args, vec!["-l"]);
     }
 
@@ -1560,7 +1769,7 @@ mod tests {
         assert_eq!(result.navigation.mode, navigation::NavigationMode::Tab);
 
         // Shell: completely replaced
-        assert_eq!(result.shell.program, "/bin/zsh");
+        assert_eq!(result.shell.program.as_deref(), Some("/bin/zsh"));
         assert_eq!(result.shell.args, vec!["--login"]);
     }
 

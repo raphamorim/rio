@@ -1745,9 +1745,14 @@ unsafe fn public_window_callback_inner(
         }
 
         WM_IME_SETCONTEXT => {
-            // Hide composing text drawn by IME.
-            let wparam = wparam & (!ISC_SHOWUICOMPOSITIONWINDOW as usize);
-            result = ProcResult::DefWindowProc(wparam);
+            // Suppress the OS-drawn floating composition window — rio
+            // renders the composition inline. The ISC_* UI flags live
+            // in `lparam` (`wparam` is the window-active BOOL); this
+            // used to mask `wparam` and therefore never suppressed
+            // anything. Same fix as upstream winit.
+            let lparam = lparam & !(ISC_SHOWUICOMPOSITIONWINDOW as isize);
+            result =
+                ProcResult::Value(unsafe { DefWindowProcW(window, msg, wparam, lparam) });
         }
 
         // this is necessary for us to maintain minimize/restore state

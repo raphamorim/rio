@@ -7,7 +7,9 @@
 //! alpha-only bytes (mask) or premultiplied RGBA in Display-P3 (color). The
 //! caller stitches this into the existing atlas pipeline unchanged.
 
+use parking_lot::Mutex;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use core_foundation::{
     attributed_string::CFMutableAttributedString,
@@ -187,17 +189,83 @@ pub fn register_fonts_in_dir(dir: &std::path::Path) {
 /// `CGFontCreateWithDataProvider` → `CTFontCreateWithGraphicsFont` path
 /// silently drops.
 ///
-/// Stored at a reference 1.0pt size; per-call rasterization clones with the
-/// target size (cheap CF refcount, not a parse). Clone is a CF retain.
+/// Stored at a reference 1.0pt size; shaping and rasterization use the
+/// memoized font at the target size (see [`FontHandle::at_size`]). Clone
+/// is a CF retain and shares the memo.
 ///
 /// TTC caveat: CoreText's data-based descriptor reads only the first font in
 /// a collection — use [`FontHandle::from_bytes_index`] for other indices.
 #[derive(Clone)]
 pub struct FontHandle {
     base_font: CTFont,
+    /// Fonts at the sizes this handle has been used at, shared by all
+    /// clones of the handle. A `CTFont` carries CoreText's per-font
+    /// shaping and cascade caches, which start cold for every new
+    /// font object: creating one per shape call made a four glyph
+    /// run cost as much as a full line. Sizes change rarely, so the
+    /// memo stays tiny; see [`Self::at_size`]. CoreText fonts are
+    /// immutable and thread safe, so the memo is too.
+    sized: Arc<Mutex<Vec<(SizedKey, CTFont)>>>,
 }
 
+/// A font size in pixels plus whether the font is sheared for
+/// synthetic italic.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct SizedKey {
+    size_bits: u32,
+    sheared: bool,
+}
+
+/// Sizes a handle remembers before the least recently used is dropped.
+/// The regular font's handle is shared by the grid and the UI text, so
+/// it sees the grid size, the layout size, the handful of UI label
+/// sizes and their sheared variants at once; past the cap every call
+/// would silently pay the cold font again.
+const SIZED_FONTS_KEPT: usize = 16;
+
 impl FontHandle {
+    fn new(base_font: CTFont) -> Self {
+        Self {
+            base_font,
+            sized: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// The font at `size_px`, sheared when `sheared`, from the memo
+    /// shared by this handle's clones. A hit is a CF retain.
+    fn at_size(&self, size_px: f32, sheared: bool) -> CTFont {
+        let key = SizedKey {
+            size_bits: size_px.to_bits(),
+            sheared,
+        };
+        let mut sized = self.sized.lock();
+        if let Some(hit) = sized.iter().position(|(k, _)| *k == key) {
+            // A hit moves to the back, so the sizes in use stay and
+            // the one not asked for longest is the one dropped. The
+            // common case asks for the newest again and moves nothing.
+            if hit + 1 != sized.len() {
+                let entry = sized.remove(hit);
+                sized.push(entry);
+            }
+            return sized.last().expect("just found").1.clone();
+        }
+        let font = if sheared {
+            ct_font_sheared(&self.base_font, size_px as f64)
+        } else {
+            self.base_font.clone_with_font_size(size_px as f64)
+        };
+        if sized.len() >= SIZED_FONTS_KEPT {
+            sized.remove(0);
+        }
+        sized.push((key, font.clone()));
+        font
+    }
+
+    /// The font at `size_px`, memoized.
+    pub(crate) fn sized(&self, size_px: f32) -> CTFont {
+        self.at_size(size_px, false)
+    }
+
     /// Parse a font file's bytes into a `CTFont`. Returns `None` if CoreText
     /// can't interpret the buffer (malformed, unsupported format).
     ///
@@ -208,7 +276,7 @@ impl FontHandle {
     pub fn from_bytes(font_bytes: &[u8]) -> Option<Self> {
         let desc = font_manager::create_font_descriptor(font_bytes).ok()?;
         let base_font = ct_font::new_from_descriptor(&desc, 1.0);
-        Some(Self { base_font })
+        Some(Self::new(base_font))
     }
 
     /// Like [`from_bytes`] but picks a specific sub-font from a TTC/OTC
@@ -233,7 +301,7 @@ impl FontHandle {
             unsafe { CFArray::wrap_under_create_rule(array_ref) };
         let desc_ref = descriptors.get(index as isize)?;
         let base_font = ct_font::new_from_descriptor(&desc_ref, 1.0);
-        Some(Self { base_font })
+        Some(Self::new(base_font))
     }
 
     /// Zero-copy variant for bundled fonts whose bytes live in `.rodata`.
@@ -261,7 +329,7 @@ impl FontHandle {
         let data = unsafe { CFData::wrap_under_create_rule(data_ref) };
         let desc = font_manager::create_font_descriptor_with_data(data).ok()?;
         let base_font = ct_font::new_from_descriptor(&desc, 1.0);
-        Some(Self { base_font })
+        Some(Self::new(base_font))
     }
 
     /// Load a font straight from a file path without reading the bytes
@@ -289,7 +357,7 @@ impl FontHandle {
             unsafe { CFArray::wrap_under_create_rule(array_ref) };
         let desc_ref = descriptors.get(0)?;
         let base_font = ct_font::new_from_descriptor(&desc_ref, 1.0);
-        Some(Self { base_font })
+        Some(Self::new(base_font))
     }
 
     /// Unique-per-face PostScript name (e.g. "CascadiaMono-Regular",
@@ -301,8 +369,7 @@ impl FontHandle {
 
     /// Return a derived `FontHandle` with the `wght` variation axis pinned
     /// to `value`. Used to bake the bold weight into Rio's bold/bold-italic
-    /// fallback slots from a single variable-font file (matches ghostty's
-    /// `Face.setVariations` flow in `face/coretext.zig:225-254`).
+    /// fallback slots from a single variable-font file.
     ///
     /// The returned CTFont references the same underlying font data — only
     /// the descriptor's variation attributes change. Returns `None` if
@@ -339,7 +406,7 @@ impl FontHandle {
             return None;
         }
         let derived = unsafe { CTFont::wrap_under_create_rule(derived_ref) };
-        Some(Self { base_font: derived })
+        Some(Self::new(derived))
     }
 
     /// Return a derived `FontHandle` with OpenType feature settings
@@ -401,7 +468,7 @@ impl FontHandle {
             return None;
         }
         let derived = unsafe { CTFont::wrap_under_create_rule(derived_ref) };
-        Some(Self { base_font: derived })
+        Some(Self::new(derived))
     }
 }
 
@@ -452,11 +519,7 @@ pub fn rasterize_glyph(
     synthetic_italic: bool,
     synthetic_bold: bool,
 ) -> Option<RasterizedGlyph> {
-    let ct_font = if synthetic_italic {
-        ct_font_sheared(&handle.base_font, size_px as f64)
-    } else {
-        handle.base_font.clone_with_font_size(size_px as f64)
-    };
+    let ct_font = handle.at_size(size_px, synthetic_italic);
 
     let glyphs = [glyph_id as CGGlyph];
     let mut raw_bounds =
@@ -618,6 +681,18 @@ pub fn find_font_path(
     italic: bool,
     style_name: Option<&str>,
 ) -> Option<PathBuf> {
+    find_font(family, bold, italic, style_name).and_then(|(path, _)| path)
+}
+
+/// Preserve the matched face, including its variable axes and collection
+/// index. The path is `None` for faces without an accessible file URL;
+/// the handle alone is enough to shape and rasterize them.
+pub fn find_font(
+    family: &str,
+    bold: bool,
+    italic: bool,
+    style_name: Option<&str>,
+) -> Option<(Option<PathBuf>, FontHandle)> {
     use core_foundation::array::CFArray;
 
     let family_cf = CFString::new(family);
@@ -672,10 +747,11 @@ pub fn find_font_path(
 
     let desired_styles = derive_desired_styles(bold, italic, style_name);
 
-    candidates
+    let descriptor = candidates
         .iter()
-        .max_by_key(|d| score_candidate(d, bold, italic, &desired_styles))
-        .and_then(|d| d.font_path())
+        .max_by_key(|d| score_candidate(d, bold, italic, &desired_styles))?;
+    let base_font = ct_font::new_from_descriptor(&descriptor, 1.0);
+    Some((descriptor.font_path(), FontHandle::new(base_font)))
 }
 
 fn derive_desired_styles(
@@ -885,7 +961,7 @@ pub fn all_families() -> Vec<String> {
 /// Swap B and R in each 4-byte pixel. CoreGraphics' `premul_first +
 /// byte_order_32_little` writes BGRA; Rio's atlas is RGBA. Alpha stays put.
 fn bgra_to_rgba_in_place(bytes: &mut [u8]) {
-    for px in bytes.chunks_exact_mut(4) {
+    for px in bytes.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
 }
@@ -1022,7 +1098,7 @@ pub fn max_ascii_advance_px(handle: &FontHandle, size_px: f32) -> Option<f32> {
     }
 
     // CTFont at the actual render size.
-    let ct_font = handle.base_font.clone_with_font_size(size_px as f64);
+    let ct_font = handle.sized(size_px);
 
     const FIRST: u16 = 0x20;
     const LAST: u16 = 0x7E;
@@ -1101,21 +1177,34 @@ pub fn font_attributes(handle: &FontHandle) -> FontAttributes {
     }
 }
 
-/// Ask CoreText which font should render `ch` when `primary` can't.
+/// Find the font that should render `ch` when `primary` can't, or
+/// `None` when no installed font has it.
 ///
-/// Wraps `CTFontCreateForString(primary, string, range)`. When the
-/// primary font carries a glyph for the codepoint, CoreText returns
-/// the primary itself; when it doesn't, CoreText walks its cascade
-/// list and returns the best available fallback (emoji, CJK, symbol,
-/// etc.).
+/// First `CTFontCreateForString(primary, string, range)`: CoreText's
+/// cascade list, which knows the system locale (the right Han font)
+/// and the emoji font. Its answer is used only when it really has the
+/// glyph. Two answers are not:
+///
+/// - `LastResort`, where the cascade ends. It maps every codepoint to
+///   a placeholder box naming the codepoint's block, so its charmap
+///   "covers" everything; registered once, it would win every later
+///   lookup. Rio treats it as not installed, as Ghostty, kitty and
+///   WezTerm do.
+/// - A font without the codepoint. CoreText hands back the primary
+///   when it can't do better, for one.
+///
+/// Neither means no font has the codepoint: the cascade list misses
+/// fonts it doesn't know about, Private Use Area icons in an installed
+/// Nerd Font among them. So on a miss Rio searches the installed fonts
+/// itself ([`search_installed_fonts`]), the way Ghostty discovers
+/// fallbacks and kitty recovers from a LastResort answer.
 ///
 /// The returned handle is normalized to 1pt so it matches the
 /// convention for stored [`FontHandle`]s — per-render sizing goes
 /// through `clone_with_font_size` at shape/raster time.
 ///
 /// Lets Rio register an unknown cascade font on first encounter rather
-/// than pre-registering every path-backed fallback at startup. Returns
-/// `None` only when CoreText itself refuses (exceptionally rare).
+/// than pre-registering every path-backed fallback at startup.
 pub fn discover_fallback(primary: &FontHandle, ch: char) -> Option<FontHandle> {
     use core_foundation::base::CFIndex;
 
@@ -1129,13 +1218,68 @@ pub fn discover_fallback(primary: &FontHandle, ch: char) -> Option<FontHandle> {
             range,
         )
     };
-    if ctfont_ref.is_null() {
-        return None;
+    if !ctfont_ref.is_null() {
+        let ct = unsafe { CTFont::wrap_under_create_rule(ctfont_ref) };
+        let handle = FontHandle::new(ct.clone_with_font_size(1.0));
+        if !is_last_resort(&handle) && font_has_char(&handle, ch) {
+            return Some(handle);
+        }
     }
-    let ct = unsafe { CTFont::wrap_under_create_rule(ctfont_ref) };
-    Some(FontHandle {
-        base_font: ct.clone_with_font_size(1.0),
-    })
+    search_installed_fonts(ch)
+}
+
+/// Whether `handle` is Apple's `LastResort` font (see
+/// [`discover_fallback`]).
+pub fn is_last_resort(handle: &FontHandle) -> bool {
+    handle.postscript_name() == "LastResort"
+}
+
+/// The installed font with a real glyph for `ch`, found by asking
+/// CoreText for every font whose character set contains it (a
+/// `kCTFontCharacterSetAttribute` descriptor, as Ghostty's discovery
+/// does). Among the matches an upright regular face is preferred, then
+/// a monospaced one, since the glyph lands in a terminal cell; ties
+/// keep CoreText's order. `LastResort` never qualifies.
+fn search_installed_fonts(ch: char) -> Option<FontHandle> {
+    use core_foundation::array::CFArray;
+    use core_foundation::base::{kCFAllocatorDefault, CFIndex};
+    use core_foundation::characterset::{
+        CFCharacterSet, CFCharacterSetCreateWithCharactersInRange,
+    };
+    use core_text::font_descriptor::kCTFontCharacterSetAttribute;
+
+    // CFCharacterSet ranges are in Unicode scalars, not UTF-16 units.
+    let set = unsafe {
+        let set_ref = CFCharacterSetCreateWithCharactersInRange(
+            kCFAllocatorDefault,
+            CFRange::init(ch as CFIndex, 1),
+        );
+        if set_ref.is_null() {
+            return None;
+        }
+        CFCharacterSet::wrap_under_create_rule(set_ref)
+    };
+    let key = unsafe { CFString::wrap_under_get_rule(kCTFontCharacterSetAttribute) };
+    let attrs: CFDictionary<CFString, CFType> =
+        CFDictionary::from_CFType_pairs(&[(key, set.as_CFType())]);
+    let wanted = font_descriptor::new_from_attributes(&attrs);
+    let collection =
+        font_collection::new_from_descriptors(&CFArray::from_CFTypes(&[wanted]));
+    let candidates = collection.get_descriptors()?;
+
+    let mut best: Option<((bool, bool), FontHandle)> = None;
+    for desc in candidates.iter() {
+        let handle = FontHandle::new(ct_font::new_from_descriptor(&desc, 1.0));
+        if is_last_resort(&handle) || !font_has_char(&handle, ch) {
+            continue;
+        }
+        let attrs = font_attributes(&handle);
+        let rank = (!attrs.is_bold && !attrs.is_italic, attrs.is_monospace);
+        if best.as_ref().is_none_or(|(r, _)| rank > *r) {
+            best = Some((rank, handle));
+        }
+    }
+    best.map(|(_, handle)| handle)
 }
 
 /// Check whether `handle`'s font has a real glyph for `ch`.
@@ -1183,10 +1327,10 @@ pub struct FontMetrics {
     pub x_height: f32,
 }
 
-/// Read CoreText's line metrics for `handle` at `size_px`. Cheap: clones the
-/// base CTFont to the target size (CF refcount + trivial size field).
+/// Read CoreText's line metrics for `handle` at `size_px`, through the
+/// handle's memoized sized font.
 pub fn font_metrics(handle: &FontHandle, size_px: f32) -> FontMetrics {
-    let ct_font = handle.base_font.clone_with_font_size(size_px as f64);
+    let ct_font = handle.sized(size_px);
     let ascent = ct_font.ascent() as f32;
     let descent = ct_font.descent() as f32;
     let leading = ct_font.leading() as f32;
@@ -1250,7 +1394,7 @@ fn read_os2_strikeout(ct_font: &CTFont, size_px: f32) -> Option<(f32, f32)> {
 /// The CoreText shaping output, flattened. `cluster` is a UTF-8 byte offset
 /// into the original input text — not a UTF-16 index — so callers doing
 /// `&text[cluster..]` get the source codepoint directly.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShapedGlyph {
     pub id: u16,
     /// Pen-relative x in device pixels; offset from the expected pen
@@ -1296,7 +1440,7 @@ pub fn shape_text(handle: &FontHandle, text: &str, size_px: f32) -> Vec<ShapedGl
         return Vec::new();
     }
 
-    let primary_ct_font = handle.base_font.clone_with_font_size(size_px as f64);
+    let primary_ct_font = handle.sized(size_px);
 
     let mut attr = CFMutableAttributedString::new();
     attr.replace_str(&CFString::new(text), CFRange::init(0, 0));
@@ -1416,8 +1560,7 @@ fn build_utf16_to_utf8_map(text: &str) -> Vec<usize> {
 /// `CFStringCreateWithCharactersNoCopy`, and `ShapedGlyph.cluster`
 /// comes back as a UTF-16 code-unit offset. Skips the UTF-8 → UTF-16
 /// conversion inside `CFString::new` AND the UTF-16 → UTF-8 mapping
-/// pass after CoreText. CoreText shaper at
-/// `ghostty/src/font/shaper/coretext.zig:652-680`.
+/// pass after CoreText.
 pub fn shape_text_utf16(
     handle: &FontHandle,
     utf16: &[u16],
@@ -1427,7 +1570,7 @@ pub fn shape_text_utf16(
         return Vec::new();
     }
 
-    let primary_ct_font = handle.base_font.clone_with_font_size(size_px as f64);
+    let primary_ct_font = handle.sized(size_px);
 
     // `NoCopy` with `kCFAllocatorNull` deallocator = CF references our
     // `utf16` buffer directly; we own it and must keep it alive for
@@ -1626,6 +1769,96 @@ mod tests {
         assert!(shape_text(&handle, "", 18.0).is_empty());
     }
 
+    // The sized font memo: one CoreText font object per size and
+    // shear, shared by every clone of the handle, because CoreText's
+    // shaping caches live on the font object.
+    #[test]
+    fn the_same_size_yields_the_same_font_object() {
+        use core_foundation::base::TCFType;
+        let handle = FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF).unwrap();
+        let a = handle.sized(14.0);
+        let b = handle.sized(14.0);
+        assert_eq!(a.as_concrete_TypeRef(), b.as_concrete_TypeRef());
+        assert_eq!((a.pt_size() * 100.0).round(), 1400.0);
+
+        let other = handle.sized(15.0);
+        assert_ne!(a.as_concrete_TypeRef(), other.as_concrete_TypeRef());
+
+        let sheared = handle.at_size(14.0, true);
+        assert_ne!(a.as_concrete_TypeRef(), sheared.as_concrete_TypeRef());
+        assert_eq!(
+            sheared.as_concrete_TypeRef(),
+            handle.at_size(14.0, true).as_concrete_TypeRef()
+        );
+    }
+
+    #[test]
+    fn clones_of_a_handle_share_the_memo() {
+        use core_foundation::base::TCFType;
+        let handle = FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF).unwrap();
+        let clone = handle.clone();
+        let from_clone = clone.sized(21.0);
+        assert_eq!(
+            handle.sized(21.0).as_concrete_TypeRef(),
+            from_clone.as_concrete_TypeRef()
+        );
+    }
+
+    #[test]
+    fn the_memo_keeps_a_bounded_number_of_sizes() {
+        use core_foundation::base::TCFType;
+        let handle = FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF).unwrap();
+        let first = handle.sized(10.0);
+        for size in 1..=SIZED_FONTS_KEPT {
+            handle.sized(10.0 + size as f32);
+        }
+        assert_eq!(handle.sized.lock().len(), SIZED_FONTS_KEPT);
+        // The size not asked for longest was dropped, so asking again
+        // makes a new object.
+        assert_ne!(
+            handle.sized(10.0).as_concrete_TypeRef(),
+            first.as_concrete_TypeRef()
+        );
+    }
+
+    #[test]
+    fn a_size_in_use_survives_the_others_churning() {
+        use core_foundation::base::TCFType;
+        let handle = FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF).unwrap();
+        let in_use = handle.sized(10.0);
+        for size in 1..=(3 * SIZED_FONTS_KEPT) {
+            handle.sized(10.0 + size as f32);
+            // Asked for again between the others, as the grid font is
+            // between the UI label sizes.
+            handle.sized(10.0);
+        }
+        assert_eq!(
+            handle.sized(10.0).as_concrete_TypeRef(),
+            in_use.as_concrete_TypeRef()
+        );
+    }
+
+    // A memoized font shapes and rasterizes exactly like a fresh one.
+    #[test]
+    fn a_memoized_font_shapes_like_a_fresh_one() {
+        let handle = FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF).unwrap();
+        let fresh = FontHandle::from_static_bytes(FONT_CASCADIA_CODE_NF).unwrap();
+        let text: Vec<u16> = "fi -> == 0x1F".encode_utf16().collect();
+        let first = shape_text_utf16(&handle, &text, 16.0);
+        let warm = shape_text_utf16(&handle, &text, 16.0);
+        let cold = shape_text_utf16(&fresh, &text, 16.0);
+        assert_eq!(first, cold);
+        assert_eq!(warm, cold);
+        let glyph = warm[0].id;
+        let a = rasterize_glyph(&handle, glyph, 16.0, false, false, false).unwrap();
+        let b = rasterize_glyph(&fresh, glyph, 16.0, false, false, false).unwrap();
+        assert_eq!(
+            (a.width, a.height, a.left, a.top),
+            (b.width, b.height, b.left, b.top)
+        );
+        assert_eq!(a.bytes, b.bytes);
+    }
+
     #[test]
     fn discover_fallback_handles_covered_char() {
         // For a codepoint the primary font already has, `CTFontCreateForString`
@@ -1638,6 +1871,23 @@ mod tests {
             result.is_some(),
             "discover_fallback should return a font for a covered char"
         );
+    }
+
+    #[test]
+    fn discover_fallback_never_returns_last_resort() {
+        let primary = FontHandle::from_bytes(FONT_CASCADIA_CODE_NF).unwrap();
+        // Unassigned, and a codepoint in the Supplementary PUA-B that
+        // no font defines: CoreText's cascade ends in LastResort.
+        assert!(discover_fallback(&primary, '\u{378}').is_none());
+        assert!(discover_fallback(&primary, '\u{100000}').is_none());
+    }
+
+    #[test]
+    fn installed_font_search_finds_real_glyphs_only() {
+        let found = search_installed_fonts('\u{6C34}').expect("a CJK font");
+        assert!(!is_last_resort(&found));
+        assert!(font_has_char(&found, '\u{6C34}'));
+        assert!(search_installed_fonts('\u{378}').is_none());
     }
 
     #[test]

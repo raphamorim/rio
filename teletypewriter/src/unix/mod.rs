@@ -1,8 +1,10 @@
 #![cfg(unix)]
 
+mod child;
 #[cfg(target_os = "macos")]
 mod macos;
 mod signals;
+pub use child::{Child, ChildTerminator};
 
 extern crate libc;
 
@@ -24,7 +26,6 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::ptr;
-use std::sync::Arc;
 
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
 const TIOCSWINSZ: libc::c_ulong = 0x5414;
@@ -51,14 +52,22 @@ extern "C" {
         termp: *const libc::termios,
         winsize: *const Winsize,
     ) -> libc::pid_t;
+}
 
-    fn waitpid(
-        pid: libc::pid_t,
-        status: *mut libc::c_int,
-        options: libc::c_int,
-    ) -> libc::pid_t;
-
-    fn ptsname(fd: *mut libc::c_int) -> *mut libc::c_char;
+/// Export `envs` in the forked child before exec. Runs post-fork, so
+/// keep it to setenv: the allocations match what `default_shell_command`
+/// already does on this path.
+fn set_child_envs(envs: &[(String, String)]) {
+    for (key, value) in envs {
+        let (Ok(key), Ok(value)) =
+            (CString::new(key.as_str()), CString::new(value.as_str()))
+        else {
+            continue;
+        };
+        unsafe {
+            libc::setenv(key.as_ptr(), value.as_ptr(), 1);
+        }
+    }
 }
 
 fn default_shell_command(shell: &str, args: &[String]) {
@@ -124,7 +133,27 @@ pub struct Pty {
     file: File,
     token: corcovado::Token,
     signals_token: corcovado::Token,
-    signals: Signals,
+    /// `None` when no child of ours is on the pty: nothing to report.
+    signals: Option<Signals>,
+    child_event_emitted: bool,
+    /// The read side is registered with the poll; see `stop_reading`.
+    reading: bool,
+}
+
+impl Pty {
+    /// The master reads nonblocking. Tokens are assigned at `register`.
+    fn over(child: Child, file: File, signals: Option<Signals>) -> Result<Self, Error> {
+        set_nonblocking(file.as_raw_fd())?;
+        Ok(Self {
+            child,
+            file,
+            token: corcovado::Token::from(0),
+            signals_token: corcovado::Token::from(0),
+            signals,
+            child_event_emitted: false,
+            reading: false,
+        })
+    }
 }
 
 impl Deref for Pty {
@@ -211,14 +240,18 @@ impl ProcessReadWrite for Pty {
             interest,
             poll_opts,
         )?;
+        self.reading = true;
 
         self.signals_token = token.next().unwrap();
-        poll.register(
-            &self.signals,
-            self.signals_token,
-            corcovado::Ready::readable(),
-            corcovado::PollOpt::level(),
-        )
+        if let Some(signals) = &self.signals {
+            poll.register(
+                signals,
+                self.signals_token,
+                corcovado::Ready::readable(),
+                corcovado::PollOpt::level(),
+            )?;
+        }
+        Ok(())
     }
 
     fn reregister(
@@ -227,24 +260,22 @@ impl ProcessReadWrite for Pty {
         interest: corcovado::Ready,
         poll_opts: corcovado::PollOpt,
     ) -> io::Result<()> {
+        // Only the PTY's interest changes; the signal registration is
+        // the same as at `register` and stays as it is.
         poll.reregister(
             &EventedFd(&self.file.as_raw_fd()),
             self.token,
             interest,
             poll_opts,
-        )?;
-
-        poll.reregister(
-            &self.signals,
-            self.signals_token,
-            corcovado::Ready::readable(),
-            corcovado::PollOpt::level(),
         )
     }
 
     fn deregister(&mut self, poll: &corcovado::Poll) -> io::Result<()> {
-        poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
-        poll.deregister(&self.signals)
+        self.stop_reading(poll)?;
+        if let Some(signals) = &self.signals {
+            poll.deregister(signals)?;
+        }
+        Ok(())
     }
 }
 
@@ -371,6 +402,23 @@ pub fn create_termp(utf8: bool) -> libc::termios {
         term.c_cc[libc::VSTATUS] = 20;
     }
 
+    // The BSD/XNU tty layer sizes the output-queue water marks from the
+    // baud rate (`ttsetwater`: cps = ospeed / 10). A zero speed clamps
+    // the queue to its ~100-byte floor, so every slave write hands the
+    // reader a ~150-byte sliver through a read+poll round trip each,
+    // capping PTY drain throughput at a fraction of what the kernel can
+    // move. B230400 saturates the clamp and yields the maximum queue.
+    // Linux ptys size their buffers independently of baud; there the
+    // speed is report-only (stty, ncurses baudrate()), and a zero would
+    // read as "0 baud", so it is set everywhere.
+    unsafe {
+        if libc::cfsetspeed(&mut term, libc::B230400) != 0 {
+            tracing::warn!(
+                "cfsetspeed(B230400) failed; pty output queue stays at the minimum"
+            );
+        }
+    }
+
     term
 }
 
@@ -384,6 +432,7 @@ struct ShellUser {
 impl ShellUser {
     /// look for shell, username, longname, and home dir in the respective environment variables
     /// before falling back on looking in to `passwd`.
+    #[allow(clippy::question_mark)]
     fn from_env() -> Result<Self, Error> {
         let mut buf = [0; 1024];
         let pw = get_pw_entry(&mut buf);
@@ -420,14 +469,13 @@ impl ShellUser {
 ///
 /// Build the argv passed to login(1) on macOS.
 ///
-/// A custom command (non empty args) goes straight into login's argv:
-/// login execvp's it, so args pass through as single words with no
-/// intermediate shell that could word split them.
-///
-/// A bare shell becomes a login shell through a bash intermediate that
-/// execs it with `-l`, which prepends the dash to argv[0]. bash runs
-/// with `--noprofile --norc` so user startup files cannot interfere
-/// with the exec.
+/// The shell always becomes a login shell through a bash intermediate
+/// that execs it with `-l`, which prepends the dash to argv[0]. The
+/// shell program rides as `$0` and any args as `"$@"`, so no quoting
+/// or word splitting can touch them (this also keeps login semantics
+/// when integration or the user adds args to the default shell). bash
+/// runs with `--noprofile --norc` so user startup files cannot
+/// interfere with the exec.
 #[cfg(any(target_os = "macos", test))]
 fn login_argv(
     hushlogin: bool,
@@ -447,17 +495,13 @@ fn login_argv(
     argv.push("-flp".to_string());
     argv.push(username.to_string());
 
-    if args.is_empty() {
-        let quoted = shell_program.replace('\'', "'\\''");
-        argv.push("/bin/bash".to_string());
-        argv.push("--noprofile".to_string());
-        argv.push("--norc".to_string());
-        argv.push("-c".to_string());
-        argv.push(format!("exec -l '{quoted}'"));
-    } else {
-        argv.push(shell_program.to_string());
-        argv.extend(args.iter().cloned());
-    }
+    argv.push("/bin/bash".to_string());
+    argv.push("--noprofile".to_string());
+    argv.push("--norc".to_string());
+    argv.push("-c".to_string());
+    argv.push(r#"exec -l "$0" "$@""#.to_string());
+    argv.push(shell_program.to_string());
+    argv.extend(args.iter().cloned());
 
     argv
 }
@@ -468,17 +512,31 @@ fn login_argv(
 /// which is a command in Unix and Unix-like operating systems to print the file name of the
 /// terminal connected to standard input. tty stands for TeleTYpewriter.
 ///
+/// `env`, when given, is applied on top of the inherited environment,
+/// overriding inherited variables of the same name. `None` inherits as-is.
+///
+/// `shell` of `None` means no program was configured: the user's default shell
+/// is looked up and, on macOS, wrapped in `/usr/bin/login` so the child gets a
+/// login session. A caller that names a program gets exactly that program,
+/// spawned directly, with no `login` in between.
+///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
+#[allow(clippy::too_many_arguments)]
 pub fn create_pty_with_spawn(
-    shell: &str,
+    shell: Option<&str>,
     args: Vec<String>,
     working_directory: &Option<String>,
+    env: Option<Vec<(String, String)>>,
     columns: u16,
     rows: u16,
     width: u16,
     height: u16,
 ) -> Result<Pty, Error> {
+    // In a flatpak sandbox the shell starts on the host, which may see
+    // directories the sandbox can't, so the host checks the directory.
+    let in_flatpak = crate::in_flatpak();
+
     #[cfg(not(any(target_os = "macos", target_os = "freebsd")))]
     let mut is_controling_terminal = true;
 
@@ -495,7 +553,7 @@ pub fn create_pty_with_spawn(
     };
     let term = create_termp(true);
 
-    let res = unsafe {
+    let mut open = || unsafe {
         openpty(
             &mut main as *mut _,
             &mut child as *mut _,
@@ -505,37 +563,65 @@ pub fn create_pty_with_spawn(
         )
     };
 
-    if res < 0 {
-        return Err(Error::other("openpty failed"));
+    // openpty fails transiently when many PTYs open concurrently (seen
+    // on macOS under parallel spawns, with garbage errno); a brief retry
+    // absorbs it instead of surfacing a dead surface to the embedder.
+    let mut res = open();
+    for _ in 0..3 {
+        if res >= 0 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        res = open();
     }
 
-    let mut shell_program = shell;
+    if res < 0 {
+        return Err(Error::other(format!(
+            "openpty failed: {}",
+            Error::last_os_error()
+        )));
+    }
+
+    // Own both descriptors before any fallible setup so every error path
+    // closes them, including command and signal registration failures.
+    let file = unsafe { File::from_raw_fd(main) };
+    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+    set_cloexec(main)?;
+    set_cloexec(child)?;
 
     let user = match ShellUser::from_env() {
         Ok(data) => data,
         Err(..) => ShellUser {
-            shell: shell.to_string(),
+            shell: shell.unwrap_or_default().to_string(),
             ..Default::default()
         },
     };
 
-    if shell.is_empty() {
-        shell_program = &user.shell;
-    }
+    // No program means the caller wants the user's default shell, which is the
+    // only case that goes through `login`. A named program is spawned as given.
+    let uses_default_shell = shell.is_none();
+    let shell_program = shell.unwrap_or(&user.shell);
 
     tracing::info!("spawn {:?} {:?}", shell_program, args);
 
     let mut builder = {
         #[cfg(target_os = "macos")]
         {
-            // On macOS, use /usr/bin/login to ensure proper login shell environment
-            // This ensures PATH includes directories like /usr/local/bin
-            let hushlogin = std::path::Path::new(&user.home).join(".hushlogin").exists();
+            if uses_default_shell {
+                // On macOS, use /usr/bin/login to ensure proper login shell environment
+                // This ensures PATH includes directories like /usr/local/bin
+                let hushlogin =
+                    std::path::Path::new(&user.home).join(".hushlogin").exists();
 
-            let mut login_cmd = Command::new("/usr/bin/login");
-            login_cmd.args(login_argv(hushlogin, &user.user, shell_program, &args));
+                let mut login_cmd = Command::new("/usr/bin/login");
+                login_cmd.args(login_argv(hushlogin, &user.user, shell_program, &args));
 
-            login_cmd
+                login_cmd
+            } else {
+                let mut cmd = Command::new(shell_program);
+                cmd.args(args);
+                cmd
+            }
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -550,7 +636,7 @@ pub fn create_pty_with_spawn(
     {
         // If running inside a flatpak sandbox.
         // Must retrieve $SHELL from outside the sandbox, so ask the host.
-        if std::path::PathBuf::from("/.flatpak-info").exists() {
+        if in_flatpak {
             builder = Command::new("flatpak-spawn");
 
             let mut with_args = vec![
@@ -560,11 +646,16 @@ pub fn create_pty_with_spawn(
                 "--env=TERM=rio".to_string(),
             ];
 
-            if let Some(directory) = working_directory {
-                with_args.push(format!(
-                    "--directory={}",
-                    std::path::Path::new(directory).display()
-                ));
+            // Only `--env=` crosses the sandbox boundary: variables set
+            // on flatpak-spawn itself never reach the host process.
+            if let Some(env) = &env {
+                for (key, value) in env {
+                    with_args.push(format!("--env={key}={value}"));
+                }
+            }
+
+            if let Some(dir) = crate::resolve_host_working_dir(working_directory) {
+                with_args.push(format!("--directory={dir}"));
             }
 
             let output = std::process::Command::new("flatpak-spawn")
@@ -582,10 +673,7 @@ pub fn create_pty_with_spawn(
     }
 
     // Setup child stdin/stdout/stderr as child fd of PTY.
-    // Ownership of fd is transferred to the Stdio structs and will be closed by them at the end of
-    // this scope. (It is not an issue that the fd is closed three times since File::drop ignores
-    // error on libc::close.).
-    let owned_child = unsafe { OwnedFd::from_raw_fd(child) };
+    // Each Stdio owns a distinct descriptor and closes it when dropped.
 
     builder.stdin(owned_child.try_clone()?);
     builder.stderr(owned_child.try_clone()?);
@@ -593,9 +681,27 @@ pub fn create_pty_with_spawn(
 
     builder.env("USER", user.user);
     builder.env("HOME", user.home);
+    if let Some(env) = env {
+        builder.envs(env);
+    }
+
+    // Checked here, entered in the child below, as Alacritty does: a
+    // failed `chdir` (the directory went away since) leaves the shell in
+    // the inherited directory, where `current_dir` would fail the spawn.
+    // Under flatpak it went to the host as `--directory` above.
+    let working_directory = if in_flatpak {
+        None
+    } else {
+        crate::resolve_working_dir(working_directory)
+            .and_then(|dir| CString::new(dir).ok())
+    };
 
     unsafe {
         builder.pre_exec(move || {
+            if let Some(dir) = &working_directory {
+                libc::chdir(dir.as_ptr());
+            }
+
             // Create a new process group.
             let err = libc::setsid();
             if err == -1 {
@@ -617,40 +723,31 @@ pub fn create_pty_with_spawn(
             libc::signal(libc::SIGTERM, libc::SIG_DFL);
             libc::signal(libc::SIGALRM, libc::SIG_DFL);
 
+            // The embedding process may run with signals blocked (e.g. on a
+            // background thread); the child must not inherit that mask or
+            // Ctrl-C and friends stop working in the spawned shell.
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            libc::sigprocmask(libc::SIG_SETMASK, &set, std::ptr::null_mut());
+
             Ok(())
         });
     }
 
-    // Handle set working directory option.
-    if let Some(dir) = &working_directory {
-        builder.current_dir(dir);
-    }
-
     // Prepare signal handling before spawning child.
-    let signals =
-        Signals::new([sigconsts::SIGCHLD]).expect("error preparing signal handling");
+    let signals = Signals::new([sigconsts::SIGCHLD])?;
 
     match builder.spawn() {
         Ok(child_process) => {
-            unsafe {
-                set_nonblocking(main);
-            }
-
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-            let child_unix = Child {
-                id: Arc::new(main),
+            let child_unix = Child::new(
+                main,
+                child_process.id() as libc::pid_t,
                 ptsname,
-                pid: Arc::new(child_process.id().try_into().unwrap()),
-                process: Some(child_process),
-            };
+                Some(child_process),
+            );
 
-            Ok(Pty {
-                child: child_unix,
-                file: unsafe { File::from_raw_fd(main) },
-                token: corcovado::Token::from(0),
-                signals,
-                signals_token: corcovado::Token::from(0),
-            })
+            Pty::over(child_unix, file, Some(signals))
         }
         Err(err) => Err(Error::new(
             err.kind(),
@@ -663,6 +760,31 @@ pub fn create_pty_with_spawn(
     }
 }
 
+/// A [`Pty`] over an existing master. There is no child of ours on it:
+/// nothing is spawned, signaled or reaped. The descriptor is closed on
+/// failure, and made nonblocking, which any duplicate the caller keeps
+/// shares.
+pub fn create_pty_from_fd(
+    main: OwnedFd,
+    columns: u16,
+    rows: u16,
+    width: u16,
+    height: u16,
+) -> Result<Pty, Error> {
+    let fd = main.as_raw_fd();
+    let ptsname = tty_ptsname(fd)
+        .map_err(|err| Error::new(err.kind(), format!("not a pty master: {err}")))?;
+    let child = Child::detached(fd, ptsname);
+    child.set_winsize(WinsizeBuilder {
+        rows,
+        cols: columns,
+        width,
+        height,
+    })?;
+    set_cloexec(fd)?;
+    Pty::over(child, File::from(main), None)
+}
+
 ///
 /// Creates a pseudoterminal using fork.
 ///
@@ -672,14 +794,32 @@ pub fn create_pty_with_spawn(
 ///
 /// It returns two [`Pty`] along with respective process name [`String`] and process id (`libc::pid_`)
 ///
+/// The shell a spawn falls back to when none is configured: `$SHELL`,
+/// else the passwd entry. Public so per-shell decisions made before
+/// spawning (title program name, shell integration) match what
+/// actually spawns.
+pub fn default_shell_program() -> String {
+    ShellUser::from_env()
+        .map(|user| user.shell)
+        .unwrap_or_default()
+}
+
+// The same parameters as `create_pty_with_spawn`, in the same order.
+#[allow(clippy::too_many_arguments)]
 pub fn create_pty_with_fork(
-    shell: &str,
+    shell: Option<&str>,
     args: &[String],
+    working_directory: &Option<String>,
+    envs: &[(String, String)],
     columns: u16,
     rows: u16,
     width: u16,
     height: u16,
 ) -> Result<Pty, Error> {
+    // Resolved in the parent so the failure path can log; the fork
+    // child only consumes the already-validated CString.
+    let working_directory = crate::resolve_working_dir(working_directory)
+        .and_then(|dir| CString::new(dir).ok());
     let mut main = 0;
     let winsize = Winsize {
         ws_row: rows as libc::c_ushort,
@@ -689,22 +829,22 @@ pub fn create_pty_with_fork(
     };
     let term = create_termp(true);
 
-    let mut shell_program = shell;
-
     let user = match ShellUser::from_env() {
         Ok(data) => data,
         Err(..) => ShellUser {
-            shell: shell.to_string(),
+            shell: shell.unwrap_or_default().to_string(),
             ..Default::default()
         },
     };
 
-    if shell.is_empty() {
-        tracing::info!("shell configuration is empty, will retrieve from env");
-        shell_program = &user.shell;
-    }
+    let shell_program = shell.unwrap_or_else(|| {
+        tracing::info!("no shell configured, will retrieve from env");
+        &user.shell
+    });
 
     tracing::info!("fork {:?}", shell_program);
+
+    let signals = Signals::new([sigconsts::SIGCHLD])?;
 
     match unsafe {
         forkpty(
@@ -715,36 +855,29 @@ pub fn create_pty_with_fork(
         )
     } {
         0 => {
+            if let Some(dir) = &working_directory {
+                unsafe {
+                    libc::chdir(dir.as_ptr());
+                }
+            }
+            set_child_envs(envs);
             default_shell_command(shell_program, args);
-            Err(Error::other(format!(
-                "forkpty has reach unreachable with {shell_program}"
-            )))
+            // Never return into the terminal application in the forked child
+            // when exec fails, or run the parent's destructors there.
+            unsafe { libc::_exit(127) }
         }
         id if id > 0 => {
+            let file = unsafe { File::from_raw_fd(main) };
+            if let Err(err) = set_cloexec(main) {
+                tracing::warn!("failed to set close-on-exec on the pty: {err}");
+            }
             // TODO: Currently we fork the process and don't wait to know if led to failure
             // Whenever it happens it will just simply shut down the teletyperwriter
             // In the future add an option to check before release the method
             let ptsname: String = tty_ptsname(main).unwrap_or_else(|_| "".to_string());
-            let child = Child {
-                id: Arc::new(main),
-                ptsname,
-                pid: Arc::new(id),
-                process: None,
-            };
+            let child = Child::new(main, id, ptsname, None);
 
-            unsafe {
-                set_nonblocking(main);
-            }
-
-            let signals = Signals::new([sigconsts::SIGCHLD])
-                .expect("error preparing signal handling");
-            Ok(Pty {
-                child,
-                signals,
-                file: unsafe { File::from_raw_fd(main) },
-                token: corcovado::Token(0),
-                signals_token: corcovado::Token(0),
-            })
+            Pty::over(child, file, Some(signals))
         }
         _ => Err(Error::other(format!(
             "forkpty failed using {shell_program}"
@@ -770,88 +903,30 @@ fn set_controlling_terminal(fd: libc::c_int) -> Result<(), Error> {
     Ok(())
 }
 
-// https://man7.org/linux/man-pages/man2/fcntl.2.html
-unsafe fn set_nonblocking(fd: libc::c_int) {
-    use libc::{fcntl, F_GETFL, F_SETFL, O_NONBLOCK};
-
-    let res = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
-    assert_eq!(res, 0);
+/// Marks `fd` close-on-exec. openpty and forkpty return descriptors
+/// without it, so every shell spawned later would inherit the pty of
+/// each terminal already open and keep it from hanging up on close.
+fn set_cloexec(fd: libc::c_int) -> Result<(), Error> {
+    add_fd_flag(fd, libc::F_GETFD, libc::F_SETFD, libc::FD_CLOEXEC)
 }
 
-#[derive(Debug)]
-pub struct Child {
-    pub id: Arc<libc::c_int>,
-    pub pid: Arc<libc::pid_t>,
-    #[allow(dead_code)]
-    ptsname: String,
-    #[allow(dead_code)]
-    process: Option<std::process::Child>,
+fn set_nonblocking(fd: libc::c_int) -> Result<(), Error> {
+    add_fd_flag(fd, libc::F_GETFL, libc::F_SETFL, libc::O_NONBLOCK)
 }
 
-impl Child {
-    /// The tcgetwinsize function fills in the winsize structure pointed to by
-    ///  gws with values that represent the size of the terminal window for which
-    ///  fd provides an open file descriptor.  If no error occurs tcgetwinsize()
-    ///  returns zero (0).
-    ///  The tcsetwinsize function sets the terminal window size, for the terminal
-    ///  referenced by fd, to the sizes from the winsize structure pointed to by
-    ///  sws.  If no error occurs tcsetwinsize() returns zero (0).
-    ///  The winsize structure, defined in <termios.h>, contains (at least) the
-    ///  following four fields
-    ///  unsigned short ws_row;      /* Number of rows, in characters */
-    ///  unsigned short ws_col;      /* Number of columns, in characters */
-    ///  unsigned short ws_xpixel;   /* Width, in pixels */
-    ///  unsigned short ws_ypixel;   /* Height, in pixels */
-    /// If the actual window size of the controlling terminal of a process
-    /// changes, the process is sent a SIGWINCH signal.  See signal(7).  Note
-    /// simply changing the sizes using tcsetwinsize() does not necessarily
-    /// change the actual window size, and if not, will not generate a SIGWINCH.
-    pub fn set_winsize(&self, winsize_builder: WinsizeBuilder) -> io::Result<()> {
-        let winsize: Winsize = winsize_builder.build();
-        match unsafe { libc::ioctl(**self, TIOCSWINSZ, &winsize as *const _) } {
-            -1 => Err(io::Error::last_os_error()),
-            _ => Ok(()),
-        }
+/// Adds `flag` to the descriptor flags read with `get` and written with
+/// `set`.
+fn add_fd_flag(
+    fd: libc::c_int,
+    get: libc::c_int,
+    set: libc::c_int,
+    flag: libc::c_int,
+) -> Result<(), Error> {
+    let flags = unsafe { libc::fcntl(fd, get) };
+    if flags < 0 || unsafe { libc::fcntl(fd, set, flags | flag) } < 0 {
+        return Err(Error::last_os_error());
     }
-
-    /// Return the child’s exit status if it has already exited. If the child is still running, return Ok(None).
-    /// https://linux.die.net/man/2/waitpid
-    pub fn waitpid(&self) -> Result<Option<i32>, String> {
-        let mut status = 0 as libc::c_int;
-        // If WNOHANG was specified in options and there were no children in a waitable state, then waitid() returns 0 immediately and the state of the siginfo_t structure pointed to by infop is unspecified. To distinguish this case from that where a child was in a waitable state, zero out the si_pid field before the call and check for a nonzero value in this field after the call returns.
-        let res =
-            unsafe { waitpid(*self.pid, &mut status as *mut libc::c_int, libc::WNOHANG) };
-        if res <= -1 {
-            return Err(String::from("error"));
-        }
-
-        if res == 0 && status == 0 {
-            return Ok(None);
-        }
-
-        Ok(Some(status))
-    }
-}
-
-pub fn kill_pid(pid: i32) {
-    unsafe {
-        libc::kill(pid, libc::SIGHUP);
-    }
-}
-
-impl Deref for Child {
-    type Target = libc::c_int;
-    fn deref(&self) -> &libc::c_int {
-        &self.id
-    }
-}
-
-impl Drop for Child {
-    fn drop(&mut self) {
-        unsafe {
-            libc::kill(*self.pid, libc::SIGHUP);
-        }
-    }
+    Ok(())
 }
 
 pub fn command_per_pid(pid: libc::pid_t) -> String {
@@ -869,22 +944,86 @@ pub fn command_per_pid(pid: libc::pid_t) -> String {
         .to_string()
 }
 
+/// The write side of a PTY: another handle to the same master, so one
+/// thread writes while another reads. The open file description, and
+/// so its non-blocking mode, is shared.
+pub struct WriteHalf {
+    file: File,
+}
+
+impl io::Write for WriteHalf {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.file.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.file.flush()
+    }
+}
+
+impl corcovado::event::Evented for WriteHalf {
+    fn register(
+        &self,
+        poll: &corcovado::Poll,
+        token: corcovado::Token,
+        interest: corcovado::Ready,
+        opts: corcovado::PollOpt,
+    ) -> io::Result<()> {
+        EventedFd(&self.file.as_raw_fd()).register(poll, token, interest, opts)
+    }
+
+    fn reregister(
+        &self,
+        poll: &corcovado::Poll,
+        token: corcovado::Token,
+        interest: corcovado::Ready,
+        opts: corcovado::PollOpt,
+    ) -> io::Result<()> {
+        EventedFd(&self.file.as_raw_fd()).reregister(poll, token, interest, opts)
+    }
+
+    fn deregister(&self, poll: &corcovado::Poll) -> io::Result<()> {
+        EventedFd(&self.file.as_raw_fd()).deregister(poll)
+    }
+}
+
 impl EventedPty for Pty {
+    type WriteHalf = WriteHalf;
+
+    fn write_half(&mut self) -> io::Result<WriteHalf> {
+        Ok(WriteHalf {
+            file: self.file.try_clone()?,
+        })
+    }
+
+    fn shutdown(&mut self) -> io::Result<()> {
+        self.child.terminate()
+    }
+
     #[inline]
+    fn has_child(&self) -> bool {
+        self.signals.is_some()
+    }
+
+    fn stop_reading(&mut self, poll: &corcovado::Poll) -> io::Result<()> {
+        if std::mem::take(&mut self.reading) {
+            poll.deregister(&EventedFd(&self.file.as_raw_fd()))?;
+        }
+        Ok(())
+    }
+
     fn next_child_event(&mut self) -> Option<ChildEvent> {
-        self.signals.pending().next().and_then(|signal| {
+        if self.child_event_emitted {
+            return None;
+        }
+        self.signals.as_mut()?.pending().next().and_then(|signal| {
             if signal != sigconsts::SIGCHLD {
                 return None;
             }
 
-            match self.child.waitpid() {
-                Err(_e) => {
-                    // std::process::exit(1);
-                    None
-                }
-                Ok(None) => None,
-                Ok(Some(..)) => Some(ChildEvent::Exited),
-            }
+            let event = self.child.poll_exit().ok().flatten()?;
+            self.child_event_emitted = true;
+            Some(event)
         })
     }
 
@@ -944,22 +1083,56 @@ fn get_pw_entry(buf: &mut [i8; 1024]) -> Result<Passwd<'_>, Error> {
     })
 }
 
-/// Unsafe
-/// Return tty pts name [`String`]
-///
-/// # Safety
-///
-/// This function is unsafe because it contains the usage of `libc::ptsname`
-/// from libc that's naturally unsafe.
-pub fn tty_ptsname(fd: libc::c_int) -> Result<String, String> {
-    let c_str: &CStr = unsafe {
-        let name_ptr = ptsname(fd as *mut _);
-        CStr::from_ptr(name_ptr)
-    };
-    let str_slice: &str = c_str.to_str().unwrap();
-    let str_buf: String = str_slice.to_owned();
+/// The slave's name for the pty master `fd`; `Err` when `fd` is not a
+/// pty master. Into a buffer of our own where the platform allows,
+/// since `ptsname` returns a static one shared by every thread.
+pub fn tty_ptsname(fd: libc::c_int) -> Result<String, Error> {
+    // 128 bytes is what macOS's ioctl writes, and longer than any
+    // `/dev/pts/N`.
+    let mut buf = [0 as libc::c_char; 128];
 
-    Ok(str_buf)
+    // What macOS's own `ptsname` calls.
+    #[cfg(target_vendor = "apple")]
+    if unsafe { libc::ioctl(fd, libc::TIOCPTYGNAME as libc::c_ulong, buf.as_mut_ptr()) }
+        != 0
+    {
+        return Err(Error::last_os_error());
+    }
+
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "netbsd"
+    ))]
+    match unsafe { libc::ptsname_r(fd, buf.as_mut_ptr(), buf.len()) } {
+        0 => {}
+        err => return Err(Error::from_raw_os_error(err)),
+    }
+
+    #[cfg(not(any(
+        target_vendor = "apple",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "netbsd"
+    )))]
+    {
+        let name = unsafe { libc::ptsname(fd) };
+        if name.is_null() {
+            return Err(Error::last_os_error());
+        }
+        let name = unsafe { CStr::from_ptr(name) }.to_bytes_with_nul();
+        if name.len() > buf.len() {
+            return Err(Error::other("pty name too long"));
+        }
+        for (dst, &src) in buf.iter_mut().zip(name) {
+            *dst = src as libc::c_char;
+        }
+    }
+
+    let name = unsafe { CStr::from_ptr(buf.as_ptr()) };
+    Ok(name.to_string_lossy().into_owned())
 }
 
 pub fn foreground_process_name(main_fd: RawFd, shell_pid: u32) -> String {
@@ -1068,7 +1241,8 @@ mod login_argv_tests {
                 "--noprofile",
                 "--norc",
                 "-c",
-                "exec -l '/bin/zsh'",
+                r#"exec -l "$0" "$@""#,
+                "/bin/zsh",
             ]
         );
     }
@@ -1081,7 +1255,7 @@ mod login_argv_tests {
     }
 
     #[test]
-    fn custom_command_goes_directly_to_login() {
+    fn args_ride_as_positional_words_and_keep_login() {
         let args = vec!["-c".to_string(), "echo hello world; sleep 1".to_string()];
         let argv = login_argv(false, "rapha", "/bin/bash", &args);
         assert_eq!(
@@ -1090,6 +1264,11 @@ mod login_argv_tests {
                 "-flp",
                 "rapha",
                 "/bin/bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                r#"exec -l "$0" "$@""#,
+                "/bin/bash",
                 "-c",
                 "echo hello world; sleep 1",
             ]
@@ -1097,8 +1276,101 @@ mod login_argv_tests {
     }
 
     #[test]
-    fn quotes_in_shell_path_are_escaped() {
+    fn shell_path_needs_no_quoting() {
+        // The program travels as `$0`, never inside the -c string, so
+        // quotes and spaces in the path cannot break the exec.
         let argv = login_argv(false, "rapha", "/tmp/it's a shell", &[]);
-        assert_eq!(argv.last().unwrap(), "exec -l '/tmp/it'\\''s a shell'");
+        assert_eq!(argv.last().unwrap(), "/tmp/it's a shell");
+    }
+}
+
+#[cfg(test)]
+mod termp_tests {
+    use super::*;
+
+    // The pty output-queue watermark is derived from the baud rate on
+    // BSD/XNU; a zero speed clamps it to a ~100-byte floor and caps
+    // drain throughput.
+    #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+    #[test]
+    fn create_termp_sets_pty_speed() {
+        let term = create_termp(true);
+        assert_eq!(term.c_ospeed, libc::B230400);
+        assert_eq!(term.c_ispeed, libc::B230400);
+    }
+}
+
+#[cfg(test)]
+mod working_dir_spawn_tests {
+    use super::{create_pty_with_fork, create_pty_with_spawn, Pty};
+    use crate::ProcessReadWrite;
+    use std::io::Read;
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
+
+    /// Everything `pwd` printed before the shell exited.
+    fn output(mut pty: Pty) -> String {
+        let mut out = Vec::new();
+        let mut buf = [0u8; 4096];
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            match pty.reader().read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => out.extend_from_slice(&buf[..n]),
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10))
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
+                // EIO: the shell exited and closed the pty.
+                Err(_) => break,
+            }
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    fn pwd_args() -> Vec<String> {
+        vec!["-c".into(), "pwd -P".into()]
+    }
+
+    /// Where `/bin/sh -c 'pwd -P'` ran, through both spawn paths.
+    fn ran_in(working_dir: Option<&str>) -> [PathBuf; 2] {
+        let dir = working_dir.map(str::to_owned);
+        let spawned =
+            create_pty_with_spawn(Some("/bin/sh"), pwd_args(), &dir, None, 80, 24, 0, 0)
+                .expect("spawn");
+        let forked =
+            create_pty_with_fork(Some("/bin/sh"), &pwd_args(), &dir, &[], 80, 24, 0, 0)
+                .expect("fork");
+        [spawned, forked].map(|pty| PathBuf::from(output(pty).trim()))
+    }
+
+    fn real(path: impl AsRef<Path>) -> PathBuf {
+        std::fs::canonicalize(path).expect("canonical path")
+    }
+
+    #[test]
+    fn both_spawn_paths_start_in_the_working_dir() {
+        let tmp = real(std::env::temp_dir());
+        for path in ran_in(Some(&tmp.to_string_lossy())) {
+            assert_eq!(path, tmp);
+        }
+    }
+
+    #[test]
+    fn both_spawn_paths_expand_a_tilde() {
+        let home = real(std::env::home_dir().expect("home"));
+        for path in ran_in(Some("~")) {
+            assert_eq!(path, home);
+        }
+    }
+
+    /// Instead of failing the spawn, a missing directory leaves the shell
+    /// where we are.
+    #[test]
+    fn a_missing_working_dir_inherits_ours() {
+        let here = real(std::env::current_dir().expect("cwd"));
+        for path in ran_in(Some("/rio/working/dir/that/does/not/exist")) {
+            assert_eq!(path, here);
+        }
     }
 }

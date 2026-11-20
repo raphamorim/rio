@@ -2,6 +2,9 @@ name: Test
 
 on:
   push:
+    # Pushes to any other branch with an open PR already run the
+    # pull_request event; triggering both doubled every job.
+    branches: [main]
     paths:
       - '**/*.rs'
       - '**/Cargo.toml'
@@ -21,6 +24,11 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
+  CARGO_INCREMENTAL: 0
+  # Line-level debug info is dead weight in CI: it multiplies target-dir
+  # size, which is what cache upload/download and the 10GB repo cache
+  # eviction actually pay for. Backtraces keep function names.
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
   test-native:
@@ -29,6 +37,7 @@ jobs:
         os: [windows-latest, macos-latest, ubuntu-latest]
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
@@ -38,14 +47,31 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update -yq && sudo apt-get install -yq libasound2-dev libfontconfig1-dev glslang-tools
       - run: cargo fetch
-      - run: cargo fmt -- --check --color always
+      - name: cargo fmt
+        # Formatting is platform-independent; once is enough.
+        if: runner.os == 'Linux'
+        run: cargo fmt -- --check --color always
       - run: cargo clippy --all-targets --all-features
-      - run: cargo test --features wgpu
+      - run: cargo test --features wgpu ${{ runner.os == 'Linux' && '--timings' || '' }}
+      - name: Upload build timings
+        # One HTML per run showing which crates dominated and whether the
+        # cache actually hit; download it when CI feels slow.
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timings
+          path: target/cargo-timings/
+          if-no-files-found: ignore
   msys2-build-test: #cargo test doesn't necessarily build the exec we want
+    # PR-only smoke of the modern default flavor; the full 3-flavor
+    # release-profile matrix runs as a gate in release.yml instead of
+    # on every main push.
+    if: github.event_name == 'pull_request'
     strategy:
       matrix:
-        sys: [MINGW64, UCRT64, CLANG64]
+        sys: [UCRT64]
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
 
@@ -53,7 +79,11 @@ jobs:
       uses: msys2/setup-msys2@v2
       with:
         msystem: ${{ matrix.sys }}
-        update: true
+        # Reuse the MSYS2 preinstalled on the runner image instead of
+        # downloading a fresh one, and skip the full pacman system
+        # upgrade: the snapshot is fresh enough for a build check.
+        release: false
+        update: false
         install: base-devel git
         pacboy: >-
           rust:p
@@ -64,48 +94,22 @@ jobs:
           python:p
           fontconfig:p
 
-    - name: Run cargo
+    - name: Cache target dir
+      uses: actions/cache@v4
+      with:
+        path: target
+        key: msys2-${{ matrix.sys }}-smoke-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: msys2-${{ matrix.sys }}-smoke-
+
+    - name: Build (smoke)
       shell: msys2 {0}
-      run: cargo build --release --features wgpu
-
-  # cli:
-  #   strategy:
-  #     matrix:
-  #       os: [macos-latest]
-
-  #   runs-on: ${{ matrix.os }}
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - uses: Swatinem/rust-cache@v2
-  #     - run: rustup toolchain install stable --profile minimal
-  #     - run: cargo fetch
-  #     - run: cargo build -p rio --bin rio
-  #     - run: RIO_LOG_LEVEL=info ./target/debug/rio -e touch ${HOME}/rio.test
-  #     - run: |
-  #         FILE=${HOME}/rio.test
-  #         if [ -f "$FILE" ]; then
-  #           echo "$FILE exists."
-  #         else
-  #           echo "$FILE does not exist."
-  #           exit 1
-  #         fi
-  #       shell: bash
-
-  # webassembly:
-  #   runs-on: ubuntu-latest
-  #   env:
-  #     GECKODRIVER: chromedriver
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - uses: Swatinem/rust-cache@v2
-  #       with:
-  #         cache-all-crates: "true"
-  #     - run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
-  #     - run: cargo fetch
-  #     - run: cargo build -p sugarloaf --target wasm32-unknown-unknown
-  #     - run: cd ./sugarloaf && make install
-  #     - uses: nanasess/setup-chromedriver@v2
-  #     - run: |
-  #         export DISPLAY=:99
-  #         chromedriver --url-base=/wd/hub &
-  #     - run: make test-renderer
+      # Debug is not viable on windows-gnu: an unoptimized build of a
+      # binary this size exceeds the PE export-ordinal limit at link
+      # time. Thin LTO keeps the dead-stripping that makes the link
+      # possible without fat LTO's cost; the release flavor matrix in
+      # release.yml still exercises the full shipped profile.
+      env:
+        CARGO_PROFILE_RELEASE_LTO: thin
+        CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 8
+        CARGO_PROFILE_RELEASE_DEBUG: "0"
+      run: cargo build -p rioterm --release --features wgpu
