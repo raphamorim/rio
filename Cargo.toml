@@ -12,6 +12,27 @@ members = [
     "rio-window",
     "rio-grid",
     "frontends/rioterm",
+    "frontends/rioterm-gtk",
+    "librio",
+    "librio-wasm",
+    "libsugarloaf",
+]
+# Everything but rioterm-gtk, which needs GTK 4 and libadwaita installed:
+# a plain `cargo build` / `cargo test` / `cargo clippy` doesn't, so it
+# works on any machine. Build it with `-p rioterm-gtk`.
+default-members = [
+    "sugarloaf",
+    "teletypewriter",
+    "corcovado",
+    "rio-graphics",
+    "rio-fonts",
+    "rio-vt",
+    "rio-backend",
+    "rio-grapheme-width",
+    "rio-unicode",
+    "rio-window",
+    "rio-grid",
+    "frontends/rioterm",
     "librio",
     "librio-wasm",
     "libsugarloaf",

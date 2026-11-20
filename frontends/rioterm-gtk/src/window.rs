@@ -1,0 +1,326 @@
+//! Windows of terminal tabs, on GNOME's own `AdwTabBar` / `AdwTabView`:
+//! tabs reorder by dragging, drag out into a new window or into another
+//! window, have a context menu, and flag a bell in the background.
+
+use crate::shared::Shared;
+use crate::terminal::TerminalView;
+use adw::prelude::*;
+use gtk::{gio, glib};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+/// Keyboard shortcuts, GNOME terminal style: with shift, so the plain
+/// ctrl keys stay the program's.
+const SHORTCUTS: &[(&str, &[&str])] = &[
+    ("app.new-window", &["<Ctrl><Shift>n"]),
+    ("win.new-tab", &["<Ctrl><Shift>t"]),
+    ("win.close-tab", &["<Ctrl><Shift>w"]),
+    ("win.copy", &["<Ctrl><Shift>c"]),
+    ("win.paste", &["<Ctrl><Shift>v"]),
+    ("win.next-tab", &["<Ctrl>Page_Down"]),
+    ("win.previous-tab", &["<Ctrl>Page_Up"]),
+    ("win.move-tab-left", &["<Ctrl><Shift>Page_Up"]),
+    ("win.move-tab-right", &["<Ctrl><Shift>Page_Down"]),
+];
+
+/// The app's actions and shortcuts, once at startup.
+pub fn install(app: &adw::Application) {
+    let new_window = gio::ActionEntry::builder("new-window")
+        .activate(|app: &adw::Application, _, _| app.activate())
+        .build();
+    app.add_action_entries([new_window]);
+    for (action, accels) in SHORTCUTS {
+        app.set_accels_for_action(action, accels);
+    }
+    // Alt+1..8 picks that tab, Alt+9 the last, as in GNOME's terminals.
+    for n in 1..=9 {
+        app.set_accels_for_action(
+            &format!("win.select-tab({n})"),
+            &[&format!("<Alt>{n}")],
+        );
+    }
+}
+
+pub struct Window;
+
+impl Window {
+    /// A new window with one tab.
+    pub fn open(app: &adw::Application, shared: &Rc<Shared>) {
+        let tabs = Self::build(app, shared);
+        add_tab(&tabs, shared);
+    }
+
+    /// A new, empty window, presented. Returns its tab view.
+    fn build(app: &adw::Application, shared: &Rc<Shared>) -> adw::TabView {
+        let tabs = adw::TabView::new();
+
+        let new_tab = gtk::Button::from_icon_name("tab-new-symbolic");
+        new_tab.set_tooltip_text(Some("New Tab"));
+        new_tab.set_action_name(Some("win.new-tab"));
+        new_tab.add_css_class("flat");
+        // Always shown, so the tabs and the new tab button are where the
+        // user looks for them even with one tab open.
+        let tab_bar = adw::TabBar::builder()
+            .view(&tabs)
+            .autohide(false)
+            .end_action_widget(&new_tab)
+            .build();
+
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        content.append(&adw::HeaderBar::new());
+        content.append(&tab_bar);
+        content.append(&tabs);
+
+        let window = adw::ApplicationWindow::builder()
+            .application(app)
+            .title("Rio")
+            .content(&content)
+            .build();
+        // Natural size: the terminal's own (80x24 cells).
+        window.set_default_size(-1, -1);
+
+        // The window shows the selected tab's title; selecting a tab
+        // clears its bell mark and focuses it. The window closes with its
+        // last tab, whether closed or dragged away.
+        tabs.connect_selected_page_notify(glib::clone!(
+            #[weak]
+            window,
+            move |tabs| {
+                if let Some(page) = tabs.selected_page() {
+                    window.set_title(Some(&page.title()));
+                    page.set_needs_attention(false);
+                    page.child().grab_focus();
+                }
+            }
+        ));
+        tabs.connect_n_pages_notify(glib::clone!(
+            #[weak]
+            window,
+            move |tabs| {
+                if tabs.n_pages() == 0 {
+                    window.close();
+                }
+            }
+        ));
+        // A tab dropped outside every window gets a window of its own.
+        tabs.connect_create_window(glib::clone!(
+            #[weak]
+            app,
+            #[strong]
+            shared,
+            #[upgrade_or]
+            None,
+            move |_| Some(Self::build(&app, &shared))
+        ));
+
+        // The tab context menu acts on the tab it was opened on; the
+        // shortcuts on the selected one.
+        let menu_page: Rc<RefCell<Option<adw::TabPage>>> = Rc::default();
+        tabs.set_menu_model(Some(&tab_menu()));
+        tabs.connect_setup_menu({
+            let menu_page = menu_page.clone();
+            move |_, page| {
+                menu_page.replace(page.cloned());
+            }
+        });
+        let target = {
+            let menu_page = menu_page.clone();
+            move |tabs: &adw::TabView| {
+                menu_page.borrow().clone().or_else(|| tabs.selected_page())
+            }
+        };
+        let on_tab = |name: &str, act: fn(&adw::TabView, &adw::TabPage)| {
+            let target = target.clone();
+            gio::ActionEntry::builder(name)
+                .activate(glib::clone!(
+                    #[weak]
+                    tabs,
+                    move |_: &adw::ApplicationWindow, _, _| {
+                        if let Some(page) = target(&tabs) {
+                            act(&tabs, &page);
+                        }
+                    }
+                ))
+                .build()
+        };
+
+        let actions = [
+            gio::ActionEntry::builder("new-tab")
+                .activate(glib::clone!(
+                    #[weak]
+                    tabs,
+                    #[strong]
+                    shared,
+                    move |_: &adw::ApplicationWindow, _, _| add_tab(&tabs, &shared)
+                ))
+                .build(),
+            on_tab("close-tab", |tabs, page| tabs.close_page(page)),
+            on_tab("close-other-tabs", |tabs, page| {
+                tabs.close_other_pages(page)
+            }),
+            on_tab("move-tab-left", |tabs, page| {
+                tabs.reorder_backward(page);
+            }),
+            on_tab("move-tab-right", |tabs, page| {
+                tabs.reorder_forward(page);
+            }),
+            gio::ActionEntry::builder("select-tab")
+                .parameter_type(Some(glib::VariantTy::INT32))
+                .activate(glib::clone!(
+                    #[weak]
+                    tabs,
+                    move |_: &adw::ApplicationWindow, _, param| {
+                        let n = tabs.n_pages();
+                        let Some(wanted) = param.and_then(|p| p.get::<i32>()) else {
+                            return;
+                        };
+                        if n == 0 {
+                            return;
+                        }
+                        let index = if wanted >= 9 {
+                            n - 1
+                        } else {
+                            (wanted - 1).min(n - 1)
+                        };
+                        tabs.set_selected_page(&tabs.nth_page(index));
+                    }
+                ))
+                .build(),
+            gio::ActionEntry::builder("next-tab")
+                .activate(glib::clone!(
+                    #[weak]
+                    tabs,
+                    move |_: &adw::ApplicationWindow, _, _| {
+                        if !tabs.select_next_page() && tabs.n_pages() > 0 {
+                            tabs.set_selected_page(&tabs.nth_page(0));
+                        }
+                    }
+                ))
+                .build(),
+            gio::ActionEntry::builder("previous-tab")
+                .activate(glib::clone!(
+                    #[weak]
+                    tabs,
+                    move |_: &adw::ApplicationWindow, _, _| {
+                        if !tabs.select_previous_page() && tabs.n_pages() > 0 {
+                            tabs.set_selected_page(&tabs.nth_page(tabs.n_pages() - 1));
+                        }
+                    }
+                ))
+                .build(),
+            gio::ActionEntry::builder("copy")
+                .activate(glib::clone!(
+                    #[weak]
+                    tabs,
+                    move |_: &adw::ApplicationWindow, _, _| {
+                        if let Some(view) = selected(&tabs) {
+                            view.copy();
+                        }
+                    }
+                ))
+                .build(),
+            gio::ActionEntry::builder("paste")
+                .activate(glib::clone!(
+                    #[weak]
+                    tabs,
+                    move |_: &adw::ApplicationWindow, _, _| {
+                        if let Some(view) = selected(&tabs) {
+                            view.paste();
+                        }
+                    }
+                ))
+                .build(),
+        ];
+        window.add_action_entries(actions);
+        // The menu's target is only good while it is open.
+        window.connect_is_active_notify(move |_| {
+            menu_page.replace(None);
+        });
+
+        window.present();
+        tabs
+    }
+}
+
+fn tab_menu() -> gio::Menu {
+    let menu = gio::Menu::new();
+    let order = gio::Menu::new();
+    order.append(Some("Move Left"), Some("win.move-tab-left"));
+    order.append(Some("Move Right"), Some("win.move-tab-right"));
+    menu.append_section(None, &order);
+    let close = gio::Menu::new();
+    close.append(Some("Close Other Tabs"), Some("win.close-other-tabs"));
+    close.append(Some("Close Tab"), Some("win.close-tab"));
+    menu.append_section(None, &close);
+    menu
+}
+
+fn selected(tabs: &adw::TabView) -> Option<TerminalView> {
+    tabs.selected_page()?.child().downcast().ok()
+}
+
+/// The tab view a terminal is in now: a tab dragged to another window
+/// moves there, so this is looked up rather than remembered.
+fn tabs_of(view: &TerminalView) -> Option<(adw::TabView, adw::TabPage)> {
+    let tabs = view
+        .ancestor(adw::TabView::static_type())
+        .and_downcast::<adw::TabView>()?;
+    let page = tabs.page(view);
+    Some((tabs, page))
+}
+
+/// A new tab running the shell, selected. Its title follows the
+/// program's, a bell in the background marks it, and it closes when the
+/// shell exits.
+fn add_tab(tabs: &adw::TabView, shared: &Rc<Shared>) {
+    let view = match TerminalView::new(shared) {
+        Ok(view) => view,
+        Err(err) => {
+            tracing::error!("could not start the shell: {err}");
+            return;
+        }
+    };
+    let page = tabs.append(&view);
+    view.bind_property("title", &page, "title")
+        .transform_to(|_, title: String| {
+            Some(if title.is_empty() {
+                "Rio".to_string()
+            } else {
+                title
+            })
+        })
+        .sync_create()
+        .build();
+    view.connect_title_notify(|view| {
+        let Some((tabs, page)) = tabs_of(view) else {
+            return;
+        };
+        if tabs.selected_page().as_ref() == Some(&page) {
+            if let Some(window) = tabs.root().and_downcast::<gtk::Window>() {
+                window.set_title(Some(&page.title()));
+            }
+        }
+    });
+    view.connect_closure(
+        "bell",
+        false,
+        glib::closure_local!(move |view: TerminalView| {
+            if let Some((tabs, page)) = tabs_of(&view) {
+                if tabs.selected_page().as_ref() != Some(&page) {
+                    page.set_needs_attention(true);
+                }
+            }
+        }),
+    );
+    view.connect_closure(
+        "exited",
+        false,
+        glib::closure_local!(move |view: TerminalView| {
+            if let Some((tabs, page)) = tabs_of(&view) {
+                tabs.close_page(&page);
+            }
+        }),
+    );
+    tabs.set_selected_page(&page);
+    view.grab_focus();
+}

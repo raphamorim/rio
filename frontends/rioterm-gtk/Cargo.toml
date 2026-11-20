@@ -1,0 +1,33 @@
+[package]
+name = "rioterm-gtk"
+description = "Rio terminal as a GTK 4 / libadwaita app, drawn by Sugarloaf's CPU renderer"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+# Shipped with the Linux release binaries, not on crates.io.
+publish = false
+
+[[bin]]
+name = "rioterm-gtk"
+path = "src/main.rs"
+
+[dependencies]
+# GNOME 42 is GTK 4.6 and libadwaita 1.1, what Ubuntu 22.04 (the release
+# runners) ships: the binary runs on the same distros as Rio's packages.
+gtk = { package = "gtk4", version = "0.11.5", features = ["gnome_42"] }
+adw = { package = "libadwaita", version = "0.9.2", features = ["v1_1"] }
+# The terminal (PTY, parsing, state, input encoding) and the renderer that
+# draws it: Sugarloaf's CPU backend into a frame GTK shows as a texture.
+librio = { path = "../../librio" }
+libsugarloaf = { path = "../../libsugarloaf" }
+# Rio's config file. No window layer: GTK is the window here.
+rio-backend = { path = "../../rio-backend", default-features = false, features = ["renderer", "graphics"] }
+async-channel = "2.5.0"
+bytemuck = { workspace = true }
+rustc-hash = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "registry"] }
