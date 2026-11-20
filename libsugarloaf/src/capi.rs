@@ -121,6 +121,7 @@ impl std::ops::DerefMut for Sl {
 
 /// Integer cell metrics the host needs to turn a pixel size into cols/rows.
 #[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SlCellMetrics {
     pub cell_width: u32,
     pub cell_height: u32,
@@ -217,18 +218,7 @@ pub unsafe extern "C" fn sl_new(
             Ok(instance) => instance,
             Err(with_errors) => with_errors.instance,
         };
-        Box::into_raw(Box::new(Sl {
-            inner: sugarloaf,
-            rasterizer: rio_grid::GridGlyphRasterizer::new(),
-            font_size,
-            line_height,
-            scale,
-            palette: HostPalette::new(),
-            had_selection: false,
-            had_search: false,
-            grid_padding: [0.0; 4],
-            padding_extend: 0,
-        }))
+        Box::into_raw(Box::new(Sl::wrap(sugarloaf, font_size, line_height, scale)))
     }))
     .unwrap_or(std::ptr::null_mut())
 }
@@ -358,9 +348,7 @@ pub unsafe extern "C" fn sl_set_font(sl: *mut Sl, spec: *const SlFontSpec) {
         if let Some(bi) = bold_italic {
             fonts.bold_italic.family = bi;
         }
-        let (font_library, _errors) = FontLibrary::new(fonts);
-        sl.update_font(&font_library);
-        sl.rasterizer.clear_font_caches();
+        sl.apply_fonts(fonts);
     }));
 }
 
@@ -1094,61 +1082,163 @@ pub struct SlSurfaceInputs {
     pub preedit: *const c_char,
 }
 
-/// Render one terminal surface into `grid` and present it. `render_state`
-/// is an opaque `librio::RenderState*` (the same object the host drives
-/// via `rio_render_state_*`); the caller MUST have already refreshed it
-/// with `rio_render_state_update` this frame — this does NOT re-snapshot.
-///
-/// Replicates rioterm's per-frame grid loop: for each dirty row (or every
-/// row when the grid needs a full rebuild) it emits `CellBg`/`CellText`
-/// via rio-grid's `build_row_bg`/`build_row_fg`, writes the row, builds
-/// the cursor sprite + bg-tint uniforms, then composites with
-/// `render_with_grids`. `cursor_r/g/b` is the cursor color; `focused`
-/// gates the active (block/bar) vs. inactive (hollow) cursor style.
-///
-/// Resolves cell/selection/cursor colors against the theme set by
-/// `sl_set_theme` (Rio's default until the host pushes one). `inputs` carries
-/// the cursor color, focus, blink phase, search-match spans, and IME preedit.
-#[no_mangle]
-pub unsafe extern "C" fn sl_render_surface(
-    sl: *mut Sl,
-    grid: *mut GridRenderer,
-    render_state: *mut c_void,
-    inputs: *const SlSurfaceInputs,
-) {
-    let (Some(sl), Some(grid), Some(inputs)) =
-        (sl.as_mut(), grid.as_mut(), inputs.as_ref())
-    else {
-        return;
-    };
-    if render_state.is_null() {
-        return;
+impl Sl {
+    fn wrap(
+        inner: Sugarloaf<'static>,
+        font_size: f32,
+        line_height: f32,
+        scale: f32,
+    ) -> Self {
+        Sl {
+            inner,
+            rasterizer: rio_grid::GridGlyphRasterizer::new(),
+            font_size,
+            line_height,
+            scale,
+            palette: HostPalette::new(),
+            had_selection: false,
+            had_search: false,
+            grid_padding: [0.0; 4],
+            padding_extend: 0,
+        }
     }
-    let rs = &mut *(render_state as *mut librio::RenderState);
 
-    let cursor_r = inputs.cursor_r;
-    let cursor_g = inputs.cursor_g;
-    let cursor_b = inputs.cursor_b;
-    let focused = inputs.focused;
-    let cursor_blinking = inputs.cursor_blinking;
-    let cursor_blink_visible = inputs.cursor_blink_visible;
-    let preedit_str: Option<&str> = if inputs.preedit.is_null() {
-        None
-    } else {
-        CStr::from_ptr(inputs.preedit)
-            .to_str()
-            .ok()
-            .filter(|s| !s.is_empty())
-    };
-    let preedit_active = preedit_str.is_some();
-    let spans: &[SlSearchSpan] =
-        if inputs.search_spans.is_null() || inputs.search_spans_len == 0 {
-            &[]
-        } else {
-            std::slice::from_raw_parts(inputs.search_spans, inputs.search_spans_len)
-        };
+    /// A renderer on Sugarloaf's CPU backend that draws into a buffer of
+    /// its own instead of a window, for a host that shows each frame
+    /// itself, such as a GTK widget: after [`Sl::render_surface`], read
+    /// the frame with [`Sugarloaf::cpu_frame`]. `width`/`height` are
+    /// physical pixels, `scale` the display scale, and `fonts` Rio's font
+    /// settings (`[fonts]`), whose `size` is the font size.
+    pub fn new_offscreen(
+        width: f32,
+        height: f32,
+        scale: f32,
+        fonts: SugarloafFonts,
+        line_height: f32,
+    ) -> Self {
+        let font_size = fonts.size;
+        let features = fonts.features.clone();
+        let (font_library, _errors) = FontLibrary::new(fonts);
+        let inner = Sugarloaf::new_offscreen(
+            SugarloafWindowSize { width, height },
+            scale,
+            &features,
+            &font_library,
+            RootStyle::new(scale, font_size, line_height),
+        );
+        Self::wrap(inner, font_size, line_height, scale)
+    }
 
-    let _ = catch_unwind(AssertUnwindSafe(move || {
+    /// Rio's color settings (`[colors]`): the palette cells resolve
+    /// against, and the background shown wherever a cell has none. Mark
+    /// grids for a full rebuild so every row repaints in the new colors.
+    pub fn set_colors(&mut self, colors: &Colors) {
+        self.palette.named = *colors;
+        self.palette.list = List::from(&self.palette.named);
+        self.inner.set_background_color(Some(colors.background.1));
+    }
+
+    /// Rio's font settings (`[fonts]`, whose `size` is the font size) and
+    /// line height. Rebuilds the font library; clear each grid's atlas and
+    /// resize the grids to the new [`Sl::cell_metrics`] afterwards, since
+    /// glyph ids and cell sizes now mean something else.
+    pub fn set_fonts(&mut self, fonts: SugarloafFonts, line_height: f32) {
+        self.font_size = fonts.size;
+        self.line_height = line_height;
+        let style = self.style_mut();
+        style.font_size = fonts.size;
+        style.line_height = line_height.max(1.0);
+        self.apply_fonts(fonts);
+        let scale = self.scale;
+        self.rescale(scale);
+    }
+
+    fn apply_fonts(&mut self, fonts: SugarloafFonts) {
+        let (font_library, _errors) = FontLibrary::new(fonts);
+        self.update_font(&font_library);
+        // A font swap reuses font ids, so stale glyph resolutions must go.
+        self.rasterizer.clear_font_caches();
+    }
+
+    /// The display scale, keeping cell metrics in step with it.
+    pub fn set_scale(&mut self, scale: f32) {
+        self.scale = scale;
+        self.rescale(scale);
+    }
+
+    /// Padding (physical px) between the frame's edges and the cell grid:
+    /// top, right, bottom, left. `extend` is a bitmask of edges whose
+    /// row/column background colors extend into the padding (bit0 left,
+    /// bit1 right, bit2 up, bit3 down).
+    pub fn set_grid_padding(&mut self, padding: [f32; 4], extend: u32) {
+        self.grid_padding = padding;
+        self.padding_extend = extend;
+    }
+
+    /// The cell size in physical pixels at the current font, line height
+    /// and scale: a frame `width` px wide holds `width / cell_width` cols.
+    pub fn cell_metrics(&self) -> SlCellMetrics {
+        let (_dims, m) =
+            self.compute_cell_metrics(self.font_size, self.line_height, self.scale);
+        SlCellMetrics {
+            cell_width: m.cell_width,
+            cell_height: m.cell_height,
+            cell_baseline: m.cell_baseline,
+        }
+    }
+
+    /// A cell grid of `cols` x `rows` for [`Sl::render_surface`].
+    pub fn new_grid(&self, cols: u32, rows: u32) -> GridRenderer {
+        GridRenderer::new(&self.ctx, cols, rows)
+    }
+}
+
+/// Per-frame inputs to [`Sl::render_surface`] beyond the terminal snapshot.
+pub struct SurfaceInputs<'a> {
+    /// Cursor color, RGB.
+    pub cursor: [u8; 3],
+    /// This panel has focus: drives active (block/bar) vs. hollow cursor.
+    pub focused: bool,
+    /// The cursor should blink (steady when false).
+    pub cursor_blinking: bool,
+    /// Current blink phase — the lit half when true. Ignored unless blinking.
+    pub cursor_blink_visible: bool,
+    /// Viewport-relative search-match spans.
+    pub search_spans: &'a [SlSearchSpan],
+    /// IME preedit text at the cursor, if any.
+    pub preedit: Option<&'a str>,
+}
+
+impl Sl {
+    /// Render one terminal surface into `grid` and present it. The caller
+    /// MUST have already refreshed `rs` with `RenderState::update` this frame
+    /// — this does NOT re-snapshot.
+    ///
+    /// Replicates rioterm's per-frame grid loop: for each dirty row (or every
+    /// row when the grid needs a full rebuild) it emits `CellBg`/`CellText`
+    /// via rio-grid's `build_row_bg`/`build_row_fg`, writes the row, builds
+    /// the cursor sprite + bg-tint uniforms, then composites with
+    /// `render_with_grids`. `cursor_r/g/b` is the cursor color; `focused`
+    /// gates the active (block/bar) vs. inactive (hollow) cursor style.
+    ///
+    /// Resolves cell/selection/cursor colors against the theme set by
+    /// `sl_set_theme` (Rio's default until the host pushes one). `inputs` carries
+    /// the cursor color, focus, blink phase, search-match spans, and IME preedit.
+    pub fn render_surface(
+        &mut self,
+        grid: &mut GridRenderer,
+        rs: &mut librio::RenderState,
+        inputs: &SurfaceInputs<'_>,
+    ) {
+        let sl = self;
+        let [cursor_r, cursor_g, cursor_b] = inputs.cursor;
+        let focused = inputs.focused;
+        let cursor_blinking = inputs.cursor_blinking;
+        let cursor_blink_visible = inputs.cursor_blink_visible;
+        let preedit_str: Option<&str> = inputs.preedit.filter(|s| !s.is_empty());
+        let preedit_active = preedit_str.is_some();
+        let spans = inputs.search_spans;
+
         let font_size = sl.font_size;
         let line_height = sl.line_height;
         let scale = sl.scale;
@@ -1394,5 +1484,124 @@ pub unsafe extern "C" fn sl_render_surface(
         let mut pairs = [(grid, uniforms)];
         sl.inner.render_with_grids(&mut pairs);
         rs.reset_dirty();
-    }));
+    }
+}
+
+/// The C form of [`Sl::render_surface`]. `render_state` is an opaque
+/// `librio::RenderState*` (the same object the host drives via
+/// `rio_render_state_*`); the caller MUST have already refreshed it with
+/// `rio_render_state_update` this frame — this does NOT re-snapshot.
+/// `inputs` carries the cursor color, focus, blink phase, search-match
+/// spans, and IME preedit.
+#[no_mangle]
+pub unsafe extern "C" fn sl_render_surface(
+    sl: *mut Sl,
+    grid: *mut GridRenderer,
+    render_state: *mut c_void,
+    inputs: *const SlSurfaceInputs,
+) {
+    let (Some(sl), Some(grid), Some(inputs)) =
+        (sl.as_mut(), grid.as_mut(), inputs.as_ref())
+    else {
+        return;
+    };
+    if render_state.is_null() {
+        return;
+    }
+    let rs = &mut *(render_state as *mut librio::RenderState);
+    let preedit = if inputs.preedit.is_null() {
+        None
+    } else {
+        CStr::from_ptr(inputs.preedit).to_str().ok()
+    };
+    let search_spans: &[SlSearchSpan] =
+        if inputs.search_spans.is_null() || inputs.search_spans_len == 0 {
+            &[]
+        } else {
+            std::slice::from_raw_parts(inputs.search_spans, inputs.search_spans_len)
+        };
+    let inputs = SurfaceInputs {
+        cursor: [inputs.cursor_r, inputs.cursor_g, inputs.cursor_b],
+        focused: inputs.focused,
+        cursor_blinking: inputs.cursor_blinking,
+        cursor_blink_visible: inputs.cursor_blink_visible,
+        search_spans,
+        preedit,
+    };
+    let _ = catch_unwind(AssertUnwindSafe(|| sl.render_surface(grid, rs, &inputs)));
+}
+
+#[cfg(all(test, unix))]
+mod offscreen_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    struct NoDelegate;
+    impl librio::SurfaceDelegate for NoDelegate {
+        fn wakeup(&self, _surface: librio::SurfaceId) {}
+    }
+
+    // A librio surface drawn by an offscreen Sl lands in the CPU frame the
+    // host reads: cell backgrounds and glyphs where the terminal put them.
+    #[test]
+    fn a_surface_renders_into_the_offscreen_frame() {
+        let (cols, rows) = (10u32, 2u32);
+        let mut sl = Sl::new_offscreen(1.0, 1.0, 1.0, SugarloafFonts::default(), 1.0);
+        sl.set_colors(&Colors::default());
+        let m = sl.cell_metrics();
+        assert!(m.cell_width > 0 && m.cell_height > 0);
+        let (width, height) = (m.cell_width * cols, m.cell_height * rows);
+        sl.resize(width, height);
+
+        let engine = librio::Engine::new(Arc::new(NoDelegate));
+        // A child that prints nothing, so only the injected output shows.
+        let surface = engine
+            .create_surface(&librio::SurfaceDesc {
+                shell: Some("/bin/sh".to_string()),
+                args: vec!["-c".to_string(), "sleep 300".to_string()],
+                cols: cols as u16,
+                rows: rows as u16,
+                ..librio::SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        surface.inject_output(b"\x1b[41m  \x1b[0m\r\nW");
+
+        let mut grid = sl.new_grid(cols, rows);
+        let mut rs = librio::RenderState::new(&surface);
+        rs.update();
+        sl.render_surface(
+            &mut grid,
+            &mut rs,
+            &SurfaceInputs {
+                cursor: [255, 255, 255],
+                focused: false,
+                cursor_blinking: false,
+                cursor_blink_visible: true,
+                search_spans: &[],
+                preedit: None,
+            },
+        );
+
+        let frame = sl.cpu_frame().expect("offscreen frame");
+        assert_eq!((frame.width, frame.height), (width, height));
+        let cell = |col: u32, row: u32| -> Vec<u32> {
+            let (x0, y0) = (col * m.cell_width, row * m.cell_height);
+            (y0..y0 + m.cell_height)
+                .flat_map(|y| {
+                    let start = (y * width + x0) as usize;
+                    frame.pixels[start..start + m.cell_width as usize].to_vec()
+                })
+                .collect()
+        };
+        let background = cell(6, 0);
+        let bg = background[0];
+        assert!(background.iter().all(|&p| p == bg), "an empty cell is flat");
+        assert_eq!(bg >> 24, 0xff, "opaque by default");
+        let red = cell(0, 0);
+        assert!(
+            red.iter().all(|&p| p == red[0]) && red[0] != bg,
+            "SGR 41 fills"
+        );
+        assert!(cell(0, 1).iter().any(|&p| p != bg), "the W is drawn");
+    }
 }
