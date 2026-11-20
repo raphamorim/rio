@@ -1865,8 +1865,15 @@ impl fmt::Debug for SetReadiness {
 
 impl RegistrationInner {
     /// Get the registration's readiness.
+    ///
+    /// `SeqCst`, like the swap in `set_readiness`: a thread that makes
+    /// work and then looks here to see whether it has to announce it,
+    /// while another clears the readiness and then looks for work, is
+    /// only sure not to miss the other if both loads are ordered after
+    /// both stores. A `Relaxed` load can be stale on a CPU that orders
+    /// memory weakly, and the work then stays unannounced.
     fn readiness(&self) -> Ready {
-        self.state.load(Relaxed).readiness()
+        self.state.load(SeqCst).readiness()
     }
 
     /// Set the registration's readiness.
@@ -1895,7 +1902,8 @@ impl RegistrationInner {
                 next.set_queued();
             }
 
-            let actual = self.state.compare_and_swap(state, next, AcqRel);
+            // `SeqCst`, for the reason given at `readiness`.
+            let actual = self.state.compare_and_swap(state, next, SeqCst);
 
             if state == actual {
                 break;
