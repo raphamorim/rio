@@ -220,6 +220,17 @@ pub struct Config {
     pub ignore_selection_fg_color: bool,
     #[serde(default = "default_bool_true", rename = "confirm-before-quit")]
     pub confirm_before_quit: bool,
+    /// Ask before pasting text that could run commands: a line break when
+    /// the program didn't ask for bracketed paste (each line would run),
+    /// or the end of a bracketed paste, which pasted text has no reason
+    /// to hold.
+    #[serde(default = "default_bool_true", rename = "paste-protection")]
+    pub paste_protection: bool,
+    /// Trust line breaks in a bracketed paste: the program gets the text
+    /// as one paste and decides what to do with it. A bracket end is still
+    /// asked about. With this off, any line break is.
+    #[serde(default = "default_bool_true", rename = "paste-bracketed-safe")]
+    pub paste_bracketed_safe: bool,
     /// Keep a pane open after its command exits, until a key is pressed.
     #[serde(default = "bool::default")]
     pub hold: bool,
@@ -758,6 +769,8 @@ impl Default for Config {
             working_dir: default_working_dir(),
             ignore_selection_fg_color: false,
             confirm_before_quit: true,
+            paste_protection: true,
+            paste_bracketed_safe: true,
             hold: false,
             grapheme_clustering: true,
             copy_on_select: false,
@@ -1274,6 +1287,18 @@ mod tests {
         assert_eq!(steady.cursor.blinking, Some(false));
         let blinking: Config = toml::from_str("[cursor]\nblinking = true\n").unwrap();
         assert_eq!(blinking.cursor.blinking, Some(true));
+    }
+
+    #[test]
+    fn paste_protection_is_on_unless_turned_off() {
+        let config = Config::default();
+        assert!(config.paste_protection);
+        assert!(config.paste_bracketed_safe);
+        let off: Config =
+            toml::from_str("paste-protection = false\npaste-bracketed-safe = false\n")
+                .unwrap();
+        assert!(!off.paste_protection);
+        assert!(!off.paste_bracketed_safe);
     }
 
     #[test]

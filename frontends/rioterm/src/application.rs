@@ -1479,6 +1479,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             WindowEvent::MouseInput { state, button, .. } => {
                 if route.path != RoutePath::Terminal
                     || route.window.screen.renderer.confirm_quit.is_active()
+                    || route.window.screen.renderer.confirm_paste.is_active()
                 {
                     #[cfg(target_os = "macos")]
                     if state == ElementState::Pressed
@@ -1862,6 +1863,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
 
                 if route.path != RoutePath::Terminal
                     || route.window.screen.renderer.confirm_quit.is_active()
+                    || route.window.screen.renderer.confirm_paste.is_active()
                 {
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                     return;
@@ -2155,6 +2157,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             WindowEvent::MouseWheel { delta, phase, .. } => {
                 if route.path != RoutePath::Terminal
                     || route.window.screen.renderer.confirm_quit.is_active()
+                    || route.window.screen.renderer.confirm_paste.is_active()
                 {
                     return;
                 }

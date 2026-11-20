@@ -21,6 +21,7 @@ pub mod crosswords;
 pub mod error;
 pub mod event;
 pub mod grapheme_lut;
+pub mod paste;
 pub mod performer;
 pub mod selection;
 pub mod simd_base64;
