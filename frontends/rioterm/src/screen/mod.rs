@@ -1051,7 +1051,7 @@ impl Screen<'_> {
                 && binding.action == Act::PasteSelection
             {
                 let content = clipboard.get(ClipboardType::Selection);
-                self.paste(&content, true);
+                self.paste_from_clipboard(&content);
             }
         }
     }
@@ -1114,14 +1114,14 @@ impl Screen<'_> {
                     }
                     Act::Paste => {
                         let content = clipboard.get(ClipboardType::Clipboard);
-                        self.paste(&content, true);
+                        self.paste_from_clipboard(&content);
                     }
                     Act::ClearSelection => {
                         self.clear_selection();
                     }
                     Act::PasteSelection => {
                         let content = clipboard.get(ClipboardType::Selection);
-                        self.paste(&content, true);
+                        self.paste_from_clipboard(&content);
                     }
                     Act::Copy => {
                         self.copy_selection(ClipboardType::Clipboard, clipboard);
@@ -3702,6 +3702,24 @@ impl Screen<'_> {
     }
 
     #[inline]
+    /// Paste what the user pasted from a clipboard, first asking them
+    /// if it could run commands (`paste-protection`): the text is held by
+    /// the confirmation dialog, which pastes it on yes.
+    pub fn paste_from_clipboard(&mut self, text: &str) {
+        let bracketed = self.get_mode().contains(Mode::BRACKETED_PASTE);
+        if !self.search_active()
+            && self
+                .renderer
+                .confirm_paste
+                .needs_confirmation(text, bracketed)
+        {
+            self.renderer.confirm_paste.hold(text.to_owned(), bracketed);
+            self.mark_dirty();
+            return;
+        }
+        self.paste(text, true);
+    }
+
     pub fn paste(&mut self, text: &str, bracketed: bool) {
         if self.search_active() {
             for c in text.chars() {
@@ -3718,37 +3736,16 @@ impl Screen<'_> {
             self.scroll_bottom_when_cursor_not_visible();
             self.clear_selection();
 
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_write(&b"\x1b[200~"[..]);
-
-            // Write filtered escape sequences.
-            //
-            // We remove `\x1b` to ensure it's impossible for the pasted text to write the bracketed
-            // paste end escape `\x1b[201~` and `\x03` since some shells incorrectly terminate
-            // bracketed paste on its receival.
-            let filtered = text.replace(['\x1b', '\x03'], "");
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_write(filtered.into_bytes());
-
-            self.ctx_mut()
-                .current_mut()
-                .messenger
-                .send_write(&b"\x1b[201~"[..]);
+            // The markers, and the text with its control bytes as
+            // spaces so it can't end the bracket or act as tty input.
+            let payload = rio_backend::paste::encode(text, true);
+            self.ctx_mut().current_mut().messenger.send_write(payload);
         } else {
             let payload = if bracketed {
-                // In non-bracketed (ie: normal) mode, terminal applications cannot distinguish
-                // pasted data from keystrokes.
-                //
-                // In theory, we should construct the keystrokes needed to produce the data we are
-                // pasting... since that's neither practical nor sensible (and probably an
-                // impossible task to solve in a general way), we'll just replace line breaks
-                // (windows and unix style) with a single carriage return (\r, which is what the
-                // Enter key produces).
-                text.replace("\r\n", "\r").replace('\n', "\r").into_bytes()
+                // The program can't tell a paste from typing: control
+                // bytes become spaces and a line break is what Enter
+                // sends.
+                rio_backend::paste::encode(text, false)
             } else {
                 // When we explicitly disable bracketed paste don't manipulate with the input,
                 // so we pass user input as is.
@@ -3853,7 +3850,7 @@ impl Screen<'_> {
             }
             PaletteAction::Paste => {
                 let content = clipboard.get(ClipboardType::Clipboard);
-                self.paste(&content, true);
+                self.paste_from_clipboard(&content);
             }
             PaletteAction::SearchForward => {
                 self.start_search(Direction::Right);

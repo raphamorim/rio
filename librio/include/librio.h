@@ -306,8 +306,15 @@ bool rio_surface_hangup_child(const rio_surface_t *surface);
 
 /* Input entry points are callable from any thread. */
 void rio_surface_text(rio_surface_t *surface, const char *bytes, size_t len);
-/* Paste `bytes` (UTF-8), bracketed when the program has enabled mode 2004. */
+/* Paste `bytes` (UTF-8), bracketed when the program has enabled mode 2004.
+ * Control bytes are sent as spaces, so a paste can't end its bracket or act
+ * as tty input; unbracketed, a line break is sent as CR. */
 void rio_surface_paste(rio_surface_t *surface, const char *bytes, size_t len);
+/* Whether `bytes` can be pasted without asking the user: bracketed, only a
+ * bracketed paste end is suspect; otherwise any line break is too, since
+ * each line would run. A host that confirms such pastes asks when false. */
+bool rio_surface_paste_is_safe(const rio_surface_t *surface, const char *bytes,
+                               size_t len);
 /* Terminal modes for input decisions the host makes on its own: bit 0 mouse
  * reporting, bit 1 application cursor keys, bit 2 alternate screen, bit 3
  * bracketed paste. */

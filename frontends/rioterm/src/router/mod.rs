@@ -42,6 +42,9 @@ pub enum Modal {
     CommandPalette,
     /// The quit confirmation dialog.
     ConfirmQuit,
+    /// The paste confirmation dialog, holding a paste that could run
+    /// commands.
+    ConfirmPaste,
     /// The error assistant; `report_error` can activate it WITHOUT
     /// leaving `RoutePath::Terminal`.
     Assistant,
@@ -201,6 +204,9 @@ impl Route<'_> {
         }
         if self.window.screen.renderer.confirm_quit.is_active() {
             return Some(Modal::ConfirmQuit);
+        }
+        if self.window.screen.renderer.confirm_paste.is_active() {
+            return Some(Modal::ConfirmPaste);
         }
         // Only hard errors are modal: a warning toast (font not
         // found on live reload, say) renders over a WORKING terminal
@@ -445,6 +451,39 @@ impl Route<'_> {
                         Key::Character(c) if c.as_str() == "y" || c.as_str() == "Y" => {
                             self.quit();
                             return true;
+                        }
+                        _ => {}
+                    }
+                }
+                true
+            }
+
+            Modal::ConfirmPaste => {
+                if key_event.state == rio_window::event::ElementState::Pressed {
+                    match &key_event.logical_key {
+                        Key::Character(c) if c.as_str() == "y" || c.as_str() == "Y" => {
+                            if let Some(text) =
+                                self.window.screen.renderer.confirm_paste.take()
+                            {
+                                self.window.screen.paste(&text, true);
+                            }
+                            self.request_overlay_redraw();
+                        }
+                        Key::Named(NamedKey::Enter) => {
+                            if let Some(text) =
+                                self.window.screen.renderer.confirm_paste.take()
+                            {
+                                self.window.screen.paste(&text, true);
+                            }
+                            self.request_overlay_redraw();
+                        }
+                        Key::Character(c) if c.as_str() == "n" || c.as_str() == "N" => {
+                            self.window.screen.renderer.confirm_paste.cancel();
+                            self.request_overlay_redraw();
+                        }
+                        Key::Named(NamedKey::Escape) => {
+                            self.window.screen.renderer.confirm_paste.cancel();
+                            self.request_overlay_redraw();
                         }
                         _ => {}
                     }
