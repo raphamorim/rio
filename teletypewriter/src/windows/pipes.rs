@@ -520,15 +520,22 @@ mod tests {
         let (host, conin) = miow::pipe::anonymous(0).unwrap();
         let mut writer = EventedAnonWrite::new(conin);
 
-        // More than the pipe holds, so the worker's write blocks.
-        assert_eq!(writer.write(&[0u8; 65536]).unwrap(), 65536);
-        let mut tries = 0;
-        while !writer.producer.is_empty() {
-            tries += 1;
-            assert!(tries < 10_000, "the worker did not take the bytes");
-            std::thread::sleep(Duration::from_millis(1));
+        // Written until the ring stays full, which it only does once
+        // the worker no longer takes from it: it is then in a write the
+        // pipe has no room for.
+        let chunk = [0u8; 65536];
+        let mut sent = 0usize;
+        let mut full_for = 0;
+        while full_for < 200 {
+            sent += writer.write(&chunk).unwrap();
+            assert!(sent < 32 << 20, "the pipe took all that was written");
+            if writer.producer.is_full() {
+                full_for += 1;
+                std::thread::sleep(Duration::from_millis(1));
+            } else {
+                full_for = 0;
+            }
         }
-        std::thread::sleep(Duration::from_millis(50));
 
         let (tx, rx) = mpsc::channel();
         let dropper = spawn(move || {
