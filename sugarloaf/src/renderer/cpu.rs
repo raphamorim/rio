@@ -2,8 +2,9 @@
 //
 // CPU rasterization pipeline.
 //
-// Writes directly into softbuffer's `&mut [u32]` (0x00RRGGBB) — no
-// intermediate pixmap, no pixel format conversion at present time.
+// Writes premultiplied 0xAARRGGBB straight into the frame's `&mut [u32]`
+// (a window's softbuffer surface or an offscreen buffer, see
+// `CpuContext`): no intermediate pixmap, no pixel format conversion.
 //
 // v1 limitations: monochrome glyphs only (color-atlas glyphs not
 // implemented), no per-corner radii / borders / advanced underlines.
@@ -307,8 +308,9 @@ pub fn render_cpu(
 
     // Frame skip.
     //
-    // Hash includes the bg color, the overlay vertex stream, and each
-    // grid's uniforms + bg cells. Per-glyph fg state is hashed by
+    // Hash includes the buffer size (a resized buffer holds no frame, so
+    // it must be drawn even when nothing else changed), the bg color, the
+    // overlay vertex stream, and each grid's uniforms + bg cells. Per-glyph fg state is hashed by
     // length only — full fg-row hashing is too expensive on large
     // panels (and a column of glyphs that swap colors will still
     // change `cell_size` / `cursor_pos` / something downstream that's
@@ -317,6 +319,8 @@ pub fn render_cpu(
     // each row.
     let frame_hash = {
         let mut h = rustc_hash::FxHasher::default();
+        h.write_u32(ctx.width_px);
+        h.write_u32(ctx.height_px);
         if let Some(c) = background {
             h.write_u64(c.r.to_bits());
             h.write_u64(c.g.to_bits());
@@ -383,40 +387,45 @@ pub fn render_cpu(
         return;
     }
 
-    let mut buffer = match ctx.surface.buffer_mut() {
-        Ok(b) => b,
-        Err(e) => {
-            tracing::error!("softbuffer buffer_mut failed: {e}");
-            return;
+    // A window's buffer is borrowed from softbuffer and presented at the
+    // end; an offscreen one is the context's own.
+    let keeps_alpha = ctx.keeps_alpha();
+    let mut window_buffer = None;
+    let buffer: &mut [u32] = match &mut ctx.target {
+        crate::context::cpu::CpuTarget::Window { surface, .. } => {
+            match surface.buffer_mut() {
+                Ok(b) => window_buffer.insert(b),
+                Err(e) => {
+                    tracing::error!("softbuffer buffer_mut failed: {e}");
+                    return;
+                }
+            }
+        }
+        crate::context::cpu::CpuTarget::Offscreen { pixels, generation } => {
+            *generation += 1;
+            pixels
         }
     };
 
-    // Bg fill writes premultiplied RGBA on Windows only: softbuffer's GDI
-    // path copies the alpha byte through to the DWM redirection surface,
-    // where `DwmEnableBlurBehindWindow` makes `window.opacity` real. Its
-    // other presenters drop the byte (macOS `NoneSkipFirst`, Wayland
-    // `Xrgb8888`), so premultiplying there would darken the window with
-    // no transparency in return; those keep the full-brightness opaque
-    // fill and opacity stays a no-op on the CPU backend, as before.
+    // The background is premultiplied where the frame keeps alpha (see
+    // `CpuContext::keeps_alpha`), so `window.opacity` reaches the
+    // compositor; elsewhere it stays opaque at full brightness and
+    // opacity is a no-op on the CPU backend.
     let bg_u32 = match background {
-        Some(c) => {
-            #[cfg(target_os = "windows")]
-            {
-                let a = c.a.clamp(0.0, 1.0);
-                pack_premul(
-                    (c.r.clamp(0.0, 1.0) * a * 255.0) as u8,
-                    (c.g.clamp(0.0, 1.0) * a * 255.0) as u8,
-                    (c.b.clamp(0.0, 1.0) * a * 255.0) as u8,
-                    (a * 255.0) as u8,
-                )
-            }
-            #[cfg(not(target_os = "windows"))]
-            pack_opaque(
-                (c.r.clamp(0.0, 1.0) * 255.0) as u8,
-                (c.g.clamp(0.0, 1.0) * 255.0) as u8,
-                (c.b.clamp(0.0, 1.0) * 255.0) as u8,
+        Some(c) if keeps_alpha => {
+            let a = c.a.clamp(0.0, 1.0);
+            pack_premul(
+                (c.r.clamp(0.0, 1.0) * a * 255.0) as u8,
+                (c.g.clamp(0.0, 1.0) * a * 255.0) as u8,
+                (c.b.clamp(0.0, 1.0) * a * 255.0) as u8,
+                (a * 255.0) as u8,
             )
         }
+        Some(c) => pack_opaque(
+            (c.r.clamp(0.0, 1.0) * 255.0) as u8,
+            (c.g.clamp(0.0, 1.0) * 255.0) as u8,
+            (c.b.clamp(0.0, 1.0) * 255.0) as u8,
+        ),
         None => 0,
     };
     buffer.fill(bg_u32);
@@ -429,7 +438,7 @@ pub fn render_cpu(
     // images.
     {
         use crate::renderer::IMAGE_BG_LIMIT;
-        let buf_slice: &mut [u32] = &mut buffer;
+        let buf_slice: &mut [u32] = &mut *buffer;
         let split_below_bg =
             image_overlays.partition_point(|o| o.z_index < IMAGE_BG_LIMIT);
         let split_below_text = image_overlays.partition_point(|o| o.z_index < 0);
@@ -453,7 +462,7 @@ pub fn render_cpu(
     // here; sub-pixel UI text already lives in `text.render_cpu`, and
     // the grid path owns terminal glyphs.
     if !quad_instances.is_empty() {
-        let buf_slice: &mut [u32] = &mut buffer;
+        let buf_slice: &mut [u32] = &mut *buffer;
         for inst in quad_instances {
             // Image / mask atlas layers — skip on CPU (handled by
             // grid + text passes for the use cases that matter).
@@ -473,7 +482,7 @@ pub fn render_cpu(
     if !vertices.is_empty() {
         let images = renderer.image_cache();
         let atlas_size = images.cpu_max_texture_size();
-        let buf_slice: &mut [u32] = &mut buffer;
+        let buf_slice: &mut [u32] = &mut *buffer;
 
         let mut pending: Option<PendingFill> = None;
 
@@ -553,10 +562,12 @@ pub fn render_cpu(
     // UI text pass — tab labels, search, command palette, assistant,
     // island, etc. Sits on top of grids + UI quads so labels never
     // get hidden by panel borders or the cursor.
-    text.render_cpu(&mut buffer, ctx.width_px, ctx.height_px);
+    text.render_cpu(buffer, ctx.width_px, ctx.height_px);
 
-    if let Err(e) = buffer.present() {
-        tracing::error!("softbuffer present failed: {e}");
+    if let Some(buffer) = window_buffer {
+        if let Err(e) = buffer.present() {
+            tracing::error!("softbuffer present failed: {e}");
+        }
     }
 }
 
