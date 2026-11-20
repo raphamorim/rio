@@ -30,6 +30,8 @@ struct TestPty {
     deregister_calls: usize,
     winsize_calls: usize,
     raw_error: Option<i32>,
+    /// The child is still running: no exit is known when asked.
+    child_runs: bool,
 }
 
 impl Read for TestPty {
@@ -252,6 +254,9 @@ impl EventedPty for TestPty {
         2.into()
     }
     fn next_child_event(&mut self) -> Option<ChildEvent> {
+        if self.child_runs {
+            return None;
+        }
         Some(ChildEvent::Exited(Some(0)))
     }
 }
@@ -273,6 +278,7 @@ fn test_pty(bytes: Vec<u8>, ending: Option<ErrorKind>) -> TestPty {
         deregister_calls: 0,
         winsize_calls: 0,
         raw_error: None,
+        child_runs: false,
     }
 }
 
@@ -542,6 +548,7 @@ fn read_failure_shuts_down_pty_and_finishes_pending_sync() {
     let (registration, readiness) = corcovado::Registration::new2();
     machine.pty.child = Some(registration);
     machine.pty.read_event = true;
+    machine.pty.child_runs = true;
     readiness.set_readiness(Ready::readable()).unwrap();
     let (machine, _) = machine.spawn().join().unwrap();
     assert_eq!(machine.pty.shutdown_calls, 1);
@@ -552,6 +559,108 @@ fn read_failure_shuts_down_pty_and_finishes_pending_sync() {
         machine.writer.is_some(),
         "the writer was stopped and joined"
     );
+}
+
+/// Hears the status every exit is announced with.
+#[derive(Clone)]
+struct ExitStatuses(mpsc::Sender<Option<i32>>);
+
+impl EventListener for ExitStatuses {
+    fn send_event(&self, event: RioEvent, _: WindowId) {
+        if let RioEvent::ChildExited(_, status) = event {
+            let _ = self.0.send(status);
+        }
+    }
+}
+
+/// The exit a failed read is announced with: the child's own status
+/// when its exit is known by then, none when the child still runs.
+fn exit_status_after_a_failed_read(child_runs: bool) -> Option<i32> {
+    let (sender, receiver) = mpsc::channel();
+    let listener = ExitStatuses(sender);
+    let terminal = Arc::new(TerminalLock::new(Crosswords::new(
+        CrosswordsSize::new(80, 24),
+        CursorShape::Block,
+        listener.clone(),
+        WindowId::from(0),
+        0,
+        0,
+    )));
+    let mut pty = test_pty(b"final output".to_vec(), Some(ErrorKind::Other));
+    let (registration, readiness) = corcovado::Registration::new2();
+    pty.child = Some(registration);
+    pty.read_event = true;
+    pty.child_runs = child_runs;
+    readiness.set_readiness(Ready::readable()).unwrap();
+    let machine = Machine::new(terminal, pty, listener, WindowId::from(0), 0).unwrap();
+    let (machine, _) = machine.spawn().join().unwrap();
+    assert_eq!(first_line(&machine, 12), "final output");
+    let statuses: Vec<_> = receiver.try_iter().collect();
+    assert_eq!(statuses.len(), 1, "one exit is announced: {statuses:?}");
+    statuses[0]
+}
+
+/// The PTY can end before the exit of its child is handled. The exit
+/// is then what happened, and its status is not lost to the failure.
+#[test]
+fn a_read_failure_after_the_child_exited_keeps_the_exit_status() {
+    assert_eq!(exit_status_after_a_failed_read(false), Some(0));
+}
+
+#[test]
+fn a_read_failure_with_a_running_child_has_no_exit_status() {
+    assert_eq!(exit_status_after_a_failed_read(true), None);
+}
+
+/// The machine for a drain after the child's exit, over a PTY with
+/// nothing to read at first: `before_read` gets the ordinal of each
+/// read and what it sends is the next thing read.
+#[cfg(windows)]
+fn drain_fed_by(
+    mut before_read: impl FnMut(usize, &mpsc::Sender<Vec<u8>>) + Send + 'static,
+) -> Machine<TestPty, VoidListener> {
+    let (feed_tx, feed) = mpsc::channel();
+    let mut pty = test_pty(Vec::new(), Some(ErrorKind::WouldBlock));
+    pty.feed = Some(feed);
+    pty.before_read = Some(Box::new(move |read| before_read(read, &feed_tx)));
+    let (registration, readiness) = corcovado::Registration::new2();
+    pty.child = Some(registration);
+    readiness.set_readiness(Ready::readable()).unwrap();
+    let (machine, _) = machine_with(pty).spawn().join().unwrap();
+    machine
+}
+
+/// On Windows the pump thread delivers the last output after the exit
+/// event, so a drain that finds nothing to read asks again.
+#[cfg(windows)]
+#[test]
+fn the_drain_waits_for_output_that_comes_after_an_empty_read() {
+    let machine = drain_fed_by(|read, feed| {
+        if read == 2 {
+            feed.send(b"final output".to_vec()).unwrap();
+        }
+    });
+    assert_eq!(first_line(&machine, 12), "final output");
+}
+
+/// The quiet window that ends that wait starts again with every read
+/// that brought something, however little: output in pieces that
+/// together take longer than the window is all read.
+#[cfg(windows)]
+#[test]
+fn the_drain_waits_again_after_each_piece_of_output() {
+    let mut start = None;
+    let mut sent = 0u8;
+    let machine = drain_fed_by(move |_, feed| {
+        let start = *start.get_or_insert_with(Instant::now);
+        // A piece every 12 ms: the third comes after 36 ms, past a
+        // window of 25 ms counted from the start.
+        if sent < 3 && start.elapsed() >= Duration::from_millis(12) * (sent as u32 + 1) {
+            feed.send(vec![b'a' + sent]).unwrap();
+            sent += 1;
+        }
+    });
+    assert_eq!(first_line(&machine, 3), "abc");
 }
 
 #[derive(Clone)]
@@ -613,6 +722,7 @@ fn hangup_without_readable_readiness_drains_residual_output() {
     let (registration, readiness) = corcovado::Registration::new2();
     machine.pty.child = Some(registration);
     machine.pty.read_event = true;
+    machine.pty.child_runs = true;
     readiness.set_readiness(UnixReady::hup().into()).unwrap();
     let shutdown = machine.channel();
     let (completed, receiver) = mpsc::channel();
@@ -692,6 +802,7 @@ fn a_stuck_write_is_not_retried_when_more_arrives() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            child_runs: false,
         },
         EventRecorder(events),
         WindowId::from(0),
@@ -808,6 +919,7 @@ fn a_parser_reply_is_written_without_the_event_loop() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            child_runs: false,
         },
         EventRecorder(events),
         WindowId::from(0),
@@ -1022,6 +1134,7 @@ fn waiter_against_a_pile(chunks: u8) -> PileWaiter {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            child_runs: false,
         },
         listener.clone(),
         WindowId::from(0),
@@ -1149,6 +1262,7 @@ fn spawn_reader(payload: Vec<u8>, piled: Option<u8>, listener: OnTitle) -> Spawn
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            child_runs: false,
         },
         listener,
         WindowId::from(0),
@@ -1351,6 +1465,7 @@ fn replies_keep_their_place_before_an_owner_answer_in_the_same_read() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            child_runs: false,
         },
         owner,
         WindowId::from(0),
@@ -1442,6 +1557,7 @@ fn a_waiting_thread_gets_the_terminal_after_the_current_chunk() {
                 deregister_calls: 0,
                 winsize_calls: 0,
                 raw_error: None,
+                child_runs: false,
             },
             listener.clone(),
             WindowId::from(0),
@@ -1544,6 +1660,7 @@ fn a_scrolling_burst_wakes_the_ui_thread_once() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            child_runs: false,
         },
         EventRecorder(events),
         WindowId::from(0),
@@ -1612,6 +1729,7 @@ fn a_fence_in_a_later_write_waits_for_the_owners_answer() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            child_runs: false,
         },
         EventRecorder(events),
         WindowId::from(0),
@@ -1741,6 +1859,7 @@ fn a_declined_query_lifts_the_fence_without_writing() {
             deregister_calls: 0,
             winsize_calls: 0,
             raw_error: None,
+            child_runs: false,
         },
         EventRecorder(events),
         WindowId::from(0),

@@ -185,6 +185,9 @@ pub struct State {
     /// Deadline of the terminal's active synchronized update, refreshed
     /// whenever the terminal lock is held.
     sync_deadline: Option<Instant>,
+    /// Bytes parsed so far, wrapping: two values that differ say a
+    /// read in between brought something, whatever its outcome.
+    parsed: usize,
 }
 
 #[cfg(feature = "pty")]
@@ -348,6 +351,7 @@ where
                 parsed = end;
             }
             processed += unprocessed;
+            state.parsed = state.parsed.wrapping_add(unprocessed);
             unprocessed = 0;
 
             if stopped || processed >= READ_BUDGET {
@@ -566,7 +570,19 @@ where
                         let hung_up = false;
                         // HUP can accompany unread final output.
                         if event.readiness().is_readable() || hung_up {
-                            self.pty_read(state, buf)?;
+                            if let Err(err) = self.pty_read(state, buf) {
+                                // The PTY can end before the exit of
+                                // its child is handled, in the same
+                                // batch of events or ahead of it. An
+                                // exit that is already known is what
+                                // happened, and keeps its status.
+                                if let Some(teletypewriter::ChildEvent::Exited(status)) =
+                                    self.pty.next_child_event()
+                                {
+                                    return Ok(ExitReason::ChildExited(status));
+                                }
+                                return Err(err);
+                            }
                         }
                     }
                     _ => (),
@@ -587,22 +603,26 @@ where
             // parsing budgets, limiting continuously available output to 100 ms
             // between batches (terminal lock waits can extend this interval).
             let deadline = Instant::now() + std::time::Duration::from_millis(100);
-            // Windows Idle means the ConPTY ring is momentarily empty
-            // (no real EOF exists until the drain's own shutdown closes
-            // the pseudoconsole), while the pump thread delivers final
-            // output after the exit event. Retry it through a short
-            // quiet window, refreshed by each batch of data, so a close
-            // is not taxed the full deadline. Unix Idle means a
+            // Windows Idle means the ConPTY ring is momentarily empty,
+            // while the pump thread delivers final output after the
+            // exit event. Retry it through a short quiet window,
+            // refreshed by every read that brought data, so a close is
+            // not taxed the full deadline. The pipe has no EOF before
+            // the pseudoconsole is closed, which the drop of the PTY
+            // does; a console host that died ends it earlier, as an
+            // error, and that ends the drain. Unix Idle means a
             // descendant still holds the slave, and Closed is a real
             // EOF: both end the drain at once.
             let quiet = std::time::Duration::from_millis(25);
             let mut quiet_deadline = Instant::now() + quiet;
             loop {
-                match self.pty_read(state, buf) {
-                    Ok(ReadOutcome::Budget) if Instant::now() < deadline => {
-                        quiet_deadline = Instant::now() + quiet;
-                        continue;
-                    }
+                let parsed = state.parsed;
+                let outcome = self.pty_read(state, buf);
+                if state.parsed != parsed {
+                    quiet_deadline = Instant::now() + quiet;
+                }
+                match outcome {
+                    Ok(ReadOutcome::Budget) if Instant::now() < deadline => continue,
                     Ok(ReadOutcome::Idle)
                         if cfg!(windows)
                             && Instant::now() < deadline

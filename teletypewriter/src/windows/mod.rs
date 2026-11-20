@@ -31,6 +31,16 @@ pub struct Pty {
     child_watcher: ChildExitWatcher,
 }
 
+impl Drop for Pty {
+    fn drop(&mut self) {
+        // Before the fields go, `backend` first: the close of the
+        // pseudoconsole can wait for the console host to write its
+        // last output, and nothing reads the ring by now, so a full
+        // ring would hold the host, and the close, up for good.
+        self.conout.discard();
+    }
+}
+
 // Creates conpty instead of pty
 // Windows Pseudo Console (ConPTY)
 //

@@ -18,6 +18,8 @@ struct EventedAnonReadInner {
     registration: Registration,
     readiness: SetReadiness,
     done: AtomicBool,
+    // What the pipe still gives is thrown away, not put in the ring
+    discard: AtomicBool,
 }
 
 /// Wraps an AnonRead pipe so that it can be read asynchronously using mio.
@@ -82,6 +84,7 @@ impl EventedAnonRead {
             registration,
             readiness,
             done,
+            discard: AtomicBool::new(false),
         });
 
         let thread = {
@@ -125,7 +128,17 @@ impl EventedAnonRead {
                             if inner.done.load(Ordering::SeqCst) {
                                 return;
                             }
+                            if inner.discard.load(Ordering::SeqCst) {
+                                break;
+                            }
                             park();
+                        }
+
+                        // Nobody reads the ring any more: the pipe is
+                        // still emptied, so its other end is not held
+                        // up, and what it gave is dropped.
+                        if inner.discard.load(Ordering::SeqCst) {
+                            break;
                         }
 
                         written += producer.write_from_slice(&tmp_buf[written..nbytes]);
@@ -152,6 +165,18 @@ impl EventedAnonRead {
 }
 
 impl EventedAnonRead {
+    /// The pipe is read to its end from here on and what it gives is
+    /// thrown away, for a reader nothing will be read from again. The
+    /// worker otherwise stops at a full ring, and the pipe's other end
+    /// waits for it: the console host, which the close of the
+    /// pseudoconsole waits for in turn.
+    pub fn discard(&self) {
+        self.inner.discard.store(true, Ordering::SeqCst);
+        if let Some(thread) = &self.thread {
+            thread.thread().unpark();
+        }
+    }
+
     /// Takes note of the worker's end, which it reports once, after
     /// the last bytes it put in the ring.
     fn look_for_end(&mut self) {
@@ -168,6 +193,12 @@ impl EventedAnonRead {
 
 impl io::Read for EventedAnonRead {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // Nothing can be read into no room, whatever state the pipe is
+        // in, and that is not for this call to report.
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
         if self.thread.is_none() {
             return Err(io::Error::new(io::ErrorKind::BrokenPipe, ""));
         }
@@ -215,7 +246,7 @@ impl io::Read for EventedAnonRead {
 
         // An empty ring is not the end of the pipe, which `Ok(0)` would
         // say it is: there is nothing to read yet.
-        if nbytes == 0 && !buf.is_empty() {
+        if nbytes == 0 {
             return Err(io::ErrorKind::WouldBlock.into());
         }
         Ok(nbytes)
@@ -559,8 +590,8 @@ mod tests {
         assert_eq!(got, b"last");
     }
 
-    /// A pipe with nothing to read says so by `WouldBlock`, and by
-    /// `Ok(0)` only to a buffer with no room, as any reader does.
+    /// A pipe with nothing to read says so by `WouldBlock`. A buffer
+    /// with no room gets `Ok(0)` in every state of the pipe.
     #[test]
     fn a_reader_with_nothing_to_read_would_block() {
         let (conout, mut host) = miow::pipe::anonymous(0).unwrap();
@@ -587,8 +618,52 @@ mod tests {
         assert_eq!(&buf[..nbytes], b"some");
         assert_eq!(reader.read(&mut []).unwrap(), 0);
 
-        drop(reader);
+        // The end of the pipe is not taken by a read with no room.
         drop(host);
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
+        let mut tries = 0;
+        let err = loop {
+            match reader.read(&mut buf) {
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
+                    tries += 1;
+                    assert!(tries < 10_000, "the end of the pipe was not reported");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                Ok(nbytes) => panic!("{nbytes} bytes read from an empty pipe"),
+                Err(err) => break err,
+            }
+        };
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
+    }
+
+    /// A reader told to discard keeps its pipe empty with nobody
+    /// reading the ring: far more than the ring and the worker hold
+    /// is written to the pipe, and every write returns.
+    #[test]
+    fn a_discarding_reader_does_not_hold_up_its_pipe() {
+        let (conout, mut host) = miow::pipe::anonymous(0).unwrap();
+        let reader = EventedAnonRead::new(conout);
+        reader.discard();
+
+        let (tx, rx) = mpsc::channel();
+        let writer = spawn(move || {
+            let chunk = [0u8; 65536];
+            for _ in 0..16 {
+                if host.write_all(&chunk).is_err() {
+                    return;
+                }
+            }
+            let _ = tx.send(());
+        });
+        let taken = rx.recv_timeout(Duration::from_secs(10));
+
+        // Dropped before the verdict, so a writer still stuck in a
+        // write is let go by the end of its pipe.
+        drop(reader);
+        writer.join().unwrap();
+        taken.expect("a write to the pipe waited for the ring to be read");
     }
 
     /// A reader is dropped at once, when its worker may not have got
