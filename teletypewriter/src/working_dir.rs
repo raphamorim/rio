@@ -4,36 +4,51 @@
 //! started in falls back to inheriting the current one, with a warning,
 //! instead of failing the spawn (#1088).
 
-use std::path::{is_separator, Path};
+use std::path::{is_separator, Path, PathBuf};
 
-/// `dir` with a leading `~`, alone or before a separator, replaced by the
-/// home directory. `~user` and a `~` anywhere else are left alone. `None`
-/// when there is a `~` to expand but no home directory.
-fn expand_tilde(dir: &str) -> Option<String> {
+/// The home directory: `$HOME` (unless empty), then the passwd entry on
+/// unix; the profile on Windows.
+fn home_dir() -> Option<PathBuf> {
+    std::env::home_dir()
+}
+
+/// `dir` with a leading `~`, alone or before separators, replaced by
+/// `home`, joined as a path so a home of `/` doesn't give `//x`. `~user`
+/// and a `~` anywhere else are left alone. Fails only when there is a `~`
+/// to expand and no usable home: none, or one that isn't UTF-8, which the
+/// expanded path couldn't carry.
+fn expand_tilde(
+    dir: &str,
+    home: impl FnOnce() -> Option<PathBuf>,
+) -> Result<String, String> {
     let Some(rest) = dir.strip_prefix('~') else {
-        return Some(dir.to_owned());
+        return Ok(dir.to_owned());
     };
     if !rest.is_empty() && !rest.starts_with(is_separator) {
-        return Some(dir.to_owned());
+        return Ok(dir.to_owned());
     }
-    // `$HOME`, then the passwd entry on unix; the profile on Windows.
-    let home = std::env::home_dir()?;
-    Some(format!("{}{rest}", home.to_string_lossy()))
+    let home = home().ok_or_else(|| "there is no home directory".to_owned())?;
+    let rest = rest.trim_start_matches(is_separator);
+    let path = if rest.is_empty() {
+        home
+    } else {
+        home.join(rest)
+    };
+    path.into_os_string()
+        .into_string()
+        .map_err(|path| format!("the home directory {path:?} isn't UTF-8"))
 }
 
 /// The directory `dir` names, before checking it: `inherit` is none (the
 /// current directory), `home` the home directory, and anything else is
 /// a path with a leading `~` expanded.
 fn expand_working_dir(dir: &str) -> Result<Option<String>, String> {
-    match dir {
-        "inherit" => Ok(None),
-        "home" => std::env::home_dir()
-            .map(|home| Some(home.to_string_lossy().into_owned()))
-            .ok_or_else(|| "home: there is no home directory".to_owned()),
-        _ => expand_tilde(dir).map(Some).ok_or_else(|| {
-            format!("{dir:?} starts with ~ but there is no home directory")
-        }),
-    }
+    let expanded = match dir {
+        "inherit" => return Ok(None),
+        "home" => expand_tilde("~", home_dir),
+        _ => expand_tilde(dir, home_dir),
+    };
+    expanded.map(Some).map_err(|why| format!("{dir:?}: {why}"))
 }
 
 /// The directory to start a shell in, if `dir` names one other than the
@@ -124,7 +139,7 @@ mod tests {
     #[test]
     fn home_and_a_tilde_are_the_home_directory() {
         assert_eq!(check_working_dir("home"), Ok(Some(home())));
-        assert_eq!(expand_tilde("~"), Some(home()));
+        assert_eq!(expand_tilde("~", home_dir), Ok(home()));
         assert_eq!(resolve_working_dir(&Some("~".into())), Some(home()));
     }
 
@@ -132,16 +147,49 @@ mod tests {
     fn a_tilde_before_a_separator_is_under_home() {
         let sep = std::path::MAIN_SEPARATOR;
         assert_eq!(
-            expand_tilde(&format!("~{sep}projects")),
-            Some(format!("{}{sep}projects", home()))
+            expand_tilde(&format!("~{sep}projects"), home_dir),
+            Ok(format!("{}{sep}projects", home()))
         );
     }
 
     #[test]
     fn only_a_leading_tilde_alone_is_expanded() {
         for dir in ["/tmp/~x", "~user", "~user/x", "a~"] {
-            assert_eq!(expand_tilde(dir), Some(dir.to_owned()), "{dir}");
+            assert_eq!(expand_tilde(dir, home_dir), Ok(dir.to_owned()), "{dir}");
         }
+    }
+
+    /// Joined as paths: a root home gives `/x`, not `//x`, and repeated
+    /// or trailing separators after the `~` don't double up.
+    #[cfg(unix)]
+    #[test]
+    fn the_home_directory_is_joined_as_a_path() {
+        let root = || Some(PathBuf::from("/"));
+        assert_eq!(expand_tilde("~/x", root), Ok("/x".to_owned()));
+        assert_eq!(expand_tilde("~", root), Ok("/".to_owned()));
+        let home = || Some(PathBuf::from("/home/me"));
+        assert_eq!(expand_tilde("~//x/", home), Ok("/home/me/x/".to_owned()));
+        assert_eq!(expand_tilde("~/", home), Ok("/home/me".to_owned()));
+    }
+
+    #[test]
+    fn a_tilde_without_a_home_is_an_error() {
+        let none = || None;
+        assert!(expand_tilde("~/x", none)
+            .unwrap_err()
+            .contains("no home directory"));
+        // Nothing to expand, so no home is needed.
+        assert_eq!(expand_tilde("/x", none), Ok("/x".to_owned()));
+    }
+
+    /// A home that isn't UTF-8 can't be carried in the expanded path, so
+    /// it's reported instead of turned into a different path.
+    #[cfg(unix)]
+    #[test]
+    fn a_home_that_isnt_utf8_is_an_error() {
+        use std::os::unix::ffi::OsStrExt;
+        let odd = || Some(PathBuf::from(std::ffi::OsStr::from_bytes(b"/home/\xff")));
+        assert!(expand_tilde("~", odd).unwrap_err().contains("isn't UTF-8"));
     }
 
     #[test]
