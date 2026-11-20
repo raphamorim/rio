@@ -2,6 +2,7 @@
 
 ## 0.6.0 (unreleased)
 
+- **rioterm-gtk: Rio as a GTK 4 / libadwaita app.** An alternative frontend for Linux, released with the Linux packages as `rioterm-gtk`: librio's terminal drawn by Sugarloaf's CPU renderer into a GTK widget, in GNOME's own window with `AdwTabBar` tabs that reorder, drag out into new windows and flag bells in the background. It reads Rio's config file. Sugarloaf's CPU backend gains an offscreen target (`Sugarloaf::new_offscreen`, `cpu_frame`) and libsugarloaf a Rust API (`Sl::new_offscreen`, `Sl::render_surface`).
 - **Windows: pasting no longer doubles line breaks.** The Windows clipboard ends every line with CRLF, which a shell read as two line breaks (readline turns the CR in a bracketed paste into a newline) or two Enters. Rio now reads CRLF from the clipboard as LF ([#1669](https://github.com/raphamorim/rio/issues/1669)).
 - **Pastes are sent exactly as xterm sends them.** Unbracketed, only LF becomes CR, so a CRLF line ending is two Enters, as in xterm; it was one. The 8-bit CSI character (U+009B) is no longer replaced, and only `ESC [201~` counts as a bracketed paste end, so a pasted U+009B is text like any other character. A paste is encoded in its own buffer and no longer copied, about three times faster: 32 MB in 4 ms ([#2116](https://github.com/raphamorim/rio/pull/2116)).
 
