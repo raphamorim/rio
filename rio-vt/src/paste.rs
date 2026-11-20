@@ -121,6 +121,21 @@ pub fn encode(text: &str, bracketed: bool) -> Vec<u8> {
     out
 }
 
+/// Text read from the Windows clipboard, with its line endings as text
+/// has them. Windows ends every line on its clipboard with CRLF; the CR is
+/// how it marks the end of a line, not part of the text. Pasted as is into
+/// a shell, it doubles every line break: readline reads each CR in a
+/// bracketed paste as a newline, so CRLF is two, and unbracketed it is two
+/// Enters (#1669). CRLF becomes LF, so a paste reads the same on every
+/// platform; the text is handed back as is when it has none.
+pub fn from_windows_clipboard(text: String) -> String {
+    if text.contains("\r\n") {
+        text.replace("\r\n", "\n")
+    } else {
+        text
+    }
+}
+
 /// Whether [`encode`] sends `c` as a space, for showing a paste the way
 /// it will arrive.
 pub fn is_replaced(c: char) -> bool {
@@ -230,6 +245,22 @@ mod tests {
         let encoded = encode_owned(String::from("one\r\ntwo\n"), false);
         assert!(encoded.start.is_empty() && encoded.end.is_empty());
         assert_eq!(encoded.text, encode("one\r\ntwo\n", false));
+    }
+
+    // Windows clipboard line endings are line breaks, not text: CRLF is
+    // one LF, so a bracketed paste has one line break per line and an
+    // unbracketed one one Enter. A lone CR stays.
+    #[test]
+    fn windows_clipboard_line_endings_are_one_break() {
+        let text = from_windows_clipboard("one\r\ntwo\r\nlone cr\r".to_owned());
+        assert_eq!(text, "one\ntwo\nlone cr\r");
+        assert_eq!(encode(&text, true), bracketed(b"one\ntwo\nlone cr\r"));
+        assert_eq!(encode(&text, false), b"one\rtwo\rlone cr\r".to_vec());
+
+        let plain = String::from("echo a\necho b");
+        let buffer = plain.as_ptr();
+        let kept = from_windows_clipboard(plain);
+        assert_eq!(kept.as_ptr(), buffer, "nothing to change, nothing copied");
     }
 
     #[test]

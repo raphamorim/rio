@@ -3706,6 +3706,11 @@ impl Screen<'_> {
     /// if it could run commands (`paste-protection`): the text is held by
     /// the confirmation dialog, which pastes it on yes.
     pub fn paste_from_clipboard(&mut self, text: String) {
+        // Windows ends every line on its clipboard with CRLF, which would
+        // paste as two line breaks (#1669): line endings as text has them
+        // before the paste is checked, shown or sent.
+        #[cfg(windows)]
+        let text = rio_backend::paste::from_windows_clipboard(text);
         let bracketed = self.get_mode().contains(Mode::BRACKETED_PASTE);
         if !self.search_active()
             && self
