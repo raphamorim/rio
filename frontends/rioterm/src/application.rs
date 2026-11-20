@@ -1696,6 +1696,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             // Load mouse point, treating message bar and padding as the closest square.
                             let display_offset = route.window.screen.display_offset();
 
+                            // The press landed on the grid: held and moved,
+                            // it selects.
+                            route.window.screen.mouse.press_on_grid(button);
                             if let MouseButton::Left = button {
                                 let pos =
                                     route.window.screen.mouse_position(display_offset);
@@ -2106,15 +2109,17 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     return;
                 }
 
-                // A held button whose press the application was not
-                // told about is selecting, whatever the modifiers and the
-                // mode say now: the drag goes where the press went. Hint
-                // and hyperlink highlighting waits while it does, which
-                // saves terminal locks and regex matching.
+                // A held button whose press landed on the grid is
+                // selecting, whatever the modifiers and the mode say now:
+                // the drag goes where the press went. A press the chrome
+                // consumed or the application was told about does not
+                // select on its way across the grid. Hint and hyperlink
+                // highlighting waits while a selection moves, which saves
+                // terminal locks and regex matching.
                 let is_selecting = {
                     let mouse = &route.window.screen.mouse;
-                    (lmb_pressed && !mouse.is_press_reported(MouseButton::Left))
-                        || (rmb_pressed && !mouse.is_press_reported(MouseButton::Right))
+                    mouse.is_selecting_with(MouseButton::Left)
+                        || mouse.is_selecting_with(MouseButton::Right)
                 };
 
                 if !is_selecting {
@@ -2133,9 +2138,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.mouse.square_side = square_side;
 
                 if is_selecting {
-                    if route.window.screen.update_selection(point, square_side) {
-                        route.window.screen.mouse.selection_changed();
-                    }
+                    route.window.screen.drag_selection_to(point, square_side);
                     route.window.screen.context_manager.request_render();
                 } else if cell_changed && route.window.screen.has_mouse_motion_and_drag()
                 {

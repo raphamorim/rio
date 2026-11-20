@@ -1935,13 +1935,30 @@ impl Screen<'_> {
         clipboard: &mut Clipboard,
         copy_on_select: bool,
     ) {
+        let primary = clipboard.has_selection();
+        if !primary && !copy_on_select {
+            return;
+        }
         let Some(text) = self.selection_text() else {
             return;
         };
-        if copy_on_select {
-            clipboard.set(ClipboardType::Clipboard, text.clone());
+        match (copy_on_select, primary) {
+            (true, true) => {
+                clipboard.set(ClipboardType::Clipboard, text.clone());
+                clipboard.set(ClipboardType::Selection, text);
+            }
+            (true, false) => clipboard.set(ClipboardType::Clipboard, text),
+            (false, true) => clipboard.set(ClipboardType::Selection, text),
+            (false, false) => {}
         }
-        clipboard.set(ClipboardType::Selection, text);
+    }
+
+    /// A pointer drag reaches `pos`: the selection it holds, if any,
+    /// extends to it, and the gesture is marked so the release copies.
+    pub fn drag_selection_to(&mut self, pos: Pos, side: Side) {
+        if self.update_selection(pos, side) {
+            self.mouse.selection_changed();
+        }
     }
 
     #[inline]
@@ -2496,9 +2513,7 @@ impl Screen<'_> {
         let display_offset = self.display_offset();
         let point = self.mouse_position(display_offset);
         let side = self.mouse.square_side;
-        if self.update_selection(point, side) {
-            self.mouse.selection_changed();
-        }
+        self.drag_selection_to(point, side);
     }
 
     #[inline]

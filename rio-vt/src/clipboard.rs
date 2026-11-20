@@ -91,6 +91,11 @@ impl Default for Clipboard {
 
 #[cfg(feature = "clipboard")]
 impl Clipboard {
+    /// Whether this platform has a primary selection to write to.
+    pub fn has_selection(&self) -> bool {
+        self.selection.is_some()
+    }
+
     pub fn set(&mut self, ty: ClipboardType, text: impl Into<String>) {
         let clipboard = match (ty, &mut self.selection) {
             (ClipboardType::Selection, Some(provider)) => provider,

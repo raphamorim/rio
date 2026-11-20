@@ -102,10 +102,7 @@ pub fn on_touch(
 
 #[inline]
 fn on_touch_start(route: &mut Route, touch: Touch) {
-    // A touch begins like a press: a selection made before it, from
-    // the keyboard say, is not what this touch made, and its end must
-    // not copy it.
-    route.window.screen.mouse.begin_press(MouseButton::Left);
+    route.window.screen.mouse.begin_touch();
     let touch_purpose = route.window.screen.touch_purpose();
     *touch_purpose = match mem::take(touch_purpose) {
         TouchPurpose::None => TouchPurpose::Tap(touch),
@@ -146,6 +143,10 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
 
                 route.window.screen.mouse.x = x;
                 route.window.screen.mouse.y = y;
+                // The selection anchors on the side of the cell the
+                // finger came down on, as a click does.
+                route.window.screen.mouse.square_side =
+                    route.window.screen.side_by_pos(x);
 
                 let now = Instant::now();
                 route.window.screen.mouse.last_click_timestamp = now;
@@ -201,10 +202,9 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
             // The finger extends the selection the touch started, as
             // a mouse drag does.
             let side = route.window.screen.side_by_pos(x);
+            route.window.screen.mouse.square_side = side;
             let pos = route.window.screen.mouse_position(0);
-            if route.window.screen.update_selection(pos, side) {
-                route.window.screen.mouse.selection_changed();
-            }
+            route.window.screen.drag_selection_to(pos, side);
             tracing::info!("select motion");
         }
         TouchPurpose::Invalid(_) => (),
