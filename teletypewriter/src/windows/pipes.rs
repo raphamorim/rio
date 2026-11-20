@@ -3,7 +3,6 @@ use corcovado::{
     event::Evented, Poll, PollOpt, Ready, Registration, SetReadiness, Token,
 };
 use miow::pipe::{AnonRead, AnonWrite};
-use parking_lot::{Condvar, Mutex};
 use windows_sys::Win32::System::IO::CancelSynchronousIo;
 
 use std::io;
@@ -13,16 +12,12 @@ use std::sync::{
     mpsc::{channel, Receiver, TryRecvError},
     Arc,
 };
-use std::thread::{spawn, JoinHandle};
-
-struct WaitTag {}
+use std::thread::{park, spawn, JoinHandle};
 
 struct EventedAnonReadInner {
     registration: Registration,
     readiness: SetReadiness,
     done: AtomicBool,
-    sig_buffer_not_full: Condvar,
-    wait_tag: Mutex<WaitTag>,
 }
 
 /// Wraps an AnonRead pipe so that it can be read asynchronously using mio.
@@ -65,17 +60,12 @@ impl EventedAnonRead {
 
         let done = AtomicBool::new(false);
 
-        let sig_buffer_not_full = Condvar::new();
-        let wait_tag = Mutex::new(WaitTag {});
-
         let (error_sender, error_receiver) = channel();
 
         let inner = Arc::new(EventedAnonReadInner {
             registration,
             readiness,
             done,
-            sig_buffer_not_full,
-            wait_tag,
         });
 
         let thread = {
@@ -111,21 +101,15 @@ impl EventedAnonRead {
                     // Write from the temp buffer into the producer
                     let mut written = 0usize;
                     while written < nbytes {
-                        // Wait for buffer to clear if need be. The ring
-                        // is looked at again under the lock, which the
-                        // other side takes before it notifies: a read
-                        // that lands after the look above is then either
-                        // seen here or notifies once this thread waits,
-                        // and is not lost between the two.
-                        if producer.is_full() {
-                            let mut wait_tag = inner.wait_tag.lock();
-                            while producer.is_full() && !inner.done.load(Ordering::SeqCst)
-                            {
-                                inner.sig_buffer_not_full.wait(&mut wait_tag);
-                            }
+                        // Wait for buffer to clear if need be. An
+                        // unpark is kept until the next park, so a read
+                        // that lands between the look at the ring and
+                        // the park still wakes this thread.
+                        while producer.is_full() {
                             if inner.done.load(Ordering::SeqCst) {
                                 return;
                             }
+                            park();
                         }
 
                         written += producer.write_from_slice(&tmp_buf[written..nbytes]);
@@ -183,10 +167,9 @@ impl io::Read for EventedAnonRead {
             }
         }
 
-        // Through the lock, so the worker is either yet to look at the
-        // ring or already waiting, and never between the two.
-        drop(self.inner.wait_tag.lock());
-        self.inner.sig_buffer_not_full.notify_one();
+        if let Some(thread) = &self.thread {
+            thread.thread().unpark();
+        }
         Ok(nbytes)
     }
 }
@@ -221,16 +204,15 @@ impl Drop for EventedAnonRead {
     fn drop(&mut self) {
         self.inner.done.store(true, Ordering::SeqCst);
 
-        drop(self.inner.wait_tag.lock());
-        self.inner.sig_buffer_not_full.notify_one();
-
         // A read that returned the worker's error has already joined
         // it: the pipe ended, as it does when the child exits.
         let Some(thread) = self.thread.take() else {
             return;
         };
 
-        // Stop reader thread waiting for pipe contents
+        // Stop reader thread waiting for room in the ring, or for pipe
+        // contents
+        thread.thread().unpark();
         unsafe {
             CancelSynchronousIo(thread.as_raw_handle());
         }
@@ -245,8 +227,6 @@ struct EventedAnonWriteInner {
     registration: Registration,
     readiness: SetReadiness,
     done: AtomicBool,
-    sig_buffer_not_empty: Condvar,
-    wait_tag: Mutex<WaitTag>,
 }
 
 /// Wraps an AnonWrite pipe so that it can be written asynchronously using mio.
@@ -274,15 +254,10 @@ impl EventedAnonWrite {
 
         let done = AtomicBool::new(false);
 
-        let sig_buffer_not_empty = Condvar::new();
-        let wait_tag = Mutex::new(WaitTag {});
-
         let inner = Arc::new(EventedAnonWriteInner {
             registration,
             readiness,
             done,
-            sig_buffer_not_empty,
-            wait_tag,
         });
 
         let (error_sender, error_receiver) = channel();
@@ -303,26 +278,20 @@ impl EventedAnonWrite {
                         return;
                     }
 
-                    // Read into temp buffer while holding the lock
+                    // Read into temp buffer
                     let nbytes = {
-                        // Wait for buffer to have contents. The ring is
-                        // looked at again under the lock, which the
-                        // other side takes before it notifies: a write
-                        // that lands after the look above is then either
-                        // seen here or notifies once this thread waits.
-                        // Without that its bytes stayed in the ring
-                        // until the next write, a key pressed and not
-                        // delivered until another one was.
-                        if consumer.is_empty() {
-                            let mut wait_tag = inner.wait_tag.lock();
-                            while consumer.is_empty()
-                                && !inner.done.load(Ordering::SeqCst)
-                            {
-                                inner.sig_buffer_not_empty.wait(&mut wait_tag);
-                            }
+                        // Wait for buffer to have contents. An unpark
+                        // is kept until the next park, so a write that
+                        // lands between the look at the ring and the
+                        // park still wakes this thread. Were it lost,
+                        // its bytes would stay in the ring until the
+                        // next write: a key pressed and not delivered
+                        // until another one was.
+                        while consumer.is_empty() {
                             if inner.done.load(Ordering::SeqCst) {
                                 return;
                             }
+                            park();
                         }
 
                         let nbytes = consumer.read_to_slice(&mut tmp_buf);
@@ -389,10 +358,9 @@ impl io::Write for EventedAnonWrite {
             }
         }
 
-        // Through the lock, so the worker is either yet to look at the
-        // ring or already waiting, and never between the two.
-        drop(self.inner.wait_tag.lock());
-        self.inner.sig_buffer_not_empty.notify_one();
+        if let Some(thread) = &self.thread {
+            thread.thread().unpark();
+        }
         Ok(nbytes)
     }
 
@@ -431,15 +399,14 @@ impl Drop for EventedAnonWrite {
     fn drop(&mut self) {
         self.inner.done.store(true, Ordering::SeqCst);
 
-        // Stop the writer thread waiting for contents
-        drop(self.inner.wait_tag.lock());
-        self.inner.sig_buffer_not_empty.notify_one();
-
         // A write that returned the worker's error has already joined
         // it.
         let Some(thread) = self.thread.take() else {
             return;
         };
+
+        // Stop the writer thread waiting for contents
+        thread.thread().unpark();
 
         thread
             .join()
