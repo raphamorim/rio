@@ -1911,15 +1911,37 @@ impl Screen<'_> {
         }
     }
 
-    pub fn copy_selection(&mut self, ty: ClipboardType, clipboard: &mut Clipboard) {
-        let terminal = self.context_manager.current_mut().terminal.lock();
-        let text = match terminal.selection_to_string().filter(|s| !s.is_empty()) {
-            Some(text) => text,
-            None => return,
-        };
-        drop(terminal);
+    /// The selected text, if the selection has any.
+    pub fn selection_text(&self) -> Option<String> {
+        let terminal = self.context_manager.current().terminal.lock();
+        terminal.selection_to_string().filter(|s| !s.is_empty())
+    }
 
-        clipboard.set(ty, text);
+    pub fn copy_selection(&mut self, ty: ClipboardType, clipboard: &mut Clipboard) {
+        if let Some(text) = self.selection_text() {
+            clipboard.set(ty, text);
+        }
+    }
+
+    /// The selection a mouse or touch gesture made is the primary
+    /// selection, the one a middle click pastes, whatever copy-on-select
+    /// says: that option is about the clipboard, which gets the same
+    /// text when it is on. Written once the gesture ends and not while
+    /// it moves, which would send the display server a copy per motion.
+    /// The text is built once for both. The clipboard drops the primary
+    /// write where there is no primary selection (macOS, Windows).
+    pub fn copy_gesture_selection(
+        &mut self,
+        clipboard: &mut Clipboard,
+        copy_on_select: bool,
+    ) {
+        let Some(text) = self.selection_text() else {
+            return;
+        };
+        if copy_on_select {
+            clipboard.set(ClipboardType::Clipboard, text.clone());
+        }
+        clipboard.set(ClipboardType::Selection, text);
     }
 
     #[inline]
@@ -1949,6 +1971,9 @@ impl Screen<'_> {
 
     #[inline]
     fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
+        // The selection changes here: the press under way, if one is,
+        // has made it, and its release copies it.
+        self.mouse.selection_gesture = true;
         let current = self.context_manager.current_mut();
         let mut terminal = current.terminal.lock();
         let selection = Selection::new(ty, point, side);
@@ -2013,6 +2038,8 @@ impl Screen<'_> {
             Some(selection) => selection,
             None => return,
         };
+        // A selection exists and this motion changes it.
+        self.mouse.selection_gesture = true;
 
         // Treat motion over message bar like motion over the last line.
         pos.row = std::cmp::min(pos.row, terminal.bottommost_line());
@@ -2797,7 +2824,7 @@ impl Screen<'_> {
 
     #[cfg(target_os = "macos")]
     pub fn start_window_drag(&mut self, window: &rio_window::window::Window) {
-        self.mouse.left_button_state = ElementState::Released;
+        self.mouse.release_lost(MouseButton::Left);
         let _ = window.drag_window();
     }
 
@@ -3545,7 +3572,7 @@ impl Screen<'_> {
                     self.mark_dirty();
                 }
             }
-            self.mouse.release_lost();
+            self.mouse.releases_lost();
         }
 
         // Which pane, if any, is focused from a program's view is the

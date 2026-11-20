@@ -13,7 +13,7 @@ use crate::watcher::configuration_file_updates;
 ))]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use raw_window_handle::HasDisplayHandle;
-use rio_backend::clipboard::{Clipboard, ClipboardType};
+use rio_backend::clipboard::Clipboard;
 use rio_backend::config::colors::{ColorRgb, NamedColor};
 use rio_window::application::ApplicationHandler;
 use rio_window::event::{
@@ -1499,9 +1499,13 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     if state == ElementState::Pressed {
                         let _ = route.window.screen.take_chrome_press();
                     } else if state == ElementState::Released
+                        && button == MouseButton::Right
+                    {
+                        route.window.screen.mouse.release_lost(button);
+                    } else if state == ElementState::Released
                         && button == MouseButton::Left
                     {
-                        route.window.screen.mouse.release_lost();
+                        route.window.screen.mouse.release_lost(button);
                         // A release swallowed here must also drop the hint
                         // latch, or a later chrome-consumed press would
                         // release against a hint it never landed on.
@@ -1560,6 +1564,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             }
                             _ => ClickState::Click,
                         };
+
+                        route.window.screen.mouse.begin_press(button);
 
                         let chrome_press = route.window.screen.take_chrome_press();
 
@@ -1626,6 +1632,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                         .window
                                         .screen
                                         .start_window_drag(&route.window.winit_window);
+                                    // The drag takes the pointer and the
+                                    // release never arrives, so the press
+                                    // ends here instead of starting a
+                                    // selection under the title bar.
+                                    return;
                                 }
                             }
 
@@ -1693,6 +1704,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .window
                                 .screen
                                 .mouse_report(code, ElementState::Pressed);
+                            route.window.screen.mouse.press_reported(button);
 
                             route.window.screen.process_mouse_bindings(
                                 button,
@@ -1706,12 +1718,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 let pos =
                                     route.window.screen.mouse_position(display_offset);
                                 route.window.screen.on_left_click(pos);
-                                // The click made or changed the selection;
-                                // its release copies it. Set here and not
-                                // in `on_left_click`, which touch input
-                                // calls too and never follows with a mouse
-                                // release.
-                                route.window.screen.mouse.selection_gesture = true;
                             }
 
                             route.request_redraw();
@@ -1731,6 +1737,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 && std::mem::take(
                                     &mut route.window.screen.mouse.selection_gesture,
                                 );
+                        // Whether the press of this button was reported to
+                        // the application; taken here for the same reason.
+                        let reported_press =
+                            route.window.screen.mouse.take_reported_press(button);
 
                         // Stop selection auto-scroll on button release.
                         if let MouseButton::Left | MouseButton::Right = button {
@@ -1777,12 +1787,15 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         } else {
                             None
                         };
-                        let hint_click = latched_hint.is_some();
 
-                        if !route.window.screen.modifiers.state().shift_key()
-                            && !hint_click
-                            && route.window.screen.mouse_mode()
-                        {
+                        // The release goes where the press went: to the
+                        // application when the press was reported, whatever
+                        // the modifiers say now. A selection made with Shift
+                        // held is copied even when Shift went up before the
+                        // button, and the application never sees a release
+                        // without its press. A press reported to a program
+                        // that has left mouse mode since gets no release.
+                        if reported_press && route.window.screen.mouse_mode() {
                             let code = match button {
                                 MouseButton::Left => 0,
                                 MouseButton::Middle => 1,
@@ -1843,23 +1856,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 }
                             }
                         } else if selection_gesture {
-                            // The selection this click or drag made becomes
-                            // the primary selection, the one a middle click
-                            // pastes, whatever copy-on-select says: that
-                            // option is about the clipboard. It is written
-                            // here and not while dragging, which would send
-                            // the display server a copy per motion.
-                            #[cfg(not(any(target_os = "macos", windows)))]
-                            route.window.screen.copy_selection(
-                                ClipboardType::Selection,
+                            route.window.screen.copy_gesture_selection(
                                 &mut self.router.clipboard,
+                                self.config.copy_on_select,
                             );
-                            if self.config.copy_on_select {
-                                route.window.screen.copy_selection(
-                                    ClipboardType::Clipboard,
-                                    &mut self.router.clipboard,
-                                );
-                            }
                         }
                     }
                 }
@@ -2155,7 +2155,6 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.screen.mouse.square_side = square_side;
 
                 if is_selecting {
-                    route.window.screen.mouse.selection_gesture = true;
                     route.window.screen.update_selection(point, square_side);
                     route.window.screen.context_manager.request_render();
                 } else if cell_changed && route.window.screen.has_mouse_motion_and_drag()
@@ -2341,7 +2340,12 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
             }
             WindowEvent::Touch(touch) => {
-                on_touch(route, touch);
+                on_touch(
+                    route,
+                    touch,
+                    &mut self.router.clipboard,
+                    self.config.copy_on_select,
+                );
             }
 
             WindowEvent::Focused(focused) => {
@@ -2354,11 +2358,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 route.window.focus_seen = true;
 
                 // The release of a divider drag never arrives once the
-                // window lost focus, so the drag ends here, button state
-                // included, or the next motion after refocus would read
-                // as a held button.
+                // window lost focus, so the drag ends here; the button
+                // state follows in `on_focus_change` below.
                 if !focused && route.window.screen.context_manager.end_border_drag() {
-                    route.window.screen.mouse.release_lost();
                     route.window.screen.mouse.hint_click_latched = None;
                     route.window.winit_window.set_cursor(CursorIcon::Default);
                 }

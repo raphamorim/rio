@@ -83,13 +83,20 @@ impl TouchZoom {
 }
 
 #[inline]
-pub fn on_touch(route: &mut Route, touch: Touch) {
+pub fn on_touch(
+    route: &mut Route,
+    touch: Touch,
+    clipboard: &mut rio_backend::clipboard::Clipboard,
+    copy_on_select: bool,
+) {
     match touch.phase {
         TouchPhase::Started => {
             on_touch_start(route, touch);
         }
         TouchPhase::Moved => on_touch_motion(route, touch),
-        TouchPhase::Ended | TouchPhase::Cancelled => on_touch_end(route, touch),
+        TouchPhase::Ended | TouchPhase::Cancelled => {
+            on_touch_end(route, touch, clipboard, copy_on_select)
+        }
     }
 }
 
@@ -194,7 +201,12 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
 }
 
 #[inline]
-fn on_touch_end(route: &mut Route, touch: Touch) {
+fn on_touch_end(
+    route: &mut Route,
+    touch: Touch,
+    clipboard: &mut rio_backend::clipboard::Clipboard,
+    copy_on_select: bool,
+) {
     on_touch_motion(route, touch);
 
     let touch_purpose = route.window.screen.touch_purpose();
@@ -253,5 +265,15 @@ fn on_touch_end(route: &mut Route, touch: Touch) {
             tracing::info!("scroll end");
         }
         TouchPurpose::None => (),
+    }
+
+    // A touch ends like a mouse release: the selection it made, by a
+    // drag or by the tap above, is copied; a tap's fresh selection is
+    // empty and copies nothing.
+    if std::mem::take(&mut route.window.screen.mouse.selection_gesture) {
+        route
+            .window
+            .screen
+            .copy_gesture_selection(clipboard, copy_on_select);
     }
 }
