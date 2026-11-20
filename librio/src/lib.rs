@@ -921,17 +921,31 @@ impl Surface {
         self.write(text.as_bytes().to_vec());
     }
 
-    /// Paste text the way Rio does, see [`rio_vt::paste::encode`]: its
-    /// control bytes as spaces so it can't end the bracket or act as tty
-    /// input, between the bracketed paste markers when the program asked
-    /// for them (mode 2004) with its line endings as they are, and
+    /// Paste text the way Rio does, see [`rio_vt::paste::encode_in_place`]:
+    /// its control bytes as spaces so it can't end the bracket or act as
+    /// tty input, between the bracketed paste markers when the program
+    /// asked for them (mode 2004) with its line endings as they are, and
     /// otherwise with LF as CR, what Enter sends.
-    pub fn paste(&self, text: &str) {
+    ///
+    /// A `String` is encoded in its own buffer and sent as is, never
+    /// copied; a `&str` is copied once, since the writer thread needs the
+    /// bytes after this returns.
+    pub fn paste(&self, text: impl Into<String>) {
+        let text = text.into();
         if text.is_empty() {
             return;
         }
         let bracketed = self.terminal.lock().mode().contains(Mode::BRACKETED_PASTE);
-        self.write(rio_vt::paste::encode(text, bracketed));
+        let encoded = rio_vt::paste::encode_owned(text, bracketed);
+        // `write` snaps the view back once, for the whole paste; the rest
+        // follows in order.
+        if encoded.start.is_empty() {
+            self.write(encoded.text);
+        } else {
+            self.write(encoded.start);
+            self.send(encoded.text);
+            self.send(encoded.end);
+        }
     }
 
     /// Whether `text` can be pasted without asking the user first, for a

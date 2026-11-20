@@ -2,7 +2,7 @@
 
 ## 0.6.0 (unreleased)
 
-- **Pastes are sent exactly as xterm sends them.** Unbracketed, only LF becomes CR, so a CRLF line ending is two Enters, as in xterm; it was one. The 8-bit CSI character (U+009B) is no longer replaced, and only `ESC [201~` counts as a bracketed paste end, so a pasted U+009B is text like any other character ([#2116](https://github.com/raphamorim/rio/pull/2116)).
+- **Pastes are sent exactly as xterm sends them.** Unbracketed, only LF becomes CR, so a CRLF line ending is two Enters, as in xterm; it was one. The 8-bit CSI character (U+009B) is no longer replaced, and only `ESC [201~` counts as a bracketed paste end, so a pasted U+009B is text like any other character. A paste is encoded in its own buffer and no longer copied, about three times faster: 32 MB in 4 ms ([#2116](https://github.com/raphamorim/rio/pull/2116)).
 
 - **Pastes that could run commands are confirmed first, and pasted control bytes can't act as input.** A paste is checked before it reaches the program: when it isn't bracketed, a line break would run each line, so Rio asks first; a paste holding the end of a bracketed paste is always asked about. `paste-protection = false` turns this off, and `paste-bracketed-safe = false` asks about line breaks in bracketed pastes too. Control bytes in a paste are now sent as spaces in either mode, as xterm does: not only ESC and ^C, which were dropped, but ^Z and ^\ (which would suspend or quit the program), the line-editing and flow-control keys, NUL and DEL; and in bracketed paste the 8-bit CSI too. Bracketed pastes keep their line endings. librio hosts paste the same way, and `rio_surface_paste_is_safe` tells them when to ask ([#2115](https://github.com/raphamorim/rio/pull/2115)).
 

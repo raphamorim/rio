@@ -465,7 +465,7 @@ impl Route<'_> {
                             if let Some(text) =
                                 self.window.screen.renderer.confirm_paste.take()
                             {
-                                self.window.screen.paste(&text, true);
+                                self.window.screen.paste(text, true);
                             }
                             self.request_overlay_redraw();
                         }
@@ -473,7 +473,7 @@ impl Route<'_> {
                             if let Some(text) =
                                 self.window.screen.renderer.confirm_paste.take()
                             {
-                                self.window.screen.paste(&text, true);
+                                self.window.screen.paste(text, true);
                             }
                             self.request_overlay_redraw();
                         }
