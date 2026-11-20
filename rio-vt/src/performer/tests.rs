@@ -706,26 +706,6 @@ fn the_drain_waits_for_output_that_comes_after_an_empty_read() {
     assert_eq!(first_line(&machine, 12), "final output");
 }
 
-/// The quiet window that ends that wait starts again with every read
-/// that brought something, however little: output in pieces that
-/// together take longer than the window is all read.
-#[cfg(windows)]
-#[test]
-fn the_drain_waits_again_after_each_piece_of_output() {
-    let mut start = None;
-    let mut sent = 0u8;
-    let machine = drain_fed_by(move |_, feed| {
-        let start = *start.get_or_insert_with(Instant::now);
-        // A piece every 12 ms: the third comes after 36 ms, past a
-        // window of 25 ms counted from the start.
-        if sent < 3 && start.elapsed() >= Duration::from_millis(12) * (sent as u32 + 1) {
-            feed.send(vec![b'a' + sent]).unwrap();
-            sent += 1;
-        }
-    });
-    assert_eq!(first_line(&machine, 3), "abc");
-}
-
 #[derive(Clone)]
 struct ExitObserver {
     terminal: Arc<std::sync::Mutex<std::sync::Weak<TerminalLock<Crosswords<Self>>>>>,

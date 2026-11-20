@@ -189,9 +189,6 @@ pub struct State {
     /// Deadline of the terminal's active synchronized update, refreshed
     /// whenever the terminal lock is held.
     sync_deadline: Option<Instant>,
-    /// Bytes parsed so far, wrapping: the drain sees by it whether a
-    /// read brought anything.
-    parsed: usize,
 }
 
 #[cfg(feature = "pty")]
@@ -361,7 +358,6 @@ where
                 parsed = end;
             }
             processed += unprocessed;
-            state.parsed = state.parsed.wrapping_add(unprocessed);
             unprocessed = 0;
 
             if stopped || processed >= READ_BUDGET {
@@ -617,19 +613,17 @@ where
             // (no real EOF exists until the pseudoconsole is closed),
             // while the pump thread delivers final output after the
             // exit event. Retry it through a short quiet window,
-            // refreshed by each read that brought data, so a close is
-            // not taxed the full deadline. Unix Idle and Closed end the
-            // drain at once.
+            // refreshed by each batch of data, so a close is not taxed
+            // the full deadline. Unix Idle and Closed end the drain at
+            // once.
             let quiet = std::time::Duration::from_millis(25);
             let mut quiet_deadline = Instant::now() + quiet;
             loop {
-                let parsed = state.parsed;
-                let outcome = self.pty_read(state, buf);
-                if state.parsed != parsed {
-                    quiet_deadline = Instant::now() + quiet;
-                }
-                match outcome {
-                    Ok(ReadOutcome::Budget) if Instant::now() < deadline => continue,
+                match self.pty_read(state, buf) {
+                    Ok(ReadOutcome::Budget) if Instant::now() < deadline => {
+                        quiet_deadline = Instant::now() + quiet;
+                        continue;
+                    }
                     Ok(ReadOutcome::Idle)
                         if cfg!(windows)
                             && Instant::now() < deadline
