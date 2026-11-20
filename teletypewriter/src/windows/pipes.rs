@@ -35,6 +35,8 @@ pub struct EventedAnonRead {
     consumer: SpscBufferReader,
     inner: Arc<EventedAnonReadInner>,
     error_receiver: Receiver<String>,
+    // The worker's error, kept until the ring it filled is read
+    ended: Option<String>,
 }
 
 /// Wakes a worker that `done` was set for, out of its park or out of
@@ -144,6 +146,22 @@ impl EventedAnonRead {
             consumer,
             inner,
             error_receiver,
+            ended: None,
+        }
+    }
+}
+
+impl EventedAnonRead {
+    /// Takes note of the worker's end, which it reports once, after
+    /// the last bytes it put in the ring.
+    fn look_for_end(&mut self) {
+        if self.ended.is_some() {
+            return;
+        }
+        match self.error_receiver.try_recv() {
+            Ok(err) => self.ended = Some(err),
+            Err(TryRecvError::Disconnected) => self.ended = Some(String::new()),
+            Err(TryRecvError::Empty) => {}
         }
     }
 }
@@ -154,29 +172,39 @@ impl io::Read for EventedAnonRead {
             return Err(io::Error::new(io::ErrorKind::BrokenPipe, ""));
         }
 
-        match self.error_receiver.try_recv() {
-            Ok(err) => {
-                // Other thread will be closing
-                self.thread.take().unwrap().join().unwrap();
-                return Err(io::Error::new(io::ErrorKind::BrokenPipe, err));
-            }
-            Err(TryRecvError::Disconnected) => {
-                return Err(io::Error::new(io::ErrorKind::BrokenPipe, ""))
-            }
-            Err(TryRecvError::Empty) => {}
-        }
+        // Looked for before the ring is read: the worker ends after its
+        // last write to the ring, so once the end is seen here the ring
+        // gets no more, and what it holds is read before the end is
+        // returned. Returned first, the end would discard the last of
+        // the output.
+        self.look_for_end();
 
         let nbytes = self.consumer.read_to_slice(buf);
 
         if self.consumer.is_empty() {
+            if self.ended.is_some() {
+                if nbytes == 0 {
+                    // The worker is closing, or has closed
+                    if let Some(thread) = self.thread.take() {
+                        let _ = thread.join();
+                    }
+                    let err = self.ended.take().unwrap_or_default();
+                    return Err(io::Error::new(io::ErrorKind::BrokenPipe, err));
+                }
+                // Left readable, for the read that returns the end.
+                return Ok(nbytes);
+            }
+
             self.inner.readiness.set_readiness(Ready::empty())?;
 
             // Possible race: the consumer may think the queue is empty but by the time
-            // the readiness is set the producer thread may have written data
+            // the readiness is set the producer thread may have written data, or
+            // have ended, which it also says by a readiness that was just undone
             //
             // We avoid the race by re-checking the queue is empty like this, and undo the
             // readiness setting if necessary.
-            if !self.consumer.is_empty() {
+            self.look_for_end();
+            if !self.consumer.is_empty() || self.ended.is_some() {
                 self.inner.readiness.set_readiness(Ready::readable())?;
             }
         }
@@ -491,6 +519,36 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 
         drop(reader);
+    }
+
+    /// What was written to the pipe before it ended is read before
+    /// the end is, though the worker reported the end long before.
+    #[test]
+    fn a_reader_returns_the_last_bytes_before_the_end_of_its_pipe() {
+        let (conout, mut host) = miow::pipe::anonymous(0).unwrap();
+        let mut reader = EventedAnonRead::new(conout);
+        host.write_all(b"last").unwrap();
+        drop(host);
+        std::thread::sleep(Duration::from_millis(200));
+
+        let mut got = Vec::new();
+        let mut buf = [0u8; 3];
+        let mut tries = 0;
+        let err = loop {
+            match reader.read(&mut buf) {
+                Ok(nbytes) => {
+                    got.extend_from_slice(&buf[..nbytes]);
+                    tries += 1;
+                    assert!(tries < 10_000, "the end of the pipe was not reported");
+                    if nbytes == 0 {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                }
+                Err(err) => break err,
+            }
+        };
+        assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(got, b"last");
     }
 
     /// A reader is dropped at once, when its worker may not have got
