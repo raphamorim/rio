@@ -29,7 +29,7 @@ fn expand_working_dir(dir: &str) -> Result<Option<String>, String> {
         "inherit" => Ok(None),
         "home" => std::env::home_dir()
             .map(|home| Some(home.to_string_lossy().into_owned()))
-            .ok_or_else(|| "home has no home directory".to_owned()),
+            .ok_or_else(|| "home: there is no home directory".to_owned()),
         _ => expand_tilde(dir).map(Some).ok_or_else(|| {
             format!("{dir:?} starts with ~ but there is no home directory")
         }),

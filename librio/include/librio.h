@@ -157,6 +157,9 @@ typedef struct {
 typedef struct {
   /* NULL means $SHELL, falling back to /bin/sh. */
   const char *shell;
+  /* NULL or "inherit" means the current directory; "home" and a leading ~
+     mean the home directory. One a shell can't start in falls back to the
+     current directory. */
   const char *working_dir;
   uint16_t cols;
   uint16_t rows;

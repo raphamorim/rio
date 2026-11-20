@@ -107,7 +107,7 @@ impl std::fmt::Display for RioErrorType {
             RioErrorType::InvalidWorkingDirectory(message) => {
                 write!(
                     f,
-                    "Could not use the configured working directory:\n\n{message}\n\nShells start in the current directory instead. Check `working-dir` in your config."
+                    "Could not start the shell in its working directory:\n\n{message}\n\nIt starts in the current directory instead. Check `working-dir` in your config."
                 )
             }
         }

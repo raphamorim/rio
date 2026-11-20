@@ -458,6 +458,10 @@ impl EventListener for Listener {
 pub struct SurfaceDesc {
     pub shell: Option<String>,
     pub args: Vec<String>,
+    /// Where the shell starts: a path (a leading `~` is the home
+    /// directory), `home`, or `inherit` (as `None`) for the host's current
+    /// directory. One a shell can't be started in falls back to the
+    /// current directory, with a warning in the log.
     pub working_dir: Option<String>,
     pub cols: u16,
     pub rows: u16,
