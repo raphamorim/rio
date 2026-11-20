@@ -364,7 +364,11 @@ fn encode_legacy(
     let ctrl = mods.contains(Modifiers::CTRL);
 
     let base: Vec<u8> = match key {
-        Key::Enter => vec![if ctrl { b'\n' } else { b'\r' }],
+        Key::Enter => vec![if ctrl || mods.contains(Modifiers::SHIFT) {
+            b'\n'
+        } else {
+            b'\r'
+        }],
         Key::Tab => {
             if mods.contains(Modifiers::SHIFT) {
                 return Some(b"\x1b[Z".to_vec());
@@ -428,6 +432,11 @@ fn encode_legacy(
 /// sequence.
 fn needs_disambiguation(key: Key, mods: Modifiers) -> bool {
     if mods.contains(Modifiers::CTRL) || mods.contains(Modifiers::ALT) {
+        return true;
+    }
+    // Shift+Enter is the legacy form's Enter, so the chord needs a sequence
+    // of its own when the terminal asked to see modified keys.
+    if key == Key::Enter && mods.contains(Modifiers::SHIFT) {
         return true;
     }
     matches!(key, Key::Escape)
@@ -567,6 +576,25 @@ mod tests {
                 &kitty(KittyFlags::DISAMBIGUATE)
             ),
             Some(b"\x1b[13;5u".to_vec())
+        );
+    }
+
+    #[test]
+    fn shift_enter_is_a_linefeed_in_legacy_mode() {
+        assert_eq!(
+            encode(&with_mods(Key::Enter, Modifiers::SHIFT), &legacy()),
+            Some(b"\n".to_vec())
+        );
+    }
+
+    #[test]
+    fn shift_enter_is_disambiguated_by_kitty() {
+        assert_eq!(
+            encode(
+                &with_mods(Key::Enter, Modifiers::SHIFT),
+                &kitty(KittyFlags::DISAMBIGUATE)
+            ),
+            Some(b"\x1b[13;2u".to_vec())
         );
     }
 
