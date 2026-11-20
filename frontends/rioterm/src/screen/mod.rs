@@ -4654,6 +4654,9 @@ impl Screen<'_> {
 
                 frame_grids.push((grid, uniforms));
             }
+            // Every panel's rows are built: the run cache may let go
+            // of what no row asks for any more.
+            rasterizer.end_frame();
 
             if should_present {
                 if frame_grids.is_empty() {

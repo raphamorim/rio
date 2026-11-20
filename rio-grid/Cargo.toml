@@ -18,3 +18,10 @@ rio-unicode = { workspace = true }
 rustc-hash = { workspace = true }
 smallvec = { workspace = true }
 rapidhash = { version = "4.4.1", default-features = false }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "grid_rows"
+harness = false
