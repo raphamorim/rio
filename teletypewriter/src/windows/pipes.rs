@@ -143,12 +143,17 @@ impl EventedAnonRead {
 
                         written += producer.write_from_slice(&tmp_buf[written..nbytes]);
 
-                        if !inner.readiness.readiness().is_readable() {
-                            try_or_send!(
-                                inner.readiness.set_readiness(Ready::readable()),
-                                error_sender
-                            );
-                        }
+                        // Set whatever it reads now. `read` clears it
+                        // and then looks at the ring again; a look at
+                        // the readiness from here could be a stale one,
+                        // and both sides would then miss each other.
+                        // Two swaps of the readiness are in order, and
+                        // the later side sees what the earlier did to
+                        // the ring before its own.
+                        try_or_send!(
+                            inner.readiness.set_readiness(Ready::readable()),
+                            error_sender
+                        );
                     }
                 }
             })
@@ -375,12 +380,13 @@ impl EventedAnonWrite {
 
                         let nbytes = consumer.read_to_slice(&mut tmp_buf);
 
-                        if !inner.readiness.readiness().is_writable() {
-                            try_or_send!(
-                                inner.readiness.set_readiness(Ready::writable()),
-                                error_sender
-                            );
-                        }
+                        // Set whatever it reads now, as the reader's
+                        // worker does and for the same reason: `write`
+                        // clears it and then looks at the ring again.
+                        try_or_send!(
+                            inner.readiness.set_readiness(Ready::writable()),
+                            error_sender
+                        );
 
                         nbytes
                     };
