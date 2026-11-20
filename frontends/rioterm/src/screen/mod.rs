@@ -1051,7 +1051,7 @@ impl Screen<'_> {
                 && binding.action == Act::PasteSelection
             {
                 let content = clipboard.get(ClipboardType::Selection);
-                self.paste_from_clipboard(&content);
+                self.paste_from_clipboard(content);
             }
         }
     }
@@ -1110,18 +1110,18 @@ impl Screen<'_> {
                 match &action {
                     Act::Run(program) => self.exec(program.program(), program.args()),
                     Act::Esc(s) => {
-                        self.paste(s, false);
+                        self.paste(s.clone(), false);
                     }
                     Act::Paste => {
                         let content = clipboard.get(ClipboardType::Clipboard);
-                        self.paste_from_clipboard(&content);
+                        self.paste_from_clipboard(content);
                     }
                     Act::ClearSelection => {
                         self.clear_selection();
                     }
                     Act::PasteSelection => {
                         let content = clipboard.get(ClipboardType::Selection);
-                        self.paste_from_clipboard(&content);
+                        self.paste_from_clipboard(content);
                     }
                     Act::Copy => {
                         self.copy_selection(ClipboardType::Clipboard, clipboard);
@@ -3705,22 +3705,25 @@ impl Screen<'_> {
     /// Paste what the user pasted from a clipboard, first asking them
     /// if it could run commands (`paste-protection`): the text is held by
     /// the confirmation dialog, which pastes it on yes.
-    pub fn paste_from_clipboard(&mut self, text: &str) {
+    pub fn paste_from_clipboard(&mut self, text: String) {
         let bracketed = self.get_mode().contains(Mode::BRACKETED_PASTE);
         if !self.search_active()
             && self
                 .renderer
                 .confirm_paste
-                .needs_confirmation(text, bracketed)
+                .needs_confirmation(&text, bracketed)
         {
-            self.renderer.confirm_paste.hold(text.to_owned(), bracketed);
+            self.renderer.confirm_paste.hold(text, bracketed);
             self.mark_dirty();
             return;
         }
         self.paste(text, true);
     }
 
-    pub fn paste(&mut self, text: &str, bracketed: bool) {
+    /// Paste `text`, bracketed when `bracketed` and the program asked for
+    /// it. The text is encoded in its own buffer and written between the
+    /// markers, never copied: a large paste costs one pass over it.
+    pub fn paste(&mut self, text: String, bracketed: bool) {
         if self.search_active() {
             for c in text.chars() {
                 self.search_input(c);
@@ -3738,18 +3741,20 @@ impl Screen<'_> {
 
             // The markers, and the text with its control bytes as
             // spaces so it can't end the bracket or act as tty input.
-            let payload = rio_backend::paste::encode(text, true);
-            self.ctx_mut().current_mut().messenger.send_write(payload);
+            let encoded = rio_backend::paste::encode_owned(text, true);
+            let messenger = &self.ctx_mut().current_mut().messenger;
+            messenger.send_write(encoded.start);
+            messenger.send_write(encoded.text);
+            messenger.send_write(encoded.end);
         } else {
             let payload = if bracketed {
                 // The program can't tell a paste from typing: control
-                // bytes become spaces and a line break is what Enter
-                // sends.
-                rio_backend::paste::encode(text, false)
+                // bytes become spaces and LF is what Enter sends.
+                rio_backend::paste::encode_owned(text, false).text
             } else {
                 // When we explicitly disable bracketed paste don't manipulate with the input,
                 // so we pass user input as is.
-                text.to_owned().into_bytes()
+                text.into_bytes()
             };
 
             self.ctx_mut().current_mut().messenger.send_write(payload);
@@ -3850,7 +3855,7 @@ impl Screen<'_> {
             }
             PaletteAction::Paste => {
                 let content = clipboard.get(ClipboardType::Clipboard);
-                self.paste_from_clipboard(&content);
+                self.paste_from_clipboard(content);
             }
             PaletteAction::SearchForward => {
                 self.start_search(Direction::Right);
@@ -4936,7 +4941,7 @@ impl Screen<'_> {
                     clipboard.set(ClipboardType::Clipboard, hint_match.text.clone());
                 }
                 HintInternalAction::Paste => {
-                    self.paste(&hint_match.text, true);
+                    self.paste(hint_match.text.clone(), true);
                 }
                 HintInternalAction::Select => {
                     // Set selection to the hint match

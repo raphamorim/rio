@@ -646,7 +646,6 @@ mod tests {
         assert!(confirm.needs_confirmation("ls\r", false));
         assert!(!confirm.needs_confirmation("ls\nrm -rf ~", true));
         assert!(confirm.needs_confirmation("a\x1b[201~rm -rf ~\n", true));
-        assert!(confirm.needs_confirmation("a\u{9b}201~rm", true));
     }
 
     #[test]

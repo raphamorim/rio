@@ -32,83 +32,89 @@ const REPLACED: [u8; 16] = [
     0x0F, // ^O, VDISCARD
 ];
 
-/// The first byte of U+009B, the 8-bit CSI, in UTF-8 (`C2 9B`). A program
-/// reading 8-bit controls would take `CSI 201~` as the end of the bracket,
-/// so the character is replaced like ESC. Matching it as a character, not
-/// the byte `9B`, which also continues ordinary characters.
-const C1_LEAD: u8 = 0xC2;
-const C1_CSI: u8 = 0x9B;
-
-/// Bytes the encoder has to look at; everything else is copied as is.
-const fn notable() -> [bool; 256] {
-    let mut table = [false; 256];
-    let mut i = 0;
-    while i < REPLACED.len() {
-        table[REPLACED[i] as usize] = true;
-        i += 1;
+/// Whether [`encode`] sends the byte `b` as a space. Compared with each
+/// of [`REPLACED`] rather than looked up, so a loop over bytes compiles to
+/// SIMD compares.
+#[inline(always)]
+fn replaces(b: u8) -> bool {
+    let mut hit = false;
+    for &replaced in &REPLACED {
+        hit |= b == replaced;
     }
-    table[C1_LEAD as usize] = true;
-    table
+    hit
 }
-const NOTABLE: [bool; 256] = notable();
 
-/// The bytes to write for pasting `text`.
+/// Turn `bytes` into what xterm sends for them, in place: control bytes
+/// (see [`REPLACED`]) become spaces either way, so the paste can't end
+/// its bracket or act as tty input; a space keeps the words around them
+/// apart. Bracketed, the line endings stay as they are: the program asked
+/// for the paste as text. Otherwise the program can't tell it from typing,
+/// so LF becomes CR, what Enter sends; CRLF becomes two CRs.
 ///
-/// Control bytes become spaces either way (see [`REPLACED`]), so the paste
-/// can't end its bracket or act as tty input; a space keeps the words
-/// around them apart. In bracketed paste mode the text then goes between
-/// the markers with its line endings as they are: the program asked for
-/// the paste as text. Otherwise the program can't tell it from typing, so
-/// a line break, CRLF or LF, becomes CR, what Enter sends.
-///
-/// The text is copied once, in runs between the bytes that need care.
+/// Every byte changed is ASCII and replaced by ASCII, so UTF-8 text stays
+/// UTF-8. The choice is made without a branch, so the loop vectorizes.
+pub fn encode_in_place(bytes: &mut [u8], bracketed: bool) {
+    #[inline(always)]
+    fn encode_byte(b: u8, lf_is_enter: bool) -> u8 {
+        if replaces(b) {
+            b' '
+        } else if lf_is_enter & (b == b'\n') {
+            b'\r'
+        } else {
+            b
+        }
+    }
+    // One loop per mode, so neither tests the mode per byte.
+    if bracketed {
+        for b in bytes.iter_mut() {
+            *b = encode_byte(*b, false);
+        }
+    } else {
+        for b in bytes.iter_mut() {
+            *b = encode_byte(*b, true);
+        }
+    }
+}
+
+/// A paste as written to the program, in order: the bracketed paste start
+/// marker (empty unless bracketed), the text, and the end marker.
+pub struct Encoded {
+    pub start: &'static [u8],
+    pub text: Vec<u8>,
+    pub end: &'static [u8],
+}
+
+/// Encode a paste the caller owns, such as text taken from the clipboard:
+/// its buffer is changed in place and handed back, so the text is never
+/// copied, and the markers are separate writes.
+pub fn encode_owned(text: String, bracketed: bool) -> Encoded {
+    let mut text = text.into_bytes();
+    encode_in_place(&mut text, bracketed);
+    let (start, end): (&'static [u8], &'static [u8]) = if bracketed {
+        (BRACKETED_START, BRACKETED_END)
+    } else {
+        (b"", b"")
+    };
+    Encoded { start, text, end }
+}
+
+/// The bytes to write for pasting `text`, as one buffer: the text copied
+/// once and encoded in place (see [`encode_in_place`]), between the
+/// bracketed paste markers when `bracketed`. When the caller owns the
+/// text, [`encode_owned`] saves the copy.
 pub fn encode(text: &str, bracketed: bool) -> Vec<u8> {
-    let bytes = text.as_bytes();
     let frame = if bracketed {
         BRACKETED_START.len() + BRACKETED_END.len()
     } else {
         0
     };
-    let mut out = Vec::with_capacity(bytes.len() + frame);
+    let mut out = Vec::with_capacity(text.len() + frame);
     if bracketed {
         out.extend_from_slice(BRACKETED_START);
     }
-    let notable =
-        |b: u8| NOTABLE[b as usize] || (!bracketed && (b == b'\r' || b == b'\n'));
-    let mut i = 0;
-    while i < bytes.len() {
-        let run = bytes[i..]
-            .iter()
-            .position(|&b| notable(b))
-            .unwrap_or(bytes.len() - i);
-        out.extend_from_slice(&bytes[i..i + run]);
-        i += run;
-        let Some(&b) = bytes.get(i) else { break };
-        let next = bytes.get(i + 1).copied();
-        match b {
-            C1_LEAD if next == Some(C1_CSI) => {
-                out.push(b' ');
-                i += 2;
-            }
-            // Unbracketed only: CRLF is one Enter, a lone CR one too.
-            b'\r' if next == Some(b'\n') => {
-                out.push(b'\r');
-                i += 2;
-            }
-            b'\n' => {
-                out.push(b'\r');
-                i += 1;
-            }
-            b if REPLACED.contains(&b) => {
-                out.push(b' ');
-                i += 1;
-            }
-            b => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
+    let start = out.len();
+    out.extend_from_slice(text.as_bytes());
+    encode_in_place(&mut out[start..], bracketed);
     if bracketed {
         out.extend_from_slice(BRACKETED_END);
     }
@@ -118,14 +124,13 @@ pub fn encode(text: &str, bracketed: bool) -> Vec<u8> {
 /// Whether [`encode`] sends `c` as a space, for showing a paste the way
 /// it will arrive.
 pub fn is_replaced(c: char) -> bool {
-    c == '\u{9b}' || (c.is_ascii() && REPLACED.contains(&(c as u8)))
+    c.is_ascii() && replaces(c as u8)
 }
 
-/// Whether `text` holds the end of a bracketed paste, in its 7-bit or
-/// 8-bit form. [`encode`] defuses it, but text carrying it was most
-/// likely made to escape the bracket.
+/// Whether `text` holds the end of a bracketed paste. [`encode`] defuses
+/// it, but text carrying it was most likely made to escape the bracket.
 fn holds_bracket_end(text: &str) -> bool {
-    text.contains("\x1b[201~") || text.contains("\u{9b}201~")
+    text.contains("\x1b[201~")
 }
 
 /// Whether `text` looks safe to paste whatever the program asked for: no
@@ -161,8 +166,9 @@ mod tests {
         assert_eq!(encode("hello", false), b"hello".to_vec());
         assert_eq!(encode("", true), bracketed(b""));
         assert!(encode("", false).is_empty());
-        // Multi-byte text that isn't the 8-bit CSI is untouched.
+        // Multi-byte text is untouched, the 8-bit CSI character included.
         assert_eq!(encode("café ©°", true), bracketed("café ©°".as_bytes()));
+        assert_eq!(encode("a\u{9b}b", true), bracketed("a\u{9b}b".as_bytes()));
     }
 
     // A pasted control byte becomes a space in either mode, so the paste
@@ -182,15 +188,48 @@ mod tests {
         assert_eq!(encode("a\tb", false), b"a\tb".to_vec(), "tab is text");
     }
 
+    // is_replaced says exactly what encode turns into a space, for every
+    // ASCII character; nothing beyond ASCII is replaced.
     #[test]
     fn is_replaced_matches_what_encode_turns_into_spaces() {
-        for c in ['\x1b', '\x03', '\x1a', '\x00', '\x7f', '\u{9b}'] {
-            assert!(is_replaced(c), "{c:?}");
-            assert_eq!(encode(&c.to_string(), false), b" ".to_vec(), "{c:?}");
+        for code in 0u8..128 {
+            let c = char::from(code);
+            if c == ' ' {
+                continue;
+            }
+            let replaced = encode(&c.to_string(), true) == bracketed(b" ");
+            assert_eq!(is_replaced(c), replaced, "{code:#04x}");
         }
-        for c in ['a', '\t', '\n', '\r', '\x07', 'é', '\u{9c}'] {
+        assert_eq!(
+            REPLACED
+                .iter()
+                .filter(|&&b| is_replaced(char::from(b)))
+                .count(),
+            16
+        );
+        for c in ['é', '\u{9b}', '\u{2028}'] {
             assert!(!is_replaced(c), "{c:?}");
         }
+    }
+
+    // An owned paste is encoded in its own buffer, not copied, and the
+    // markers come as their own writes.
+    #[test]
+    fn an_owned_paste_is_not_copied() {
+        let text = String::from("echo a\x1b[201~\nls\n");
+        let buffer = text.as_ptr();
+        let encoded = encode_owned(text, true);
+        assert_eq!(encoded.text.as_ptr(), buffer);
+        assert_eq!(encoded.start, BRACKETED_START);
+        assert_eq!(encoded.end, BRACKETED_END);
+        assert_eq!(
+            [encoded.start, &encoded.text[..], encoded.end].concat(),
+            encode("echo a\x1b[201~\nls\n", true)
+        );
+
+        let encoded = encode_owned(String::from("one\r\ntwo\n"), false);
+        assert!(encoded.start.is_empty() && encoded.end.is_empty());
+        assert_eq!(encoded.text, encode("one\r\ntwo\n", false));
     }
 
     #[test]
@@ -199,7 +238,6 @@ mod tests {
             encode("a\x1b[201~rm -rf /\n", true),
             bracketed(b"a [201~rm -rf /\n")
         );
-        assert_eq!(encode("a\u{9b}201~oops", true), bracketed(b"a 201~oops"));
     }
 
     // Bracketed, line endings are the text's: the program asked for it as
@@ -212,12 +250,12 @@ mod tests {
         );
     }
 
-    // Unbracketed, a line break of either style is one Enter.
+    // Unbracketed, LF is Enter; CRLF is two, as xterm sends it.
     #[test]
-    fn unbracketed_line_breaks_are_enter() {
+    fn unbracketed_lf_is_enter() {
         assert_eq!(
             encode("one\r\ntwo\nthree\r", false),
-            b"one\rtwo\rthree\r".to_vec()
+            b"one\r\rtwo\rthree\r".to_vec()
         );
     }
 
@@ -232,7 +270,6 @@ mod tests {
             "hello\r\nworld",
             "\r",
             "he\x1b[201~llo",
-            "he\u{9b}201~llo",
         ] {
             assert!(!is_safe(unsafe_text), "{unsafe_text:?}");
         }

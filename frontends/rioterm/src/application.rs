@@ -2272,7 +2272,8 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             return;
                         }
                         // Don't use bracketed paste for single char input.
-                        route.window.screen.paste(&text, text.chars().count() > 1);
+                        let bracketed = text.chars().count() > 1;
+                        route.window.screen.paste(text, bracketed);
                     }
                     Ime::Preedit(text, cursor_offset) => {
                         let preedit = if text.is_empty() || route.modal_owns_input() {
@@ -2397,7 +2398,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                 }
 
                 let path = crate::platform::shell_escape(&path.to_string_lossy());
-                route.window.screen.paste(&(path + " "), true);
+                route.window.screen.paste(path + " ", true);
             }
 
             WindowEvent::Resized(new_size) => {

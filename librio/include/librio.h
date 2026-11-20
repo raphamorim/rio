@@ -308,7 +308,7 @@ bool rio_surface_hangup_child(const rio_surface_t *surface);
 void rio_surface_text(rio_surface_t *surface, const char *bytes, size_t len);
 /* Paste `bytes` (UTF-8), bracketed when the program has enabled mode 2004.
  * Control bytes are sent as spaces, so a paste can't end its bracket or act
- * as tty input; unbracketed, a line break is sent as CR. */
+ * as tty input; unbracketed, LF is sent as CR. */
 void rio_surface_paste(rio_surface_t *surface, const char *bytes, size_t len);
 /* Whether `bytes` can be pasted without asking the user: bracketed, only a
  * bracketed paste end is suspect; otherwise any line break is too, since

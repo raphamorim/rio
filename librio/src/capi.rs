@@ -821,7 +821,10 @@ pub unsafe extern "C" fn rio_surface_paste(
             return;
         }
         let slice = unsafe { std::slice::from_raw_parts(bytes as *const u8, len) };
-        unsafe { &*surface }.paste(&String::from_utf8_lossy(slice));
+        // Copied once here (borrowed text; the buffer is the host's only
+        // for this call), or not at all when invalid UTF-8 was already
+        // repaired into an owned string.
+        unsafe { &*surface }.paste(String::from_utf8_lossy(slice));
     }));
 }
 
