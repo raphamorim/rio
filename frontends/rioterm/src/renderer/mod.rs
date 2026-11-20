@@ -173,7 +173,10 @@ pub struct Renderer {
     /// `set_background_color`. Lets the per-frame "derive bg from
     /// active panel's OSC state" loop avoid redundant resyncs.
     last_window_bg: Option<rio_backend::sugarloaf::Color>,
-    pub config_has_blinking_enabled: bool,
+    /// Where shaping breaks runs beyond what the content forces; the
+    /// row builder gets the cursor column only when the break at the
+    /// cursor is on.
+    pub cursor_shaping_break: bool,
     pub config_blinking_interval: u64,
     pub(crate) ignore_selection_fg_color: bool,
     pub search: search::SearchOverlay,
@@ -247,7 +250,7 @@ impl Renderer {
             macos_use_unified_titlebar: config.window.macos_use_unified_titlebar,
             config_blinking_interval: config.cursor.blinking_interval.clamp(350, 1200),
             option_as_alt: config.option_as_alt.to_lowercase(),
-            config_has_blinking_enabled: config.cursor.blinking,
+            cursor_shaping_break: config.fonts.cursor_shaping_break,
             is_window_focused: true,
             ignore_selection_fg_color: config.ignore_selection_fg_color,
             colors,
@@ -481,24 +484,46 @@ impl Renderer {
             {
                 let mut terminal = context.terminal.lock();
                 any_panel_dirty = true;
-                let snapshotted = context
-                    .renderable_content
-                    .update_from_terminal(&mut terminal, force_full_damage);
-                if let Some(dfas) = search
+                // Search matches are found before the snapshot, so the
+                // rows whose highlight changed are among the rows it
+                // copies: a highlight paints over a row without
+                // changing it, and nothing else would mark it.
+                let new_matches: Option<Option<Vec<_>>> = search
                     .as_mut()
-                    .filter(|_| snapshotted && context.route_id == active_route)
-                {
-                    context.renderable_content.hint_matches =
+                    .filter(|_| context.route_id == active_route)
+                    .map(|dfas| {
                         dfas.as_deref_mut().map(|dfas| {
                             HintMatches::visible_regex_matches(&terminal, dfas)
                                 .iter()
                                 .cloned()
                                 .collect()
-                        });
+                        })
+                    });
+                if let Some(new_matches) = &new_matches {
+                    let old_matches = &context.renderable_content.hint_matches;
+                    if new_matches != old_matches {
+                        for regex_match in old_matches
+                            .iter()
+                            .flatten()
+                            .chain(new_matches.iter().flatten())
+                        {
+                            terminal.damage_range_rows(
+                                &rio_backend::selection::SelectionRange::new(
+                                    *regex_match.start(),
+                                    *regex_match.end(),
+                                    false,
+                                ),
+                            );
+                        }
+                    }
                 }
-                drop(terminal);
+                let snapshotted = context
+                    .renderable_content
+                    .update_from_terminal(&mut terminal, force_full_damage);
+                if let (true, Some(new_matches)) = (snapshotted, new_matches) {
+                    context.renderable_content.hint_matches = new_matches;
+                }
             }
-
             // Recalculate image overlay positions every frame when placements
             // exist. Positions depend on display_offset and history_size which
             // change on scroll and text output (like approach).
@@ -1360,6 +1385,16 @@ mod grid_cell_bg_tests {
     /// re-emits the pane's OSC 11 as an explicit SGR 48 on every cell,
     /// so a faint cell arrived as `Spec(bg) + DIM` and was painted at
     /// `bg * DIM_FACTOR`, a dark block against the field around it.
+    // The row builder is handed the cursor column only when the break
+    // at the cursor is on, which the font config decides.
+    #[test]
+    fn the_cursor_shaping_break_comes_from_the_font_config() {
+        assert!(Renderer::new(&Config::default()).cursor_shaping_break);
+        let mut config = Config::default();
+        config.fonts.cursor_shaping_break = false;
+        assert!(!Renderer::new(&config).cursor_shaping_break);
+    }
+
     #[test]
     fn dim_cell_paints_its_explicit_background_unchanged() {
         let renderer = Renderer::new(&Config::default());

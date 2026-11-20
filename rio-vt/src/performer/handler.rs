@@ -463,6 +463,14 @@ pub trait Handler {
     /// writes it back to the originating pane's PTY directly.
     fn glyph_query(&mut self, _cp: u32) {}
 
+    /// Payload formats this host accepts: what the `s` reply lists, and
+    /// the only ones `r` takes. Empty switches Glyph Protocol off: its
+    /// messages are ignored and `s` goes unanswered, which is how a
+    /// client tells the protocol is unsupported (§3.4).
+    fn glyph_formats(&self) -> &'static [glyph_protocol::GlyphFormat] {
+        glyph_protocol::GlyphFormat::ALL
+    }
+
     /// Whether this host answers grapheme queries (`q;grapheme=`,
     /// spec §5.3). Drives both the `cap=grapheme` advertisement in the
     /// `s` reply and the `reason=unsupported` answer, so the two can
@@ -746,17 +754,18 @@ impl<'a, H: Handler + 'a> Performer<'a, H> {
     /// Parse and dispatch a Glyph Protocol APC. `data` starts with the
     /// `25a1` identifier and excludes the APC introducer / terminator.
     fn dispatch_glyph_protocol(&mut self, data: &[u8]) {
-        match glyph_protocol::parse(data) {
+        let formats = self.handler.glyph_formats();
+        if formats.is_empty() {
+            return;
+        }
+        match glyph_protocol::parse_with(data, formats) {
             Ok(glyph_protocol::GlyphCommand::Support) => {
                 let caps: &[&str] = if self.handler.glyph_grapheme_query_enabled() {
                     &[glyph_protocol::CAP_GRAPHEME]
                 } else {
                     &[]
                 };
-                let resp = glyph_protocol::format_support_response(
-                    glyph_protocol::SUPPORTED_FORMATS,
-                    caps,
-                );
+                let resp = glyph_protocol::format_support_response(formats, caps);
                 self.handler.glyph_protocol_response(resp);
             }
             Ok(glyph_protocol::GlyphCommand::QueryGrapheme { cps }) => {

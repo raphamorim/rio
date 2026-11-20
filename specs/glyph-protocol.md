@@ -516,12 +516,46 @@ Defined error codes:
 | `malformed_payload`     | Payload failed to parse as its format, or a sizing parameter has an invalid value. |
 | `payload_too_large`     | Payload exceeds 32 KiB: decoded for the base64 formats, as sent for `vg`. |
 | `outline_too_large`     | An outline (or a colour container's outlines in aggregate) exceeds the 64 KiB decoded-size budget (§8.2), or a `vg` payload exceeds one of its limits (§8.9.5). |
-| `no_space`              | The terminal's memory budget for registrations, across all its sessions, is used up (§9). The registration may succeed after others are cleared. |
+| `no_space`              | A memory budget the terminal enforces for registrations, per session or across sessions, is used up (§9). The registration may succeed after others are cleared, or after text using old glyphs is gone. |
+
+When a registration has several problems, the terminal reports the
+first in this order, so every terminal gives the same reason: `cp`
+(`out_of_namespace`), then `fmt` (`unsupported_format`), then the
+placement keys (`width`, and `upm`, `aw`, `lh`, `ymin`, `size`,
+`align`, `pad` for the font formats or `vb`, `fit`, `align` for `vg`:
+`malformed_payload`), then the payload's size (`payload_too_large`),
+then the payload itself. Payload size comes before its content: a
+base64 payload too long to decode within 32 KiB is too large whether
+or not it is valid base64.
 
 ### 6.3 Overwrite
 
-A second `r` on the same `cp` overwrites the first. This is how
-applications update a glyph or react to theme changes.
+A second `r` on the same `cp` replaces the registration for text
+printed after it. Terminals SHOULD bind a registration to the text
+when it is printed: a cell keeps the glyph that was registered when
+its codepoint was printed, so overwriting or clearing a registration
+changes neither text already on screen nor text in the scrollback,
+and doesn't force a redraw. Colours that use the foreground (`fg`,
+palette index `0xFFFF`) still follow the cell's foreground when it is
+drawn. A terminal that binds this way MUST bound the glyphs that
+text keeps alive (§9). A terminal MAY instead apply a new
+registration to all existing text (§7.3).
+
+Clients MUST NOT rely on either behaviour. To change what is
+displayed, a client registers again and prints the codepoint again. A
+theme change that only affects the foreground needs neither.
+
+Binding at print time is what kitty measured as the better choice.
+Applying a registration to existing text means that after every `r`
+or `c` any cell on screen or in the scrollback may have changed, so
+the terminal redraws the whole window and drops what it has cached for
+the scrollback: 0.1–1.3 ms per frame against 0.005–0.016 ms for the
+one line that changed, every frame, for a program animating an icon by
+re-registering it. Binding costs one lookup per printed block
+codepoint, which kitty's benchmarks could not tell apart from printing
+any other character. It also keeps programs from changing each other's
+output, and makes memory accounting exact: a glyph is in use exactly
+as long as some cell refers to it (§9).
 
 There is no eviction: the glossary has a slot for every codepoint in
 the registration block (§4), so a registration stays until it is
@@ -538,11 +572,13 @@ Registrations MUST NOT persist across terminal restarts.
 A registration can outlive the program that made it. A later
 program in the same session that emits a block codepoint without
 registering it first gets whatever was registered there last, or
-the system font, or tofu. Programs MUST register every block
-codepoint they emit, rather than relying on what the session
-already holds. Because the block holds only application-drawn
-glyphs, a leftover registration can only affect other programs
-using the block, never text or an installed font's icons.
+the system font, or tofu. Where the terminal binds at print time
+(§6.3), registering never changes what an earlier program printed.
+Programs MUST register every block codepoint they emit, rather than
+relying on what the session already holds. Because the block holds
+only application-drawn glyphs, a leftover registration can only
+affect other programs using the block, never text or an installed
+font's icons.
 
 ## 7. Clear (`c`)
 
@@ -553,7 +589,9 @@ ESC _ 25a1 ; c [ ; cp=<hex> ] [ ; reply=<0|1|2> ] ESC \
 ```
 
 If `cp` is omitted, every slot in the session's glossary is
-cleared. Otherwise the slot corresponding to `cp` is cleared. `cp`
+cleared. Otherwise the slot corresponding to `cp` is cleared. Like an
+overwrite (§6.3), clearing applies to text printed afterwards where
+the terminal binds at print time. `cp`
 MUST be in the registration block; otherwise the request is
 rejected with `reason=out_of_namespace`. `reply` works as it does
 for `r` (§6.1): `0` sends nothing, `2` only failures, `1` (the
@@ -582,9 +620,14 @@ ESC _ 25a1 ; c ; cp=<hex> ; status=1 ; reason=out_of_namespace ESC \
 ### 7.3 Cache invalidation
 
 When a slot is cleared (explicitly, via overwrite, or via a
-terminal reset), the terminal MUST invalidate any rasterization cached
-for that codepoint. A subsequent `r` that reuses the codepoint
-MUST rasterize the new outline fresh, not serve stale pixels.
+terminal reset), text printed afterwards MUST NOT be drawn from a
+rasterization of the old registration. A subsequent `r` that reuses
+the codepoint MUST rasterize the new outline fresh, not serve stale
+pixels. Where the terminal binds at print time, text printed before
+keeps its glyph, and its rasterization stays valid as long as that
+text exists. A terminal that instead applies a new registration to
+existing text applies it to all of it: no cell, on screen or in the
+scrollback, keeps drawing a rasterization of the old one.
 
 ## 8. Payload formats
 
@@ -957,7 +1000,7 @@ layer is a header, `:`, and SVG 2 path data:
 
 ```
 fill=<rule>,<colour>[,m <a> <b> <c> <d> <e> <f>]:<path data>
-stroke=<width>[/<cap>[/<join>]],<colour>[,m <a> <b> <c> <d> <e> <f>]:<path data>
+stroke=<width>[/<style>[/<style>]],<colour>[,m <a> <b> <c> <d> <e> <f>]:<path data>
 clip=<n>,<rule>[,m <a> <b> <c> <d> <e> <f>]:<path data>
 ```
 
@@ -965,11 +1008,14 @@ clip=<n>,<rule>[,m <a> <b> <c> <d> <e> <f>]:<path data>
 - `fill` fills the path with the colour.
 - `stroke` strokes it. The width is in the layer's units and MUST be
   greater than zero; through the layer's matrix, it MUST NOT exceed
-  the larger of the viewBox's width and height. `<cap>` is `round`
-  (default), `butt` or `square`. `<join>` is `round` (default),
-  `bevel`, or `miter` followed by an optional limit from 1 to 1000
-  (`miter`, `miter4` and `miter10.5` are valid; the default limit is
-  4). Caps, joins and the miter limit mean what they mean in SVG.
+  the viewBox size the limits use (§8.9.5). The styles that follow
+  the width are at most one cap and one join, in either order: caps
+  are `butt` and `square`, joins `bevel` and `miter` with an optional
+  limit from 1 to 1000 (`miter`, `miter4` and `miter10.5` are valid;
+  the default limit is 4), and `round`, the default for both, is
+  whichever of the two isn't given. So `stroke=1/miter` is a round cap
+  with a miter join, and `stroke=1/round/butt` a butt cap with a round
+  join. Caps, joins and the miter limit mean what they mean in SVG.
 - `clip` makes the path a clip, using `<rule>`, for the next `n`
   layers (1 to 127). Those layers draw only inside it. They MUST
   exist and MUST NOT be clips themselves: there is one level of
@@ -982,9 +1028,14 @@ clip=<n>,<rule>[,m <a> <b> <c> <d> <e> <f>]:<path data>
 
 A colour is one of:
 
-- `fg`: the cell's foreground colour when the glyph is drawn.
-- `fg@<alpha>`: the foreground with its alpha multiplied by `<alpha>`,
-  a number from 0 to 1.
+- `fg`: the cell's foreground colour when the glyph is drawn. A glyph
+  whose colours are all the foreground is drawn like text (§8.9.4). In
+  a glyph that mixes `fg` with fixed colours, `fg` is the foreground as
+  an opaque colour: a terminal whose foreground carries an alpha
+  doesn't apply it there, so it can composite such a glyph as
+  `K + fg·F` at draw time and get the same pixels.
+- `fg@<alpha>`: the foreground with alpha `<alpha>`, a number from 0
+  to 1.
 - `#rrggbb` or `#rrggbbaa`: a fixed sRGB colour, hex digits in either
   case, alpha not premultiplied.
 - A gradient:
@@ -1000,7 +1051,11 @@ circle (`cx`, `cy`, `r`), which covers SVG's `radialGradient` focal
 point and radius; `fr` and `r` MUST NOT be negative. `<spread>` is
 `pad` (default), `reflect` or `repeat`, as SVG's `spreadMethod`. The
 optional matrix maps gradient space to the layer's coordinates, as
-`gradientTransform`. A gradient has 2 to 16 stops, each an offset
+`gradientTransform`. Colours between stops are interpolated in
+non-premultiplied sRGB, as SVG does (CSS and canvas interpolate
+premultiplied, which differs for stops of different alpha: halfway
+from `#ff000000` to `#0000ffff` is half-transparent purple here, and
+half-transparent blue there). A gradient has 2 to 16 stops, each an offset
 from 0 to 1, a space, and a colour that is not itself a gradient
 (`fg`, `fg@<alpha>`, `#rrggbb` or `#rrggbbaa`). Offsets MUST NOT
 decrease. A gradient with no extent (its two points, or two circles,
@@ -1027,9 +1082,15 @@ relative; implicit repetition, a moveto's extra pairs being linetos;
 starting at the subpath's start. Numbers are an optional sign, then
 digits, digits with a fraction, or a fraction alone, then an optional
 exponent; a `.` MUST be followed by a digit, so `1.` is not a number.
+A number too large for a 32-bit float is a limit (§8.9.5), not a
+syntax error: it is rejected with `reason=outline_too_large`, wherever
+it appears.
 Numbers are separated by spaces, at most one comma, or a sign or `.`
 that can't continue the previous number. Arc flags are `0` or `1` and
-need no separator. Path data MUST start with a moveto.
+need no separator. Path data MUST start with a moveto, so empty path
+data (`fill=nonzero,fg:`) is malformed, though SVG accepts an empty
+`d` as drawing nothing; a layer that draws nothing is written as a
+moveto alone.
 
 Arcs follow SVG 2's implementation notes: a zero radius draws a
 straight line, identical endpoints draw nothing, and radii too small
@@ -1047,8 +1108,9 @@ that only moves or closes is valid and draws nothing.
 #### 8.9.3 Placement
 
 The viewBox `vb=<x>,<y>,<w>,<h>` is required: its values are
-separated by commas or spaces, `w` and `h` MUST be positive, and no
-value's magnitude may exceed 1,000,000. Its y axis points down, as in
+separated by commas or spaces, `w` and `h` MUST be positive, neither
+may be more than 4096 times the other, and no value's magnitude may
+exceed 1,000,000. Its y axis points down, as in
 SVG. It is the glyph's extent, placed in the render span of §8.5.2
 the way SVG's `preserveAspectRatio` places a viewBox in a viewport:
 
@@ -1073,22 +1135,31 @@ filled or stroked with its colour, through its clip when one covers
 it. Path coordinates go through the layer's matrix, then the
 placement of §8.9.3.
 
-`fg` and `fg@<alpha>` resolve to the cell's foreground colour when
-the glyph is rasterized. Terminals that cache rasterized glyphs MUST
-re-rasterize on foreground change for any glyph that uses the
-foreground, like `colrv1` (§8.7). A glyph whose every colour,
+`fg` and `fg@<alpha>` are the cell's foreground colour when the
+glyph is drawn. A terminal that caches rasterized glyphs MUST NOT
+draw a glyph that uses the foreground with a stale one: it
+re-rasterizes on foreground change, as for `colrv1` (§8.7), or
+applies the foreground at draw time. A glyph whose every colour,
 gradient stops included, is the foreground MAY be kept as a coverage
-mask and tinted at draw time, as `glyf` is.
+mask and tinted at draw time, as `glyf` is; a glyph that mixes the
+foreground with fixed colours MAY be kept as two layers, the fixed
+colours `K` and the foreground's coverage `F`, and drawn as
+`K + fg·F`, which is exact because `fg` is opaque there (§8.9.1).
 
 #### 8.9.5 Limits
 
 What makes a glyph slow to draw is how much path crosses the cell,
-not its bytes, segments or layers, so the limits bound that. A
+not its bytes, segments or layers, so the limits bound that. They are
+measured in the *viewBox size*: the side `fit` maps onto the cell,
+which is the larger of `w` and `h` for `contain` and the smaller for
+`cover` and `stretch`. Measured in the larger side, a thin viewBox
+under `cover` would let path data that passes every limit be millions
+of times the cell's size in pixels; measured this way, the path drawn
+is at most 64 times the render span's larger dimension in every mode. A
 payload over any of them is rejected with `reason=outline_too_large`:
 
 - Every point, control points included, after the layer's matrix,
-  lies within one viewBox size (the larger of `w` and `h`) of the
-  viewBox.
+  lies within one viewBox size of the viewBox.
 - At most 2048 segments across all layers, clip paths included:
   movetos, lines, curves (an arc counted as its cubics, §8.9.2) and
   closes each count one. Drawing after `Z` starts a subpath with an
@@ -1105,12 +1176,20 @@ payload over any of them is rejected with `reason=outline_too_large`:
 These numbers come from icon sets and emoji. Of 584 icons sampled
 from nine sets, the largest needs 226 segments and 14 viewBox sizes
 of path; of 600 emoji sampled from Twemoji, OpenMoji, Noto and Fluent
-Flat, the largest needs 83 layers, 955 segments and 41 sizes. Under
-these limits the most expensive payload found takes about 1.4 ms to
-draw into an 80×160 pixel cell with tiny-skia, and the cost grows
-with the cell's pixels. A converter can't save layers by merging
-same-colour fills: overlapping shapes drawn in opposite directions
-cancel under nonzero winding.
+Flat, the largest needs 83 layers, 955 segments and 41 sizes. A
+converter can't save layers by merging same-colour fills: overlapping
+shapes drawn in opposite directions cancel under nonzero winding. Under
+these limits the most expensive path found takes about 1.4 ms to draw
+into an 80×160 pixel cell with tiny-skia, and about 1.1 ms with
+kitty's own renderer.
+
+The limits bound path, not paint. Every layer covers its pixels once,
+so the cost of filling is layers × pixels: 16 layers covering the
+whole viewBox, each a radial gradient (the most the length limit
+allows), take 1.6 ms at 80×160 in kitty and 60 ms at 7×7 cells. A
+terminal SHOULD rasterize a glyph when it is first drawn and cache the
+result (Appendix C), and MAY bound the work spent on one glyph, or the
+area it rasterizes, drawing the glyph as missing past it.
 
 #### 8.9.6 Not included
 
@@ -1167,9 +1246,22 @@ Other considerations:
   registration is held parsed, at most 2048 segments, which is the
   same order of memory. Those are per
   session, and a user with many tabs and splits multiplies them, so
-  a terminal MAY also enforce a total budget across its sessions and
-  reject registrations past it with `reason=no_space` (§6.2), rather
-  than being able to hold 1024 maximal glyphs in every session.
+  a terminal MAY also enforce budgets of its own, per session or
+  across sessions, and reject registrations past them with
+  `reason=no_space` (§6.2), rather than being able to hold 1024
+  maximal glyphs in every session. Binding at print time (§6.3)
+  changes that arithmetic: a replaced or cleared registration lives on
+  while text printed with it does, so a program that registers and
+  prints new glyphs in a loop keeps every old one alive in the
+  scrollback, past the 1024 slots. A terminal that binds at print time
+  MUST bound that: count the glyphs still used by text against its
+  budget, reject registrations past it with `reason=no_space`, and
+  release a glyph once no cell uses it, which it can find out by
+  walking its cells before refusing. Rasterizations of a released
+  glyph are never drawn again, so a cache can drop them with it or
+  evict them like any other. It knows exactly which glyphs are in use,
+  so the bound is exact: in kitty, registering and printing 200 new
+  glyphs in a row never kept more than 40 rasterized at once.
 - **Font fingerprinting.** `q` with a `cp` outside the block tells a
   program, one codepoint at a time, whether an installed font covers
   it, so a remote program can learn something about the installed
@@ -1254,6 +1346,9 @@ A terminal emulator is Glyph Protocol v1 conformant if it:
     reply's `cap`, answers grapheme queries per §5.3; otherwise
     replies to them with `reason=unsupported` (§5.4).
 11. Clears the glossary on a full reset (RIS, §6.4).
+12. Either binds registrations at print time and bounds the glyphs
+    text keeps alive, or applies a new registration to all existing
+    text (§6.3, §7.3, §9).
 
 A client (application) is Glyph Protocol v1 conformant if it:
 
@@ -1270,6 +1365,9 @@ A client (application) is Glyph Protocol v1 conformant if it:
    relies on `width` rather than an explicit width (§8.5.2).
 6. Sends `q` with `grapheme` only when the `s` reply lists `grapheme` in
    `cap`, and falls back to `cp` otherwise.
+7. Registers again and prints again to change what is displayed, and
+   relies neither on earlier output changing with a new registration
+   nor on it staying the same (§6.3).
 
 ## 12. Reference implementation
 
@@ -1402,9 +1500,12 @@ the only place a registration is accepted.
 applies to overwrite and reset too, not only explicit clear. Every
 block codepoint keeps the same slot for the whole session, so an atlas
 keyed on the codepoint or its slot alone would serve the previous
-outline after a re-registration. Pair the key with a per-registration
-tag (a counter bumped on every `r`) so a new registration rasterizes
-fresh bytes rather than serving a stale bitmap.
+outline after a re-registration. Key it on the registration instead:
+the one the cell was printed with where the terminal binds at print
+time (§6.3), or a per-registration tag (a counter bumped on every
+`r`) otherwise. A registration identical to the one it replaces can
+reuse it, so re-sending every icon on a theme change costs almost
+nothing.
 
 ## Appendix D. Change log
 
@@ -1428,3 +1529,4 @@ fresh bytes rather than serving a stale bitmap.
 | 2026-11-18 | v1.15   | Added a note to §3.1 on dispatch: to a terminal that dispatches control strings by intermediate and final bytes, as DEC structures them, a message is `APC 2` with the command string starting `5a1;`, and `2` is in the private-use final range; terminals now recognise a message by `25a1;`, not `25a1` alone. Corrected §3: ECMA-48 leaves an APC's content to the program that receives it and does not require a program that doesn't implement a command to ignore it, as the earlier wording claimed. Added §3.4: clients detect support with `s` followed by DA1, so a DA1 reply with no `s` reply before it means unsupported, as with kitty's graphics and keyboard protocols, and MUST NOT send `q`, `r`, or `c` to a terminal that has not answered `s`. GNU screen and tmux give APC their own meaning (the hardstatus line or window title, the pane title), so there the probe shows up as text, but it is never answered and nothing else is sent. Clients that use the multiplexer's passthrough wrap DA1 too, since the multiplexer answers an unwrapped DA1 itself. Clients that register without sending `s` first must add the probe. Wire format unchanged. |
 | 2026-11-18 | v1.16   | Review from Kovid Goyal for kitty. `width` is an optional hint: a glyph is drawn into the cells its character occupies (§8.5.2), so an explicit width such as kitty's text sizing protocol (OSC 66), or a terminal's own rule for a codepoint followed by a space, wins over it; clipping is to that area. The grapheme query answers for the cluster printed as plain text; explicit widths are the client's business. `status=system` means as the terminal would currently render it in the regular face, symbol maps included. `q` may answer the new `reason=unknown` instead of stalling input on a font lookup, and terminals may rate-limit it. The payload is the last field of `r`, found by position, and never contains `;` (§3.2). `c` takes `reply=` and its reply echoes `cp`. The payload cap drops from 64 KiB to 32 KiB, and terminals may enforce a budget across sessions with the new `reason=no_space`. A full reset (RIS) MUST clear the glossary. A `colrv1` paint the terminal can't render rejects the registration instead of drawing a substitute, and §8.7 no longer claims the COLR parser adds no attack surface. §9 reasons from anything printed to the terminal being able to register and use block codepoints, and notes font fingerprinting through `q`. Appendix C has notes on lazy rasterization and cache keys. A client that sent payloads over 32 KiB, or relied on a `c` reply without `cp`, must adjust. |
 | 2026-11-18 | v1.17   | Added the `vg` payload format (§8.9) and made it the recommended one: SVG path data as text, in layers of fills, strokes and one level of clips, painted with the foreground, a fixed colour, or a linear or two-point conical gradient, with an optional matrix per layer, placed by `vb`, `fit` and `align` like SVG's `preserveAspectRatio`, and bounded by how much path crosses the cell rather than by bytes. It started from Mitchell Hashimoto's and Kovid Goyal's suggestions to accept SVG. Every payload format is now optional, `glyf` included: a terminal lists the ones it accepts in `s`, and rejects an `r` for any other with the new `reason=unsupported_format`. A registration without `fmt` is still `glyf`, so existing clients keep working where `glyf` is listed. Clients send only listed formats. §8 is now "Payload formats", and `glyf`'s scope is §8.1. |
+| 2026-11-19 | v1.18   | Review of v1.17 from Kovid Goyal, with measurements from kitty's implementation (kitty#10872). Terminals SHOULD bind a registration to text when it is printed, so overwriting or clearing one changes only text printed afterwards, and MUST then bound the replaced glyphs that text keeps alive (§9); they MAY instead apply a registration to all existing text. Clients MUST NOT rely on either and re-register and print again to change what's shown (§6.3, §7). `vg`'s limits are measured in the viewBox side `fit` maps onto the cell, the smaller one for `cover` and `stretch`, which closes a hole where a thin viewBox let path many times the cell's size through, and a viewBox's sides may differ by at most 4096 times (§8.9.3, §8.9.5). The spec now says paint cost is layers × pixels, which terminals bound by rasterizing lazily and caching and MAY cap. Gradients interpolate in non-premultiplied sRGB, as in SVG; in a glyph that mixes `fg` with fixed colours, `fg` is the opaque foreground; stroke styles come in either order, so `stroke=1/miter` is valid; empty path data is malformed; a number too large for a 32-bit float is `outline_too_large` wherever it appears. §6.2 gives the order in which a registration's problems are reported. `no_space` budgets may be per session. |

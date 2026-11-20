@@ -1,5 +1,10 @@
 extern crate libc;
 
+mod working_dir;
+#[cfg(target_os = "linux")]
+pub use working_dir::resolve_host_working_dir;
+pub use working_dir::{check_working_dir, in_flatpak, resolve_working_dir};
+
 #[cfg(not(windows))]
 mod unix;
 #[cfg(not(windows))]
@@ -64,6 +69,21 @@ pub trait EventedPty: ProcessReadWrite {
     }
 
     fn child_event_token(&self) -> corcovado::Token;
+
+    /// Whether a child of ours runs on the pty. Its exit, reported by
+    /// [`Self::next_child_event`], is what ends the session; without
+    /// one, the other side of the pty closing ends it.
+    fn has_child(&self) -> bool {
+        true
+    }
+
+    /// Stop watching the read side: once the other side of the pty is
+    /// closed nothing more is read, and a closed side is reported ready
+    /// on every poll. The child event stays watched. Only Unix reports
+    /// a closed side, so elsewhere this does nothing.
+    fn stop_reading(&mut self, _poll: &corcovado::Poll) -> io::Result<()> {
+        Ok(())
+    }
 
     /// Tries to retrieve an event.
     ///

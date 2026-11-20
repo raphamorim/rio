@@ -58,12 +58,47 @@ pub fn is_glyph_protocol(body: &[u8]) -> bool {
 /// with `payload_too_large`.
 pub const MAX_PAYLOAD_BYTES: usize = 32 * 1024;
 
-/// Payload formats this build supports, advertised in the reply to
-/// the `s` verb as a comma-separated list of names. An empty slice
-/// produces `fmt=` (protocol implemented but no payload format
-/// accepted) — a degenerate state reserved for future negotiation,
-/// never produced by this build.
-pub const SUPPORTED_FORMATS: &[&str] = &["glyf", "colrv0", "colrv1", "vg"];
+/// A payload format (§8), named on the wire by [`GlyphFormat::name`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GlyphFormat {
+    /// A TrueType simple glyph (§8.1).
+    Glyf,
+    /// COLRv0 layers over `glyf` outlines (§8.6).
+    ColrV0,
+    /// COLRv1 paint graphs over `glyf` outlines (§8.7).
+    ColrV1,
+    /// SVG path data as text (§8.9).
+    Vg,
+}
+
+impl GlyphFormat {
+    /// Every format this build parses, in the order the `s` reply lists
+    /// them. A frontend that draws registered glyphs itself may accept
+    /// fewer (`Handler::glyph_formats`).
+    pub const ALL: &'static [GlyphFormat] = &[
+        GlyphFormat::Glyf,
+        GlyphFormat::ColrV0,
+        GlyphFormat::ColrV1,
+        GlyphFormat::Vg,
+    ];
+
+    /// The name in `fmt=`.
+    pub fn name(self) -> &'static str {
+        match self {
+            GlyphFormat::Glyf => "glyf",
+            GlyphFormat::ColrV0 => "colrv0",
+            GlyphFormat::ColrV1 => "colrv1",
+            GlyphFormat::Vg => "vg",
+        }
+    }
+
+    fn from_name(name: &[u8]) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|f| f.name().as_bytes() == name)
+    }
+}
 
 pub use rio_graphics::glyph_namespace::in_registration_block;
 
@@ -235,6 +270,17 @@ pub enum QueryStatus {
 }
 
 impl QueryStatus {
+    /// The status of a codepoint, from whether the session's glossary
+    /// and the terminal's fonts cover it.
+    pub fn new(glossary: bool, system: bool) -> Self {
+        match (glossary, system) {
+            (true, true) => QueryStatus::Both,
+            (true, false) => QueryStatus::Glossary,
+            (false, true) => QueryStatus::System,
+            (false, false) => QueryStatus::Free,
+        }
+    }
+
     /// Wire form of the `status=` value: a comma-separated list of
     /// coverage names. `Free` returns the empty string.
     pub fn as_str(self) -> &'static str {
@@ -258,6 +304,8 @@ pub enum RegisterError {
     OutlineTooLarge,
     /// `fmt` names a format this terminal doesn't list in `s`.
     UnsupportedFormat,
+    /// Too many replaced registrations are still shown by text (§9).
+    NoSpace,
 }
 
 impl RegisterError {
@@ -270,6 +318,7 @@ impl RegisterError {
             RegisterError::PayloadTooLarge => "payload_too_large",
             RegisterError::OutlineTooLarge => "outline_too_large",
             RegisterError::UnsupportedFormat => "unsupported_format",
+            RegisterError::NoSpace => "no_space",
         }
     }
 }
@@ -306,6 +355,15 @@ pub enum ParseError {
 /// Parse a raw APC body (minus the `ESC _` introducer and `ESC \`
 /// terminator) into a [`GlyphCommand`].
 pub fn parse(body: &[u8]) -> Result<GlyphCommand, ParseError> {
+    parse_with(body, GlyphFormat::ALL)
+}
+
+/// [`parse`] for a terminal that lists only `formats` in its `s`
+/// reply: a registration in any other is `unsupported_format`.
+pub fn parse_with(
+    body: &[u8],
+    formats: &[GlyphFormat],
+) -> Result<GlyphCommand, ParseError> {
     if !is_glyph_protocol(body) {
         return Err(ParseError::NotGlyphProtocol);
     }
@@ -320,7 +378,7 @@ pub fn parse(body: &[u8]) -> Result<GlyphCommand, ParseError> {
     match verb[0] {
         b's' => parse_support(rest),
         b'q' => parse_query(rest),
-        b'r' => parse_register(rest),
+        b'r' => parse_register(rest, formats),
         b'c' => parse_clear(rest),
         _ => Err(ParseError::Malformed("unknown verb")),
     }
@@ -367,7 +425,10 @@ fn parse_query(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     }
 }
 
-fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
+fn parse_register(
+    rest: &[u8],
+    formats: &[GlyphFormat],
+) -> Result<GlyphCommand, ParseError> {
     // Register splits control parameters from the payload at the LAST
     // `;`. Neither base64 nor `fmt=vg` text has a `;`, so this is
     // unambiguous.
@@ -406,13 +467,13 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     // `s` gets its own reason, so a client can tell it from a bad
     // payload and fall back to a listed one.
     let fmt = params.get("fmt").copied().unwrap_or(b"glyf");
-    if !SUPPORTED_FORMATS.iter().any(|name| name.as_bytes() == fmt) {
+    let Some(fmt) = GlyphFormat::from_name(fmt).filter(|f| formats.contains(f)) else {
         return Err(ParseError::RegisterFailed {
             cp,
             reason: RegisterError::UnsupportedFormat,
             reply,
         });
-    }
+    };
 
     let malformed = || ParseError::RegisterFailed {
         cp,
@@ -420,13 +481,8 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         reply,
     };
 
-    let upm = match params.get("upm") {
-        Some(raw) => parse_decimal_u16(raw).ok_or(malformed())?,
-        None => 1000,
-    };
-    if upm == 0 {
-        return Err(malformed());
-    }
+    // Checks run in the order of spec §6.2: `cp`, `fmt`, then the
+    // placement keys, then the payload's size, then the payload.
 
     // Declared Unicode width (spec §8.5): `1` or `2`, default `1`.
     let width = match params.get("width") {
@@ -438,9 +494,13 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         None => 1,
     };
 
-    if fmt == b"vg" {
+    if fmt == GlyphFormat::Vg {
         let layout = parse_vector_layout(&params).ok_or_else(malformed)?;
-        let payload = parse_vector_payload(&params, trim(payload_b64))
+        let view_box = params
+            .get("vb")
+            .and_then(|raw| rio_graphics::glyph_vector::parse_view_box(raw))
+            .ok_or_else(malformed)?;
+        let payload = parse_vector_payload(view_box, &layout, trim(payload_b64))
             .map_err(|reason| ParseError::RegisterFailed { cp, reason, reply })?;
         return Ok(GlyphCommand::Register {
             cp,
@@ -451,8 +511,25 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
         });
     }
 
+    // `upm` only means something to the font formats; `vg` ignores it.
+    let upm = match params.get("upm") {
+        Some(raw) => parse_decimal_u16(raw).ok_or(malformed())?,
+        None => 1000,
+    };
+    if upm == 0 {
+        return Err(malformed());
+    }
     let layout = parse_layout(&params).ok_or_else(malformed)?;
     let payload_b64 = trim(payload_b64);
+    // Size before content: base64 longer than this decodes past the cap
+    // even with padding, so it's too large whether or not it's valid.
+    if payload_b64.len() > MAX_PAYLOAD_BYTES.div_ceil(3) * 4 {
+        return Err(ParseError::RegisterFailed {
+            cp,
+            reason: RegisterError::PayloadTooLarge,
+            reply,
+        });
+    }
     let raw = BASE64
         .decode(payload_b64)
         .map_err(|_| ParseError::RegisterFailed {
@@ -482,18 +559,18 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
     }
 
     let payload = match fmt {
-        b"glyf" => GlyphPayload::Glyf { glyf: raw, upm },
-        b"colrv0" => {
+        GlyphFormat::Glyf => GlyphPayload::Glyf { glyf: raw, upm },
+        GlyphFormat::ColrV0 => {
             let container = parse_colr_container(&raw)
                 .map_err(|reason| ParseError::RegisterFailed { cp, reason, reply })?;
             GlyphPayload::ColrV0 { container, upm }
         }
-        b"colrv1" => {
+        GlyphFormat::ColrV1 => {
             let container = parse_colr_container(&raw)
                 .map_err(|reason| ParseError::RegisterFailed { cp, reason, reply })?;
             GlyphPayload::ColrV1 { container, upm }
         }
-        _ => unreachable!("fmt validated above"),
+        GlyphFormat::Vg => unreachable!("vg returned above"),
     };
 
     Ok(GlyphCommand::Register {
@@ -508,18 +585,22 @@ fn parse_register(rest: &[u8]) -> Result<GlyphCommand, ParseError> {
 /// `fmt=vg`: the payload is the text itself, read against the `vb`
 /// key. Placement is [`parse_vector_layout`]'s.
 fn parse_vector_payload(
-    params: &Params<'_>,
+    view_box: rio_graphics::glyph_vector::ViewBox,
+    layout: &GlyphLayout,
     text: &[u8],
 ) -> Result<GlyphPayload, RegisterError> {
-    use rio_graphics::glyph_vector::{self, VectorError};
+    use rio_graphics::glyph_vector::{self, Fit, VectorError};
     if text.len() > MAX_PAYLOAD_BYTES {
         return Err(RegisterError::PayloadTooLarge);
     }
-    let view_box = params
-        .get("vb")
-        .and_then(|raw| glyph_vector::parse_view_box(raw))
-        .ok_or(RegisterError::MalformedPayload)?;
-    let glyph = glyph_vector::parse(text, view_box).map_err(|err| match err {
+    // The limits are measured in the viewBox side `fit` maps onto the
+    // cell (spec §8.9.5).
+    let fit = match layout.size {
+        GlyphSize::Cover => Fit::Cover,
+        GlyphSize::Stretch => Fit::Stretch,
+        _ => Fit::Contain,
+    };
+    let glyph = glyph_vector::parse(text, view_box, fit).map_err(|err| match err {
         VectorError::Malformed => RegisterError::MalformedPayload,
         VectorError::TooLarge => RegisterError::OutlineTooLarge,
     })?;
@@ -871,14 +952,14 @@ impl<'a> Params<'a> {
     }
 }
 
-/// Format the reply to `s` (support). `fmts` is the list of supported
-/// payload format names, joined with `,` on the wire. An empty slice
-/// produces `fmt=` — a degenerate "protocol implemented but no payload
-/// format accepted" state, reserved for future negotiation and never
-/// produced by this build. `caps` lists optional capabilities (§3.3);
-/// the `cap` key is left out when there are none, which the spec
-/// defines as equal to an empty `cap=`.
-pub(crate) fn format_support_response(fmts: &[&str], caps: &[&str]) -> String {
+/// Format the reply to `s` (support). `fmts` are the accepted payload
+/// formats, their names joined with `,` on the wire. A terminal that
+/// accepts none doesn't answer `s` at all (`Handler::glyph_formats`).
+/// `caps` lists optional capabilities (§3.3); the `cap` key is left
+/// out when there are none, which the spec defines as equal to an
+/// empty `cap=`.
+pub(crate) fn format_support_response(fmts: &[GlyphFormat], caps: &[&str]) -> String {
+    let fmts: Vec<&str> = fmts.iter().map(|f| f.name()).collect();
     if caps.is_empty() {
         format!("\x1b_25a1;s;fmt={}\x1b\\", fmts.join(","))
     } else {
@@ -1326,9 +1407,111 @@ mod tests {
     }
 
     #[test]
+    fn register_reports_problems_in_spec_order() {
+        // Spec §6.2: `cp`, then `fmt`, then placement keys, then the
+        // payload's size, then the payload itself.
+        let reason = |body: String| match parse(body.as_bytes()) {
+            Err(ParseError::RegisterFailed { reason, .. }) => reason,
+            other => panic!("{body}: {other:?}"),
+        };
+        let huge_vg = format!("M0 0{}", "l0 0".repeat(MAX_PAYLOAD_BYTES / 4 + 1));
+        let huge_b64 = "$".repeat(MAX_PAYLOAD_BYTES.div_ceil(3) * 4 + 4);
+        use RegisterError::*;
+        // Everything wrong: the codepoint wins.
+        assert_eq!(
+            reason(format!("25a1;r;cp=61;fmt=svg;vb=x;{huge_vg}")),
+            OutOfNamespace
+        );
+        // Then the format.
+        assert_eq!(
+            reason(format!("25a1;r;cp=100000;fmt=svg;vb=x;{huge_vg}")),
+            UnsupportedFormat
+        );
+        // Then the placement keys, before the size.
+        assert_eq!(
+            reason(format!("25a1;r;cp=100000;fmt=vg;vb=x;{huge_vg}")),
+            MalformedPayload
+        );
+        assert_eq!(
+            reason(format!(
+                "25a1;r;cp=100000;fmt=vg;vb=0,0,24,24;width=3;{huge_vg}"
+            )),
+            MalformedPayload
+        );
+        assert_eq!(
+            reason(format!("25a1;r;cp=100000;upm=0;{huge_b64}")),
+            MalformedPayload
+        );
+        // Then the size, before the content: invalid and too large is
+        // too large, for text and for base64.
+        assert_eq!(
+            reason(format!(
+                "25a1;r;cp=100000;fmt=vg;vb=0,0,24,24;{}X",
+                &huge_vg[..]
+            )),
+            PayloadTooLarge
+        );
+        assert_eq!(
+            reason(format!("25a1;r;cp=100000;{huge_b64}")),
+            PayloadTooLarge
+        );
+        // Small and invalid is malformed.
+        assert_eq!(
+            reason("25a1;r;cp=100000;$$$$".to_string()),
+            MalformedPayload
+        );
+    }
+
+    #[test]
+    fn vg_ignores_the_font_keys() {
+        // `upm` is a font key: invalid or zero, `vg` doesn't read it.
+        for keys in ["upm=0;", "upm=x;", "aw=0;lh=x;ymin=y;", "size=bogus;pad=9;"] {
+            let body = format!(
+                "25a1;r;cp=100000;fmt=vg;vb=0,0,24,24;{keys}fill=nonzero,fg:M0 0h4v4z"
+            );
+            assert!(
+                matches!(parse(body.as_bytes()), Ok(GlyphCommand::Register { .. })),
+                "{keys}"
+            );
+        }
+    }
+
+    #[test]
+    fn vg_limits_follow_fit() {
+        // A thin viewBox under cover is measured by its smaller side.
+        let reg = |fit: &str| {
+            parse(
+                format!("25a1;r;cp=100000;fmt=vg;vb=0,0,1000,1;{fit}fill=nonzero,fg:M0 0h1000")
+                    .as_bytes(),
+            )
+        };
+        assert!(matches!(reg(""), Ok(GlyphCommand::Register { .. })));
+        for fit in ["fit=cover;", "fit=stretch;"] {
+            assert!(
+                matches!(
+                    reg(fit),
+                    Err(ParseError::RegisterFailed {
+                        reason: RegisterError::OutlineTooLarge,
+                        ..
+                    })
+                ),
+                "{fit}"
+            );
+        }
+        // And past 4096:1 a viewBox is malformed.
+        assert!(matches!(
+            parse(b"25a1;r;cp=100000;fmt=vg;vb=0 0 1 0.000001;fill=nonzero,fg:M0 0h1"),
+            Err(ParseError::RegisterFailed {
+                reason: RegisterError::MalformedPayload,
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn every_advertised_format_is_accepted_by_name() {
         // `s` and `r` read the same list, so they can't drift apart.
-        for fmt in SUPPORTED_FORMATS {
+        for fmt in GlyphFormat::ALL.iter().map(|f| f.name()) {
             let body = format!("25a1;r;cp=100000;fmt={fmt};x");
             assert!(
                 !matches!(
@@ -1654,7 +1837,7 @@ stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A
     #[test]
     fn support_response_advertises_every_format() {
         assert_eq!(
-            format_support_response(SUPPORTED_FORMATS, &[]),
+            format_support_response(GlyphFormat::ALL, &[]),
             "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,vg\x1b\\"
         );
     }
@@ -1662,16 +1845,41 @@ stroke=2,fg:M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A
     #[test]
     fn support_response_encodes_subset_and_empty() {
         assert_eq!(
-            format_support_response(&["glyf", "colrv0"], &[]),
+            format_support_response(&[GlyphFormat::Glyf, GlyphFormat::ColrV0], &[]),
             "\x1b_25a1;s;fmt=glyf,colrv0\x1b\\"
         );
         assert_eq!(format_support_response(&[], &[]), "\x1b_25a1;s;fmt=\x1b\\");
     }
 
     #[test]
+    fn only_the_listed_formats_register() {
+        let body = |fmt: &str| format!("25a1;r;cp=100000;fmt={fmt};AAAA");
+        let unsupported = |result| {
+            matches!(
+                result,
+                Err(ParseError::RegisterFailed {
+                    reason: RegisterError::UnsupportedFormat,
+                    ..
+                })
+            )
+        };
+        let glyf_only = &[GlyphFormat::Glyf][..];
+        assert!(unsupported(parse_with(
+            body("colrv0").as_bytes(),
+            glyf_only
+        )));
+        assert!(unsupported(parse_with(body("vg").as_bytes(), glyf_only)));
+        assert!(unsupported(parse_with(body("svg").as_bytes(), glyf_only)));
+        // No `fmt` is `glyf`, so it's refused where `glyf` isn't listed.
+        let vg_only = &[GlyphFormat::Vg][..];
+        assert!(unsupported(parse_with(b"25a1;r;cp=100000;AAAA", vg_only)));
+        assert!(!unsupported(parse_with(body("glyf").as_bytes(), glyf_only)));
+    }
+
+    #[test]
     fn support_response_lists_capabilities() {
         assert_eq!(
-            format_support_response(SUPPORTED_FORMATS, &[CAP_GRAPHEME]),
+            format_support_response(GlyphFormat::ALL, &[CAP_GRAPHEME]),
             "\x1b_25a1;s;fmt=glyf,colrv0,colrv1,vg;cap=grapheme\x1b\\"
         );
     }

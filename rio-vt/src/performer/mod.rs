@@ -100,6 +100,8 @@ const READ_BUDGET: usize = READ_CHUNK * 4;
 #[derive(Debug, PartialEq, Eq)]
 enum ReadOutcome {
     Idle,
+    /// The other side of the pty is closed. Unix only: the ConPTY
+    /// pipe ends as an error, and its empty ring is `Idle`.
     Closed,
     Budget,
 }
@@ -108,6 +110,8 @@ enum ReadOutcome {
 enum ExitReason {
     Shutdown,
     ChildExited(Option<i32>),
+    /// The other side of a pty with no child of ours closed.
+    HungUp,
 }
 
 // Guards the pairing that once regressed: a READ_BUDGET below
@@ -313,6 +317,12 @@ where
                 Err(err) if err.kind() == ErrorKind::Interrupted => continue,
                 Err(err) if err.kind() == ErrorKind::WouldBlock => {
                     result = Ok(ReadOutcome::Idle);
+                    true
+                }
+                // Linux reports a closed other side as EIO, not EOF.
+                #[cfg(unix)]
+                Err(err) if err.raw_os_error() == Some(libc::EIO) => {
+                    result = Ok(ReadOutcome::Closed);
                     true
                 }
                 Err(err) => {
@@ -570,18 +580,35 @@ where
                         let hung_up = false;
                         // HUP can accompany unread final output.
                         if event.readiness().is_readable() || hung_up {
-                            if let Err(err) = self.pty_read(state, buf) {
-                                // The PTY can end before the exit of
-                                // its child is handled, in the same
-                                // batch of events or ahead of it. An
-                                // exit that is already known is what
-                                // happened, and keeps its status.
-                                if let Some(teletypewriter::ChildEvent::Exited(status)) =
-                                    self.pty.next_child_event()
-                                {
-                                    return Ok(ExitReason::ChildExited(status));
+                            let outcome = match self.pty_read(state, buf) {
+                                Ok(outcome) => outcome,
+                                Err(err) => {
+                                    // The PTY can end before the exit
+                                    // of its child is handled, in the
+                                    // same batch of events or ahead of
+                                    // it. An exit that is already known
+                                    // is what happened, and keeps its
+                                    // status.
+                                    if let Some(teletypewriter::ChildEvent::Exited(
+                                        status,
+                                    )) = self.pty.next_child_event()
+                                    {
+                                        return Ok(ExitReason::ChildExited(status));
+                                    }
+                                    return Err(err);
                                 }
-                                return Err(err);
+                            };
+                            if outcome == ReadOutcome::Closed && cfg!(unix) {
+                                // Nothing more will be read. A child of ours
+                                // ends the session when it exits, with its
+                                // status, which it may not have yet: the
+                                // other side can close first, or the child
+                                // close it and run on. Without one, this is
+                                // the end.
+                                if !self.pty.has_child() {
+                                    return Ok(ExitReason::HungUp);
+                                }
+                                self.pty.stop_reading(&self.poll)?;
                             }
                         }
                     }
@@ -652,6 +679,15 @@ where
             Ok(ExitReason::ChildExited(status)) => {
                 self.event_proxy.send_event(
                     RioEvent::ChildExited(self.route_id, *status),
+                    self.window_id,
+                );
+                self.terminal.lock().exit();
+            }
+            // The session ends as it does when a child exits, with no
+            // status to report.
+            Ok(ExitReason::HungUp) => {
+                self.event_proxy.send_event(
+                    RioEvent::ChildExited(self.route_id, None),
                     self.window_id,
                 );
                 self.terminal.lock().exit();

@@ -11,10 +11,10 @@ pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
 use crate::performer::handler::Handler;
 use crate::performer::{self, Machine};
-use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::layout::Margin;
 use rio_backend::config::Shell;
+use rio_backend::crosswords::pos::CursorState;
 use smallvec::{smallvec, SmallVec};
 
 use crate::layout::{BorderDirection, GridId, PanelImages, ResizeState};
@@ -97,24 +97,23 @@ impl<T: EventListener> Context<T> {
     #[inline]
     pub fn set_selection(&mut self, selection_range: Option<SelectionRange>) {
         let old_selection = self.renderable_content.selection_range;
-        let has_updated = old_selection != selection_range;
 
-        if has_updated {
-            // Selection affects terminal line rendering, so use terminal damage
+        if old_selection != selection_range {
+            // The selection paints over rows without changing them, so
+            // the rows of the old one and the new one are marked for the
+            // next snapshot and the frame is a partial one. A drag then
+            // rebuilds the rows it touches, not the screen.
+            let mut terminal = self.terminal.lock();
+            for range in old_selection.iter().chain(selection_range.iter()) {
+                terminal.damage_range_rows(range);
+            }
+            drop(terminal);
             self.renderable_content
                 .pending_update
-                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
         }
 
         self.renderable_content.selection_range = selection_range;
-    }
-
-    #[inline]
-    pub fn cursor_from_ref(&self) -> Cursor {
-        Cursor {
-            state: self.renderable_content.cursor.state.new_from_self(),
-            content: self.renderable_content.cursor.content,
-        }
     }
 }
 
@@ -144,6 +143,11 @@ pub struct ContextManagerConfig {
     /// The configured palette, handed to every terminal so it answers
     /// color queries itself.
     pub colors: rio_backend::config::colors::term::List,
+    /// The configured cursor, every new terminal's default: not the
+    /// current tab's, which a program (an insert-mode beam) may have
+    /// changed.
+    pub cursor_shape: CursorShape,
+    pub cursor_blinking: Option<bool>,
 }
 
 const DEFAULT_CONTEXT_CAPACITY: usize = 28;
@@ -237,7 +241,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         #[cfg(not(target_os = "windows"))]
         child_terminator: teletypewriter::ChildTerminator::retired(),
         messenger: Messenger::new(sender),
-        renderable_content: RenderableContent::new(Cursor::default()),
+        renderable_content: RenderableContent::new(CursorState::default()),
         terminal,
         rich_text_id,
         dimension,
@@ -263,7 +267,6 @@ pub fn create_mock_context<
         ..ContextManagerConfig::default()
     };
     ContextManager::create_context(
-        (&Cursor::default(), false),
         event_proxy.clone(),
         window_id,
         rich_text_id,
@@ -290,7 +293,6 @@ fn current_index_after_tab_removal(current: usize, removed: usize) -> usize {
 impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     fn create_context(
-        cursor_state: (&Cursor, bool),
         event_proxy: T,
         window_id: WindowId,
         rich_text_id: usize,
@@ -301,13 +303,18 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         #[cfg(test)]
         if config.dead_pty {
-            return Ok(create_dead_context(
+            let context = create_dead_context(
                 event_proxy,
                 window_id,
                 route_id,
                 rich_text_id,
                 dimension,
-            ));
+            );
+            context
+                .terminal
+                .lock()
+                .set_default_cursor_style(config.cursor_shape, config.cursor_blinking);
+            return Ok(context);
         }
 
         let cols: u16 = dimension.columns.try_into().unwrap_or(MIN_COLUMNS as u16);
@@ -317,7 +324,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
 
         let mut terminal = Crosswords::new(
             dimension,
-            CursorShape::from_char(cursor_state.0.content),
+            config.cursor_shape,
             event_proxy.clone(),
             window_id,
             route_id,
@@ -328,7 +335,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         // The application answers `q;grapheme=` by shaping the cluster
         // with the grid rasterizer (`GlyphProtocolGraphemeQuery`).
         terminal.set_glyph_grapheme_query(true);
-        terminal.blinking_cursor = cursor_state.1;
+        terminal.set_default_cursor_style(config.cursor_shape, config.cursor_blinking);
         let terminal: Arc<TerminalLock<Crosswords<T>>> =
             Arc::new(TerminalLock::new(terminal));
 
@@ -356,6 +363,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 pty = match create_pty_with_fork(
                     shell_program,
                     shell_args,
+                    &config.working_dir,
                     &integration.env,
                     cols,
                     rows,
@@ -441,7 +449,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             messenger,
             terminal,
             rich_text_id,
-            renderable_content: RenderableContent::new(cursor_state.0.clone()),
+            renderable_content: RenderableContent::new(CursorState::new(
+                config.cursor_shape.into(),
+            )),
             dimension,
             title: ContextTitle::default(),
             title_dirty: false,
@@ -458,7 +468,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn start(
-        cursor_state: (&Cursor, bool),
         event_proxy: T,
         window_id: WindowId,
         rich_text_id: usize,
@@ -468,7 +477,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
         sugarloaf_errors: Option<SugarloafErrors>,
     ) -> Result<Self, Box<dyn Error>> {
         let initial_context = match ContextManager::create_context(
-            cursor_state,
             event_proxy.clone(),
             window_id,
             rich_text_id,
@@ -553,7 +561,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             ..ContextManagerConfig::default()
         };
         let initial_context = ContextManager::create_context(
-            (&Cursor::default(), false),
             event_proxy.clone(),
             window_id,
             0,
@@ -1481,11 +1488,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             cloned_config.working_dir = working_dir;
         }
 
-        let current = self.current();
-        let cursor = current.cursor_from_ref();
-
         match ContextManager::create_context(
-            (&cursor, current.renderable_content.has_blinking_enabled),
             self.event_proxy.clone(),
             self.window_id,
             rich_text_id,
@@ -1543,13 +1546,11 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
+            cursor_shape: config.cursor.shape,
+            cursor_blinking: config.cursor.blinking,
         };
 
-        let current = self.current();
-        let cursor = current.cursor_from_ref();
-
         match ContextManager::create_context(
-            (&cursor, current.renderable_content.has_blinking_enabled),
             self.event_proxy.clone(),
             self.window_id,
             rich_text_id,
@@ -1613,9 +1614,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
                 cloned_config.working_dir = working_dir;
             }
 
-            let current = self.current();
-            let cursor = current.cursor_from_ref();
-            let mut dimension = current.dimension;
+            let mut dimension = self.current().dimension;
 
             // If current has splits then shouldn't use that dimension
             if self.current_grid().len() > 1 {
@@ -1623,7 +1622,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             }
 
             match ContextManager::create_context(
-                (&cursor, current.renderable_content.has_blinking_enabled),
                 self.event_proxy.clone(),
                 self.window_id,
                 rich_text_id,
@@ -1738,6 +1736,93 @@ pub mod test {
         }
     }
 
+    #[test]
+    fn a_selection_change_marks_its_rows_and_is_partial() {
+        use rio_backend::config::layout::Margin;
+        use rio_backend::crosswords::pos::{Column, Line, Pos};
+        use rio_backend::event::TerminalDamage;
+        use rio_backend::selection::SelectionRange;
+        use rio_backend::sugarloaf::layout::TextDimensions;
+        let text = TextDimensions {
+            scale: 1.0,
+            width: 18.,
+            height: 9.,
+        };
+        let cell = rio_backend::sugarloaf::layout::CellMetrics {
+            cell_width: 18,
+            cell_height: 9,
+            cell_baseline: 0,
+            face_width: 18.0,
+            face_height: 9.0,
+            face_y: 0.0,
+        };
+        let dimension = ContextDimension::build(
+            1200.0,
+            800.0,
+            text,
+            cell,
+            1.0,
+            14.0,
+            Margin::default(),
+        );
+        let mut ctx =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, dimension);
+        let ctx = &mut ctx;
+        fn clear_rows(ctx: &mut Context<VoidListener>) {
+            let mut terminal = ctx.terminal.lock();
+            assert!(terminal.screen_lines() >= 4);
+            for line in 0..terminal.screen_lines() as i32 {
+                terminal.grid[Line(line)].dirty = false;
+            }
+        }
+        fn dirty_rows(ctx: &Context<VoidListener>) -> Vec<i32> {
+            let terminal = ctx.terminal.lock();
+            (0..terminal.screen_lines() as i32)
+                .filter(|&line| terminal.grid[Line(line)].dirty)
+                .collect()
+        }
+        clear_rows(ctx);
+        let _ = ctx.renderable_content.pending_update.take_terminal_damage();
+
+        let first = SelectionRange::new(
+            Pos::new(Line(1), Column(0)),
+            Pos::new(Line(2), Column(3)),
+            false,
+        );
+        ctx.set_selection(Some(first));
+        assert_eq!(
+            ctx.renderable_content.pending_update.take_terminal_damage(),
+            Some(TerminalDamage::Partial)
+        );
+        assert_eq!(dirty_rows(ctx), vec![1, 2]);
+
+        clear_rows(ctx);
+        ctx.set_selection(Some(first));
+        assert_eq!(
+            ctx.renderable_content.pending_update.take_terminal_damage(),
+            None,
+            "the same selection is not news"
+        );
+        assert!(dirty_rows(ctx).is_empty());
+
+        let second = SelectionRange::new(
+            Pos::new(Line(3), Column(0)),
+            Pos::new(Line(3), Column(1)),
+            false,
+        );
+        ctx.set_selection(Some(second));
+        assert_eq!(dirty_rows(ctx), vec![1, 2, 3], "rows left and rows entered");
+
+        clear_rows(ctx);
+        let _ = ctx.renderable_content.pending_update.take_terminal_damage();
+        ctx.set_selection(None);
+        assert_eq!(
+            ctx.renderable_content.pending_update.take_terminal_damage(),
+            Some(TerminalDamage::Partial)
+        );
+        assert_eq!(dirty_rows(ctx), vec![3]);
+    }
+
     // Focus follows the pane the user is looking at, not just the window:
     // a tab switch tells the old pane it lost focus and the new one it
     // gained it, when they asked for focus events.
@@ -1840,6 +1925,35 @@ pub mod test {
         context_manager.add_context(should_redirect, 0);
         assert_eq!(context_manager.capacity, 5);
         assert_eq!(context_manager.current_index, 2);
+    }
+
+    // A new tab or split takes the configured cursor, not the current
+    // tab's, which a program changed (an editor's insert-mode beam).
+    #[test]
+    fn new_terminals_take_the_configured_cursor() {
+        use crate::ansi::CursorShape;
+        let mut manager =
+            ContextManager::start_with_capacity(5, VoidListener {}, WindowId::from(0))
+                .unwrap();
+        manager.config.cursor_shape = CursorShape::Underline;
+        manager.config.cursor_blinking = Some(false);
+        {
+            let mut terminal = manager.current().terminal.lock();
+            terminal.cursor_shape = CursorShape::Beam;
+            terminal.blinking_cursor = true;
+        }
+
+        manager.add_context(true, 0);
+        let check = |manager: &ContextManager<VoidListener>| {
+            let terminal = manager.current().terminal.lock();
+            assert_eq!(terminal.cursor_shape, CursorShape::Underline);
+            assert_eq!(terminal.default_cursor_shape, CursorShape::Underline);
+            assert!(!terminal.blinking_cursor);
+        };
+        check(&manager);
+
+        manager.split(0, false);
+        check(&manager);
     }
 
     #[test]

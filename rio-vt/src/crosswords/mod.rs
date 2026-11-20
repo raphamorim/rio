@@ -269,13 +269,9 @@ struct TermDamageState {
     /// Information about damage on terminal lines.
     lines: Vec<LineDamage>,
 
-    /// Old terminal cursor point.
+    /// Where the rendered cursor was when the last frame was consumed:
+    /// the vi cursor in vi mode, the terminal cursor otherwise.
     last_cursor: Pos,
-
-    /// Last Vi cursor point.
-    last_vi_cursor_point: Option<Pos>,
-    // Old selection range.
-    last_selection: Option<SelectionRange>,
 }
 
 impl TermDamageState {
@@ -286,8 +282,6 @@ impl TermDamageState {
             full: true,
             lines,
             last_cursor: Default::default(),
-            last_vi_cursor_point: Default::default(),
-            last_selection: Default::default(),
         }
     }
 
@@ -295,8 +289,6 @@ impl TermDamageState {
     fn resize(&mut self, num_lines: usize) {
         // Reset point, so old cursor won't end up outside of the viewport.
         self.last_cursor = Default::default();
-        self.last_vi_cursor_point = None;
-        self.last_selection = None;
         self.full = true;
 
         self.lines.clear();
@@ -310,24 +302,6 @@ impl TermDamageState {
     #[inline]
     fn damage_line(&mut self, line: usize) {
         self.lines[line].mark_damaged();
-    }
-
-    fn damage_selection(&mut self, selection: SelectionRange, display_offset: usize) {
-        let display_offset = display_offset as i32;
-        let last_visible_line = self.lines.len() as i32 - 1;
-
-        // Don't damage invisible selection.
-        if selection.end.row.0 + display_offset < 0
-            || selection.start.row.0.abs() < display_offset - last_visible_line
-        {
-            return;
-        };
-
-        let start = std::cmp::max(selection.start.row.0 + display_offset, 0);
-        let end = (selection.end.row.0 + display_offset).clamp(0, last_visible_line);
-        for line in start as usize..=end as usize {
-            self.damage_line(line);
-        }
     }
 
     /// Reset information about terminal damage.
@@ -585,6 +559,19 @@ where
     pub cursor_shape: CursorShape,
     pub default_cursor_shape: CursorShape,
     pub blinking_cursor: bool,
+    /// Whether the cursor blinks by default: what `CSI 0 SP q` and a
+    /// reset go back to, with `default_cursor_shape`.
+    pub default_blinking_cursor: bool,
+    /// The user chose the default blink, so mode 12 (`?12h`/`?12l`) is
+    /// ignored: a program using it could otherwise stop
+    /// the blink for good, mode 12 having no way back to the default.
+    /// DECSCUSR, which has one, still applies.
+    ignore_blink_mode: bool,
+    /// Whether the cursor still follows the defaults: no program chose a
+    /// style since the last `CSI 0 SP q` or reset. Only then does a new
+    /// default (a config reload) change the cursor on screen, so a
+    /// reload doesn't undo a program's insert-mode beam.
+    cursor_is_default: bool,
     pub window_id: WindowId,
     pub route_id: usize,
     title_stack: Vec<String>,
@@ -616,6 +603,9 @@ where
     /// both the `cap=grapheme` advertisement and the
     /// `reason=unsupported` reply follow it.
     glyph_grapheme_query: bool,
+    /// Glyph Protocol payload formats accepted; see
+    /// [`Self::set_glyph_formats`].
+    glyph_formats: &'static [crate::ansi::glyph_protocol::GlyphFormat],
 
     /// When the running shell command started its output (OSC 133 `C`),
     /// so `D` can report how long it ran. `None` between commands.
@@ -695,6 +685,9 @@ impl<U: EventListener> Crosswords<U> {
             default_cursor_shape: cursor_shape,
             cursor_shape,
             blinking_cursor: false,
+            default_blinking_cursor: false,
+            ignore_blink_mode: false,
+            cursor_is_default: true,
             window_id,
             route_id,
             title_stack: Default::default(),
@@ -705,6 +698,7 @@ impl<U: EventListener> Crosswords<U> {
             focused: false,
             program_status_seen: false,
             glyph_grapheme_query: false,
+            glyph_formats: crate::ansi::glyph_protocol::GlyphFormat::ALL,
             command_started_at: None,
             modify_other_keys: 0,
             keyboard_mode_stack: Default::default(),
@@ -736,6 +730,16 @@ impl<U: EventListener> Crosswords<U> {
         self.glyph_grapheme_query = enabled;
     }
 
+    /// The Glyph Protocol payload formats this terminal accepts, for a
+    /// frontend that draws registered glyphs itself and draws only
+    /// some. Every format by default; none switches the protocol off.
+    pub fn set_glyph_formats(
+        &mut self,
+        formats: &'static [crate::ansi::glyph_protocol::GlyphFormat],
+    ) {
+        self.glyph_formats = formats;
+    }
+
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
         self.grapheme_clustering_default = enabled;
         self.mode.set(Mode::GRAPHEME_CLUSTER, enabled);
@@ -764,26 +768,6 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.full
     }
 
-    /// Update selection damage tracking.
-    /// This should be called when the selection changes to damage only the affected lines.
-    pub fn update_selection_damage(
-        &mut self,
-        new_selection: Option<SelectionRange>,
-        display_offset: usize,
-    ) {
-        // Damage old selection lines if they exist
-        if let Some(old_selection) = self.damage.last_selection {
-            self.damage.damage_selection(old_selection, display_offset);
-        }
-
-        // Damage new selection lines if they exist
-        if let Some(new_selection) = new_selection {
-            self.damage.damage_selection(new_selection, display_offset);
-        }
-
-        // Update the stored selection
-        self.damage.last_selection = new_selection;
-    }
     #[must_use]
     pub fn damage(&mut self) -> TermDamage<'_> {
         // Ensure the entire terminal is damaged after entering insert mode.
@@ -792,8 +776,8 @@ impl<U: EventListener> Crosswords<U> {
             self.mark_fully_damaged();
         }
 
-        let previous_cursor =
-            mem::replace(&mut self.damage.last_cursor, self.grid.cursor.pos);
+        let cursor = self.rendered_cursor_pos();
+        let previous_cursor = mem::replace(&mut self.damage.last_cursor, cursor);
 
         if self.damage.full {
             return TermDamage::Full;
@@ -802,9 +786,14 @@ impl<U: EventListener> Crosswords<U> {
         // Add information about old cursor position and new one if they are not the same, so we
         // cover everything that was produced by `Term::input`.
         if self.damage.last_cursor != previous_cursor {
-            // Damage the entire line where the previous cursor was
-            let previous_line = previous_cursor.row.0 as usize;
-            self.damage.damage_line(previous_line);
+            // Damage the line the previous cursor was on. The lines are
+            // the active area's rows; in vi mode the cursor can be on a
+            // scrollback row, which has no line here and is skipped.
+            if let Ok(line) = usize::try_from(previous_cursor.row.0) {
+                if line < self.damage.lines.len() {
+                    self.damage.damage_line(line);
+                }
+            }
         }
 
         // Always damage current cursor.
@@ -816,29 +805,44 @@ impl<U: EventListener> Crosswords<U> {
         TermDamage::Partial(TermDamageIterator::new(&self.damage.lines, display_offset))
     }
 
-    /// Peek damage event based on current damage state
+    /// The grid position of the cursor a renderer draws: the vi cursor
+    /// in vi mode, the terminal cursor otherwise. The row may be in
+    /// scrollback in vi mode.
+    fn rendered_cursor_pos(&self) -> Pos {
+        if self.mode.contains(Mode::VI) {
+            self.vi_mode_cursor.pos
+        } else {
+            self.grid.cursor.pos
+        }
+    }
+
+    /// Peek damage event based on current damage state. A cursor move
+    /// is partial damage, not cursor-only: a renderer that shapes the
+    /// cursor cell as a run of its own rebuilds the row it left and the
+    /// row it is on, from the rows it already holds.
     pub fn peek_damage_event(&self) -> Option<TerminalDamage> {
         if self.damage.full {
             Some(TerminalDamage::Full)
-        } else if self.damage.lines.iter().any(|line| line.is_damaged()) {
+        } else if self.damage.lines.iter().any(|line| line.is_damaged())
+            || self.damage.last_cursor != self.rendered_cursor_pos()
+        {
             Some(TerminalDamage::Partial)
-        } else if self.damage.last_cursor != self.grid.cursor.pos {
-            Some(TerminalDamage::CursorOnly)
         } else {
             None
         }
     }
 
+    /// Consume the frame's damage, to be called before the snapshot
+    /// that draws it. The consumer snapshots the cursor along with the
+    /// rows, so the position is painted once this frame is consumed;
+    /// without recording it `peek_damage_event` would report the move
+    /// forever. A cursor move marks no row: the row it left and the row
+    /// it is on did not change, and a renderer that shapes the cursor
+    /// cell as a run of its own rebuilds both from the rows it holds.
     #[inline]
     pub fn reset_damage(&mut self) {
         self.damage.reset();
-        // The consumer snapshots the cursor along with the rows, so the
-        // position is painted once this frame is consumed. Without this,
-        // `peek_damage_event` reports CursorOnly forever after the first
-        // cursor movement (`last_cursor` was only maintained by the
-        // legacy `damage()` path), so every PTY drain fires a redraw
-        // event even when nothing changed.
-        self.damage.last_cursor = self.grid.cursor.pos;
+        self.damage.last_cursor = self.rendered_cursor_pos();
     }
 
     /// Whether a synchronized update (mode 2026) is active, during which
@@ -919,12 +923,7 @@ impl<U: EventListener> Crosswords<U> {
         self.event_proxy
             .send_event(RioEvent::MouseCursorDirty, self.window_id);
 
-        // Clamp vi mode cursor to the viewport.
-        let viewport_start = -(self.grid.display_offset() as i32);
-        let viewport_end = viewport_start + self.grid.bottommost_line().0;
-        let vi_cursor_line = &mut self.vi_mode_cursor.pos.row.0;
-        *vi_cursor_line =
-            std::cmp::min(viewport_end, std::cmp::max(viewport_start, *vi_cursor_line));
+        self.clamp_vi_cursor_to_viewport();
         self.vi_mode_recompute_selection();
 
         // Damage everything if display offset changed. This is a
@@ -950,6 +949,17 @@ impl<U: EventListener> Crosswords<U> {
     #[inline]
     pub fn bottommost_line(&self) -> Line {
         self.grid.bottommost_line()
+    }
+
+    /// Keeps the vi cursor on a row and column the viewport shows. The
+    /// viewport runs from the display offset into scrollback to the
+    /// bottom row of the grid minus that offset.
+    fn clamp_vi_cursor_to_viewport(&mut self) {
+        let viewport_top = Line(-(self.grid.display_offset() as i32));
+        let viewport_bottom = viewport_top + self.grid.bottommost_line();
+        let pos = &mut self.vi_mode_cursor.pos;
+        pos.row = std::cmp::max(std::cmp::min(pos.row, viewport_bottom), viewport_top);
+        pos.col = std::cmp::min(pos.col, self.grid.last_column());
     }
 
     #[inline]
@@ -1097,14 +1107,7 @@ impl<U: EventListener> Crosswords<U> {
             self.selection = selection.rotate(&self.grid, &range, -delta);
         }
 
-        // Clamp vi cursor to viewport.
-        let vi_pos = self.vi_mode_cursor;
-        let viewport_top = Line(-(self.grid.display_offset() as i32));
-        let viewport_bottom = viewport_top + self.bottommost_line();
-        self.vi_mode_cursor.pos.row =
-            std::cmp::max(std::cmp::min(vi_pos.pos.row, viewport_bottom), viewport_top);
-        self.vi_mode_cursor.pos.col =
-            std::cmp::min(vi_pos.pos.col, self.grid.last_column());
+        self.clamp_vi_cursor_to_viewport();
 
         // Reset scrolling region.
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
@@ -1431,6 +1434,66 @@ impl<U: EventListener> Crosswords<U> {
         self.damage.damage_line(line);
     }
 
+    /// The cursor changed how it looks: DECTCEM showed or hid it, or
+    /// DECSCUSR or the blinking mode changed its shape or blinking. A
+    /// burst that does nothing else has to wake the renderer like any
+    /// other, which the line damage does; the event that announces the
+    /// change reaches the UI but marks nothing to draw, and goes to the
+    /// focused terminal rather than this one. The cursor row shapes
+    /// differently with the cursor on it, but it did not change: a
+    /// renderer that shapes the cursor cell as a run of its own rebuilds
+    /// it from the row it already holds, as for a cursor move, so no row
+    /// is copied.
+    fn damage_cursor_appearance(&mut self) {
+        self.damage_cursor_line();
+    }
+
+    /// Show the cursor as `shape`, blinking or not, damaging it only if
+    /// that is a change.
+    fn show_cursor_style(&mut self, shape: CursorShape, blinking: bool) {
+        if shape != self.cursor_shape || blinking != self.blinking_cursor {
+            self.cursor_shape = shape;
+            self.blinking_cursor = blinking;
+            self.damage_cursor_appearance();
+        }
+    }
+
+    /// Set the default cursor style, from the config. The cursor on
+    /// screen takes it only while it follows the defaults: a style a
+    /// program chose (an insert-mode beam) stays until it selects the
+    /// default again, which then is the new one. `blinking` unset is a
+    /// steady cursor that programs are free to make blink; set, it is
+    /// the default and mode 12 is ignored.
+    pub fn set_default_cursor_style(
+        &mut self,
+        shape: CursorShape,
+        blinking: Option<bool>,
+    ) {
+        self.default_cursor_shape = shape;
+        self.default_blinking_cursor = blinking.unwrap_or(false);
+        self.ignore_blink_mode = blinking.is_some();
+        let blinking = self.default_blinking_cursor;
+        if self.cursor_is_default {
+            self.show_cursor_style(shape, blinking);
+        }
+    }
+
+    /// Mark the visible rows of `range` for the next snapshot. A
+    /// selection or a highlight paints over rows without changing
+    /// their content, so nothing else would copy them again. Both the
+    /// row bits and the line damage are set: the bits pick the rows,
+    /// the line damage makes the frame a partial one.
+    pub fn damage_range_rows(&mut self, range: &SelectionRange) {
+        let display_offset = self.grid.display_offset() as i32;
+        let last_visible = self.grid.screen_lines() as i32 - 1;
+        let start = (range.start.row.0 + display_offset).max(0);
+        let end = (range.end.row.0 + display_offset).min(last_visible);
+        for viewport_line in start..=end {
+            self.grid[Line(viewport_line - display_offset)].dirty = true;
+            self.damage.damage_line(viewport_line as usize);
+        }
+    }
+
     #[inline]
     pub fn damage_cursor(&mut self) {
         self.damage_cursor_line();
@@ -1500,16 +1563,30 @@ impl<U: EventListener> Crosswords<U> {
             .take()
             .and_then(|s| s.rotate(&self.grid, &region, -(lines as i32)));
 
-        // Scroll vi mode cursor.
+        // Scroll vi mode cursor. The region can reach below a viewport
+        // scrolled into history, so the cursor stops at the viewport's
+        // bottom row rather than the region's.
+        let viewport_bottom =
+            self.grid.bottommost_line() - self.grid.display_offset() as i32;
         let line = &mut self.vi_mode_cursor.pos.row;
         if region.start <= *line && region.end > *line {
             *line = std::cmp::min(*line + lines, region.end - 1);
+            *line = std::cmp::min(*line, viewport_bottom);
         }
 
         // Scroll between origin and bottom
         self.grid.sync_template_style();
         self.grid.scroll_down(&region, lines);
-        self.mark_fully_damaged();
+        // Mark the scroll region as damaged; a full-screen region
+        // coalesces into full damage, like scroll_up_relative. The rows
+        // themselves were marked by the grid.
+        if region.start.0 == 0 && region.end.0 as usize == self.grid.screen_lines() {
+            self.mark_fully_damaged();
+        } else {
+            for line in region.start.0..region.end.0 {
+                self.damage.damage_line(line as usize);
+            }
+        }
         // Partial-region scrolls move grid-plane images with their
         // content (kitty placements float and are not adjusted).
         self.shift_atlas_placements_in_region(&region, lines as i64);
@@ -1544,10 +1621,15 @@ impl<U: EventListener> Crosswords<U> {
         // At the history cap the offset clamps, the view slides, and
         // every visible row changes while the region damage below only
         // covers active-area lines. Nothing less than full damage is
-        // correct then.
+        // correct then. The same holds when the region ends above the
+        // bottom and a fixed row below it is on screen: the offset grew
+        // but the fixed rows kept their grid index, so they moved down
+        // the viewport without changing.
+        let offset = self.grid.display_offset();
         if region.start == 0
             && pinned_offset != 0
-            && self.grid.display_offset() != pinned_offset + lines
+            && (offset != pinned_offset + lines
+                || region.end.0 as usize + offset < self.grid.screen_lines())
         {
             self.mark_fully_damaged();
         }
@@ -1769,7 +1851,98 @@ impl<U: EventListener> Crosswords<U> {
         let c = self.grid.cursor.charsets[self.active_charset].map(c);
         self.grid.sync_template_style();
         let template = self.cell_template();
+        let template = self.bind_glyph(c, template);
         self.write_cell(c, template);
+    }
+
+    /// Glyph Protocol §6.3: a block codepoint printed while it has a
+    /// registration keeps that registration. The cell carries its
+    /// version in its extras (with the template's hyperlink, if any), so
+    /// registering or clearing the codepoint later changes only text
+    /// printed after it. Cells sharing a registration share one interned
+    /// extras slot, and the extras mark-and-sweep is what tells the
+    /// registry which replaced registrations are still shown.
+    #[cfg(feature = "graphics")]
+    fn bind_glyph(
+        &mut self,
+        c: char,
+        mut template: crate::crosswords::square::Square,
+    ) -> crate::crosswords::square::Square {
+        if !crate::ansi::glyph_protocol::in_registration_block(c as u32) {
+            return template;
+        }
+        let cp = c as u32;
+        let Some(version) = self
+            .glyph_registry
+            .as_ref()
+            .and_then(|registry| registry.bind(cp))
+        else {
+            return template;
+        };
+        // The common case, a cell with nothing else in its extras, is
+        // answered by the print cache.
+        let plain = template.extras_id().is_none();
+        if plain {
+            if let Some(id) = self.grid.extras_table.glyph_only(cp, version) {
+                template.set_extras_id(Some(id));
+                return template;
+            }
+        }
+        let mut extras = template
+            .extras_id()
+            .and_then(|id| self.grid.extras_table.get(id))
+            .cloned()
+            .unwrap_or_default();
+        extras.glyph = Some(version);
+        let id = self.grid.alloc_extras(extras);
+        if id != 0 {
+            template.set_extras_id(Some(id));
+            if plain {
+                self.grid.extras_table.set_glyph_only(cp, version, id);
+            }
+        }
+        template
+    }
+
+    #[cfg(not(feature = "graphics"))]
+    #[inline]
+    fn bind_glyph(
+        &mut self,
+        _c: char,
+        template: crate::crosswords::square::Square,
+    ) -> crate::crosswords::square::Square {
+        template
+    }
+
+    /// Whether printed block codepoints need binding, so the bulk print
+    /// paths, which write a whole run from one template, must hand them
+    /// to the scalar writer.
+    #[inline]
+    fn binds_glyphs(&self) -> bool {
+        #[cfg(feature = "graphics")]
+        {
+            self.glyph_registry.is_some()
+        }
+        #[cfg(not(feature = "graphics"))]
+        {
+            false
+        }
+    }
+
+    /// Drop the replaced registrations no cell shows any more, on either
+    /// screen, scrollback included (spec §9). Sweeps the extras tables
+    /// first so only cells that still exist count.
+    #[cfg(feature = "graphics")]
+    fn reclaim_glyphs(&mut self) {
+        let Some(registry) = self.glyph_registry.clone() else {
+            return;
+        };
+        self.grid.reclaim_extras();
+        self.inactive_grid.reclaim_extras();
+        let mut in_use: rustc_hash::FxHashSet<u32> = Default::default();
+        in_use.extend(self.grid.extras_table.glyph_versions());
+        in_use.extend(self.inactive_grid.extras_table.glyph_versions());
+        registry.retain_retired(|version| in_use.contains(&version));
     }
 
     /// Write an already-charset-mapped `c` into the cursor cell, taking a
@@ -2492,6 +2665,12 @@ impl<U: EventListener> Crosswords<U> {
         buf
     }
 
+    /// Copy the visible rows marked dirty into `dst`, or every visible
+    /// row when `damage` is full or the buffers are the wrong size,
+    /// marking each copied row dirty for the renderer, and record their
+    /// styles on `pending`. The caller fills `row_styles` from `pending`
+    /// once per snapshot, after releasing the terminal lock; until then
+    /// the per-cell styles of the copied rows are stale.
     pub fn snapshot_visible(
         &mut self,
         damage: &crate::event::TerminalDamage,
@@ -2528,24 +2707,16 @@ impl<U: EventListener> Crosswords<U> {
                 dst[i].dirty = true;
                 self.grid.resolve_row_styles(src, &mut row_styles[i]);
                 self.refresh_row_extras(src, extras);
-            }
-            for row_idx in start..end {
                 self.grid[Line(row_idx)].dirty = false;
             }
             return;
         }
 
-        // A Noop/CursorOnly frame normally has nothing to copy, but rows
-        // written after the damage event was consumed (e.g. a graphics
-        // insert racing a redraw) still carry their dirty bit. Fall
-        // through when any row is dirty so the snapshot can't go stale.
-        if matches!(damage, TerminalDamage::Noop | TerminalDamage::CursorOnly) {
-            let any_dirty = (0..count as i32).any(|y| self.grid[Line(start + y)].dirty);
-            if !any_dirty {
-                return;
-            }
-        }
-
+        // One walk over the viewport: a dirty row is copied and its bit
+        // cleared as it is passed. A Noop/CursorOnly frame normally has
+        // nothing to copy, but rows written after the damage event was
+        // consumed (e.g. a graphics insert racing a redraw) still carry
+        // their bit and are copied here, so the snapshot can't go stale.
         #[allow(clippy::needless_range_loop)]
         for y in 0..count {
             let row_idx = start + y as i32;
@@ -2557,8 +2728,6 @@ impl<U: EventListener> Crosswords<U> {
             dst[y].dirty = true;
             self.grid.resolve_row_styles(src, &mut row_styles[y]);
             self.refresh_row_extras(src, extras);
-        }
-        for row_idx in start..end {
             self.grid[Line(row_idx)].dirty = false;
         }
     }
@@ -2709,20 +2878,19 @@ impl<U: EventListener> Crosswords<U> {
         let mut content = self.cursor_shape;
         let vi_mode = self.mode.contains(Mode::VI);
         let scroll = self.display_offset() as i32;
-        let mut pos = if vi_mode {
-            let mut vi_cursor_pos = self.vi_mode_cursor.pos;
-            if scroll > 0 {
-                vi_cursor_pos.row += scroll;
-            }
-            vi_cursor_pos
-        } else {
-            if scroll != 0 {
-                content = CursorShape::Hidden;
-            }
-            self.grid.cursor.pos
-        };
+        // The spacer check reads the grid, so it looks at the grid
+        // position before the row is shifted into viewport coordinates:
+        // in vi mode the cursor can be on a scrollback row.
+        let mut pos = self.rendered_cursor_pos();
         if matches!(self.grid[pos].wide(), Wide::Spacer) {
             pos.col -= 1;
+        }
+        if vi_mode {
+            if scroll > 0 {
+                pos.row += scroll;
+            }
+        } else if scroll != 0 {
+            content = CursorShape::Hidden;
         }
 
         // If the cursor is hidden then set content as hidden
@@ -2806,6 +2974,9 @@ impl<U: EventListener> Crosswords<U> {
         mem::swap(&mut self.grid, &mut self.inactive_grid);
         self.mode ^= Mode::ALT_SCREEN;
         self.selection = None;
+        // The vi cursor may be on a scrollback row the alt screen does
+        // not have, or below a primary viewport scrolled into history.
+        self.clamp_vi_cursor_to_viewport();
 
         // Swap kitty graphics state per screen so each screen owns its
         // own image cache, placements, number map, and virtual placements.
@@ -3187,7 +3358,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     self.swap_alt();
                 }
             }
-            NamedPrivateMode::ShowCursor => self.mode.insert(Mode::SHOW_CURSOR),
+            NamedPrivateMode::ShowCursor => {
+                if !self.mode.contains(Mode::SHOW_CURSOR) {
+                    self.mode.insert(Mode::SHOW_CURSOR);
+                    self.damage_cursor_appearance();
+                }
+            }
             NamedPrivateMode::CursorKeys => self.mode.insert(Mode::APP_CURSOR),
             // Mouse protocols are mutually exclusive.
             NamedPrivateMode::ReportX10MouseClicks => {
@@ -3242,11 +3418,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::LineWrap => self.mode.insert(Mode::LINE_WRAP),
             NamedPrivateMode::Origin => self.mode.insert(Mode::ORIGIN),
             NamedPrivateMode::ColumnMode => self.deccolm(),
-            NamedPrivateMode::BlinkingCursor => {
-                self.blinking_cursor = true;
+            NamedPrivateMode::BlinkingCursor if !self.ignore_blink_mode => {
+                if !self.blinking_cursor {
+                    self.blinking_cursor = true;
+                    self.damage_cursor_appearance();
+                }
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
+            NamedPrivateMode::BlinkingCursor => {}
             NamedPrivateMode::GraphemeCluster => self.mode.insert(Mode::GRAPHEME_CLUSTER),
             NamedPrivateMode::SyncUpdate => {
                 self.mode.insert(Mode::SYNC_UPDATE);
@@ -3293,7 +3473,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
                     self.swap_alt();
                 }
             }
-            NamedPrivateMode::ShowCursor => self.mode.remove(Mode::SHOW_CURSOR),
+            NamedPrivateMode::ShowCursor => {
+                if self.mode.contains(Mode::SHOW_CURSOR) {
+                    self.mode.remove(Mode::SHOW_CURSOR);
+                    self.damage_cursor_appearance();
+                }
+            }
             NamedPrivateMode::CursorKeys => self.mode.remove(Mode::APP_CURSOR),
             // The mouse protocols are one setting, so resetting any of them
             // turns reporting off. There is no protocol underneath to fall
@@ -3314,11 +3499,15 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::LineWrap => self.mode.remove(Mode::LINE_WRAP),
             NamedPrivateMode::Origin => self.mode.remove(Mode::ORIGIN),
             NamedPrivateMode::ColumnMode => self.deccolm(),
-            NamedPrivateMode::BlinkingCursor => {
-                self.blinking_cursor = false;
+            NamedPrivateMode::BlinkingCursor if !self.ignore_blink_mode => {
+                if self.blinking_cursor {
+                    self.blinking_cursor = false;
+                    self.damage_cursor_appearance();
+                }
                 self.event_proxy
                     .send_event(RioEvent::CursorBlinkingChange, self.window_id);
             }
+            NamedPrivateMode::BlinkingCursor => {}
             NamedPrivateMode::GraphemeCluster => self.mode.remove(Mode::GRAPHEME_CLUSTER),
             NamedPrivateMode::SyncUpdate => self.end_sync_update(),
         }
@@ -3715,7 +3904,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
             std::mem::swap(&mut self.grid, &mut self.inactive_grid);
         }
         self.active_charset = Default::default();
+        self.cursor_is_default = true;
         self.cursor_shape = self.default_cursor_shape;
+        self.blinking_cursor = self.default_blinking_cursor;
         self.grid.reset();
         self.inactive_grid.reset();
         self.scroll_region = Line(0)..Line(self.grid.screen_lines() as i32);
@@ -3743,7 +3934,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.graphics.clear_all_kitty_state();
         self.send_graphics_updates();
         // Glyph Protocol §6.4: a full reset clears every registration.
-        self.glyph_clear(None);
+        // Both screens and the scrollback were just erased, so no text
+        // shows a replaced one either.
+        #[cfg(feature = "graphics")]
+        if let Some(registry) = self.glyph_registry.as_ref() {
+            registry.reset();
+        }
 
         // Preserve vi mode across resets.
         self.mode &= Mode::VI;
@@ -3948,20 +4144,30 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn set_cursor_style(&mut self, style: Option<CursorShape>, blinking: bool) {
-        if let Some(cursor_shape) = style {
-            self.cursor_shape = cursor_shape;
-        } else {
-            self.cursor_shape = self.default_cursor_shape;
+        // `CSI 0 SP q` is the default style, blinking included; the
+        // parameter's own parity says nothing there.
+        match style {
+            None => {
+                self.cursor_is_default = true;
+                self.show_cursor_style(
+                    self.default_cursor_shape,
+                    self.default_blinking_cursor,
+                );
+            }
+            Some(shape) => {
+                self.cursor_is_default = false;
+                self.show_cursor_style(shape, blinking);
+            }
         }
-
-        self.blinking_cursor = blinking;
         self.event_proxy
             .send_event(RioEvent::CursorBlinkingChange, self.window_id);
     }
 
     #[inline]
     fn set_cursor_shape(&mut self, shape: CursorShape) {
-        self.cursor_shape = shape;
+        // OSC 50 `CursorShape=`: a program's choice, like DECSCUSR.
+        self.cursor_is_default = false;
+        self.show_cursor_style(shape, self.blinking_cursor);
     }
 
     #[inline]
@@ -4213,6 +4419,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
         self.grid.sync_template_style();
         let template = self.cell_template();
         let template_has_extras = template.extras_id().is_some();
+        // A block codepoint that may bind to a registration needs a cell
+        // template of its own, so it leaves the bulk run.
+        let binds = self.binds_glyphs();
 
         let mut i = 0;
         let n = codepoints.len();
@@ -4237,7 +4446,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 continue;
             }
 
-            if cp == crate::ansi::kitty_virtual::PLACEHOLDER as u32 {
+            if cp == crate::ansi::kitty_virtual::PLACEHOLDER as u32
+                || (binds && crate::ansi::glyph_protocol::in_registration_block(cp))
+            {
                 let c = char::from_u32(cp).unwrap_or('\u{FFFD}');
                 self.write_codepoint_cell(cp, c, width);
                 i += 1;
@@ -4288,6 +4499,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 }
                 let next = codepoints[j];
                 if next == crate::ansi::kitty_virtual::PLACEHOLDER as u32
+                    || (binds && crate::ansi::glyph_protocol::in_registration_block(next))
                     || crate::codepoint_width::width_in(table, next) != Some(width)
                 {
                     break;
@@ -4855,6 +5067,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             let cell = self.grid.cursor_square();
             if cell.c() == '\0' {
                 cell.set_c(c);
+                // The cell changed even if the cursor stays put, as it
+                // does on the last column.
+                let row = self.grid.cursor.pos.row.0 as usize;
+                self.damage.damage_line(row);
             }
 
             loop {
@@ -5819,7 +6035,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
         };
         use rio_graphics::glyph::glyf_decode;
         use rio_graphics::glyph::glyph_registry::{
-            GlyphRegistry, RegisterRejection, StoredPayload,
+            GlyphRegistry, RegisterRejection, StoredPayload, MAX_RETIRED,
         };
 
         // Block check first: callers that bypass the wire parser (direct
@@ -5904,6 +6120,30 @@ impl<U: EventListener> Handler for Crosswords<U> {
         // frame. The first allocation fires `GlyphProtocolInstalled`
         // so the frontend can wire the registry into the font library
         // exactly once per session.
+        // §9: replaced registrations text still shows are bounded. Past
+        // the bound, a registration that adds a glyph (anything but the
+        // current one again) first finds out which are really still
+        // shown, and if all of them are, is refused until text using
+        // them is gone. Any new glyph counts, not only one that replaces
+        // a shown one: it can be printed and then cleared, and `c` can't
+        // be refused. The sweep costs one walk of the cells with extras,
+        // like other requests that touch the scrollback (ED 3J), so it
+        // isn't rate limited: a client that keeps asking after
+        // `no_space` pays for it in time, and gets the space as soon as
+        // it frees it.
+        if self.glyph_registry.as_ref().is_some_and(|r| {
+            r.retired_len() >= MAX_RETIRED
+                && !r.is_current(cp, &stored, upm, width, &layout)
+        }) {
+            self.reclaim_glyphs();
+            if self
+                .glyph_registry
+                .as_ref()
+                .is_some_and(|r| r.retired_len() >= MAX_RETIRED)
+            {
+                return Err(RegisterError::NoSpace);
+            }
+        }
         let was_uninitialised = self.glyph_registry.is_none();
         let registry = self.glyph_registry.get_or_insert_with(GlyphRegistry::new);
 
@@ -5925,15 +6165,16 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 },
                 self.window_id,
             );
-        }
-
-        // §7.3: re-registering a codepoint must repaint cells already
-        // showing it — partial damage can't know which rows hold the
-        // codepoint, so a register is a full-screen invalidation.
-        if result.is_ok() {
+            // The renderer only has the registry once the frontend handles
+            // that event, and text printed in between draws as nothing
+            // until its row repaints. Repaint once, here, so it can't
+            // stay that way; later registrations change nothing on
+            // screen and don't.
             self.mark_fully_damaged();
         }
 
+        // No repaint: text already printed keeps the registration it was
+        // printed with (§6.3), so registering changes nothing on screen.
         result
     }
 
@@ -5948,9 +6189,12 @@ impl<U: EventListener> Handler for Crosswords<U> {
             None => registry.clear_all(),
             Some(cp) => registry.clear_one(cp),
         }
-        // §7.3: cleared codepoints fall back to font rendering on the
-        // next frame — repaint everything that might show them.
-        self.mark_fully_damaged();
+        // No repaint: text already printed keeps the registration it was
+        // printed with (§6.3); clearing only affects text printed after.
+    }
+
+    fn glyph_formats(&self) -> &'static [crate::ansi::glyph_protocol::GlyphFormat] {
+        self.glyph_formats
     }
 
     fn glyph_grapheme_query_enabled(&self) -> bool {
@@ -6387,6 +6631,17 @@ mod tests {
         Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10)
     }
 
+    /// A snapshot as a frontend takes it.
+    fn snap<T: EventListener>(
+        cw: &mut Crosswords<T>,
+        damage: &crate::event::TerminalDamage,
+        rows: &mut Vec<Row<Square>>,
+        row_styles: &mut Vec<Vec<crate::crosswords::style::Style>>,
+        extras: &mut rustc_hash::FxHashMap<u16, crate::crosswords::square::Extras>,
+    ) {
+        cw.snapshot_visible(damage, rows, row_styles, extras);
+    }
+
     /// A 20x4 terminal on `route_id` that records the events it sends.
     #[allow(clippy::type_complexity)]
     fn make_crosswords_with_events(
@@ -6686,6 +6941,44 @@ mod tests {
     }
 
     #[test]
+    fn glyph_protocol_offers_only_the_formats_the_host_draws() {
+        use crate::ansi::glyph_protocol::GlyphFormat;
+        let (mut cw, events) = make_crosswords_with_events(3);
+        cw.set_glyph_formats(&[GlyphFormat::Vg]);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b_25a1;s\x1b\\");
+        // No `fmt` is `glyf`, which this host doesn't draw.
+        parser.advance(&mut cw, b"\x1b_25a1;r;cp=100000;AAAA\x1b\\");
+        assert_eq!(
+            pty_writes(&events),
+            vec![
+                "\x1b_25a1;s;fmt=vg\x1b\\".to_string(),
+                "\x1b_25a1;r;cp=100000;status=1;reason=unsupported_format\x1b\\"
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn glyph_protocol_is_off_for_a_host_that_draws_no_format() {
+        // Nothing answers, so a client's `s` + DA1 probe finds no
+        // support (§3.4), and nothing is registered or asked.
+        let (mut cw, events) = make_crosswords_with_events(3);
+        cw.set_glyph_formats(&[]);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b_25a1;s\x1b\\");
+        parser.advance(&mut cw, b"\x1b_25a1;q;cp=100000\x1b\\");
+        parser.advance(
+            &mut cw,
+            b"\x1b_25a1;r;cp=100000;fmt=vg;vb=0 0 1 1;fill=nonzero,fg:M0 0h1v1z\x1b\\",
+        );
+        parser.advance(&mut cw, b"\x1b_25a1;c\x1b\\");
+        assert!(events.borrow().is_empty(), "{:?}", events.borrow());
+        #[cfg(feature = "graphics")]
+        assert!(cw.glyph_registry.is_none());
+    }
+
+    #[test]
     fn grapheme_query_is_unsupported_until_the_host_opts_in() {
         let (mut cw, events) = make_crosswords_with_events(3);
         let mut parser = crate::performer::handler::Processor::default();
@@ -6964,7 +7257,8 @@ mod tests {
         for line in 0..lines {
             cw.input_str(&format!("{line}\r\n"));
         }
-        cw.snapshot_visible(
+        snap(
+            &mut cw,
             &TerminalDamage::Full,
             &mut rows,
             &mut row_styles,
@@ -6980,7 +7274,8 @@ mod tests {
         for line in lines..2 * lines {
             cw.input_str(&format!("{line}\r\n"));
         }
-        cw.snapshot_visible(
+        snap(
+            &mut cw,
             &TerminalDamage::Full,
             &mut rows,
             &mut row_styles,
@@ -7007,7 +7302,7 @@ mod tests {
         cw.terminal_attribute(Attr::Background(red));
         cw.input('x');
         let damage = cw.peek_damage_event().unwrap();
-        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+        snap(&mut cw, &damage, &mut rows, &mut row_styles, &mut extras);
         cw.reset_damage();
         assert_eq!(row_styles.len(), rows.len());
         assert_eq!(row_styles[0][0].bg, red);
@@ -7021,7 +7316,7 @@ mod tests {
         cw.terminal_attribute(Attr::Background(blue));
         cw.input('z');
         let damage = cw.peek_damage_event().unwrap();
-        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+        snap(&mut cw, &damage, &mut rows, &mut row_styles, &mut extras);
         cw.reset_damage();
         assert_eq!(row_styles[0][0].bg, red);
         assert_eq!(row_styles[1][0].bg, blue);
@@ -7031,10 +7326,830 @@ mod tests {
         cw.swap_alt();
         let damage = cw.peek_damage_event().unwrap();
         assert!(matches!(damage, TerminalDamage::Full));
-        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+        snap(&mut cw, &damage, &mut rows, &mut row_styles, &mut extras);
         cw.reset_damage();
         // The alt screen was cleared with the carried blue bg template.
         assert_eq!(row_styles[0][0].bg, blue);
+    }
+
+    // The copy resolves the styles of the rows it copies into values,
+    // so a frontend reads them as soon as the copy returns.
+    #[test]
+    fn snapshot_styles_are_resolved_by_the_copy() {
+        use crate::config::colors::{AnsiColor, ColorRgb};
+        use crate::crosswords::style::Style;
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut rows = Vec::new();
+        let mut row_styles = Vec::new();
+        let mut extras = rustc_hash::FxHashMap::default();
+        snap(
+            &mut cw,
+            &TerminalDamage::Full,
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        let red = AnsiColor::Spec(ColorRgb { r: 250, g: 0, b: 0 });
+        cw.terminal_attribute(Attr::Background(red));
+        cw.input_str("xy");
+        let damage = cw.peek_damage_event().unwrap();
+        cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+        assert_eq!(row_styles[0][0].bg, red);
+        assert_eq!(row_styles[0][1].bg, red);
+        assert_eq!(row_styles[0][2], Style::default());
+    }
+
+    // DECTCEM alone is a change the renderer has to see: the frame is
+    // a partial one, and like a cursor move it copies no row, since no
+    // row changed. Repeating the state it is already in is not news.
+    #[test]
+    fn hiding_or_showing_the_cursor_is_damage() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.input_str("ab");
+        cw.goto(Line(2), Column(1));
+        cw.reset_damage();
+        for row in 0..cw.grid.screen_lines() {
+            cw.grid[Line(row as i32)].dirty = false;
+        }
+        let dirty = |cw: &Crosswords<VoidListener>| -> Vec<i32> {
+            (0..cw.grid.screen_lines() as i32)
+                .filter(|&row| cw.grid[Line(row)].dirty)
+                .collect()
+        };
+
+        parser.advance(&mut cw, b"\x1b[?25l");
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        assert!(dirty(&cw).is_empty(), "no row changed, none is copied");
+        cw.reset_damage();
+
+        parser.advance(&mut cw, b"\x1b[?25l");
+        assert_eq!(cw.peek_damage_event(), None, "already hidden");
+
+        parser.advance(&mut cw, b"\x1b[?25h");
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        assert!(dirty(&cw).is_empty());
+    }
+
+    // DECSCUSR and the blinking mode are the same kind of change: alone
+    // in a burst (fish's vi mode switching to a beam on insert) they are
+    // a frame for the terminal that sent them, which a UI-side redraw of
+    // the focused terminal would miss in a split. Repeating the current
+    // style is not news.
+    #[test]
+    fn changing_the_cursor_style_is_damage() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.input_str("ab");
+        cw.reset_damage();
+        for row in 0..cw.grid.screen_lines() {
+            cw.grid[Line(row as i32)].dirty = false;
+        }
+        let dirty = |cw: &Crosswords<VoidListener>| -> bool {
+            (0..cw.grid.screen_lines() as i32).any(|row| cw.grid[Line(row)].dirty)
+        };
+        let mut style = |cw: &mut Crosswords<VoidListener>, seq: &[u8]| {
+            parser.advance(cw, seq);
+            let damage = cw.peek_damage_event();
+            assert!(!dirty(cw), "no row changed, none is copied");
+            cw.reset_damage();
+            damage
+        };
+
+        // Steady beam, then the same again.
+        assert_eq!(style(&mut cw, b"\x1b[6 q"), Some(TerminalDamage::Partial));
+        assert_eq!(cw.cursor_shape, CursorShape::Beam);
+        assert_eq!(style(&mut cw, b"\x1b[6 q"), None, "already a steady beam");
+        // Blinking only.
+        assert_eq!(style(&mut cw, b"\x1b[5 q"), Some(TerminalDamage::Partial));
+        assert_eq!(style(&mut cw, b"\x1b[?12l"), Some(TerminalDamage::Partial));
+        assert_eq!(style(&mut cw, b"\x1b[?12l"), None, "already steady");
+        assert_eq!(style(&mut cw, b"\x1b[?12h"), Some(TerminalDamage::Partial));
+        // Shape only, back to a block.
+        assert_eq!(style(&mut cw, b"\x1b[1 q"), Some(TerminalDamage::Partial));
+        assert_eq!(cw.cursor_shape, CursorShape::Block);
+    }
+
+    // `CSI 0 SP q` is the default style, blinking included: an editor
+    // restoring it on exit gives back the configured
+    // blink, not a steady cursor.
+    #[test]
+    fn the_default_cursor_style_includes_its_blink() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.set_default_cursor_style(CursorShape::Underline, Some(true));
+        assert_eq!(
+            (cw.cursor_shape, cw.blinking_cursor),
+            (CursorShape::Underline, true)
+        );
+        parser.advance(&mut cw, b"\x1b[6 q");
+        assert_eq!(
+            (cw.cursor_shape, cw.blinking_cursor),
+            (CursorShape::Beam, false)
+        );
+        parser.advance(&mut cw, b"\x1b[0 q");
+        assert_eq!(
+            (cw.cursor_shape, cw.blinking_cursor),
+            (CursorShape::Underline, true)
+        );
+        // A reset goes back to the defaults too.
+        parser.advance(&mut cw, b"\x1b[2 q\x1bc");
+        assert_eq!(
+            (cw.cursor_shape, cw.blinking_cursor),
+            (CursorShape::Underline, true)
+        );
+    }
+
+    // With no blink configured the cursor is steady, and programs may
+    // make it blink: mode 12 is obeyed.
+    #[test]
+    fn unconfigured_blinking_is_steady_and_follows_mode_12() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.set_default_cursor_style(CursorShape::Block, None);
+        assert!(!cw.blinking_cursor, "steady by default");
+        parser.advance(&mut cw, b"\x1b[?12h");
+        assert!(cw.blinking_cursor, "mode 12 is obeyed");
+        parser.advance(&mut cw, b"\x1b[?12l");
+        assert!(!cw.blinking_cursor);
+        parser.advance(&mut cw, b"\x1b[1 q\x1b[0 q");
+        assert!(!cw.blinking_cursor, "the default is steady");
+    }
+
+    // A configured blink is the default and mode 12 is ignored: mode 12
+    // has no way back to the default. DECSCUSR, which has one, still applies.
+    #[test]
+    fn a_configured_blink_ignores_mode_12() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.set_default_cursor_style(CursorShape::Block, Some(false));
+        assert!(!cw.blinking_cursor);
+        cw.reset_damage();
+        parser.advance(&mut cw, b"\x1b[?12h");
+        assert!(!cw.blinking_cursor, "mode 12 is ignored");
+        assert_eq!(cw.peek_damage_event(), None, "nothing changed");
+        parser.advance(&mut cw, b"\x1b[1 q");
+        assert!(cw.blinking_cursor, "DECSCUSR still applies");
+        parser.advance(&mut cw, b"\x1b[0 q");
+        assert!(!cw.blinking_cursor, "back to the configured steady cursor");
+
+        cw.set_default_cursor_style(CursorShape::Block, Some(true));
+        assert!(
+            cw.blinking_cursor,
+            "following the defaults, it takes the new one"
+        );
+        parser.advance(&mut cw, b"\x1b[?12l");
+        assert!(cw.blinking_cursor, "mode 12 is ignored either way");
+    }
+
+    // A new default (a config reload) shows only while the cursor follows
+    // the defaults: a program's chosen style stays until it
+    // selects the default, which is then the new one.
+    #[test]
+    fn a_new_default_leaves_a_programs_cursor_alone() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b[6 q");
+        cw.reset_damage();
+        cw.set_default_cursor_style(CursorShape::Underline, Some(false));
+        assert_eq!(
+            cw.cursor_shape,
+            CursorShape::Beam,
+            "the program's beam stays"
+        );
+        assert_eq!(cw.peek_damage_event(), None, "nothing on screen changed");
+        parser.advance(&mut cw, b"\x1b[0 q");
+        assert_eq!(cw.cursor_shape, CursorShape::Underline);
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        cw.reset_damage();
+        // Following the defaults again, the next one shows right away.
+        cw.set_default_cursor_style(CursorShape::Block, Some(false));
+        assert_eq!(cw.cursor_shape, CursorShape::Block);
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+    }
+
+    // OSC 50 `CursorShape=` changes the shape like DECSCUSR, so it is
+    // damage too.
+    #[test]
+    fn osc_50_cursor_shape_is_damage() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.reset_damage();
+        parser.advance(&mut cw, b"\x1b]50;CursorShape=1\x07");
+        assert_eq!(cw.cursor_shape, CursorShape::Beam);
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        cw.reset_damage();
+        parser.advance(&mut cw, b"\x1b]50;CursorShape=1\x07");
+        assert_eq!(cw.peek_damage_event(), None, "already a beam");
+    }
+
+    // A cursor move is a frame, for the cursor itself, and copies no
+    // row: the row it left and the row it is on did not change. A
+    // renderer that breaks runs at the cursor rebuilds both from the
+    // rows it already holds. Every way of moving the cursor behaves so.
+    #[test]
+    fn a_cursor_move_is_a_frame_that_copies_no_row() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        cw.input_str("ab");
+        cw.goto(Line(2), Column(0));
+        cw.input_str("cd");
+        cw.goto(Line(2), Column(1));
+        cw.reset_damage();
+        let mut rows = Vec::new();
+        let mut row_styles = Vec::new();
+        let mut extras = rustc_hash::FxHashMap::default();
+        snap(
+            &mut cw,
+            &TerminalDamage::Full,
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        for row in &mut rows {
+            row.dirty = false;
+        }
+
+        // A tab is not among them: it writes into the cell it crosses.
+        let moves: [(&str, &[u8]); 9] = [
+            ("CUP", b"\x1b[1;2H"),
+            ("CUD", b"\x1b[B"),
+            ("CUU", b"\x1b[A"),
+            ("CUF", b"\x1b[C"),
+            ("CUB", b"\x1b[D"),
+            ("CHA", b"\x1b[3G"),
+            ("VPA", b"\x1b[3d"),
+            ("CR", b"\r"),
+            ("BS", b"\x1b[5G\x08"),
+        ];
+        for (name, bytes) in moves {
+            let before = cw.grid.cursor.pos;
+            parser.advance(&mut cw, bytes);
+            assert_ne!(cw.grid.cursor.pos, before, "{name} moved the cursor");
+            assert_eq!(
+                cw.peek_damage_event(),
+                Some(TerminalDamage::Partial),
+                "{name} is a frame"
+            );
+            cw.reset_damage();
+            snap(
+                &mut cw,
+                &TerminalDamage::Partial,
+                &mut rows,
+                &mut row_styles,
+                &mut extras,
+            );
+            assert!(rows.iter().all(|row| !row.dirty), "{name} copied a row");
+            assert_eq!(cw.peek_damage_event(), None, "{name} was consumed");
+        }
+    }
+
+    // A reverse scroll moves the vi cursor down with the region's rows.
+    // With the viewport scrolled into history the region reaches below
+    // the viewport, and the cursor must not follow it off screen.
+    #[test]
+    fn a_reverse_scroll_keeps_the_vi_cursor_in_a_scrolled_viewport() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        for line in 0..8 {
+            parser.advance(&mut cw, format!("{line}\r\n").as_bytes());
+        }
+        cw.toggle_vi_mode();
+        // Four lines shown, two in scrollback: rows -2 to 1.
+        cw.scroll_display(Scroll::Delta(2));
+        cw.vi_goto_pos(Pos::new(Line(1), Column(0)));
+        assert_eq!(cw.display_offset(), 2);
+
+        // Insert two lines at the top of the active area.
+        parser.advance(&mut cw, b"\x1b[1;1H\x1b[2L");
+        assert_eq!(cw.display_offset(), 2, "the viewport did not move");
+        assert_eq!(
+            cw.vi_mode_cursor.pos.row,
+            Line(1),
+            "the bottom row of the viewport, not of the region"
+        );
+        let cursor = cw.cursor();
+        assert_eq!(cursor.pos.row, Line(3), "drawn on the last viewport row");
+    }
+
+    // The alt screen has no scrollback and the primary viewport may be
+    // scrolled into it. A screen swap brings the vi cursor onto a row
+    // the new viewport shows, in both directions.
+    #[test]
+    fn a_screen_swap_keeps_the_vi_cursor_in_the_viewport() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        for line in 0..8 {
+            parser.advance(&mut cw, format!("{line}\r\n").as_bytes());
+        }
+        cw.toggle_vi_mode();
+        cw.scroll_display(Scroll::Delta(3));
+        cw.vi_goto_pos(Pos::new(Line(-3), Column(2)));
+        assert_eq!(cw.display_offset(), 3);
+
+        parser.advance(&mut cw, b"\x1b[?1049h");
+        assert!(cw.mode().contains(Mode::ALT_SCREEN));
+        assert_eq!(cw.history_size(), 0);
+        assert_eq!(cw.vi_mode_cursor.pos, Pos::new(Line(0), Column(2)));
+        assert_eq!(cw.cursor().pos, Pos::new(Line(0), Column(2)));
+
+        // Back on the primary screen the viewport is still rows -3 to 0.
+        cw.vi_goto_pos(Pos::new(Line(3), Column(1)));
+        parser.advance(&mut cw, b"\x1b[?1049l");
+        assert!(!cw.mode().contains(Mode::ALT_SCREEN));
+        assert_eq!(cw.display_offset(), 3);
+        assert_eq!(cw.vi_mode_cursor.pos, Pos::new(Line(0), Column(1)));
+        assert_eq!(cw.cursor().pos, Pos::new(Line(3), Column(1)));
+    }
+
+    // A tab on the last column writes the tab into the cell and leaves
+    // the cursor where it is, so the cell change itself has to be the
+    // damage: there is no cursor move to carry the frame.
+    #[test]
+    fn a_tab_on_the_last_column_is_damage() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        let last = cw.grid.columns();
+        parser.advance(&mut cw, format!("\x1b[1;{last}H").as_bytes());
+        assert_eq!(cw.grid.cursor.pos.col, Column(last - 1));
+        cw.reset_damage();
+        assert!(cw.peek_damage_event().is_none());
+
+        parser.advance(&mut cw, b"\t");
+        assert_eq!(cw.grid.cursor.pos.col, Column(last - 1), "no move");
+        assert_eq!(cw.grid[Line(0)][Column(last - 1)].c(), '\t');
+        assert!(cw.peek_damage_event().is_some(), "the cell changed");
+    }
+
+    // A scroll in a region anchored at the top goes through history,
+    // so a viewport scrolled back grows its offset and keeps showing
+    // the same scrollback rows. The fixed rows below the region keep
+    // their grid index and so move down the screen without changing;
+    // the region's damage does not cover them, the frame must be full.
+    #[test]
+    fn a_top_anchored_region_scroll_in_a_scrolled_viewport_is_full_damage() {
+        use crate::event::TerminalDamage;
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(12, 5),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            40,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+        for i in 0..9 {
+            parser.advance(&mut cw, format!("L{i}\r\n").as_bytes());
+        }
+        parser.advance(&mut cw, b"Lx");
+        cw.scroll_display(Scroll::Delta(1));
+        assert_eq!(cw.display_offset(), 1);
+        let mut rows = Vec::new();
+        let mut row_styles = Vec::new();
+        let mut extras = rustc_hash::FxHashMap::default();
+        cw.reset_damage();
+        snap(
+            &mut cw,
+            &TerminalDamage::Full,
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        let text = |rows: &[Row<Square>]| -> Vec<String> {
+            rows.iter()
+                .map(|r| r.inner.iter().map(|s| s.c()).collect::<String>())
+                .map(|s| s.trim_end_matches(['\0', ' ']).to_string())
+                .collect()
+        };
+        assert_eq!(text(&rows), ["L4", "L5", "L6", "L7", "L8"]);
+
+        // Region rows 1 to 2, fixed rows 3 to 5; a linefeed at the
+        // region's bottom scrolls it.
+        parser.advance(&mut cw, b"\x1b[1;2r\x1b[2;1H\n");
+        assert_eq!(cw.display_offset(), 2, "the pin absorbed the scroll");
+        let peeked = cw.peek_damage_event();
+        assert_eq!(peeked, Some(TerminalDamage::Full));
+
+        cw.reset_damage();
+        snap(
+            &mut cw,
+            &peeked.unwrap(),
+            &mut rows,
+            &mut row_styles,
+            &mut extras,
+        );
+        let mut fresh = Vec::new();
+        let mut fresh_styles = Vec::new();
+        let mut fresh_extras = rustc_hash::FxHashMap::default();
+        snap(
+            &mut cw,
+            &TerminalDamage::Full,
+            &mut fresh,
+            &mut fresh_styles,
+            &mut fresh_extras,
+        );
+        // The scrollback rows stay, the region shows its new blank row,
+        // and the fixed row below it moved down by one.
+        assert_eq!(text(&fresh), ["L4", "L5", "L6", "", "L7"]);
+        assert_eq!(text(&rows), text(&fresh), "the kept snapshot is current");
+    }
+
+    // The legacy damage iterator names the line the cursor left. In vi
+    // mode that cursor can be on a scrollback row, which has no line
+    // of its own in the damage state; it must not be indexed.
+    #[test]
+    fn the_legacy_damage_handles_a_vi_cursor_that_left_scrollback() {
+        fn lines(cw: &mut Crosswords<VoidListener>) -> Vec<usize> {
+            match cw.damage() {
+                TermDamage::Partial(it) => it.map(|l| l.line).collect(),
+                TermDamage::Full => panic!("a cursor move is partial damage"),
+            }
+        }
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        for line in 0..8 {
+            parser.advance(&mut cw, format!("{line}\r\n").as_bytes());
+        }
+        assert!(cw.history_size() >= 3);
+        cw.toggle_vi_mode();
+        // Four screen lines, three in scrollback: rows -3 to 0 are shown.
+        cw.scroll_display(Scroll::Delta(3));
+        cw.vi_goto_pos(Pos::new(Line(-3), Column(0)));
+        let _ = cw.damage();
+        cw.reset_damage();
+        assert_eq!(cw.damage.last_cursor, Pos::new(Line(-3), Column(0)));
+
+        // Leaving a scrollback row names nothing: it has no line.
+        cw.vi_goto_pos(Pos::new(Line(0), Column(0)));
+        assert_eq!(cw.display_offset(), 3, "the viewport did not move");
+        assert_eq!(lines(&mut cw), Vec::<usize>::new());
+        cw.reset_damage();
+
+        // Leaving an active row names it, as the viewport line it is on.
+        cw.vi_goto_pos(Pos::new(Line(-1), Column(0)));
+        assert_eq!(cw.display_offset(), 3, "the viewport did not move");
+        assert_eq!(lines(&mut cw), vec![3], "grid row 0 is viewport line 3");
+    }
+
+    // The cursor a renderer draws sits on the left half of a wide
+    // character. In vi mode with the viewport scrolled, the vi cursor
+    // is on a scrollback row; the spacer check has to read that row,
+    // not the active-area row at the same viewport index.
+    #[test]
+    fn a_vi_cursor_on_a_wide_spacer_in_scrollback_moves_left() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, "中x\r\n".as_bytes());
+        for _ in 0..7 {
+            parser.advance(&mut cw, b"ab\r\n");
+        }
+        let history = cw.history_size();
+        assert!(history >= 5);
+        let wide_line = Line(-(history as i32));
+        assert_eq!(cw.grid[wide_line][Column(0)].c(), '中');
+        assert!(matches!(cw.grid[wide_line][Column(1)].wide(), Wide::Spacer));
+        assert_eq!(
+            cw.grid[Line(0)][Column(1)].c(),
+            'b',
+            "the active row under it is plain"
+        );
+
+        cw.toggle_vi_mode();
+        cw.scroll_display(Scroll::Delta(history as i32));
+        assert_eq!(cw.display_offset(), history);
+        cw.vi_goto_pos(Pos::new(wide_line, Column(1)));
+        assert_eq!(cw.display_offset(), history, "the viewport did not move");
+
+        let cursor = cw.cursor();
+        assert_eq!(cursor.pos.row, Line(0), "shown on the top viewport row");
+        assert_eq!(
+            cursor.pos.col,
+            Column(0),
+            "drawn on the wide character, not its spacer"
+        );
+    }
+
+    // A reverse index inside a scroll region moves only the region's
+    // rows, so only they are damaged; the full screen still coalesces
+    // into full damage.
+    #[test]
+    fn a_region_scroll_down_damages_only_the_region() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b[2;3r\x1b[2;1H");
+        cw.reset_damage();
+        for row in 0..cw.grid.screen_lines() {
+            cw.grid[Line(row as i32)].dirty = false;
+        }
+
+        parser.advance(&mut cw, b"\x1bM");
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        assert!(!cw.grid[Line(0)].dirty);
+        assert!(cw.grid[Line(1)].dirty);
+        assert!(cw.grid[Line(2)].dirty);
+        assert!(!cw.grid[Line(3)].dirty);
+
+        parser.advance(&mut cw, b"\x1b[r\x1b[1;1H");
+        cw.reset_damage();
+        parser.advance(&mut cw, b"\x1bM");
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Full));
+    }
+
+    // Marking a range marks the rows of it that are on screen, as rows
+    // to copy and as a partial frame; the part in scrollback is left
+    // alone.
+    #[test]
+    fn damage_range_rows_marks_the_visible_rows() {
+        use crate::event::TerminalDamage;
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        for _ in 0..6 {
+            parser.advance(&mut cw, b"x\r\n");
+        }
+        assert!(
+            cw.history_size() >= 2,
+            "the rows above scrolled into history"
+        );
+        cw.reset_damage();
+        for row in -2..cw.grid.screen_lines() as i32 {
+            cw.grid[Line(row)].dirty = false;
+        }
+        let range = SelectionRange::new(
+            Pos::new(Line(-1), Column(0)),
+            Pos::new(Line(1), Column(2)),
+            false,
+        );
+        cw.damage_range_rows(&range);
+        assert_eq!(cw.peek_damage_event(), Some(TerminalDamage::Partial));
+        assert!(!cw.grid[Line(-1)].dirty, "scrollback is not on screen");
+        assert!(cw.grid[Line(0)].dirty);
+        assert!(cw.grid[Line(1)].dirty);
+        assert!(!cw.grid[Line(2)].dirty);
+
+        // Scrolled back one line, the same range is one row lower on
+        // screen and its scrollback row is now visible.
+        cw.scroll_display(Scroll::Delta(1));
+        cw.reset_damage();
+        for row in -2..cw.grid.screen_lines() as i32 {
+            cw.grid[Line(row)].dirty = false;
+        }
+        cw.damage_range_rows(&range);
+        assert!(cw.grid[Line(-1)].dirty);
+        assert!(cw.grid[Line(0)].dirty);
+        assert!(cw.grid[Line(1)].dirty);
+        assert!(!cw.grid[Line(2)].dirty);
+    }
+
+    /// xorshift64*, enough randomness for an operation mix and a seed
+    /// that reproduces a failure.
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x >> 12;
+            x ^= x << 25;
+            x ^= x >> 27;
+            self.0 = x;
+            x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        }
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+        fn pick<'a>(&mut self, items: &[&'a str]) -> &'a str {
+            items[self.below(items.len() as u64) as usize]
+        }
+    }
+
+    /// One random burst of terminal input, or a host action, applied
+    /// to `cw`. Returns a description for the failure message.
+    fn random_burst<T: EventListener>(
+        cw: &mut Crosswords<T>,
+        parser: &mut crate::performer::handler::Processor,
+        rng: &mut Rng,
+    ) -> String {
+        let cols = cw.grid.columns() as u64;
+        let lines = cw.grid.screen_lines() as u64;
+        match rng.below(40) {
+            0 => {
+                let delta = rng.below(7) as i32 - 3;
+                cw.scroll_display(Scroll::Delta(delta));
+                return format!("scroll_display({delta})");
+            }
+            1 if rng.below(4) == 0 => {
+                let c = 6 + rng.below(20) as usize;
+                let r = 3 + rng.below(6) as usize;
+                cw.resize(CrosswordsSize::new(c, r));
+                return format!("resize({c}x{r})");
+            }
+            _ => {}
+        }
+        let mut bytes = String::new();
+        let ops = 1 + rng.below(6);
+        for _ in 0..ops {
+            let op: String = match rng.below(26) {
+                0..=5 => {
+                    let n = 1 + rng.below(10);
+                    (0..n)
+                        .map(|_| {
+                            rng.pick(&[
+                                "a", "b", "Z", "9", " ", " ", "é", "中", "e\u{301}", "~",
+                            ])
+                        })
+                        .collect()
+                }
+                6 => "\r\n".into(),
+                7 => format!("\x1b[{};{}H", 1 + rng.below(lines), 1 + rng.below(cols)),
+                8 => format!(
+                    "\x1b[{}{}",
+                    1 + rng.below(3),
+                    rng.pick(&["A", "B", "C", "D"])
+                ),
+                9 => format!("\x1b[{}{}", 1 + rng.below(3), rng.pick(&["L", "M"])),
+                10 => format!("\x1b[{}{}", 1 + rng.below(4), rng.pick(&["@", "P", "X"])),
+                11 => rng.pick(&["\x1b[K", "\x1b[1K", "\x1b[2K"]).into(),
+                12 => rng
+                    .pick(&["\x1b[J", "\x1b[1J", "\x1b[2J", "\x1b[3J"])
+                    .into(),
+                13 => rng.pick(&["\x1bM", "\x1bD", "\x1bE"]).into(),
+                14 => {
+                    // Top-anchored regions take the history path with
+                    // fixed rows below them, so they come up often.
+                    let top = if rng.below(2) == 0 {
+                        1
+                    } else {
+                        1 + rng.below(lines.max(2) - 1)
+                    };
+                    let bottom = top + 1 + rng.below(lines - top);
+                    if rng.below(3) == 0 {
+                        "\x1b[r".into()
+                    } else {
+                        format!("\x1b[{top};{bottom}r")
+                    }
+                }
+                15 => rng
+                    .pick(&[
+                        "\x1b[0m",
+                        "\x1b[1m",
+                        "\x1b[4m",
+                        "\x1b[7m",
+                        "\x1b[31m",
+                        "\x1b[44m",
+                        "\x1b[38;2;10;20;30m",
+                        "\x1b[48;5;200m",
+                        "\x1b[39m",
+                        "\x1b[49m",
+                    ])
+                    .into(),
+                16 => rng.pick(&["\x1b[?1049h", "\x1b[?1049l"]).into(),
+                17 => rng.pick(&["\x1b[?25l", "\x1b[?25h"]).into(),
+                18 => format!("\x1b[{}{}", 1 + rng.below(3), rng.pick(&["S", "T"])),
+                19 => format!(
+                    "\x1b]8;;http://example/{}\x1b\\link\x1b]8;;\x1b\\",
+                    rng.below(5)
+                ),
+                20 => rng.pick(&["\x1b[?7l", "\x1b[?7h"]).into(),
+                21 => "\x1b#8".into(),
+                22 => rng.pick(&["\t", "\x08", "\x08\x08"]).into(),
+                23 => format!("\x1b[{}b", 1 + rng.below(5)),
+                24 => rng
+                    .pick(&["\x1b[4h", "\x1b[4l", "\x1b[?6h", "\x1b[?6l"])
+                    .into(),
+                _ => rng.pick(&["\x1b7", "\x1b8"]).into(),
+            };
+            bytes.push_str(&op);
+        }
+        parser.advance(cw, bytes.as_bytes());
+        bytes.escape_debug().to_string()
+    }
+
+    // The snapshot a frontend keeps across frames, copying only the
+    // rows the damage names, must equal one taken from scratch after
+    // every burst. Any operation that changes a visible row without
+    // marking it shows up here as a stale row, with the seed and the
+    // burst that did it.
+    #[test]
+    fn an_incremental_snapshot_matches_a_fresh_one_after_random_bursts() {
+        use crate::event::TerminalDamage;
+        for seed in 1..=60u64 {
+            let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+            let mut cw = Crosswords::new(
+                CrosswordsSize::new(12, 5),
+                CursorShape::Block,
+                VoidListener {},
+                crate::event::WindowId::from(0),
+                0,
+                40,
+            );
+            let mut parser = crate::performer::handler::Processor::default();
+            let mut rows = Vec::new();
+            let mut row_styles = Vec::new();
+            let mut extras = rustc_hash::FxHashMap::default();
+            let mut history: std::collections::VecDeque<String> =
+                std::collections::VecDeque::new();
+            let mut previous: Vec<Vec<Square>> = Vec::new();
+            for burst in 0..400 {
+                let what = random_burst(&mut cw, &mut parser, &mut rng);
+                history.push_back(what);
+                if history.len() > 4 {
+                    history.pop_front();
+                }
+                // What the burst itself marked.
+                let full_before = cw.is_fully_damaged();
+                let offset = cw.display_offset() as i32;
+                let dirty_before: Vec<bool> = (0..cw.grid.screen_lines() as i32)
+                    .map(|y| cw.grid[Line(y - offset)].dirty)
+                    .collect();
+                // The frontends' order: peek, consume, copy.
+                let peeked = cw.peek_damage_event();
+                let damage = peeked.unwrap_or(TerminalDamage::Noop);
+                cw.reset_damage();
+                cw.snapshot_visible(&damage, &mut rows, &mut row_styles, &mut extras);
+
+                let mut fresh_rows = Vec::new();
+                let mut fresh_styles = Vec::new();
+                let mut fresh_extras = rustc_hash::FxHashMap::default();
+                snap(
+                    &mut cw,
+                    &TerminalDamage::Full,
+                    &mut fresh_rows,
+                    &mut fresh_styles,
+                    &mut fresh_extras,
+                );
+
+                let context = || {
+                    format!(
+                        "seed {seed}, burst {burst}, damage {damage:?}, last bursts {:?}",
+                        history
+                    )
+                };
+                // A burst that changed what is on screen must have been
+                // one the reader announces: the snapshot path above
+                // copies dirty rows even on a quiet frame, but the
+                // renderer is only woken when the peek says so.
+                let fresh_cells: Vec<Vec<Square>> =
+                    fresh_rows.iter().map(|row| row.inner.clone()).collect();
+                if fresh_cells != previous {
+                    assert!(
+                        peeked.is_some(),
+                        "the screen changed and no damage was reported: {}",
+                        context()
+                    );
+                }
+                // Every row that changed carried its own mark, or the
+                // frame was full.
+                for (y, fresh) in fresh_cells.iter().enumerate() {
+                    if previous.get(y) != Some(fresh) {
+                        assert!(
+                            full_before || dirty_before[y],
+                            "row {y} changed without a mark: {}",
+                            context()
+                        );
+                    }
+                }
+                previous = fresh_cells;
+                assert_eq!(rows.len(), fresh_rows.len(), "{}", context());
+                for (y, (kept, fresh)) in rows.iter().zip(&fresh_rows).enumerate() {
+                    assert_eq!(kept.inner, fresh.inner, "row {y} cells: {}", context());
+                    assert_eq!(
+                        (
+                            kept.has_styles,
+                            kept.has_extras,
+                            kept.kitty_virtual_placeholder
+                        ),
+                        (
+                            fresh.has_styles,
+                            fresh.has_extras,
+                            fresh.kitty_virtual_placeholder
+                        ),
+                        "row {y} flags: {}",
+                        context()
+                    );
+                    assert_eq!(
+                        row_styles[y],
+                        fresh_styles[y],
+                        "row {y} styles: {}",
+                        context()
+                    );
+                    for sq in &fresh.inner {
+                        if let Some(id) = sq.extras_id_checked() {
+                            assert_eq!(
+                                extras.get(&id),
+                                fresh_extras.get(&id),
+                                "row {y} extras {id}: {}",
+                                context()
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -7697,26 +8812,326 @@ mod tests {
         );
     }
 
+    /// The registration the cell at (line, col) was printed with.
     #[cfg(feature = "graphics")]
-    #[test]
-    fn glyph_protocol_register_and_clear_mark_full_damage() {
-        let mut cw = make_crosswords();
-        cw.reset_damage();
-        assert!(!cw.is_fully_damaged());
+    fn bound_version<U: EventListener>(
+        cw: &Crosswords<U>,
+        line: i32,
+        col: usize,
+    ) -> Option<u32> {
+        let sq = cw.grid[Line(line)][Column(col)];
+        sq.extras_id()
+            .and_then(|id| cw.grid.extras_table.get(id))
+            .and_then(|extras| extras.glyph)
+    }
 
+    #[cfg(feature = "graphics")]
+    fn register_upm<U: EventListener>(cw: &mut Crosswords<U>, cp: u32, upm: u16) {
+        // Same outline, different upm: a different registration.
         Handler::glyph_register(
-            &mut cw,
-            0x10_0000,
-            glyf_payload(minimal_glyf_bytes(), 1000),
+            cw,
+            cp,
+            glyf_payload(minimal_glyf_bytes(), upm),
             1,
             Default::default(),
         )
         .unwrap();
-        assert!(cw.is_fully_damaged(), "register must repaint (§7.3)");
+    }
+
+    #[cfg(feature = "graphics")]
+    fn current_version(cw: &Crosswords<VoidListener>, cp: u32) -> u32 {
+        cw.glyph_registry.as_ref().unwrap().get(cp).unwrap().version
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_binds_registrations_when_printed() {
+        // Spec §6.3: a cell keeps the registration it was printed with.
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        let first = current_version(&cw, 0x10_0000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
 
         cw.reset_damage();
+        register_upm(&mut cw, 0x10_0000, 2048);
+        let second = current_version(&cw, 0x10_0000);
+        // Registering changes nothing on screen, so nothing repaints
+        // (only the first registration does, see below).
+        assert!(!cw.is_fully_damaged());
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+
         Handler::glyph_clear(&mut cw, Some(0x10_0000));
-        assert!(cw.is_fully_damaged(), "clear must repaint (§7.3)");
+        assert!(!cw.is_fully_damaged());
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+
+        assert_eq!(bound_version(&cw, 0, 0), Some(first));
+        assert_eq!(bound_version(&cw, 0, 1), Some(second));
+        // Printed with nothing registered: nothing to bind.
+        assert_eq!(bound_version(&cw, 0, 2), None);
+        // The text is the codepoint either way.
+        for col in 0..3 {
+            assert_eq!(cw.grid[Line(0)][Column(col)].c(), '\u{100000}');
+        }
+        let registry = cw.glyph_registry.as_ref().unwrap();
+        assert!(registry.get_version(first).is_some());
+        assert!(registry.get_version(second).is_some());
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_first_registration_repaints_once() {
+        // The renderer gets the registry through an event; one repaint
+        // covers text printed before it arrives.
+        let mut cw = make_crosswords();
+        cw.reset_damage();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        assert!(cw.is_fully_damaged());
+        cw.reset_damage();
+        register_upm(&mut cw, 0x10_0001, 1000);
+        assert!(!cw.is_fully_damaged());
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_text_printed_before_a_registration_stays_unbound() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0001, 1000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        register_upm(&mut cw, 0x10_0000, 1000);
+        assert_eq!(bound_version(&cw, 0, 0), None);
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_binds_inside_a_bulk_print_run() {
+        // The bulk writers fill a run from one template; block
+        // codepoints leave the run so each gets its own binding.
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        register_upm(&mut cw, 0x10_0001, 1000);
+        let a = current_version(&cw, 0x10_0000);
+        let b = current_version(&cw, 0x10_0001);
+        parser.advance(&mut cw, "\u{e9}\u{100000}\u{100001}\u{e8}".as_bytes());
+        assert_eq!(bound_version(&cw, 0, 0), None);
+        assert_eq!(bound_version(&cw, 0, 1), Some(a));
+        assert_eq!(bound_version(&cw, 0, 2), Some(b));
+        assert_eq!(bound_version(&cw, 0, 3), None);
+        assert_eq!(cw.grid[Line(0)][Column(3)].c(), '\u{e8}');
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_binding_keeps_hyperlinks_and_marks() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        let version = current_version(&cw, 0x10_0000);
+        // Inside an OSC 8 link, then a combining mark on the same cell.
+        parser.advance(&mut cw, b"\x1b]8;;https://example.com\x1b\\");
+        parser.advance(&mut cw, "\u{100000}\u{301}".as_bytes());
+        let sq = cw.grid[Line(0)][Column(0)];
+        let extras = cw.grid.extras_table.get(sq.extras_id().unwrap()).unwrap();
+        assert_eq!(extras.glyph, Some(version));
+        assert_eq!(
+            extras.hyperlink.as_ref().unwrap().uri(),
+            "https://example.com"
+        );
+        assert_eq!(extras.zerowidth, vec!['\u{301}']);
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_print_cache_shares_one_slot_and_only_for_plain_cells() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        let version = current_version(&cw, 0x10_0000);
+        let id = |cw: &Crosswords<VoidListener>, col| {
+            cw.grid[Line(0)][Column(col)].extras_id()
+        };
+        // Plain, linked, plain: the plain cells share one slot, the
+        // linked one keeps its link.
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        parser.advance(&mut cw, b"\x1b]8;;https://example.com\x1b\\");
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        parser.advance(&mut cw, b"\x1b]8;;\x1b\\");
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        assert_eq!(id(&cw, 0), id(&cw, 2));
+        assert_ne!(id(&cw, 0), id(&cw, 1));
+        let linked = cw.grid.extras_table.get(id(&cw, 1).unwrap()).unwrap();
+        assert_eq!(linked.glyph, Some(version));
+        assert!(linked.hyperlink.is_some());
+        let plain = cw.grid.extras_table.get(id(&cw, 2).unwrap()).unwrap();
+        assert_eq!(plain.glyph, Some(version));
+        assert!(plain.hyperlink.is_none());
+
+        // A new registration is a miss.
+        register_upm(&mut cw, 0x10_0000, 2048);
+        let second = current_version(&cw, 0x10_0000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        assert_eq!(bound_version(&cw, 0, 3), Some(second));
+        assert_eq!(bound_version(&cw, 0, 2), Some(version));
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_print_cache_forgets_slots_the_sweep_frees() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        let version = current_version(&cw, 0x10_0000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        let freed = cw.grid[Line(0)][Column(0)].extras_id().unwrap();
+        // Overwrite it, sweep, and give its slot to a link.
+        parser.advance(&mut cw, b"\rx");
+        cw.grid.reclaim_extras();
+        parser.advance(
+            &mut cw,
+            b"\r\x1b]8;;https://example.com\x1b\\y\x1b]8;;\x1b\\",
+        );
+        assert_eq!(cw.grid[Line(0)][Column(0)].extras_id(), Some(freed));
+        // Printing the glyph again must not reuse the link's slot.
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        assert_eq!(bound_version(&cw, 0, 1), Some(version));
+        let sq = cw.grid[Line(0)][Column(1)];
+        let extras = cw.grid.extras_table.get(sq.extras_id().unwrap()).unwrap();
+        assert!(extras.hyperlink.is_none());
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_overwritten_text_releases_its_registration() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        let first = current_version(&cw, 0x10_0000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        register_upm(&mut cw, 0x10_0000, 2048);
+        assert_eq!(cw.glyph_registry.as_ref().unwrap().retired_len(), 1);
+        // The only cell showing the first registration is overwritten.
+        parser.advance(&mut cw, b"\rx");
+        cw.reclaim_glyphs();
+        let registry = cw.glyph_registry.as_ref().unwrap();
+        assert!(registry.get_version(first).is_none());
+        assert_eq!(registry.retired_len(), 0);
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_bounds_the_registrations_text_keeps_alive() {
+        // §9: replace and print a registration until MAX_RETIRED old ones
+        // are still on screen. The next is refused with `no_space` until
+        // the text using them is gone.
+        use crate::ansi::glyph_protocol::RegisterError;
+        use rio_graphics::glyph::glyph_registry::MAX_RETIRED;
+        let size = CrosswordsSize::new(80, 24);
+        let mut cw = Crosswords::new(
+            size,
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            100,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+        for upm in 1..=MAX_RETIRED as u16 + 1 {
+            register_upm(&mut cw, 0x10_0000, upm);
+            parser.advance(&mut cw, "\u{100000}".as_bytes());
+        }
+        let registry = cw.glyph_registry.clone().unwrap();
+        assert_eq!(registry.retired_len(), MAX_RETIRED);
+        let over = |cw: &mut Crosswords<VoidListener>| {
+            Handler::glyph_register(
+                cw,
+                0x10_0000,
+                glyf_payload(minimal_glyf_bytes(), 9999),
+                1,
+                Default::default(),
+            )
+        };
+        assert_eq!(over(&mut cw), Err(RegisterError::NoSpace));
+        // Every one of them is still shown.
+        assert_eq!(registry.retired_len(), MAX_RETIRED);
+
+        // A new codepoint is refused too, since it could be printed and
+        // cleared; the current one sent again adds nothing and succeeds.
+        assert_eq!(
+            Handler::glyph_register(
+                &mut cw,
+                0x10_0001,
+                glyf_payload(minimal_glyf_bytes(), 1000),
+                1,
+                Default::default(),
+            ),
+            Err(RegisterError::NoSpace)
+        );
+        register_upm(&mut cw, 0x10_0000, MAX_RETIRED as u16 + 1);
+        assert_eq!(registry.retired_len(), MAX_RETIRED);
+
+        // Overwrite the text that used them (all of it is on screen: 1025
+        // cells in 80 columns), and the space is back right away.
+        parser.advance(&mut cw, b"\x1b[H");
+        parser.advance(&mut cw, " ".repeat(80 * 14).as_bytes());
+        assert_eq!(over(&mut cw), Ok(()));
+        assert_eq!(registry.retired_len(), 1);
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_bound_holds_when_clearing_retires() {
+        // Register, print, clear: every round retires one more glyph text
+        // shows, through `c` rather than a replacing `r`. The bound still
+        // has to stop it.
+        use crate::ansi::glyph_protocol::RegisterError;
+        use rio_graphics::glyph::glyph_registry::MAX_RETIRED;
+        // Every glyph printed stays on screen or in the scrollback.
+        let mut cw = Crosswords::new(
+            CrosswordsSize::new(80, 24),
+            CursorShape::Block,
+            VoidListener {},
+            crate::event::WindowId::from(0),
+            0,
+            100,
+        );
+        let mut parser = crate::performer::handler::Processor::default();
+        let mut refused = false;
+        for round in 0..2 * MAX_RETIRED {
+            let registered = Handler::glyph_register(
+                &mut cw,
+                0x10_0000,
+                glyf_payload(minimal_glyf_bytes(), 1000 + round as u16),
+                1,
+                Default::default(),
+            );
+            if registered == Err(RegisterError::NoSpace) {
+                refused = true;
+                break;
+            }
+            registered.unwrap();
+            parser.advance(&mut cw, "\u{100000}".as_bytes());
+            Handler::glyph_clear(&mut cw, Some(0x10_0000));
+        }
+        let retired = cw.glyph_registry.as_ref().unwrap().retired_len();
+        assert!(retired <= MAX_RETIRED, "{retired} retired");
+        assert!(refused);
+    }
+
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_full_reset_drops_retired_registrations() {
+        let mut cw = make_crosswords();
+        let mut parser = crate::performer::handler::Processor::default();
+        register_upm(&mut cw, 0x10_0000, 1000);
+        parser.advance(&mut cw, "\u{100000}".as_bytes());
+        register_upm(&mut cw, 0x10_0000, 2048);
+        let registry = cw.glyph_registry.clone().unwrap();
+        assert_eq!(registry.retired_len(), 1);
+        parser.advance(&mut cw, b"\x1bc");
+        assert_eq!(registry.retired_len(), 0);
+        assert!(registry.is_empty());
     }
 
     #[cfg(feature = "graphics")]
@@ -8157,11 +9572,9 @@ mod tests {
             "Input should cause damage"
         );
 
-        // Reset damage to simulate a render cycle completing
+        // Reset damage to simulate a render cycle completing; it records
+        // the cursor position as rendered.
         cw.reset_damage();
-
-        // Update last cursor position to match current (simulating that cursor position was rendered)
-        cw.damage.last_cursor = cw.grid.cursor.pos;
 
         // Verify damage was cleared
         assert!(
@@ -10823,7 +12236,7 @@ mod tests {
     }
 
     /// Consuming a frame records the cursor position it carried:
-    /// without that, every subsequent peek reports CursorOnly and
+    /// without that, every subsequent peek reports the move again and
     /// each PTY drain fires a redraw event forever.
     #[test]
     fn reset_damage_quiesces_cursor_events() {

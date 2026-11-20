@@ -10,6 +10,14 @@ pub use key::{
 pub use render_state::{
     ImageLayer, ImagePlacement, ImageProtocol, RenderState, ViewportSelection,
 };
+/// What a host that draws Glyph Protocol glyphs needs: the registry's
+/// entries, their placement (§8.5), and the `glyf` and `vg` decoders.
+#[cfg(feature = "graphics")]
+pub use rio_graphics::{
+    glyph::{glyf_decode, glyph_registry},
+    glyph_layout, glyph_vector,
+};
+pub use rio_vt::ansi::glyph_protocol::GlyphFormat;
 pub use rio_vt::clipboard::ClipboardType;
 pub use rio_vt::config::colors::term::TermColors;
 pub use rio_vt::config::colors::{AnsiColor, ColorRgb, NamedColor};
@@ -182,10 +190,32 @@ pub trait SurfaceDelegate: MaybeSendSync + 'static {
     fn handles_program_status(&self) -> bool {
         false
     }
+    /// The Glyph Protocol payload formats this delegate draws. Read once
+    /// per surface at creation. Programs are offered exactly these, and
+    /// what they register is read with [`RenderState::glyph_version`]
+    /// and [`Surface::glyph`]. None by default, which leaves the
+    /// protocol off: a program probing for it gets no answer, as from a
+    /// terminal without it. Needs the `graphics` feature, which stores
+    /// registrations.
+    fn glyph_formats(&self) -> &'static [GlyphFormat] {
+        &[]
+    }
+    /// A program asked what draws `cp` (Glyph Protocol `q`). Only called
+    /// for a delegate that draws some format, and like [`Self::wakeup`]
+    /// with the terminal locked, so the only surface call allowed here is
+    /// [`Surface::glyph_query_reply`]. Answer with it once per query, in
+    /// order: right here, or later from any thread when looking the
+    /// codepoint up in the fonts is slow. Replies the terminal makes
+    /// after the query wait for that answer, so the program gets them in
+    /// the order it asked; a query never answered holds them forever.
+    fn glyph_query(&self, _surface: SurfaceId, _cp: u32) {}
     /// Bytes the terminal wants delivered to the child process. Only called
     /// on non-`pty` builds, where the host owns the transport (a WebSocket
     /// to a real shell, an in-page demo interpreter, ...); with a PTY the
-    /// bytes go straight to it and this never fires.
+    /// bytes go straight to it and this never fires. Called with the
+    /// terminal locked, or from inside [`Surface::glyph_query_reply`]
+    /// while it keeps the replies in order, so only hand the bytes on
+    /// here; calling back into the surface deadlocks.
     fn output(&self, _surface: SurfaceId, _bytes: &[u8]) {}
 }
 
@@ -235,11 +265,27 @@ impl InlineImageStore {
 
 pub(crate) type InlineImages = Arc<InlineImageStore>;
 
+/// What goes to the terminal behind a glyph query the host has yet to
+/// answer, in request order. The front is always a query.
+#[cfg(feature = "graphics")]
+enum Held {
+    Query(u32),
+    Reply(Cow<'static, [u8]>),
+}
+
+#[cfg(feature = "graphics")]
+type HeldReplies = Arc<std::sync::Mutex<std::collections::VecDeque<Held>>>;
+
 #[derive(Clone)]
 pub(crate) struct Listener {
     surface_id: SurfaceId,
     delegate: Arc<dyn SurfaceDelegate>,
     inline_images: InlineImages,
+    /// The delegate answers glyph queries: it draws some format.
+    #[cfg(feature = "graphics")]
+    glyph_queries: bool,
+    #[cfg(feature = "graphics")]
+    held: HeldReplies,
     #[cfg(feature = "pty")]
     pty_writer: Arc<Mutex<Option<corcovado::channel::Sender<Msg>>>>,
 }
@@ -285,6 +331,11 @@ impl Listener {
             // terminal knows when it has every one of them.
             RioEvent::PtyWrite(_, text) => {
                 self.pass_back(Cow::Owned(text.into_bytes()));
+            }
+            #[cfg(feature = "graphics")]
+            RioEvent::GlyphProtocolQuery { cp, .. } if self.glyph_queries => {
+                self.held.lock().unwrap().push_back(Held::Query(cp));
+                self.delegate.glyph_query(self.surface_id, cp);
             }
             // Not answered here. The terminal is told the query is
             // settled, so the replies behind it take the direct path.
@@ -366,6 +417,22 @@ impl Listener {
     /// the terminal: the PTY's writer settles one fenced item with it
     /// on `pty` builds, the delegate gets the bytes otherwise.
     fn pass_back(&self, bytes: Cow<'static, [u8]>) {
+        #[cfg(feature = "graphics")]
+        {
+            let mut held = self.held.lock().unwrap();
+            if !held.is_empty() {
+                held.push_back(Held::Reply(bytes));
+                return;
+            }
+            self.deliver(bytes);
+        }
+        #[cfg(not(feature = "graphics"))]
+        self.deliver(bytes);
+    }
+
+    /// Hand one answer or reply to the terminal, now. Callers hold
+    /// `held`, so a reply can't overtake one held behind a query.
+    fn deliver(&self, bytes: Cow<'static, [u8]>) {
         #[cfg(feature = "pty")]
         if let Some(channel) = self.pty_writer.lock().unwrap().as_ref() {
             let _ = channel.send(Msg::Reply(bytes));
@@ -391,6 +458,10 @@ impl EventListener for Listener {
 pub struct SurfaceDesc {
     pub shell: Option<String>,
     pub args: Vec<String>,
+    /// Where the shell starts: a path (a leading `~` is the home
+    /// directory), `home`, or `inherit` (as `None`) for the host's current
+    /// directory. One a shell can't be started in falls back to the
+    /// current directory, with a warning in the log.
     pub working_dir: Option<String>,
     pub cols: u16,
     pub rows: u16,
@@ -427,11 +498,43 @@ impl Engine {
         }
     }
 
+    /// A surface running the shell `desc` names, or the user's login
+    /// shell, on a new pty. Without the `pty` feature the host carries
+    /// the bytes instead, and `desc`'s shell, args and working_dir are
+    /// unused.
     pub fn create_surface(
         &self,
         desc: &SurfaceDesc,
     ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
+        #[cfg(feature = "pty")]
+        return Surface::new(self, desc, spawn_pty(desc)?);
+        #[cfg(not(feature = "pty"))]
         Surface::new(self, desc)
+    }
+
+    /// A surface over a pty master the host already holds, instead of a
+    /// spawned shell, like foot's `--pty`. `desc`'s shell, args and
+    /// working_dir are unused. Nothing of ours runs on it, so nothing is
+    /// signaled or reaped and [`Surface::child_pid`] is 0, and the
+    /// surface ends when the other side closes: once no process holds
+    /// the slave, which on Linux includes one that has never been
+    /// opened. Anything but a pty master is refused. The descriptor is
+    /// made nonblocking, which a duplicate the host keeps shares, and
+    /// closed on failure.
+    #[cfg(all(feature = "pty", not(target_os = "windows")))]
+    pub fn adopt_surface(
+        &self,
+        desc: &SurfaceDesc,
+        main: std::os::fd::OwnedFd,
+    ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
+        let pty = teletypewriter::create_pty_from_fd(
+            main,
+            desc.cols,
+            desc.rows,
+            desc.pixel_width,
+            desc.pixel_height,
+        )?;
+        Surface::new(self, desc, pty)
     }
 }
 
@@ -482,6 +585,13 @@ fn trailing_url_punctuation(text: &str) -> usize {
 
 pub struct Surface {
     id: SurfaceId,
+    /// The terminal's glyph registry, when the delegate draws glyphs;
+    /// see [`Surface::glyph`].
+    #[cfg(feature = "graphics")]
+    glyphs: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
+    /// Delivers the glyph query answers and the replies held behind them.
+    #[cfg(feature = "graphics")]
+    replies: Listener,
     alt_is_meta: std::sync::atomic::AtomicBool,
     terminal: Arc<TerminalLock<Crosswords<Listener>>>,
     /// Compiled URL detector, built on first hover. Hit-testing runs per
@@ -494,6 +604,9 @@ pub struct Surface {
     processor: std::sync::Mutex<Option<rio_vt::performer::handler::Processor>>,
     /// Sixel/iTerm2 pixels for the render states to read.
     inline_images: InlineImages,
+    /// Whether the host breaks shaping runs at the cursor cell; read by
+    /// the render states to mark the rows a cursor move reshapes.
+    cursor_shaping_break: Arc<std::sync::atomic::AtomicBool>,
     /// Non-pty transport: `write` hands the bytes to the delegate instead
     /// of a PTY channel.
     #[cfg(not(feature = "pty"))]
@@ -557,22 +670,90 @@ fn encode_paste(text: &str, bracketed: bool) -> Vec<u8> {
     }
 }
 
+/// A pty with the shell `desc` names, or the user's login shell.
+#[cfg(feature = "pty")]
+fn spawn_pty(desc: &SurfaceDesc) -> std::io::Result<teletypewriter::Pty> {
+    // No shell in the descriptor means "whatever the user's default is",
+    // which teletypewriter resolves (and starts as a login shell).
+    let shell = desc.shell.as_deref();
+
+    // The child inherits the host process's environment, which for GUI
+    // hosts has no TERM at all (or a stale one). Resolve it the way rio
+    // does: prefer rio's terminfo when it's installed, else fall back to
+    // the universally known xterm-256color so local prompts and remote
+    // ssh sessions both keep working.
+    #[cfg(not(target_os = "windows"))]
+    {
+        let terminfo = match (
+            teletypewriter::terminfo_exists("xterm-rio"),
+            teletypewriter::terminfo_exists("rio"),
+        ) {
+            (true, _) => "xterm-rio",
+            (false, true) => "rio",
+            (false, false) => "xterm-256color",
+        };
+        let env = vec![
+            ("TERM".to_string(), terminfo.to_string()),
+            ("COLORTERM".to_string(), "truecolor".to_string()),
+        ];
+        create_pty_with_spawn(
+            shell,
+            desc.args.clone(),
+            &desc.working_dir,
+            Some(env),
+            desc.cols,
+            desc.rows,
+            desc.pixel_width,
+            desc.pixel_height,
+        )
+    }
+
+    #[cfg(target_os = "windows")]
+    create_pty(
+        shell,
+        desc.args.clone(),
+        &desc.working_dir,
+        None,
+        desc.cols,
+        desc.rows,
+    )
+}
+
 impl Surface {
+    /// A surface over `pty`, which librio reads and writes on its own
+    /// threads: [`Engine::create_surface`] spawns it and
+    /// [`Engine::adopt_surface`] wraps the host's. Without the `pty`
+    /// feature the host carries the bytes: it feeds the program's output
+    /// with [`Surface::inject_output`] and gets the terminal's through
+    /// [`SurfaceDelegate::output`].
     fn new(
         engine: &Engine,
         desc: &SurfaceDesc,
+        #[cfg(feature = "pty")] pty: teletypewriter::Pty,
     ) -> Result<Surface, Box<dyn Error + Send + Sync>> {
         let id = engine.next_surface_id.fetch_add(1, Ordering::SeqCst);
         #[cfg(feature = "pty")]
         let pty_writer = Arc::new(Mutex::new(None));
         let inline_images = InlineImages::default();
+        // Without `graphics` nothing stores a registration to draw.
+        let glyph_formats = if cfg!(feature = "graphics") {
+            engine.delegate.glyph_formats()
+        } else {
+            &[]
+        };
         let listener = Listener {
             surface_id: id,
             delegate: engine.delegate.clone(),
             inline_images: inline_images.clone(),
+            #[cfg(feature = "graphics")]
+            glyph_queries: !glyph_formats.is_empty(),
+            #[cfg(feature = "graphics")]
+            held: HeldReplies::default(),
             #[cfg(feature = "pty")]
             pty_writer: pty_writer.clone(),
         };
+        #[cfg(feature = "graphics")]
+        let replies = listener.clone();
 
         let mut terminal = Crosswords::new(
             GridSize::new(
@@ -588,6 +769,16 @@ impl Surface {
             desc.scrollback,
         );
         terminal.set_program_status_enabled(engine.delegate.handles_program_status());
+        terminal.set_glyph_formats(glyph_formats);
+        // Made now so the surface holds it; a full reset empties it in
+        // place.
+        #[cfg(feature = "graphics")]
+        let glyphs = (!glyph_formats.is_empty()).then(|| {
+            terminal
+                .glyph_registry
+                .get_or_insert_with(Default::default)
+                .clone()
+        });
         // On wasm the delegate (and so the whole graph) is single-threaded
         // by design; Arc stays because the pty build shares it with the IO
         // thread and the API is one type on every target.
@@ -598,67 +789,23 @@ impl Surface {
         {
             Ok(Surface {
                 id,
+                #[cfg(feature = "graphics")]
+                glyphs,
+                #[cfg(feature = "graphics")]
+                replies,
                 // Terminals default alt to meta; the host may override it.
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
                 inline_images,
+                cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
                 delegate: engine.delegate.clone(),
             })
         }
 
         #[cfg(feature = "pty")]
         {
-            // No shell in the descriptor means "whatever the user's default is",
-            // which teletypewriter resolves (and starts as a login shell).
-            let shell = desc.shell.as_deref();
-
-            // The child inherits the host process's environment, which for GUI
-            // hosts has no TERM at all (or a stale one). Resolve it the way rio
-            // does: prefer rio's terminfo when it's installed, else fall back to
-            // the universally known xterm-256color so local prompts and remote
-            // ssh sessions both keep working.
-            #[cfg(not(target_os = "windows"))]
-            let env = {
-                let terminfo = match (
-                    teletypewriter::terminfo_exists("xterm-rio"),
-                    teletypewriter::terminfo_exists("rio"),
-                ) {
-                    (true, _) => "xterm-rio",
-                    (false, true) => "rio",
-                    (false, false) => "xterm-256color",
-                };
-                Some(vec![
-                    ("TERM".to_string(), terminfo.to_string()),
-                    ("COLORTERM".to_string(), "truecolor".to_string()),
-                ])
-            };
-
-            #[cfg(not(target_os = "windows"))]
-            let pty = create_pty_with_spawn(
-                shell,
-                desc.args.clone(),
-                &desc.working_dir,
-                env,
-                desc.cols,
-                desc.rows,
-                desc.pixel_width,
-                desc.pixel_height,
-            )
-            .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
-
-            #[cfg(target_os = "windows")]
-            let pty = create_pty(
-                shell,
-                desc.args.clone(),
-                &desc.working_dir,
-                None,
-                desc.cols,
-                desc.rows,
-            )
-            .map_err(|err| Box::new(err) as Box<dyn Error + Send + Sync>)?;
-
             #[cfg(not(target_os = "windows"))]
             let shell_pid = *pty.child.pid.clone() as u32;
             #[cfg(target_os = "windows")]
@@ -682,12 +829,17 @@ impl Surface {
 
             Ok(Surface {
                 id,
+                #[cfg(feature = "graphics")]
+                glyphs,
+                #[cfg(feature = "graphics")]
+                replies,
                 // Terminals default alt to meta; the host may override it.
                 alt_is_meta: std::sync::atomic::AtomicBool::new(true),
                 terminal,
                 url_regex: std::sync::Mutex::new(None),
                 processor: std::sync::Mutex::new(None),
                 inline_images,
+                cursor_shaping_break: Arc::new(std::sync::atomic::AtomicBool::new(true)),
                 channel,
                 shell_pid,
                 #[cfg(not(target_os = "windows"))]
@@ -718,6 +870,51 @@ impl Surface {
             }
         }
         self.send(bytes);
+    }
+
+    /// The Glyph Protocol registration a cell was printed with, by the
+    /// version [`RenderState::glyph_version`] gives for it. A cell keeps
+    /// that registration (spec §6.3): registering or clearing the
+    /// codepoint again changes only text printed afterwards, and doesn't
+    /// damage the screen. A version always means the same glyph, so it
+    /// can key a raster cache; versions are unique within one surface.
+    /// `None` without a delegate that draws glyphs, or once no cell
+    /// shows the registration any more. This reads the registry under
+    /// its lock and clones the entry, so look a version up once and
+    /// cache what it draws, not once per cell and frame.
+    #[cfg(feature = "graphics")]
+    pub fn glyph(
+        &self,
+        version: u32,
+    ) -> Option<rio_graphics::glyph::glyph_registry::RegisteredGlyph> {
+        self.glyphs.as_ref()?.get_version(version)
+    }
+
+    /// Answer the oldest unanswered [`SurfaceDelegate::glyph_query`]:
+    /// `system` says whether the host's fonts cover its codepoint, and
+    /// whether a program registered it is filled in here. The replies
+    /// the terminal made after the query follow it. Returns `false`, and
+    /// sends nothing, when no query is waiting.
+    #[cfg(feature = "graphics")]
+    pub fn glyph_query_reply(&self, system: bool) -> bool {
+        use rio_vt::ansi::glyph_protocol::{format_query_response, QueryStatus};
+        let Some(glyphs) = &self.glyphs else {
+            return false;
+        };
+        let mut held = self.replies.held.lock().unwrap();
+        let Some(&Held::Query(cp)) = held.front() else {
+            return false;
+        };
+        held.pop_front();
+        let status = QueryStatus::new(glyphs.contains(cp), system);
+        let answer = format_query_response(cp, status).into_bytes();
+        self.replies.deliver(Cow::Owned(answer));
+        while let Some(Held::Reply(_)) = held.front() {
+            if let Some(Held::Reply(bytes)) = held.pop_front() {
+                self.replies.deliver(bytes);
+            }
+        }
+        true
     }
 
     /// Bytes for the child, as they are: the PTY on `pty` builds, the
@@ -804,6 +1001,18 @@ impl Surface {
     /// still wins at runtime.
     pub fn set_grapheme_clustering(&self, enabled: bool) {
         self.terminal.lock().set_grapheme_clustering(enabled);
+    }
+
+    /// Whether the host breaks shaping runs around the cursor cell, as
+    /// a renderer does so a ligature under the cursor shows its
+    /// characters one by one. When it does, a render state update marks
+    /// the row the cursor left and the row it is on dirty on a cursor
+    /// move, without copying either from the terminal, since neither
+    /// changed. A host that shapes rows the same wherever the cursor is
+    /// turns this off and a cursor move marks no row. On by default.
+    pub fn set_cursor_shaping_break(&self, enabled: bool) {
+        self.cursor_shaping_break
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub fn key(&self, event: &KeyEvent) -> bool {
@@ -1390,6 +1599,10 @@ impl Surface {
     pub(crate) fn inline_images(&self) -> InlineImages {
         self.inline_images.clone()
     }
+
+    pub(crate) fn cursor_shaping_break(&self) -> Arc<std::sync::atomic::AtomicBool> {
+        self.cursor_shaping_break.clone()
+    }
 }
 
 #[cfg(feature = "pty")]
@@ -1566,6 +1779,58 @@ mod tests {
 
     fn row_10(state: &RenderState) -> Option<char> {
         state.square(9, 0).map(|sq| sq.c())
+    }
+
+    // A cursor move marks the row the cursor left and the row it is on,
+    // which a shaping break at the cursor changes, without the terminal
+    // copying either. A host that does not break at the cursor says so:
+    // the row shaped around the cursor is marked once more, and a
+    // cursor move then leaves every row clean.
+    #[test]
+    fn the_cursor_shaping_break_decides_whether_a_move_dirties_rows() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        // A child that prints nothing, so only injected output and the
+        // cursor touch the rows.
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".to_string()),
+                args: vec!["-c".to_string(), "sleep 300".to_string()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        let mut state = RenderState::new(&surface);
+        surface.inject_output(b"ab\r\n\r\ncd\x1b[3;2H");
+        state.update();
+        state.reset_dirty();
+
+        surface.set_cursor_shaping_break(false);
+        state.update();
+        assert!(state.row_dirty(2), "the row shaped around the cursor");
+        assert!(!state.row_dirty(0));
+        state.reset_dirty();
+        surface.inject_output(b"\x1b[1;2H");
+        state.update();
+        assert_eq!(state.cursor(), (0, 1), "line 0, column 1");
+        assert!(
+            !state.row_dirty(0) && !state.row_dirty(2),
+            "no break, no row work"
+        );
+
+        surface.set_cursor_shaping_break(true);
+        surface.inject_output(b"\x1b[3;2H");
+        state.update();
+        assert!(state.row_dirty(2), "the row the cursor is on");
+        assert!(
+            !state.row_dirty(0),
+            "the row it left was shaped without a cursor"
+        );
+        state.reset_dirty();
+        surface.inject_output(b"\x1b[1;2H");
+        state.update();
+        assert!(state.row_dirty(0), "the row the cursor is on");
+        assert!(state.row_dirty(2), "the row the cursor left");
     }
 
     /// Move the active update's last BSU far enough back that it expired.
@@ -2812,5 +3077,248 @@ mod tests {
             .image_placement(0, CELL_W, CELL_H)
             .expect("back in view");
         assert_eq!(placement.geometry.y, 0.0);
+    }
+
+    /// Registers `cp=100000` as the smallest `glyf`, one contour with one
+    /// point, at `upm`.
+    #[cfg(feature = "graphics")]
+    fn register_glyf(surface: &Surface, upm: u16) {
+        surface.inject_output(
+            format!("\x1b_25a1;r;cp=100000;reply=0;upm={upm};AAEAAAAAAAAAAAAAAAABAAAAAA==\x1b\\")
+                .as_bytes(),
+        );
+    }
+
+    // A delegate that draws no glyphs leaves Glyph Protocol off: nothing
+    // a program registers is kept or bound to its text.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_needs_the_delegate_to_opt_in() {
+        let surface = quiet_surface(80, 24);
+        let mut state = RenderState::new(&surface);
+        register_glyf(&surface, 1000);
+        surface.inject_output("\u{100000}".as_bytes());
+        state.update();
+        let cell = *state.square(0, 0).unwrap();
+        assert_eq!(state.glyph_version(&cell), None);
+        assert!(surface.glyph(0).is_none());
+        assert!(!surface.glyph_query_reply(false));
+    }
+
+    #[cfg(feature = "graphics")]
+    struct GlyphHost(Mutex<Vec<u32>>);
+
+    #[cfg(feature = "graphics")]
+    impl SurfaceDelegate for GlyphHost {
+        fn wakeup(&self, _surface: SurfaceId) {}
+        fn glyph_formats(&self) -> &'static [GlyphFormat] {
+            &[GlyphFormat::Glyf]
+        }
+        fn glyph_query(&self, _surface: SurfaceId, cp: u32) {
+            self.0.lock().unwrap().push(cp);
+        }
+    }
+
+    // Each cell draws the registration it was printed with; text printed
+    // before a registration draws as text.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_cells_keep_the_registration_they_were_printed_with() {
+        let engine = Engine::new(Arc::new(GlyphHost(Mutex::new(Vec::new()))));
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec!["-c".into(), "sleep 300".into()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        let mut state = RenderState::new(&surface);
+        surface.inject_output("\u{100000}".as_bytes());
+        register_glyf(&surface, 1000);
+        surface.inject_output("\u{100000}".as_bytes());
+        register_glyf(&surface, 2048);
+        surface.inject_output("\u{100000}".as_bytes());
+        state.update();
+        let version = |col| {
+            let cell = *state.square(0, col).unwrap();
+            state.glyph_version(&cell)
+        };
+        assert_eq!(version(0), None);
+        let (first, second) = (version(1).unwrap(), version(2).unwrap());
+        assert_ne!(first, second);
+        assert_eq!(surface.glyph(first).unwrap().upm, 1000);
+        assert_eq!(surface.glyph(second).unwrap().upm, 2048);
+    }
+
+    // The host draws `glyf` alone, so that is all programs are offered,
+    // and its answer to a query reaches the program ahead of the replies
+    // made after the query.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_query_answers_keep_request_order() {
+        let delegate = Arc::new(GlyphHost(Mutex::new(Vec::new())));
+        let engine = Engine::new(delegate.clone());
+        // The child shows the replies it is sent.
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec!["-c".into(), "stty raw -echo; printf READY; cat -v".into()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn cat");
+        let shown = |text: &str| {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            while !surface.dump().contains(text) {
+                assert!(
+                    Instant::now() < deadline,
+                    "no {text:?} in {:?}",
+                    surface.dump()
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        shown("READY");
+
+        register_glyf(&surface, 1000);
+        surface.inject_output(b"\x1b_25a1;q;cp=100000\x1b\\\x1b_25a1;s\x1b\\");
+        assert_eq!(*delegate.0.lock().unwrap(), [0x100000]);
+        // The `s` reply waits behind the unanswered query.
+        {
+            let held = surface.replies.held.lock().unwrap();
+            assert_eq!(held.len(), 2);
+            assert!(matches!(held[0], Held::Query(0x100000)));
+            assert!(matches!(held[1], Held::Reply(_)));
+        }
+        assert!(surface.glyph_query_reply(false));
+        assert!(!surface.glyph_query_reply(false), "one answer per query");
+        shown("q;cp=100000;status=glossary^[\\^[_25a1;s;fmt=glyf^[\\");
+    }
+
+    // A host whose font lookup is cheap answers inside the callback.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_query_can_be_answered_from_the_callback() {
+        struct EagerHost(std::sync::OnceLock<std::sync::Weak<Surface>>);
+        impl SurfaceDelegate for EagerHost {
+            fn wakeup(&self, _surface: SurfaceId) {}
+            fn glyph_formats(&self) -> &'static [GlyphFormat] {
+                &[GlyphFormat::Vg]
+            }
+            fn glyph_query(&self, _surface: SurfaceId, _cp: u32) {
+                let surface = self.0.get().and_then(std::sync::Weak::upgrade);
+                assert!(surface.expect("surface").glyph_query_reply(true));
+            }
+        }
+        let delegate = Arc::new(EagerHost(std::sync::OnceLock::new()));
+        let engine = Engine::new(delegate.clone());
+        let surface = Arc::new(
+            engine
+                .create_surface(&SurfaceDesc {
+                    shell: Some("/bin/sh".into()),
+                    args: vec![
+                        "-c".into(),
+                        "stty raw -echo; printf READY; cat -v".into(),
+                    ],
+                    ..SurfaceDesc::default()
+                })
+                .expect("spawn cat"),
+        );
+        let _ = delegate.0.set(Arc::downgrade(&surface));
+        let shown = |text: &str| {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            while !surface.dump().contains(text) {
+                assert!(
+                    Instant::now() < deadline,
+                    "no {text:?} in {:?}",
+                    surface.dump()
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        shown("READY");
+        surface.inject_output(b"\x1b_25a1;q;cp=e0a0\x1b\\\x1b_25a1;s\x1b\\");
+        shown("q;cp=e0a0;status=system^[\\^[_25a1;s;fmt=vg^[\\");
+    }
+
+    /// A pty pair: the main (master) and sub (slave) ends.
+    fn openpty() -> (std::os::fd::OwnedFd, std::fs::File) {
+        use std::os::fd::FromRawFd;
+        let (mut main, mut sub) = (0, 0);
+        let opened = unsafe {
+            libc::openpty(
+                &mut main,
+                &mut sub,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(opened, 0);
+        unsafe {
+            (
+                std::os::fd::OwnedFd::from_raw_fd(main),
+                std::fs::File::from_raw_fd(sub),
+            )
+        }
+    }
+
+    struct ClosingDelegate(std::sync::atomic::AtomicBool);
+
+    impl SurfaceDelegate for ClosingDelegate {
+        fn wakeup(&self, _surface: SurfaceId) {}
+        fn close_surface(&self, _surface: SurfaceId) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    // A pty master the host holds drives a surface like a spawned shell;
+    // the test writes from the other side, and closing that side ends
+    // the surface.
+    #[test]
+    fn adopts_an_existing_pty() {
+        use std::io::Write;
+        let delegate =
+            Arc::new(ClosingDelegate(std::sync::atomic::AtomicBool::new(false)));
+        let engine = Engine::new(delegate.clone());
+        let (main, mut sub) = openpty();
+        let surface = engine
+            .adopt_surface(&SurfaceDesc::default(), main)
+            .expect("adopt the pty");
+        assert_eq!(surface.child_pid(), 0);
+        let mut state = RenderState::new(&surface);
+
+        sub.write_all(b"from the other side").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            state.update();
+            if (0..state.lines())
+                .any(|i| state.text_row(i).contains("from the other side"))
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the output never reached the grid"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        drop(sub);
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while !delegate.0.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "the surface did not close");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn adopting_refuses_what_is_not_a_pty_master() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let (read_end, _write_end) = std::io::pipe().unwrap();
+        assert!(engine
+            .adopt_surface(&SurfaceDesc::default(), read_end.into())
+            .is_err());
     }
 }

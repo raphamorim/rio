@@ -442,6 +442,7 @@ fn extras_sweep_resets_reclaim_cadence() {
         table.alloc(Extras {
             zerowidth: Vec::new(),
             hyperlink: Some(Hyperlink::new(Some(i.to_string()), i.to_string())),
+            glyph: None,
         });
     }
     assert!(table.should_reclaim());
@@ -494,12 +495,14 @@ fn extras_reclaim_keeps_ids_of_hidden_cached_rows() {
     let id = grid.alloc_extras(Extras {
         zerowidth: vec!['\u{301}'],
         hyperlink: None,
+        glyph: None,
     });
     grid[Line(3)][Column(0)].set_extras_id(Some(id));
     grid[Line(3)].has_extras = true;
     let dead = grid.alloc_extras(Extras {
         zerowidth: vec!['\u{302}'],
         hyperlink: None,
+        glyph: None,
     });
 
     // Shrinking with the cursor at the top drops the bottom rows into
@@ -601,17 +604,21 @@ fn resolver_fast_path_matches_slow_path() {
     grid.sync_template_style();
     let id = grid.template_style_id();
 
-    // Styled row: full resolution.
-    let mut styled: Row<Square> = Row::new(3);
+    // Styled row: a run of two styled cells between default ones.
+    let mut styled: Row<Square> = Row::new(5);
     styled[Column(1)].set_style_id(id);
+    styled[Column(2)].set_style_id(id);
     styled.has_styles = true;
     let mut out = Vec::new();
     grid.resolve_row_styles(&styled, &mut out);
-    assert_eq!(out.len(), 3);
+    assert_eq!(out.len(), 5);
     assert_eq!(out[0], Style::default());
     assert_eq!(out[1].fg, AnsiColor::Named(NamedColor::Blue));
+    assert_eq!(out[2].fg, AnsiColor::Named(NamedColor::Blue));
+    assert_eq!(out[3], Style::default());
+    assert_eq!(out[4], Style::default());
 
-    // Unstyled row: fast fill must be indistinguishable.
+    // Unstyled row: the fast path must be indistinguishable.
     let plain: Row<Square> = Row::new(3);
     let mut fast = Vec::new();
     grid.resolve_row_styles(&plain, &mut fast);

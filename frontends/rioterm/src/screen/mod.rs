@@ -15,7 +15,7 @@ use crate::bindings::{
     ViAction,
 };
 use crate::context;
-use crate::context::renderable::{Cursor, RenderableContent};
+use crate::context::renderable::RenderableContent;
 use crate::context::{next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
@@ -35,7 +35,7 @@ use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::layout::Margin;
 use rio_backend::config::renderer::Backend;
-use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
+use rio_backend::crosswords::pos::{Boundary, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::{ClickState, EventProxy, SearchState};
@@ -82,6 +82,10 @@ pub struct Screen<'screen> {
     /// be rebuilt when the composition moves or ends even when
     /// terminal damage reports nothing.
     last_preedit_row: Option<usize>,
+    /// The search match focused on the last frame, so the rows of the
+    /// one it moves away from and the one it moves to are marked for
+    /// the snapshot; the focus paints over rows without changing them.
+    last_focused_match: Option<rio_backend::crosswords::search::Match>,
     last_ime_cursor_pos: Option<(f32, f32, f32)>,
     hints_config: Vec<std::rc::Rc<rio_backend::config::hints::Hint>>,
     /// Hint regexes compiled on first use, keyed by pattern. Hover
@@ -131,6 +135,22 @@ pub struct ScreenWindowProperties {
 #[inline]
 fn window_should_be_opaque(config: &rio_backend::config::Config) -> bool {
     config.window.opacity >= 1.0 && !config.window.blur.is_glass()
+}
+
+/// A warning for a `working-dir` shells can't start in (they start in the
+/// current directory instead), which would otherwise only reach the log.
+/// Not under Flatpak, where shells start on the host, which may see
+/// directories the sandbox can't.
+fn working_dir_error(config: &rio_backend::config::Config) -> Option<RioError> {
+    let dir = config.working_dir.as_deref()?;
+    if teletypewriter::in_flatpak() {
+        return None;
+    }
+    let why = teletypewriter::check_working_dir(dir).err()?;
+    Some(RioError {
+        level: RioErrorLevel::Warning,
+        report: RioErrorType::InvalidWorkingDirectory(why),
+    })
 }
 
 impl Screen<'_> {
@@ -263,6 +283,8 @@ impl Screen<'_> {
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
+            cursor_shape: config.cursor.shape,
+            cursor_blinking: config.cursor.blinking,
         };
 
         let rich_text_id = next_rich_text_id();
@@ -293,14 +315,7 @@ impl Screen<'_> {
             margin,
         );
 
-        let cursor = Cursor {
-            content: config.cursor.shape.into(),
-            state: CursorState::new(config.cursor.shape.into()),
-        };
-
         let context_manager = context::ContextManager::start(
-            // config.cursor.blinking
-            (&cursor, config.cursor.blinking),
             event_proxy,
             window_id.into(),
             rich_text_id,
@@ -323,6 +338,9 @@ impl Screen<'_> {
         } else {
             sugarloaf.clear_background_image();
         }
+        if let Some(error) = working_dir_error(config) {
+            renderer.assistant.set_error(error);
+        }
 
         Ok(Screen {
             search_state: SearchState::default(),
@@ -340,6 +358,7 @@ impl Screen<'_> {
             context_manager,
             ime: crate::ime::Ime::new(),
             last_preedit_row: None,
+            last_focused_match: None,
             sugarloaf,
             mouse: Mouse::new(config.scroll.multiplier, config.scroll.divider),
             touchpurpose: TouchPurpose::default(),
@@ -604,10 +623,12 @@ impl Screen<'_> {
                     .renderable_content
                     .pending_update
                     .set_dirty();
-                let shape = config.cursor.shape;
-                terminal.cursor_shape = shape;
-                terminal.default_cursor_shape = shape;
-                terminal.blinking_cursor = config.cursor.blinking;
+                // The new default shows only while no program chose a
+                // style (an editor's insert-mode beam stays).
+                terminal.set_default_cursor_style(
+                    config.cursor.shape,
+                    config.cursor.blinking,
+                );
                 drop(terminal);
             }
         }
@@ -617,6 +638,9 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard.clone();
+        // New terminals take the reloaded cursor defaults.
+        self.context_manager.config.cursor_shape = config.cursor.shape;
+        self.context_manager.config.cursor_blinking = config.cursor.blinking;
         self.context_manager.config.title = config.title.clone();
 
         // Re-evaluate the opaque flag — toggling `window.opacity` /
@@ -636,6 +660,9 @@ impl Screen<'_> {
             }
         } else {
             self.sugarloaf.clear_background_image();
+        }
+        if let Some(error) = working_dir_error(config) {
+            self.renderer.assistant.set_error(error);
         }
     }
 
@@ -2110,45 +2137,46 @@ impl Screen<'_> {
                 return false;
             }
 
-            // Mark the hint range as damaged so it gets re-rendered.
-            //
-            // Two damage signals are required:
-            // * Terminal-side: `update_selection_damage` marks the affected
-            // lines so the partial render path knows what to redraw.
-            // * Renderer-side: `pending_update.set_terminal_damage(Full)`
-            // ensures the render loop doesn't early-exit on
-            // `!pending_update.is_dirty()`
+            // The highlight paints over rows without changing them, so
+            // the rows of the previous highlight and of this one are
+            // marked for the next snapshot: that both copies them and
+            // makes the frame a partial one.
             {
                 let mut terminal = current.terminal.lock();
-                let display_offset = terminal.display_offset();
-
-                let hint_range = rio_backend::selection::SelectionRange::new(
+                if let Some(old) = &current.renderable_content.highlighted_hint {
+                    terminal.damage_range_rows(
+                        &rio_backend::selection::SelectionRange::new(
+                            old.start, old.end, false,
+                        ),
+                    );
+                }
+                terminal.damage_range_rows(&rio_backend::selection::SelectionRange::new(
                     hint_match.start,
                     hint_match.end,
                     false,
-                );
-                terminal.update_selection_damage(Some(hint_range), display_offset);
+                ));
             }
 
             current
                 .renderable_content
                 .pending_update
-                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
             current.renderable_content.highlighted_hint = Some(hint_match);
             true
         } else {
-            if current.renderable_content.highlighted_hint.is_some() {
+            if let Some(old) = &current.renderable_content.highlighted_hint {
                 let mut terminal = current.terminal.lock();
-                let display_offset = terminal.display_offset();
-                terminal.update_selection_damage(None, display_offset);
+                terminal.damage_range_rows(&rio_backend::selection::SelectionRange::new(
+                    old.start, old.end, false,
+                ));
             }
 
-            // Force a render so the previously-highlighted line clears.
+            // A render so the previously highlighted rows clear.
             if had_highlight {
                 current
                     .renderable_content
                     .pending_update
-                    .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
             }
             current.renderable_content.highlighted_hint = None;
             had_highlight
@@ -2164,10 +2192,16 @@ impl Screen<'_> {
         let current = self.context_manager.current_mut();
         let had_highlight = current.renderable_content.highlighted_hint.is_some();
 
-        if had_highlight {
+        if let Some(old) = &current.renderable_content.highlighted_hint {
             let mut terminal = current.terminal.lock();
-            let display_offset = terminal.display_offset();
-            terminal.update_selection_damage(None, display_offset);
+            terminal.damage_range_rows(&rio_backend::selection::SelectionRange::new(
+                old.start, old.end, false,
+            ));
+            drop(terminal);
+            current
+                .renderable_content
+                .pending_update
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
         }
 
         current.renderable_content.highlighted_hint = None;
@@ -3862,12 +3896,46 @@ impl Screen<'_> {
         }
 
         if is_search_active {
-            // Force invalidation for search with full damage
-            self.context_manager
-                .current_mut()
+            // The matches are found again every frame while searching,
+            // and the rows whose highlight changed are marked before the
+            // snapshot copies them; the panel only has to enter the
+            // render path. The focused match lives on the screen, so
+            // its rows are marked here when it moves.
+            let focused = self.search_state.focused_match.clone();
+            let current = self.context_manager.current_mut();
+            if focused != self.last_focused_match {
+                let mut terminal = current.terminal.lock();
+                for regex_match in self.last_focused_match.iter().chain(focused.iter()) {
+                    terminal.damage_range_rows(
+                        &rio_backend::selection::SelectionRange::new(
+                            *regex_match.start(),
+                            *regex_match.end(),
+                            false,
+                        ),
+                    );
+                }
+                drop(terminal);
+                current
+                    .renderable_content
+                    .pending_update
+                    .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
+                self.last_focused_match = focused;
+            }
+            current.renderable_content.pending_update.set_dirty();
+        } else if let Some(last) = self.last_focused_match.take() {
+            // The search ended: the focus is gone from its rows.
+            let current = self.context_manager.current_mut();
+            let mut terminal = current.terminal.lock();
+            terminal.damage_range_rows(&rio_backend::selection::SelectionRange::new(
+                *last.start(),
+                *last.end(),
+                false,
+            ));
+            drop(terminal);
+            current
                 .renderable_content
                 .pending_update
-                .set_terminal_damage(rio_backend::event::TerminalDamage::Full);
+                .set_terminal_damage(rio_backend::event::TerminalDamage::Partial);
         }
 
         let search_dfas = if is_search_active {
@@ -3913,8 +3981,8 @@ impl Screen<'_> {
                 // rows; today's clamps keep it non-negative, but a
                 // negative Line wrapping through `as usize` would fling
                 // the trail target off by ~10^18 px, so clamp first.
-                let cursor_row = cursor.state.pos.row.0.max(0) as usize;
-                let cursor_col = cursor.state.pos.col.0;
+                let cursor_row = cursor.pos.row.0.max(0) as usize;
+                let cursor_col = cursor.pos.col.0;
 
                 // Cursor position in physical pixels.
                 let cursor_px_x = origin_x + cursor_col as f32 * cell_width;
@@ -3925,8 +3993,8 @@ impl Screen<'_> {
                     cursor_px_y,
                     cell_width,
                     cell_height,
-                    cursor.state.content,
-                    cursor.state.is_visible(),
+                    cursor.content,
+                    cursor.is_visible(),
                     current.route_id,
                 );
 
@@ -4091,6 +4159,19 @@ impl Screen<'_> {
                 // and put them back at the end of the render pass so
                 // the next frame's `Renderer::run` resumes the same
                 // allocations.
+                // The row the cursor left and the row it is on shape
+                // differently when the cursor cell is a run of its own.
+                // Neither changed, so they are marked here from the
+                // rows already held instead of copied again, and a
+                // frame that was only a cursor move becomes a partial
+                // one so the emit loop rebuilds them.
+                let cursor = &ctx.renderable_content.cursor;
+                let shaped_cursor = (self.renderer.cursor_shaping_break
+                    && cursor.is_visible()
+                    && cursor.content != rio_backend::ansi::CursorShape::Hidden)
+                    .then_some((cursor.pos.row.0 as u16, cursor.pos.col.0 as u16));
+                let cursor_rows_marked =
+                    ctx.renderable_content.mark_cursor_rows(shaped_cursor);
                 let visible_rows =
                     std::mem::take(&mut ctx.renderable_content.visible_rows);
                 let row_styles = std::mem::take(&mut ctx.renderable_content.row_styles);
@@ -4105,6 +4186,16 @@ impl Screen<'_> {
                     &mut ctx.renderable_content.frame_damage,
                     rio_backend::event::TerminalDamage::Noop,
                 );
+                let damage = if cursor_rows_marked
+                    && matches!(
+                        damage,
+                        rio_backend::event::TerminalDamage::Noop
+                            | rio_backend::event::TerminalDamage::CursorOnly
+                    ) {
+                    rio_backend::event::TerminalDamage::Partial
+                } else {
+                    damage
+                };
                 let hint_matches = ctx.renderable_content.hint_matches.clone();
                 let is_active = *key == active_key;
                 // `focused_match` lives on `Screen::search_state` — it's
@@ -4133,7 +4224,7 @@ impl Screen<'_> {
                 } else {
                     None
                 };
-                let cursor_shape = cursor.state.content;
+                let cursor_shape = cursor.content;
                 let cursor_blinking = ctx.renderable_content.has_blinking_enabled;
                 let cursor_blink_visible =
                     !cursor_blinking || ctx.renderable_content.is_blinking_cursor_visible;
@@ -4146,9 +4237,9 @@ impl Screen<'_> {
                         rio_grid::preedit::PreeditLine::new(
                             &preedit.text,
                             preedit.cursor,
-                            (cursor.state.pos.row.0.max(0) as usize)
+                            (cursor.pos.row.0.max(0) as usize)
                                 .min(ctx.renderable_content.screen_lines.max(1) - 1),
-                            cursor.state.pos.col.0,
+                            cursor.pos.col.0,
                             ctx.renderable_content.columns.max(1),
                         )
                     })
@@ -4173,9 +4264,9 @@ impl Screen<'_> {
                     row_styles,
                     extras,
                     term_colors,
-                    cursor_col: cursor.state.pos.col.0 as u16,
-                    cursor_row: cursor.state.pos.row.0 as u16,
-                    cursor_visible: cursor.state.is_visible(),
+                    cursor_col: cursor.pos.col.0 as u16,
+                    cursor_row: cursor.pos.row.0 as u16,
+                    cursor_visible: cursor.is_visible(),
                     cursor_shape,
                     cursor_blinking,
                     cursor_blink_visible,
@@ -4360,7 +4451,8 @@ impl Screen<'_> {
                             preedit_row.as_ref(),
                             &mut bg_scratch,
                         );
-                        let cursor_col_for_row = if p.cursor_visible
+                        let cursor_col_for_row = if renderer_ref.cursor_shaping_break
+                            && p.cursor_visible
                             && (y as u16) == p.cursor_row
                             && p.cursor_shape != rio_backend::ansi::CursorShape::Hidden
                         {
@@ -4404,9 +4496,13 @@ impl Screen<'_> {
                         // atlas-full clear inside `rebuild_row` can
                         // re-set it for the recovery pass below.
                         grid.mark_full_rebuild_done();
+                        // The snapshot's full copy marked every row; clear
+                        // the bits here or the next partial frame rebuilds
+                        // the whole screen again.
                         #[allow(clippy::needless_range_loop)]
                         for y in 0..p.visible_rows.len() {
                             rebuild_row(p, y, grid, rasterizer);
+                            p.visible_rows[y].dirty = false;
                         }
                     }
                     RowsToRebuild::Dirty => {
@@ -4424,7 +4520,6 @@ impl Screen<'_> {
                         }
                     }
                 }
-
                 // The composition is painted into the row's CPU
                 // cells, so its row must rebuild whenever the overlay
                 // exists, moved, or just disappeared — even when
@@ -4648,7 +4743,6 @@ impl Screen<'_> {
         // In case the configuration of blinking cursor is enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
         if self.renderer.is_window_focused
-            && self.renderer.config_has_blinking_enabled
             && self.selection_is_empty()
             && self
                 .context_manager
@@ -4682,7 +4776,7 @@ impl Screen<'_> {
         };
 
         let layout = current_item.val.dimension;
-        let cursor_pos = current_item.val.renderable_content.cursor.state.pos;
+        let cursor_pos = current_item.val.renderable_content.cursor.pos;
 
         // While composing, the candidate popup follows the IME caret,
         // not the terminal cursor: the composition renders inline and
@@ -5082,5 +5176,40 @@ mod tests {
             at: std::time::Instant::now() - crate::constants::MULTI_CLICK_THRESHOLD * 2,
         };
         assert!(!stale.validates_double_click(origin));
+    }
+}
+
+#[cfg(test)]
+mod working_dir_error_tests {
+    use super::working_dir_error;
+    use rio_backend::config::Config;
+    use rio_backend::error::RioErrorType;
+
+    fn with_dir(dir: Option<String>) -> Config {
+        Config {
+            working_dir: dir,
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn unset_or_usable_is_no_error() {
+        assert!(working_dir_error(&with_dir(None)).is_none());
+        let tmp = std::env::temp_dir().to_string_lossy().into_owned();
+        assert!(working_dir_error(&with_dir(Some(tmp))).is_none());
+        assert!(working_dir_error(&with_dir(Some("~".into()))).is_none());
+    }
+
+    #[test]
+    fn a_missing_directory_is_reported() {
+        let missing = std::env::temp_dir()
+            .join("rio-working-dir-that-does-not-exist")
+            .to_string_lossy()
+            .into_owned();
+        let error = working_dir_error(&with_dir(Some(missing))).expect("reported");
+        assert!(matches!(
+            error.report,
+            RioErrorType::InvalidWorkingDirectory(ref why) if why.contains("can't be opened")
+        ));
     }
 }
