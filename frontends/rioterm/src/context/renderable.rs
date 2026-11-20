@@ -23,17 +23,6 @@ pub enum WindowUpdate {
     Background(BackgroundState),
 }
 
-/// `content` is the configured cursor shape as a char, read once to
-/// seed the terminal's cursor shape. The glyph actually drawn each
-/// frame comes from `state`; the old `content`/`content_ref` pair
-/// (drawn vs configured) collapsed when the IME preview stopped
-/// swapping the drawn char.
-#[derive(Default, Clone, Debug)]
-pub struct Cursor {
-    pub state: CursorState,
-    pub content: char,
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct HintLabel {
     pub position: rio_backend::crosswords::pos::Pos,
@@ -44,7 +33,8 @@ pub struct HintLabel {
 #[derive(Default)]
 pub struct RenderableContent {
     // TODO: Should not use default
-    pub cursor: Cursor,
+    /// The cursor drawn this frame, copied from the terminal.
+    pub cursor: CursorState,
     pub has_blinking_enabled: bool,
     pub is_blinking_cursor_visible: bool,
     pub selection_range: Option<SelectionRange>,
@@ -122,7 +112,7 @@ pub struct RenderableContent {
 }
 
 impl RenderableContent {
-    pub fn new(cursor: Cursor) -> Self {
+    pub fn new(cursor: CursorState) -> Self {
         RenderableContent {
             cursor,
             has_blinking_enabled: false,
@@ -216,7 +206,7 @@ impl RenderableContent {
         self.history_size = terminal.history_size();
         self.lines_evicted = terminal.lines_evicted();
         self.blinking_cursor = terminal.blinking_cursor;
-        self.cursor.state = terminal.cursor();
+        self.cursor = terminal.cursor();
         self.is_vi_mode = terminal.mode().contains(Mode::VI);
         if terminal.graphics.kitty_graphics_dirty {
             self.kitty_virtual_placements =
@@ -266,11 +256,7 @@ impl RenderableContent {
     }
 
     pub fn from_cursor_config(config_cursor: &CursorConfig) -> Self {
-        let cursor = Cursor {
-            content: config_cursor.shape.into(),
-            state: CursorState::new(config_cursor.shape.into()),
-        };
-        Self::new(cursor)
+        Self::new(CursorState::new(config_cursor.shape.into()))
     }
 }
 
@@ -458,7 +444,7 @@ mod pipeline_tests {
                 .count();
             // The rows the cursor cell reshapes, as screen::render
             // marks them before it takes the rows.
-            let cursor = &self.content.cursor.state;
+            let cursor = &self.content.cursor;
             let shaped_cursor = (self.cursor_shaping_break
                 && cursor.is_visible()
                 && cursor.content != rio_backend::ansi::CursorShape::Hidden)

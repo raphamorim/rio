@@ -15,7 +15,7 @@ use crate::bindings::{
     ViAction,
 };
 use crate::context;
-use crate::context::renderable::{Cursor, RenderableContent};
+use crate::context::renderable::RenderableContent;
 use crate::context::{next_rich_text_id, process_open_url, ContextManager};
 use crate::crosswords::{
     grid::{Dimensions, Scroll},
@@ -35,7 +35,7 @@ use rio_backend::clipboard::Clipboard;
 use rio_backend::clipboard::ClipboardType;
 use rio_backend::config::layout::Margin;
 use rio_backend::config::renderer::Backend;
-use rio_backend::crosswords::pos::{Boundary, CursorState, Direction, Line};
+use rio_backend::crosswords::pos::{Boundary, Direction, Line};
 use rio_backend::crosswords::search::RegexSearch;
 use rio_backend::error::{RioError, RioErrorLevel, RioErrorType};
 use rio_backend::event::{ClickState, EventProxy, SearchState};
@@ -283,6 +283,8 @@ impl Screen<'_> {
             scrollback_history_limit: config.scrollback_history_limit,
             grapheme_clustering: config.grapheme_clustering,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
+            cursor_shape: config.cursor.shape,
+            cursor_blinking: config.cursor.blinking,
         };
 
         let rich_text_id = next_rich_text_id();
@@ -313,14 +315,7 @@ impl Screen<'_> {
             margin,
         );
 
-        let cursor = Cursor {
-            content: config.cursor.shape.into(),
-            state: CursorState::new(config.cursor.shape.into()),
-        };
-
         let context_manager = context::ContextManager::start(
-            // config.cursor.blinking
-            (&cursor, config.cursor.blinking),
             event_proxy,
             window_id.into(),
             rich_text_id,
@@ -628,10 +623,12 @@ impl Screen<'_> {
                     .renderable_content
                     .pending_update
                     .set_dirty();
-                let shape = config.cursor.shape;
-                terminal.cursor_shape = shape;
-                terminal.default_cursor_shape = shape;
-                terminal.blinking_cursor = config.cursor.blinking;
+                // The new default shows only while no program chose a
+                // style (an editor's insert-mode beam stays).
+                terminal.set_default_cursor_style(
+                    config.cursor.shape,
+                    config.cursor.blinking,
+                );
                 drop(terminal);
             }
         }
@@ -641,6 +638,9 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard.clone();
+        // New terminals take the reloaded cursor defaults.
+        self.context_manager.config.cursor_shape = config.cursor.shape;
+        self.context_manager.config.cursor_blinking = config.cursor.blinking;
         self.context_manager.config.title = config.title.clone();
 
         // Re-evaluate the opaque flag — toggling `window.opacity` /
@@ -3981,8 +3981,8 @@ impl Screen<'_> {
                 // rows; today's clamps keep it non-negative, but a
                 // negative Line wrapping through `as usize` would fling
                 // the trail target off by ~10^18 px, so clamp first.
-                let cursor_row = cursor.state.pos.row.0.max(0) as usize;
-                let cursor_col = cursor.state.pos.col.0;
+                let cursor_row = cursor.pos.row.0.max(0) as usize;
+                let cursor_col = cursor.pos.col.0;
 
                 // Cursor position in physical pixels.
                 let cursor_px_x = origin_x + cursor_col as f32 * cell_width;
@@ -3993,8 +3993,8 @@ impl Screen<'_> {
                     cursor_px_y,
                     cell_width,
                     cell_height,
-                    cursor.state.content,
-                    cursor.state.is_visible(),
+                    cursor.content,
+                    cursor.is_visible(),
                     current.route_id,
                 );
 
@@ -4165,7 +4165,7 @@ impl Screen<'_> {
                 // rows already held instead of copied again, and a
                 // frame that was only a cursor move becomes a partial
                 // one so the emit loop rebuilds them.
-                let cursor = &ctx.renderable_content.cursor.state;
+                let cursor = &ctx.renderable_content.cursor;
                 let shaped_cursor = (self.renderer.cursor_shaping_break
                     && cursor.is_visible()
                     && cursor.content != rio_backend::ansi::CursorShape::Hidden)
@@ -4224,7 +4224,7 @@ impl Screen<'_> {
                 } else {
                     None
                 };
-                let cursor_shape = cursor.state.content;
+                let cursor_shape = cursor.content;
                 let cursor_blinking = ctx.renderable_content.has_blinking_enabled;
                 let cursor_blink_visible =
                     !cursor_blinking || ctx.renderable_content.is_blinking_cursor_visible;
@@ -4237,9 +4237,9 @@ impl Screen<'_> {
                         rio_grid::preedit::PreeditLine::new(
                             &preedit.text,
                             preedit.cursor,
-                            (cursor.state.pos.row.0.max(0) as usize)
+                            (cursor.pos.row.0.max(0) as usize)
                                 .min(ctx.renderable_content.screen_lines.max(1) - 1),
-                            cursor.state.pos.col.0,
+                            cursor.pos.col.0,
                             ctx.renderable_content.columns.max(1),
                         )
                     })
@@ -4264,9 +4264,9 @@ impl Screen<'_> {
                     row_styles,
                     extras,
                     term_colors,
-                    cursor_col: cursor.state.pos.col.0 as u16,
-                    cursor_row: cursor.state.pos.row.0 as u16,
-                    cursor_visible: cursor.state.is_visible(),
+                    cursor_col: cursor.pos.col.0 as u16,
+                    cursor_row: cursor.pos.row.0 as u16,
+                    cursor_visible: cursor.is_visible(),
                     cursor_shape,
                     cursor_blinking,
                     cursor_blink_visible,
@@ -4743,7 +4743,6 @@ impl Screen<'_> {
         // In case the configuration of blinking cursor is enabled
         // TODO: enable blinking for selection after adding debounce (https://github.com/raphamorim/rio/issues/437)
         if self.renderer.is_window_focused
-            && self.renderer.config_has_blinking_enabled
             && self.selection_is_empty()
             && self
                 .context_manager
@@ -4777,7 +4776,7 @@ impl Screen<'_> {
         };
 
         let layout = current_item.val.dimension;
-        let cursor_pos = current_item.val.renderable_content.cursor.state.pos;
+        let cursor_pos = current_item.val.renderable_content.cursor.pos;
 
         // While composing, the candidate popup follows the IME caret,
         // not the terminal cursor: the composition renders inline and

@@ -264,8 +264,13 @@ pub struct Config {
 pub struct CursorConfig {
     #[serde(default = "default_cursor")]
     pub shape: CursorShape,
-    #[serde(default = "bool::default")]
-    pub blinking: bool,
+    /// Whether the cursor blinks by default. Unset, it is steady, and
+    /// programs may make it blink (DECSCUSR and mode 12). Set, it is the
+    /// default, and mode 12 is ignored so a legacy program can't override
+    /// it for good; DECSCUSR still sets a style, and `CSI 0 SP q`
+    /// restores this.
+    #[serde(default)]
+    pub blinking: Option<bool>,
     #[serde(default = "default_cursor_interval", rename = "blinking-interval")]
     pub blinking_interval: u64,
 }
@@ -772,7 +777,7 @@ impl Default for CursorConfig {
     fn default() -> Self {
         Self {
             shape: default_cursor(),
-            blinking: false,
+            blinking: None,
             blinking_interval: default_cursor_interval(),
         }
     }
@@ -1256,6 +1261,19 @@ mod tests {
             result.colors.selection_foreground,
             hex_to_color_arr("#222222")
         );
+    }
+
+    // `cursor.blinking` unset is a steady cursor programs may make blink;
+    // set, it is the user's choice.
+    #[test]
+    fn cursor_blinking_is_unset_unless_configured() {
+        assert_eq!(Config::default().cursor.blinking, None);
+        let unset: Config = toml::from_str("[cursor]\nshape = 'beam'\n").unwrap();
+        assert_eq!(unset.cursor.blinking, None);
+        let steady: Config = toml::from_str("[cursor]\nblinking = false\n").unwrap();
+        assert_eq!(steady.cursor.blinking, Some(false));
+        let blinking: Config = toml::from_str("[cursor]\nblinking = true\n").unwrap();
+        assert_eq!(blinking.cursor.blinking, Some(true));
     }
 
     #[test]
