@@ -219,7 +219,7 @@ impl Drop for EventedAnonRead {
         self.inner.done.store(true, Ordering::SeqCst);
 
         // A read that returned the worker's error has already joined
-        // it: the pipe ended, as it does when the child exits.
+        // it: the pipe ended, as it does when the console host exits.
         let Some(thread) = self.thread.take() else {
             return;
         };
@@ -500,13 +500,17 @@ mod tests {
     fn a_reader_is_dropped_before_its_worker_reads() {
         for _ in 0..200 {
             let (conout, host) = miow::pipe::anonymous(0).unwrap();
-            let reader = EventedAnonRead::new(conout);
 
+            // The thread that drops it is started first, so the drop
+            // comes as soon after the worker's start as it can.
+            let (to_dropper, reader) = mpsc::channel::<EventedAnonRead>();
             let (tx, rx) = mpsc::channel();
             let dropper = spawn(move || {
-                drop(reader);
+                drop(reader.recv().unwrap());
                 let _ = tx.send(());
             });
+            to_dropper.send(EventedAnonRead::new(conout)).unwrap();
+
             rx.recv_timeout(Duration::from_secs(10))
                 .expect("the drop waited for a read of an idle pipe");
             dropper.join().unwrap();
@@ -516,7 +520,8 @@ mod tests {
         }
     }
 
-    /// The same for a writer whose pipe has no reader any more.
+    /// A writer whose pipe has no reader any more, and that said so
+    /// from `write`, is dropped without a panic as well.
     #[test]
     fn a_writer_is_dropped_after_its_pipe_ended() {
         let (host, conin) = miow::pipe::anonymous(0).unwrap();
