@@ -11,7 +11,6 @@ pub use crate::layout::{ContextDimension, ContextGrid, ContextGridItem};
 use crate::messenger::Messenger;
 use crate::performer::handler::Handler;
 use crate::performer::{self, Machine};
-use renderable::Cursor;
 use renderable::RenderableContent;
 use rio_backend::config::layout::Margin;
 use rio_backend::config::Shell;
@@ -242,7 +241,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         #[cfg(not(target_os = "windows"))]
         child_terminator: teletypewriter::ChildTerminator::retired(),
         messenger: Messenger::new(sender),
-        renderable_content: RenderableContent::new(Cursor::default()),
+        renderable_content: RenderableContent::new(CursorState::default()),
         terminal,
         rich_text_id,
         dimension,
@@ -450,9 +449,9 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             messenger,
             terminal,
             rich_text_id,
-            renderable_content: RenderableContent::new(Cursor {
-                state: CursorState::new(config.cursor_shape.into()),
-            }),
+            renderable_content: RenderableContent::new(CursorState::new(
+                config.cursor_shape.into(),
+            )),
             dimension,
             title: ContextTitle::default(),
             title_dirty: false,

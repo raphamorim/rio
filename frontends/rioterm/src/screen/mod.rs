@@ -3981,8 +3981,8 @@ impl Screen<'_> {
                 // rows; today's clamps keep it non-negative, but a
                 // negative Line wrapping through `as usize` would fling
                 // the trail target off by ~10^18 px, so clamp first.
-                let cursor_row = cursor.state.pos.row.0.max(0) as usize;
-                let cursor_col = cursor.state.pos.col.0;
+                let cursor_row = cursor.pos.row.0.max(0) as usize;
+                let cursor_col = cursor.pos.col.0;
 
                 // Cursor position in physical pixels.
                 let cursor_px_x = origin_x + cursor_col as f32 * cell_width;
@@ -3993,8 +3993,8 @@ impl Screen<'_> {
                     cursor_px_y,
                     cell_width,
                     cell_height,
-                    cursor.state.content,
-                    cursor.state.is_visible(),
+                    cursor.content,
+                    cursor.is_visible(),
                     current.route_id,
                 );
 
@@ -4165,7 +4165,7 @@ impl Screen<'_> {
                 // rows already held instead of copied again, and a
                 // frame that was only a cursor move becomes a partial
                 // one so the emit loop rebuilds them.
-                let cursor = &ctx.renderable_content.cursor.state;
+                let cursor = &ctx.renderable_content.cursor;
                 let shaped_cursor = (self.renderer.cursor_shaping_break
                     && cursor.is_visible()
                     && cursor.content != rio_backend::ansi::CursorShape::Hidden)
@@ -4224,7 +4224,7 @@ impl Screen<'_> {
                 } else {
                     None
                 };
-                let cursor_shape = cursor.state.content;
+                let cursor_shape = cursor.content;
                 let cursor_blinking = ctx.renderable_content.has_blinking_enabled;
                 let cursor_blink_visible =
                     !cursor_blinking || ctx.renderable_content.is_blinking_cursor_visible;
@@ -4237,9 +4237,9 @@ impl Screen<'_> {
                         rio_grid::preedit::PreeditLine::new(
                             &preedit.text,
                             preedit.cursor,
-                            (cursor.state.pos.row.0.max(0) as usize)
+                            (cursor.pos.row.0.max(0) as usize)
                                 .min(ctx.renderable_content.screen_lines.max(1) - 1),
-                            cursor.state.pos.col.0,
+                            cursor.pos.col.0,
                             ctx.renderable_content.columns.max(1),
                         )
                     })
@@ -4264,9 +4264,9 @@ impl Screen<'_> {
                     row_styles,
                     extras,
                     term_colors,
-                    cursor_col: cursor.state.pos.col.0 as u16,
-                    cursor_row: cursor.state.pos.row.0 as u16,
-                    cursor_visible: cursor.state.is_visible(),
+                    cursor_col: cursor.pos.col.0 as u16,
+                    cursor_row: cursor.pos.row.0 as u16,
+                    cursor_visible: cursor.is_visible(),
                     cursor_shape,
                     cursor_blinking,
                     cursor_blink_visible,
@@ -4776,7 +4776,7 @@ impl Screen<'_> {
         };
 
         let layout = current_item.val.dimension;
-        let cursor_pos = current_item.val.renderable_content.cursor.state.pos;
+        let cursor_pos = current_item.val.renderable_content.cursor.pos;
 
         // While composing, the candidate popup follows the IME caret,
         // not the terminal cursor: the composition renders inline and
