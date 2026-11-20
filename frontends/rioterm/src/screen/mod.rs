@@ -1975,14 +1975,7 @@ impl Screen<'_> {
     }
 
     #[inline]
-    fn start_selection(
-        &mut self,
-        ty: SelectionType,
-        point: Pos,
-        side: Side,
-        clipboard: &mut Clipboard,
-    ) {
-        self.copy_selection(ClipboardType::Selection, clipboard);
+    fn start_selection(&mut self, ty: SelectionType, point: Pos, side: Side) {
         let current = self.context_manager.current_mut();
         let mut terminal = current.terminal.lock();
         let selection = Selection::new(ty, point, side);
@@ -2018,7 +2011,7 @@ impl Screen<'_> {
             _ => {
                 let pos = terminal.vi_mode_cursor.pos;
                 drop(terminal);
-                self.start_selection(ty, pos, side, clipboard)
+                self.start_selection(ty, pos, side)
             }
         }
 
@@ -3171,7 +3164,7 @@ impl Screen<'_> {
     }
 
     #[inline]
-    pub fn on_left_click(&mut self, point: Pos, clipboard: &mut Clipboard) {
+    pub fn on_left_click(&mut self, point: Pos) {
         let side = self.mouse.square_side;
 
         match self.mouse.click_state {
@@ -3184,27 +3177,17 @@ impl Screen<'_> {
 
                     // Start new empty selection.
                     if self.modifiers.state().control_key() {
-                        self.start_selection(
-                            SelectionType::Block,
-                            point,
-                            side,
-                            clipboard,
-                        );
+                        self.start_selection(SelectionType::Block, point, side);
                     } else {
-                        self.start_selection(
-                            SelectionType::Simple,
-                            point,
-                            side,
-                            clipboard,
-                        );
+                        self.start_selection(SelectionType::Simple, point, side);
                     }
                 }
             }
             ClickState::DoubleClick => {
-                self.start_selection(SelectionType::Semantic, point, side, clipboard);
+                self.start_selection(SelectionType::Semantic, point, side);
             }
             ClickState::TripleClick => {
-                self.start_selection(SelectionType::Lines, point, side, clipboard);
+                self.start_selection(SelectionType::Lines, point, side);
             }
             ClickState::None => (),
         };
@@ -3289,7 +3272,7 @@ impl Screen<'_> {
             // Create a selection for the focused match.
             let start = *focused_match.start();
             let end = *focused_match.end();
-            self.start_selection(SelectionType::Simple, start, Side::Left, clipboard);
+            self.start_selection(SelectionType::Simple, start, Side::Left);
             self.update_selection(end, Side::Right);
             self.copy_selection(ClipboardType::Selection, clipboard);
         }
@@ -3596,7 +3579,7 @@ impl Screen<'_> {
                     self.mark_dirty();
                 }
             }
-            self.mouse.left_button_state = ElementState::Released;
+            self.mouse.release_lost();
         }
 
         // Which pane, if any, is focused from a program's view is the

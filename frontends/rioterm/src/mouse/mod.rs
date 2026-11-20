@@ -50,6 +50,13 @@ pub struct Mouse {
     /// its release) and follows the link only when the release lands
     /// on the same hint.
     pub hint_click_latched: Option<crate::hints::HintMatch>,
+    /// The buttons held now have made or changed the selection: a
+    /// click that started one, a drag that extended it. The release
+    /// copies the selection only then. A release that follows no such
+    /// gesture (a right click, a click on a tab) finds whatever was
+    /// selected earlier, and copying that would replace what another
+    /// application has put in the primary selection since.
+    pub selection_gesture: bool,
 }
 
 impl Default for Mouse {
@@ -72,6 +79,7 @@ impl Default for Mouse {
             raw_y: 0.0,
             last_cell: None,
             hint_click_latched: None,
+            selection_gesture: false,
         }
     }
 }
@@ -89,6 +97,16 @@ impl Mouse {
     pub fn set_multiplier_and_divider(&mut self, multiplier: f64, divider: f64) {
         self.multiplier = multiplier;
         self.divider = divider;
+    }
+
+    /// The left press being held ends without its release reaching the
+    /// terminal: the window lost focus, a dialog or another route took
+    /// the pointer. The button reads released and the selection
+    /// gesture goes with it, or the next release would copy whatever
+    /// selection the lost press left behind.
+    pub fn release_lost(&mut self) {
+        self.left_button_state = ElementState::Released;
+        self.selection_gesture = false;
     }
 }
 
@@ -174,6 +192,21 @@ pub fn calculate_side_by_pos(
 #[cfg(test)]
 pub mod test {
     use super::*;
+
+    // A press whose release never arrives (focus lost mid drag, a
+    // dialog took the pointer) leaves no gesture behind, or the next
+    // release would copy a selection it did not make.
+    #[test]
+    fn a_lost_release_drops_the_selection_gesture() {
+        let mut mouse = Mouse {
+            left_button_state: ElementState::Pressed,
+            selection_gesture: true,
+            ..Default::default()
+        };
+        mouse.release_lost();
+        assert_eq!(mouse.left_button_state, ElementState::Released);
+        assert!(!mouse.selection_gesture);
+    }
 
     fn mk_mouse(x: f64, y: f64) -> Mouse {
         Mouse {
