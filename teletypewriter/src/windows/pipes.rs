@@ -212,6 +212,12 @@ impl io::Read for EventedAnonRead {
         if let Some(thread) = &self.thread {
             thread.thread().unpark();
         }
+
+        // An empty ring is not the end of the pipe, which `Ok(0)` would
+        // say it is: there is nothing to read yet.
+        if nbytes == 0 && !buf.is_empty() {
+            return Err(io::ErrorKind::WouldBlock.into());
+        }
         Ok(nbytes)
     }
 }
@@ -508,11 +514,12 @@ mod tests {
         let mut tries = 0;
         let err = loop {
             match reader.read(&mut buf) {
-                Ok(_nbytes) => {
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
                     tries += 1;
                     assert!(tries < 10_000, "the end of the pipe was not reported");
                     std::thread::sleep(Duration::from_millis(1));
                 }
+                Ok(nbytes) => panic!("{nbytes} bytes read from an empty pipe"),
                 Err(err) => break err,
             }
         };
@@ -537,18 +544,51 @@ mod tests {
         let err = loop {
             match reader.read(&mut buf) {
                 Ok(nbytes) => {
+                    assert_ne!(nbytes, 0, "an empty read is not said by Ok(0)");
                     got.extend_from_slice(&buf[..nbytes]);
+                }
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
                     tries += 1;
                     assert!(tries < 10_000, "the end of the pipe was not reported");
-                    if nbytes == 0 {
-                        std::thread::sleep(Duration::from_millis(1));
-                    }
+                    std::thread::sleep(Duration::from_millis(1));
                 }
                 Err(err) => break err,
             }
         };
         assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
         assert_eq!(got, b"last");
+    }
+
+    /// A pipe with nothing to read says so by `WouldBlock`, and by
+    /// `Ok(0)` only to a buffer with no room, as any reader does.
+    #[test]
+    fn a_reader_with_nothing_to_read_would_block() {
+        let (conout, mut host) = miow::pipe::anonymous(0).unwrap();
+        let mut reader = EventedAnonRead::new(conout);
+
+        let mut buf = [0u8; 16];
+        let err = reader.read(&mut buf).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
+
+        host.write_all(b"some").unwrap();
+        let mut tries = 0;
+        let nbytes = loop {
+            match reader.read(&mut buf) {
+                Ok(nbytes) => break nbytes,
+                Err(err) => {
+                    assert_eq!(err.kind(), io::ErrorKind::WouldBlock);
+                    tries += 1;
+                    assert!(tries < 10_000, "the bytes did not arrive");
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+        };
+        assert_eq!(&buf[..nbytes], b"some");
+        assert_eq!(reader.read(&mut []).unwrap(), 0);
+
+        drop(reader);
+        drop(host);
     }
 
     /// A reader is dropped at once, when its worker may not have got
