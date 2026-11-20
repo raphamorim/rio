@@ -405,8 +405,18 @@ impl Drop for EventedAnonWrite {
             return;
         };
 
-        // Stop the writer thread waiting for contents
-        thread.thread().unpark();
+        // Stop the writer thread, which waits either for contents or in
+        // a write to a pipe nobody reads: a child that takes no input
+        // leaves the pipe full, and that write never returns. Neither
+        // an unpark nor a cancel is kept for a thread that is only on
+        // its way to the write, so both are repeated until it ends.
+        while !thread.is_finished() {
+            thread.thread().unpark();
+            unsafe {
+                CancelSynchronousIo(thread.as_raw_handle());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
 
         thread
             .join()
@@ -501,5 +511,35 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::BrokenPipe);
 
         drop(writer);
+    }
+
+    /// A writer whose worker is in a write that nobody reads is still
+    /// dropped: the write is cancelled, not waited for.
+    #[test]
+    fn a_writer_is_dropped_while_its_pipe_is_full() {
+        let (host, conin) = miow::pipe::anonymous(0).unwrap();
+        let mut writer = EventedAnonWrite::new(conin);
+
+        // More than the pipe holds, so the worker's write blocks.
+        assert_eq!(writer.write(&[0u8; 65536]).unwrap(), 65536);
+        let mut tries = 0;
+        while !writer.producer.is_empty() {
+            tries += 1;
+            assert!(tries < 10_000, "the worker did not take the bytes");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+
+        let (tx, rx) = mpsc::channel();
+        let dropper = spawn(move || {
+            drop(writer);
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(Duration::from_secs(10))
+            .expect("the drop waited for a write nobody reads");
+        dropper.join().unwrap();
+
+        // Only now does the pipe lose its reader.
+        drop(host);
     }
 }
