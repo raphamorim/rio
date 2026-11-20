@@ -1,4 +1,5 @@
-//! libsugarloaf: a C ABI over Rio's `sugarloaf` GPU renderer.
+//! libsugarloaf: Rio's `sugarloaf` renderer for hosts that embed librio,
+//! as a C ABI and as Rust ([`Sl`]).
 //!
 //! Where `librio` wraps the terminal core (parse + VT state + a pull API
 //! for cells), libsugarloaf wraps the *renderer*: a host (a Swift/AppKit
@@ -14,3 +15,10 @@
 //! ABI as plain pointers with no marshalling.
 
 pub mod capi;
+
+/// The Rust form, for a host written in Rust: create an [`Sl`] (e.g.
+/// [`Sl::new_offscreen`] for a CPU frame the host shows itself), give it a
+/// grid with [`Sl::new_grid`], and draw a librio surface each frame with
+/// [`Sl::render_surface`]. `Sl` derefs to [`sugarloaf::Sugarloaf`].
+pub use capi::{Sl, SlCellMetrics, SlSearchSpan, SurfaceInputs};
+pub use sugarloaf;
