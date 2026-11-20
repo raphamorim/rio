@@ -16,6 +16,25 @@ pub struct AccumulatedScroll {
     pub y: f64,
 }
 
+/// Where a press went, and with it the drag and the release of its
+/// button, whatever the modifiers and the mode say by then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PressTarget {
+    /// No press is held, or the chrome consumed it: a tab, a button of
+    /// the search overlay, the scrollbar, a divider. Nothing follows
+    /// such a press onto the grid: it extends no older selection on
+    /// its way out, and its release copies nothing.
+    #[default]
+    Nowhere,
+    /// The grid, with the left button: the press selects while it is
+    /// held and moves, and its release copies the selection it leaves.
+    Grid,
+    /// The application, which was told about the press and is told
+    /// about its drag and its release too, so it never sees one
+    /// without the other. Such a press never selects.
+    Application,
+}
+
 #[derive(Debug)]
 pub struct Mouse {
     pub multiplier: f64,
@@ -50,20 +69,11 @@ pub struct Mouse {
     /// its release) and follows the link only when the release lands
     /// on the same hint.
     pub hint_click_latched: Option<crate::hints::HintMatch>,
-    /// The buttons whose press was reported to the application, one
-    /// bit each, until their release is reported too. The release and
-    /// the drag go where the press went, whatever the modifiers say
-    /// then, so the application never sees one without the other, and
-    /// a press that selects is never reported.
-    reported_presses: u8,
-    /// The left press held now landed on the grid: not on a tab, a
-    /// button of the search overlay, the scrollbar or a divider, and
-    /// not reported to the application. Only such a press selects
-    /// while it is held and moves, and only its release copies the
-    /// selection. A press the chrome consumed neither extends an older
-    /// selection on its way out nor copies it, and a right click
-    /// copies nothing.
-    grid_press: bool,
+    /// Where the press of each button went. The drag and the release
+    /// of a button follow its press.
+    left_press: PressTarget,
+    middle_press: PressTarget,
+    right_press: PressTarget,
 }
 
 impl Default for Mouse {
@@ -86,8 +96,9 @@ impl Default for Mouse {
             raw_y: 0.0,
             last_cell: None,
             hint_click_latched: None,
-            reported_presses: 0,
-            grid_press: false,
+            left_press: PressTarget::Nowhere,
+            middle_press: PressTarget::Nowhere,
+            right_press: PressTarget::Nowhere,
         }
     }
 }
@@ -128,70 +139,74 @@ impl Mouse {
         }
     }
 
-    /// A press begins. Nothing an earlier press of the button left
-    /// behind carries into it: not a reported press whose release was
-    /// lost, not a left press on the grid.
-    pub fn begin_press(&mut self, button: MouseButton) {
-        self.reported_presses &= !button_bit(button);
-        if button == MouseButton::Left {
-            self.grid_press = false;
+    /// Where the press of `button` went; the buttons that are not
+    /// tracked went nowhere.
+    pub fn press_target(&self, button: MouseButton) -> PressTarget {
+        match button {
+            MouseButton::Left => self.left_press,
+            MouseButton::Middle => self.middle_press,
+            MouseButton::Right => self.right_press,
+            _ => PressTarget::Nowhere,
         }
     }
 
-    /// The left press landed on the grid, where it selects.
-    pub fn press_on_grid(&mut self) {
-        self.grid_press = true;
+    fn set_press_target(&mut self, button: MouseButton, target: PressTarget) {
+        match button {
+            MouseButton::Left => self.left_press = target,
+            MouseButton::Middle => self.middle_press = target,
+            MouseButton::Right => self.right_press = target,
+            _ => {}
+        }
     }
 
-    /// Whether the left button is held by a press that landed on the
-    /// grid: its motion extends the selection.
+    /// A press begins. Nothing an earlier press of the button left
+    /// behind carries into it, not even one whose release was lost.
+    pub fn begin_press(&mut self, button: MouseButton) {
+        self.set_press_target(button, PressTarget::Nowhere);
+    }
+
+    /// The press of `button` landed on the grid or with the
+    /// application; the chrome's presses land nowhere.
+    pub fn press_lands(&mut self, button: MouseButton, target: PressTarget) {
+        self.set_press_target(button, target);
+    }
+
+    /// Whether the left button is held by a press on the grid: its
+    /// motion extends the selection.
     pub fn is_selecting(&self) -> bool {
-        self.left_button_state == ElementState::Pressed && self.grid_press
+        self.left_button_state == ElementState::Pressed
+            && self.left_press == PressTarget::Grid
     }
 
-    /// Whether the left press that ends landed on the grid; asked
-    /// once, by its release, which then copies the selection.
-    pub fn take_grid_press(&mut self) -> bool {
-        std::mem::take(&mut self.grid_press)
+    /// Whether `button` is held by a press the application was told
+    /// about: its motion is reported as a drag.
+    pub fn is_dragging_for_application(&self, button: MouseButton) -> bool {
+        self.button_state(button) == ElementState::Pressed
+            && self.press_target(button) == PressTarget::Application
     }
 
-    /// The press of `button` was reported to the application.
-    pub fn press_reported(&mut self, button: MouseButton) {
-        self.reported_presses |= button_bit(button);
-    }
-
-    /// Whether the press of `button` was reported and its release not
-    /// yet.
-    pub fn is_press_reported(&self, button: MouseButton) -> bool {
-        self.reported_presses & button_bit(button) != 0
-    }
-
-    /// Whether the press of `button` was reported; asked once, by its
-    /// release.
-    pub fn take_reported_press(&mut self, button: MouseButton) -> bool {
-        let reported = self.is_press_reported(button);
-        self.reported_presses &= !button_bit(button);
-        reported
+    /// Where the press of `button` went; asked once, by its release,
+    /// which follows it there.
+    pub fn take_press(&mut self, button: MouseButton) -> PressTarget {
+        let target = self.press_target(button);
+        self.set_press_target(button, PressTarget::Nowhere);
+        target
     }
 
     /// The release of `button` arrived where the terminal could not
     /// act on it: a dialog or another route took the pointer. The
-    /// button reads released, its reported press is over, and a left
-    /// press on the grid is over too, or the next release would copy
-    /// whatever selection the lost press left behind.
+    /// button reads released and its press is over, or the next
+    /// release would follow a press that is not its own.
     pub fn release_lost(&mut self, button: MouseButton) {
         self.set_button_state(button, ElementState::Released);
-        self.reported_presses &= !button_bit(button);
-        if button == MouseButton::Left {
-            self.grid_press = false;
-        }
+        self.set_press_target(button, PressTarget::Nowhere);
     }
 
     /// The window lost focus: every button reads released, or the
     /// next motion after refocus would read as a held button. A
-    /// release that still arrives is reported or copies as usual, so
-    /// the reported presses and the press on the grid stay; one that
-    /// never arrives is forgotten by the next press of its button.
+    /// release that still arrives follows its press as usual, so the
+    /// presses stay where they went; one that never arrives is
+    /// forgotten by the next press of its button.
     pub fn focus_lost(&mut self) {
         for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
             self.set_button_state(button, ElementState::Released);
@@ -208,12 +223,6 @@ pub fn report_code(button: MouseButton) -> Option<u8> {
         MouseButton::Right => Some(2),
         _ => None,
     }
-}
-
-/// The bit of `button` in `Mouse::reported_presses`; none for the
-/// buttons that are never reported.
-fn button_bit(button: MouseButton) -> u8 {
-    report_code(button).map_or(0, |code| 1 << code)
 }
 
 /// Map a physical-pixel cursor position to a terminal grid `Pos`.
@@ -301,38 +310,37 @@ pub mod test {
 
     // A release that arrived where the terminal could not act on it
     // (a dialog took the pointer) ends that button's press entirely:
-    // no release to report, and for the left button no selection to
-    // copy on the next release.
+    // the next release of the button follows no press.
     #[test]
     fn a_lost_release_ends_the_press() {
         let mut mouse = Mouse::default();
         mouse.set_button_state(MouseButton::Left, ElementState::Pressed);
         mouse.set_button_state(MouseButton::Right, ElementState::Pressed);
-        mouse.press_on_grid();
-        mouse.press_reported(MouseButton::Right);
+        mouse.press_lands(MouseButton::Left, PressTarget::Grid);
+        mouse.press_lands(MouseButton::Right, PressTarget::Application);
 
         mouse.release_lost(MouseButton::Right);
         assert_eq!(mouse.right_button_state, ElementState::Released);
         assert_eq!(mouse.left_button_state, ElementState::Pressed);
-        assert!(!mouse.take_reported_press(MouseButton::Right));
+        assert_eq!(mouse.take_press(MouseButton::Right), PressTarget::Nowhere);
         assert!(mouse.is_selecting(), "the left press is untouched");
 
         mouse.release_lost(MouseButton::Left);
         assert!(!mouse.is_selecting());
-        assert!(!mouse.take_grid_press());
+        assert_eq!(mouse.take_press(MouseButton::Left), PressTarget::Nowhere);
     }
 
     // Focus loss releases every button, but the release may still
-    // arrive: it is reported or copies as usual. A press of the
-    // button forgets it instead.
+    // arrive and follows its press as usual. A press of the button
+    // forgets it instead.
     #[test]
     fn focus_loss_releases_the_buttons_and_keeps_the_press_for_its_release() {
         let mut mouse = Mouse::default();
         for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
             mouse.set_button_state(button, ElementState::Pressed);
         }
-        mouse.press_on_grid();
-        mouse.press_reported(MouseButton::Middle);
+        mouse.press_lands(MouseButton::Left, PressTarget::Grid);
+        mouse.press_lands(MouseButton::Middle, PressTarget::Application);
 
         mouse.focus_lost();
         for button in [MouseButton::Left, MouseButton::Middle, MouseButton::Right] {
@@ -343,73 +351,68 @@ pub mod test {
             ElementState::Released
         );
         assert!(!mouse.is_selecting(), "released, so no longer selecting");
-        assert!(mouse.is_press_reported(MouseButton::Middle));
-        assert!(mouse.take_grid_press(), "the release still copies");
-        assert!(mouse.take_reported_press(MouseButton::Middle));
+        assert!(!mouse.is_dragging_for_application(MouseButton::Middle));
+        assert_eq!(mouse.take_press(MouseButton::Left), PressTarget::Grid);
+        assert_eq!(
+            mouse.take_press(MouseButton::Middle),
+            PressTarget::Application
+        );
     }
 
-    // A new press of a button starts clean, and leaves the other
-    // buttons' presses alone, since those are still held.
+    // A new press of a button starts from nowhere, and leaves the
+    // other buttons' presses where they went, since those are still
+    // held.
     #[test]
     fn a_press_leaves_nothing_of_the_last_one_behind() {
         let mut mouse = Mouse::default();
         mouse.set_button_state(MouseButton::Left, ElementState::Pressed);
-        mouse.press_on_grid();
-        mouse.press_reported(MouseButton::Middle);
+        mouse.press_lands(MouseButton::Left, PressTarget::Grid);
+        mouse.press_lands(MouseButton::Middle, PressTarget::Application);
 
         mouse.begin_press(MouseButton::Right);
         assert!(mouse.is_selecting(), "the left press is still held");
-        assert!(mouse.is_press_reported(MouseButton::Middle));
+        assert_eq!(
+            mouse.press_target(MouseButton::Middle),
+            PressTarget::Application
+        );
 
         mouse.begin_press(MouseButton::Left);
         assert!(!mouse.is_selecting());
-        assert!(!mouse.take_grid_press());
-        assert!(mouse.is_press_reported(MouseButton::Middle));
+        assert_eq!(mouse.take_press(MouseButton::Left), PressTarget::Nowhere);
 
         mouse.begin_press(MouseButton::Middle);
-        assert!(!mouse.is_press_reported(MouseButton::Middle));
+        assert_eq!(
+            mouse.press_target(MouseButton::Middle),
+            PressTarget::Nowhere
+        );
     }
 
-    // Only a left press that landed on the grid selects while it is
-    // held and moves: one the chrome consumed does not, nor does a
-    // right press, and a grid press stops selecting when its button
-    // is released.
+    // Only a held left press on the grid selects, and only a held
+    // press the application was told about drags for it; a press
+    // that went nowhere, or a released one, does neither.
     #[test]
-    fn only_a_left_press_on_the_grid_selects() {
+    fn a_held_press_acts_where_it_landed() {
         let mut mouse = Mouse::default();
-        mouse.set_button_state(MouseButton::Right, ElementState::Pressed);
-        mouse.press_on_grid();
-        assert!(!mouse.is_selecting(), "a right button never selects");
-
         mouse.set_button_state(MouseButton::Left, ElementState::Pressed);
+        assert!(!mouse.is_selecting(), "consumed by chrome");
+        assert!(!mouse.is_dragging_for_application(MouseButton::Left));
+
+        mouse.press_lands(MouseButton::Left, PressTarget::Grid);
         assert!(mouse.is_selecting());
+        assert!(!mouse.is_dragging_for_application(MouseButton::Left));
+
+        mouse.set_button_state(MouseButton::Right, ElementState::Pressed);
+        mouse.press_lands(MouseButton::Right, PressTarget::Application);
+        assert!(mouse.is_dragging_for_application(MouseButton::Right));
 
         mouse.set_button_state(MouseButton::Left, ElementState::Released);
         assert!(!mouse.is_selecting(), "released");
-        assert!(mouse.take_grid_press(), "the release copies once");
-        assert!(!mouse.take_grid_press());
-
-        mouse.set_button_state(MouseButton::Left, ElementState::Pressed);
-        assert!(!mouse.is_selecting(), "consumed by chrome");
+        assert_eq!(mouse.take_press(MouseButton::Left), PressTarget::Grid);
+        assert_eq!(mouse.take_press(MouseButton::Left), PressTarget::Nowhere);
     }
 
-    // The release asks once whether its press was reported, so a
-    // reported press is reported released exactly once; the drag in
-    // between may ask as often as it moves.
-    #[test]
-    fn a_reported_press_is_taken_once() {
-        let mut mouse = Mouse::default();
-        assert!(!mouse.take_reported_press(MouseButton::Left));
-        mouse.press_reported(MouseButton::Left);
-        assert!(mouse.is_press_reported(MouseButton::Left));
-        assert!(mouse.is_press_reported(MouseButton::Left));
-        assert!(!mouse.take_reported_press(MouseButton::Right));
-        assert!(mouse.take_reported_press(MouseButton::Left));
-        assert!(!mouse.take_reported_press(MouseButton::Left));
-    }
-
-    // The buttons the protocols can carry have a code and a bit; the
-    // others have neither, so they are never reported or remembered.
+    // The buttons the protocols can carry have a code; the others
+    // have none and are tracked nowhere.
     #[test]
     fn only_reportable_buttons_have_a_code() {
         assert_eq!(report_code(MouseButton::Left), Some(0));
@@ -417,8 +420,11 @@ pub mod test {
         assert_eq!(report_code(MouseButton::Right), Some(2));
         assert_eq!(report_code(MouseButton::Back), None);
         let mut mouse = Mouse::default();
-        mouse.press_reported(MouseButton::Forward);
-        assert!(!mouse.is_press_reported(MouseButton::Forward));
+        mouse.press_lands(MouseButton::Forward, PressTarget::Application);
+        assert_eq!(
+            mouse.press_target(MouseButton::Forward),
+            PressTarget::Nowhere
+        );
     }
 
     fn mk_mouse(x: f64, y: f64) -> Mouse {

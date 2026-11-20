@@ -155,7 +155,11 @@ fn on_touch_motion(route: &mut Route, touch: Touch) {
                 route.window.screen.mouse.left_button_state = ElementState::Pressed;
                 // The touch is a press on the grid: lifting copies the
                 // selection it leaves.
-                route.window.screen.mouse.press_on_grid();
+                route
+                    .window
+                    .screen
+                    .mouse
+                    .press_lands(MouseButton::Left, crate::mouse::PressTarget::Grid);
                 route
                     .window
                     .screen
@@ -282,7 +286,9 @@ fn on_touch_end(
 
     // A touch that selected ends like a mouse release: the selection
     // it leaves is copied.
-    if route.window.screen.mouse.take_grid_press() {
+    if route.window.screen.mouse.take_press(MouseButton::Left)
+        == crate::mouse::PressTarget::Grid
+    {
         route
             .window
             .screen

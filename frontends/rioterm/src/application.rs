@@ -1686,7 +1686,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 .window
                                 .screen
                                 .mouse_report(code, ElementState::Pressed);
-                            route.window.screen.mouse.press_reported(button);
+                            route.window.screen.mouse.press_lands(
+                                button,
+                                crate::mouse::PressTarget::Application,
+                            );
 
                             route.window.screen.process_mouse_bindings(
                                 button,
@@ -1699,7 +1702,11 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             if let MouseButton::Left = button {
                                 // The press landed on the grid: held and
                                 // moved, it selects, and its release copies.
-                                route.window.screen.mouse.press_on_grid();
+                                route
+                                    .window
+                                    .screen
+                                    .mouse
+                                    .press_lands(button, crate::mouse::PressTarget::Grid);
                                 let pos =
                                     route.window.screen.mouse_position(display_offset);
                                 route.window.screen.on_left_click(pos);
@@ -1713,15 +1720,10 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                             .process_mouse_bindings(button, &mut self.router.clipboard);
                     }
                     ElementState::Released => {
-                        // Whether the left press now released landed on
-                        // the grid, and whether the press of this button
-                        // was reported to the application. Both are taken
-                        // on every release, so one that returns early
-                        // below leaves nothing for the next.
-                        let grid_press = button == MouseButton::Left
-                            && route.window.screen.mouse.take_grid_press();
-                        let reported_press =
-                            route.window.screen.mouse.take_reported_press(button);
+                        // Where the press of this button went; the release
+                        // follows it. Taken on every release, so one that
+                        // returns early below leaves nothing for the next.
+                        let press = route.window.screen.mouse.take_press(button);
 
                         // Stop selection auto-scroll on button release.
                         if let MouseButton::Left | MouseButton::Right = button {
@@ -1776,7 +1778,9 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                         // button, and the application never sees a release
                         // without its press. A press reported to a program
                         // that has left mouse mode since gets no release.
-                        if reported_press && route.window.screen.mouse_mode() {
+                        if press == crate::mouse::PressTarget::Application
+                            && route.window.screen.mouse_mode()
+                        {
                             if let Some(code) = crate::mouse::report_code(button) {
                                 route
                                     .window
@@ -1829,7 +1833,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                     }
                                 }
                             }
-                        } else if grid_press {
+                        } else if press == crate::mouse::PressTarget::Grid {
                             route.window.screen.copy_selection_on_release(
                                 &mut self.router.clipboard,
                                 self.config.copy_on_select,
@@ -2147,10 +2151,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     let dragging =
                         [MouseButton::Left, MouseButton::Middle, MouseButton::Right]
                             .into_iter()
-                            .find(|&button| {
-                                mouse.button_state(button) == ElementState::Pressed
-                                    && mouse.is_press_reported(button)
-                            })
+                            .find(|&button| mouse.is_dragging_for_application(button))
                             .and_then(crate::mouse::report_code);
                     if let Some(code) = dragging {
                         route
