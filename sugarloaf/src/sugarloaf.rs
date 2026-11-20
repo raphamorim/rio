@@ -233,9 +233,50 @@ impl Sugarloaf<'_> {
         let font_features = renderer.font_features.to_owned();
         let colorspace = renderer.colorspace;
         let ctx = Context::new(window, renderer);
+        Ok(Self::with_context(
+            ctx,
+            colorspace,
+            &font_features,
+            font_library,
+            layout,
+        ))
+    }
 
+    /// A Sugarloaf on the CPU backend that draws into a buffer of its own
+    /// instead of a window, for a host that composites each frame itself,
+    /// such as a GTK widget. `size` is in physical pixels; read the frame
+    /// with [`Sugarloaf::cpu_frame`] after rendering.
+    pub fn new_offscreen<'a>(
+        size: SugarloafWindowSize,
+        scale: f32,
+        font_features: &Option<Vec<String>>,
+        font_library: &FontLibrary,
+        layout: RootStyle,
+    ) -> Sugarloaf<'a> {
+        let ctx = Context::new_offscreen(size, scale);
+        // Offscreen frames are sRGB, what a host compositor expects.
+        Self::with_context(ctx, Colorspace::Srgb, font_features, font_library, layout)
+    }
+
+    /// The frame last drawn by an offscreen Sugarloaf (see
+    /// [`Sugarloaf::new_offscreen`]); `None` for one drawing into a window.
+    pub fn cpu_frame(&self) -> Option<crate::context::cpu::CpuFrame<'_>> {
+        match &self.ctx.inner {
+            crate::context::ContextType::Cpu(ctx) => ctx.frame(),
+            #[allow(unreachable_patterns)]
+            _ => None,
+        }
+    }
+
+    fn with_context<'a>(
+        ctx: Context<'a>,
+        colorspace: Colorspace,
+        font_features: &Option<Vec<String>>,
+        font_library: &FontLibrary,
+        layout: RootStyle,
+    ) -> Sugarloaf<'a> {
         let renderer = Renderer::new(&ctx, colorspace);
-        let state = SugarState::new(layout, font_library, &font_features);
+        let state = SugarState::new(layout, font_library, font_features);
 
         let font_cache = FontCache::new();
 
@@ -245,7 +286,7 @@ impl Sugarloaf<'_> {
             text.init_cpu();
         }
 
-        let instance = Sugarloaf {
+        Sugarloaf {
             state,
             ctx,
             colorspace,
@@ -262,9 +303,7 @@ impl Sugarloaf<'_> {
             font_cache,
             text,
             image_overlays: rustc_hash::FxHashMap::default(),
-        };
-
-        Ok(instance)
+        }
     }
 
     /// Encoding for `GridUniforms.input_colorspace` — same mapping
@@ -1256,5 +1295,70 @@ impl Sugarloaf<'_> {
         ctx.queue.submit(Some(encoder.finish()));
         ctx.queue.present(frame);
         self.reset();
+    }
+}
+
+#[cfg(test)]
+mod offscreen_tests {
+    use super::*;
+    use crate::font::fonts::SugarloafFonts;
+
+    fn offscreen(width: f32, height: f32) -> Sugarloaf<'static> {
+        let (font_library, _) = FontLibrary::new(SugarloafFonts::default());
+        Sugarloaf::new_offscreen(
+            SugarloafWindowSize { width, height },
+            1.0,
+            &None,
+            &font_library,
+            RootStyle::new(1.0, 14.0, 1.0),
+        )
+    }
+
+    // An offscreen frame is the host's to read: premultiplied ARGB, one
+    // new generation per frame drawn, none for a frame skipped as
+    // unchanged, and a resized buffer is drawn again even when nothing
+    // else changed.
+    #[test]
+    fn offscreen_frames_are_read_by_the_host() {
+        let mut sugarloaf = offscreen(8.0, 4.0);
+        sugarloaf.set_background_color(Some(Color {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        }));
+        sugarloaf.render();
+        let frame = sugarloaf.cpu_frame().expect("offscreen frame");
+        assert_eq!((frame.width, frame.height, frame.generation), (8, 4, 1));
+        assert_eq!(frame.pixels.len(), 32);
+        assert!(frame.pixels.iter().all(|&p| p == 0xffff_0000));
+
+        sugarloaf.render();
+        assert_eq!(sugarloaf.cpu_frame().unwrap().generation, 1, "unchanged");
+
+        sugarloaf.resize(3, 2);
+        sugarloaf.render();
+        let frame = sugarloaf.cpu_frame().unwrap();
+        assert_eq!((frame.width, frame.height, frame.generation), (3, 2, 2));
+        assert!(frame.pixels.iter().all(|&p| p == 0xffff_0000));
+    }
+
+    // Window opacity reaches the host: the background is premultiplied.
+    #[test]
+    fn offscreen_background_keeps_its_alpha() {
+        let mut sugarloaf = offscreen(2.0, 2.0);
+        sugarloaf.set_background_color(Some(Color {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 0.5,
+        }));
+        sugarloaf.render();
+        let frame = sugarloaf.cpu_frame().unwrap();
+        assert!(
+            frame.pixels.iter().all(|&p| p == 0x7f7f_7f7f),
+            "{:08x}",
+            frame.pixels[0]
+        );
     }
 }

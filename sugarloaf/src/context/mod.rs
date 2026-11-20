@@ -57,6 +57,15 @@ impl Context<'_> {
         Context { inner }
     }
 
+    /// A CPU context drawing into a buffer it owns instead of a window,
+    /// for a host that shows each frame itself (see
+    /// [`cpu::CpuContext::new_offscreen`]). `size` is in physical pixels.
+    pub fn new_offscreen<'a>(size: SugarloafWindowSize, scale: f32) -> Context<'a> {
+        Context {
+            inner: ContextType::Cpu(cpu::CpuContext::new_offscreen(size, scale)),
+        }
+    }
+
     #[inline]
     pub fn scale(&self) -> f32 {
         match &self.inner {
