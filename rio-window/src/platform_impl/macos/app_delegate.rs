@@ -173,12 +173,18 @@ declare_class!(
 
         #[method(applicationShouldHandleReopen:hasVisibleWindows:)]
         fn should_handle_reopen(&self,
-            _sender: Option<&AnyObject>,
-            has_open_windows: bool,
+            app: &NSApplication,
+            has_visible_windows: bool,
         ) -> bool {
-            if self.is_launched() && !has_open_windows {
-                self.dispatch_application_reopen();
-                true
+            if self.is_launched() {
+                // AppKit counts minimized windows as visible in this callback.
+                let has_visible_window = has_visible_windows && app.windows().iter().any(|window| {
+                    window.isVisible() && window.is_kind_of::<WinitWindow>()
+                });
+                if !has_visible_window {
+                    self.dispatch_application_reopen();
+                }
+                has_visible_window
             } else {
                 false
             }
