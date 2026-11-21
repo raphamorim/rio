@@ -59,6 +59,8 @@
 
 - **rio-window: a `notification` module replaces the `rio-notifier` crate.** `rio_window::notification::Notification` is a builder (`new`, `with_body`, `with_app_name`, `with_icon`) whose `show()` returns at once and posts through `UNUserNotificationCenter` on macOS, `org.freedesktop.Notifications` on Linux and BSD, and a toast on Windows; `request_permission()` asks for the macOS permission prompt. The app name and icon are set by the caller rather than fixed to Rio. `rio-notifier` is removed from the workspace and gets no further releases ([#2044](https://github.com/raphamorim/rio/pull/2044)).
 
+- **Nix: the flake builds again.** nixpkgs now links `onig_sys` against the system oniguruma, which the package did not provide, so `nix build` failed; `pkgRio.nix` adds it ([#2091](https://github.com/raphamorim/rio/pull/2091)).
+
 - Internals: the split layout and the context manager run without a GPU context, so the close paths, the font-size reflow and the divider drag are covered by tests ([#2057](https://github.com/raphamorim/rio/pull/2057), [#2059](https://github.com/raphamorim/rio/pull/2059)).
 
 ## 0.5.32 (2026-11-15)
