@@ -35,9 +35,29 @@ impl<'a> WgpuContext<'a> {
         // - `gl`
         // - `webgpu`
         // - `primary`
-        let backend = wgpu::Backends::from_env().unwrap_or(wgpu_backend);
+        //
+        // A DirectComposition presentation is DX12-only: when the frontend
+        // asked for the transparent Windows path, keep that backend even if
+        // `WGPU_BACKEND` names another one. An HWND surface on another
+        // backend cannot present into the DComp visual, leaving the window
+        // blank.
+        let backend = if cfg!(target_os = "windows") && renderer_config.windows_dcomp {
+            wgpu_backend
+        } else {
+            wgpu::Backends::from_env().unwrap_or(wgpu_backend)
+        };
         let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
         instance_desc.backends = backend;
+        // A transparent Windows window is created without a redirection
+        // surface (WS_EX_NOREDIRECTIONBITMAP). DX12 must then present
+        // through a DirectComposition visual instead of an HWND swap
+        // chain; the HWND path only exposes Opaque and DWM would
+        // composite the window as an opaque gray rectangle.
+        #[cfg(target_os = "windows")]
+        if renderer_config.windows_dcomp {
+            instance_desc.backend_options.dx12.presentation_system =
+                wgpu::Dx12SwapchainKind::DxgiFromVisual;
+        }
         let instance = wgpu::Instance::new(instance_desc);
 
         tracing::info!("selected instance: {instance:?}");
