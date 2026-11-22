@@ -826,10 +826,18 @@ pub fn encode(event: &KeyEvent, ctx: &EncodeContext) -> Option<Vec<u8>> {
     if let Some(level) = ctx.modify_other_keys.filter(|level| *level >= 1) {
         if let Key::Char(c) = key {
             let codepoint = modify_other_keys_codepoint(c, text);
-            if !mods.contains(Modifiers::SUPER)
-                && modify_other_keys_reports(level, c, codepoint, mods)
+            // Alt that isn't meta is the Mac's Option typing a character,
+            // not a chord, even when the host didn't mark it spent; ghostty
+            // drops it here the same way.
+            let chord_mods = if ctx.alt_is_meta {
+                mods
+            } else {
+                mods.difference(Modifiers::ALT)
+            };
+            if !chord_mods.contains(Modifiers::SUPER)
+                && modify_other_keys_reports(level, c, codepoint, chord_mods)
             {
-                return Some(encode_modify_other_keys(codepoint, mods));
+                return Some(encode_modify_other_keys(codepoint, chord_mods));
             }
         }
         if let Some(bytes) = modify_other_keys_editing(key, level, mods) {
@@ -1589,6 +1597,25 @@ mod tests {
         assert_eq!(encode(&option, &ctx), Some("\u{a9}".as_bytes().to_vec()));
         // Super is the platform's, here as everywhere.
         assert_eq!(encode(&typed('c', Modifiers::SUPER, "c"), &ctx), None);
+    }
+
+    #[test]
+    fn modify_other_keys_option_typing_is_text_without_consumed_alt() {
+        // A host that doesn't mark Option spent: with alt not meta, `©` is
+        // still what option+g typed, not an alt chord.
+        let ctx = EncodeContext {
+            alt_is_meta: false,
+            ..mok(2)
+        };
+        let option = typed('g', Modifiers::ALT, "\u{a9}");
+        assert_eq!(encode(&option, &ctx), Some("\u{a9}".as_bytes().to_vec()));
+        // ctrl alongside still makes it a chord, reported without the alt.
+        let mut ctrl = typed('g', Modifiers::ALT | Modifiers::CTRL, "g");
+        ctrl.text = Some("g".into());
+        assert_eq!(encode(&ctrl, &ctx), Some(b"\x1b[27;5;103~".to_vec()));
+        // With alt as meta it is a chord.
+        let meta = typed('g', Modifiers::ALT, "g");
+        assert_eq!(encode(&meta, &mok(2)), Some(b"\x1b[27;3;103~".to_vec()));
     }
 
     #[test]
