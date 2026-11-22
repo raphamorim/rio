@@ -2,6 +2,8 @@
 
 ## 0.6.0 (unreleased)
 
+- **librio: shift works in programs that use the full kitty keyboard protocol.** Programs that ask for every key as an escape code (yazi pushes flags 1, 4, 8 and 16) got `shift+g` as `CSI 103;2u`, `g` with shift, and lost the `G`: shift looked dead and capitals came out lowercase. librio's encoder now reports the shifted key (`CSI 103:71;2u`) and the associated text (`;71`), as kitty and ghostty do. Text is reported only for keys that type it: ctrl and super chords carry none, nor does alt acting as meta, while the Mac's Option, which types (`©`), keeps its text. Kitty sequences report every modifier held; a modifier the platform spent on the text only decides between text and an escape, and only when there was text, so alt+backspace stays alt. Control characters are left out of the text. The shifted key is only what shift alone types, so option+shift reports none ([#2119](https://github.com/raphamorim/rio/issues/2119)).
+
 - **Windows: pasting no longer doubles line breaks.** The Windows clipboard ends every line with CRLF, which a shell read as two line breaks (readline turns the CR in a bracketed paste into a newline) or two Enters. Rio now reads CRLF from the clipboard as LF ([#1669](https://github.com/raphamorim/rio/issues/1669)).
 - **Pastes are sent exactly as xterm sends them.** Unbracketed, only LF becomes CR, so a CRLF line ending is two Enters, as in xterm; it was one. The 8-bit CSI character (U+009B) is no longer replaced, and only `ESC [201~` counts as a bracketed paste end, so a pasted U+009B is text like any other character. A paste is encoded in its own buffer and no longer copied, about three times faster: 32 MB in 4 ms ([#2116](https://github.com/raphamorim/rio/pull/2116)).
 

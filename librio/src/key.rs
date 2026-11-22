@@ -7,12 +7,10 @@
 //! no business tracking, so it belongs here rather than in the host.
 //!
 //! What is implemented: the legacy encodings, `modifyOtherKeys` (levels 1 and
-//! 2 alike), and the parts of the kitty keyboard protocol that change what a
-//! key produces, namely disambiguation, event types, and reporting every key
-//! as an escape sequence. Alternate keys and associated text (kitty's
-//! `REPORT_ALTERNATE_KEYS` and `REPORT_ASSOCIATED_TEXT`) are not encoded; a
-//! terminal may set those flags and this encoder simply will not enrich the
-//! sequence, which degrades to the disambiguating form rather than misreporting.
+//! 2 alike), and the kitty keyboard protocol: disambiguation, event types,
+//! reporting every key as an escape sequence, the shifted alternate key, and
+//! associated text. The base layout key (the third alternate) is not reported:
+//! the embedder hands over the key it saw, not the US-layout key in its place.
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -33,6 +31,13 @@ bitflags::bitflags! {
         const DISAMBIGUATE      = 1 << 0;
         const REPORT_EVENT_TYPES = 1 << 1;
         const REPORT_ALL_AS_ESC = 1 << 2;
+        /// `CSI key:shifted u`: the key shift turned it into, so a program
+        /// matching on `G` sees `G` and not only `g` plus shift.
+        const REPORT_ALTERNATE_KEYS = 1 << 3;
+        /// `CSI key ; mods ; text u`: the text the key produced. Only
+        /// meaningful with `REPORT_ALL_AS_ESC`, where text keys stop
+        /// arriving as plain text.
+        const REPORT_ASSOCIATED_TEXT = 1 << 4;
     }
 }
 
@@ -294,6 +299,8 @@ fn encode_kitty(
     key: Key,
     mods: Modifiers,
     action: KeyAction,
+    shifted: Option<u32>,
+    text: Option<&str>,
     ctx: &EncodeContext,
 ) -> Vec<u8> {
     let mut out = String::from("\x1b[");
@@ -319,9 +326,96 @@ fn encode_kitty(
     }
 
     out.push_str(&kitty_codepoint(key).to_string());
-    push_mods_and_event(&mut out, mods, action, ctx.kitty);
+    if let Some(shifted) = shifted {
+        out.push(':');
+        out.push_str(&shifted.to_string());
+    }
+    let associated = associated_text(key, mods, action, text, ctx);
+    if associated.is_some() && mods.is_empty() && !has_event_param(action, ctx.kitty) {
+        // Text is the third parameter, so the modifiers slot stays, empty,
+        // as kitty and ghostty write it: `CSI 97 ; ; 97 u`.
+        out.push(';');
+    } else {
+        push_mods_and_event(&mut out, mods, action, ctx.kitty);
+    }
+    if let Some(codepoints) = associated {
+        for (index, codepoint) in codepoints.iter().enumerate() {
+            out.push(if index == 0 { ';' } else { ':' });
+            out.push_str(&codepoint.to_string());
+        }
+    }
     out.push('u');
     out.into_bytes()
+}
+
+/// Whether `push_mods_and_event` writes an event type for this action.
+fn has_event_param(action: KeyAction, kitty: KittyFlags) -> bool {
+    kitty.contains(KittyFlags::REPORT_EVENT_TYPES) && action != KeyAction::Press
+}
+
+/// The shifted key, for `REPORT_ALTERNATE_KEYS`: the single character shift
+/// produced when it differs from the key itself (`g` gives `G`, `1` gives `!`
+/// on a US layout).
+///
+/// `pressed` is every modifier held, before removing the ones the platform
+/// spent on the text: with alt or ctrl also down, the text is no longer what
+/// shift alone makes (alt+shift+g is `˝` on a Mac), so it isn't the shifted
+/// key and nothing is reported.
+fn alternate_key(
+    key: Key,
+    pressed: Modifiers,
+    text: Option<&str>,
+    kitty: KittyFlags,
+) -> Option<u32> {
+    if !kitty.contains(KittyFlags::REPORT_ALTERNATE_KEYS)
+        || !pressed.contains(Modifiers::SHIFT)
+        || pressed.intersects(Modifiers::ALT | Modifiers::CTRL)
+    {
+        return None;
+    }
+    let Key::Char(base) = key else { return None };
+    let mut chars = text?.chars();
+    let shifted = chars.next()?;
+    if chars.next().is_some() || shifted == base || shifted.is_control() {
+        return None;
+    }
+    Some(shifted as u32)
+}
+
+/// The text to report, for `REPORT_ASSOCIATED_TEXT`: what a press or repeat
+/// of a text key typed, never control characters and never on release.
+///
+/// A chord types nothing: embedders translate text with ctrl (and alt, when
+/// it acts as meta) taken out, so ctrl+a arrives with text `a`. Reporting it
+/// would tell the program that ctrl+a typed an `a`. Alt that is not meta is
+/// the Mac's Option, which types (option+g is `©`), so it keeps its text;
+/// ghostty draws the same line.
+///
+/// Control characters are skipped one by one, so what's left is only what
+/// can be typed.
+fn associated_text(
+    key: Key,
+    mods: Modifiers,
+    action: KeyAction,
+    text: Option<&str>,
+    ctx: &EncodeContext,
+) -> Option<Vec<u32>> {
+    let chord = mods.intersects(Modifiers::CTRL | Modifiers::SUPER)
+        || (mods.contains(Modifiers::ALT) && ctx.alt_is_meta);
+    if !ctx.kitty.contains(KittyFlags::REPORT_ASSOCIATED_TEXT)
+        || !ctx.kitty.contains(KittyFlags::REPORT_ALL_AS_ESC)
+        || action == KeyAction::Release
+        || chord
+        || !matches!(key, Key::Char(_))
+    {
+        return None;
+    }
+    let codepoints: Vec<u32> = text?
+        .chars()
+        .filter(|c| !c.is_control())
+        .map(u32::from)
+        .collect();
+    (!codepoints.is_empty()).then_some(codepoints)
 }
 
 /// `CSI 27 ; mods ; codepoint ~`, xterm's unambiguous form for a modified key.
@@ -466,14 +560,20 @@ pub fn encode(event: &KeyEvent, ctx: &EncodeContext) -> Option<Vec<u8>> {
         if !ctx.kitty.contains(KittyFlags::REPORT_ALL_AS_ESC) {
             return None;
         }
-        let mods = event.mods.difference(event.consumed_mods);
-        return Some(encode_kitty(key, mods, event.action, ctx));
+        return Some(encode_kitty(key, event.mods, event.action, None, None, ctx));
     }
 
     // A modifier the platform spent on producing the text is not also a
-    // modifier the program should see.
-    let mods = event.mods.difference(event.consumed_mods);
+    // modifier the program should see as a chord: it decides between text
+    // and an escape, and what legacy sends. With no text nothing was spent,
+    // so every modifier stays (alt+backspace is still alt). Kitty sequences
+    // still report every modifier held, as kitty and ghostty do.
     let text = event.text.as_deref();
+    let mods = if text.is_some_and(|text| !text.is_empty()) {
+        event.mods.difference(event.consumed_mods)
+    } else {
+        event.mods
+    };
 
     let kitty_active = !ctx.kitty.is_empty();
     if kitty_active {
@@ -484,7 +584,15 @@ pub fn encode(event: &KeyEvent, ctx: &EncodeContext) -> Option<Vec<u8>> {
             && needs_disambiguation(key, mods);
 
         if all || event_types || disambiguate {
-            return Some(encode_kitty(key, mods, event.action, ctx));
+            let shifted = alternate_key(key, event.mods, text, ctx.kitty);
+            return Some(encode_kitty(
+                key,
+                event.mods,
+                event.action,
+                shifted,
+                text,
+                ctx,
+            ));
         }
     }
 
@@ -794,5 +902,165 @@ mod tests {
         );
         let shifted = with_mods(Key::F(1), Modifiers::SHIFT);
         assert_eq!(encode(&shifted, &legacy()), Some(b"\x1b[1;2P".to_vec()));
+    }
+
+    fn typed(c: char, mods: Modifiers, text: &str) -> KeyEvent {
+        KeyEvent {
+            key: Some(Key::Char(c)),
+            mods,
+            text: Some(text.to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// What yazi pushes: disambiguate, alternate keys, report all as escape
+    /// codes and associated text (kitty flags 1 | 4 | 8 | 16).
+    fn yazi() -> EncodeContext {
+        kitty(
+            KittyFlags::DISAMBIGUATE
+                | KittyFlags::REPORT_ALL_AS_ESC
+                | KittyFlags::REPORT_ALTERNATE_KEYS
+                | KittyFlags::REPORT_ASSOCIATED_TEXT,
+        )
+    }
+
+    #[test]
+    fn alternate_key_reports_the_shifted_character() {
+        // The kitty spec's own example: shift+a is `CSI 97:65 ; 2 u`.
+        let ctx =
+            kitty(KittyFlags::REPORT_ALL_AS_ESC | KittyFlags::REPORT_ALTERNATE_KEYS);
+        let event = typed('a', Modifiers::SHIFT, "A");
+        assert_eq!(encode(&event, &ctx), Some(b"\x1b[97:65;2u".to_vec()));
+        // A symbol shift produces on the same key: `1` gives `!`.
+        let bang = typed('1', Modifiers::SHIFT, "!");
+        assert_eq!(encode(&bang, &ctx), Some(b"\x1b[49:33;2u".to_vec()));
+    }
+
+    #[test]
+    fn alternate_key_needs_shift_and_a_different_character() {
+        let ctx =
+            kitty(KittyFlags::REPORT_ALL_AS_ESC | KittyFlags::REPORT_ALTERNATE_KEYS);
+        assert_eq!(
+            encode(&typed('a', Modifiers::empty(), "a"), &ctx),
+            Some(b"\x1b[97u".to_vec())
+        );
+        // ctrl+shift+a produces no text, so there is no shifted key to add.
+        let mut ctrl = typed('a', Modifiers::SHIFT | Modifiers::CTRL, "");
+        ctrl.text = None;
+        assert_eq!(encode(&ctrl, &ctx), Some(b"\x1b[97;6u".to_vec()));
+    }
+
+    #[test]
+    fn alternate_key_is_only_what_shift_alone_makes() {
+        let ctx =
+            kitty(KittyFlags::REPORT_ALL_AS_ESC | KittyFlags::REPORT_ALTERNATE_KEYS);
+        // alt+shift+g types `˝` on a Mac: text, but not g's shifted key.
+        let alt = typed('g', Modifiers::SHIFT | Modifiers::ALT, "\u{2dd}");
+        assert_eq!(encode(&alt, &ctx), Some(b"\x1b[103;4u".to_vec()));
+        // Same when the platform marks alt as spent on the text.
+        let mut consumed = alt.clone();
+        consumed.consumed_mods = Modifiers::ALT;
+        assert_eq!(encode(&consumed, &ctx), Some(b"\x1b[103;4u".to_vec()));
+    }
+
+    #[test]
+    fn yazi_sees_shift_g_as_capital_g() {
+        // Issue #2119: shift was lost because only `CSI 103 ; 2 u` went out.
+        let event = typed('g', Modifiers::SHIFT, "G");
+        assert_eq!(encode(&event, &yazi()), Some(b"\x1b[103:71;2;71u".to_vec()));
+    }
+
+    #[test]
+    fn associated_text_keeps_the_modifier_slot() {
+        let event = typed('g', Modifiers::empty(), "g");
+        assert_eq!(encode(&event, &yazi()), Some(b"\x1b[103;;103u".to_vec()));
+    }
+
+    #[test]
+    fn associated_text_is_never_sent_on_release_or_for_control() {
+        let mut release = typed('g', Modifiers::empty(), "g");
+        release.action = KeyAction::Release;
+        let ctx = kitty(
+            KittyFlags::REPORT_ALL_AS_ESC
+                | KittyFlags::REPORT_EVENT_TYPES
+                | KittyFlags::REPORT_ASSOCIATED_TEXT,
+        );
+        assert_eq!(encode(&release, &ctx), Some(b"\x1b[103;1:3u".to_vec()));
+        let control = typed('a', Modifiers::CTRL, "\u{1}");
+        assert_eq!(encode(&control, &yazi()), Some(b"\x1b[97;5u".to_vec()));
+    }
+
+    #[test]
+    fn chords_carry_no_text() {
+        // Embedders translate without ctrl, so ctrl+a comes with text `a`.
+        let ctrl = typed('a', Modifiers::CTRL, "a");
+        assert_eq!(encode(&ctrl, &yazi()), Some(b"\x1b[97;5u".to_vec()));
+        // Alt acting as meta: the `g` is not typed text.
+        let meta = typed('g', Modifiers::ALT, "g");
+        assert_eq!(encode(&meta, &yazi()), Some(b"\x1b[103;3u".to_vec()));
+        // Alt as a Mac's Option, spent on the text: the `©` was typed, and
+        // alt is still reported as held, as kitty and ghostty do.
+        let mut option = typed('g', Modifiers::ALT, "\u{a9}");
+        option.consumed_mods = Modifiers::ALT;
+        let mac = EncodeContext {
+            alt_is_meta: false,
+            ..yazi()
+        };
+        assert_eq!(encode(&option, &mac), Some(b"\x1b[103;3;169u".to_vec()));
+    }
+
+    #[test]
+    fn option_typed_text_is_text_outside_report_all() {
+        // Disambiguate alone: the `©` option typed goes through as text,
+        // not as an alt+g chord.
+        let mut option = typed('g', Modifiers::ALT, "\u{a9}");
+        option.consumed_mods = Modifiers::ALT;
+        let ctx = EncodeContext {
+            alt_is_meta: false,
+            ..kitty(KittyFlags::DISAMBIGUATE)
+        };
+        assert_eq!(encode(&option, &ctx), Some("\u{a9}".as_bytes().to_vec()));
+    }
+
+    #[test]
+    fn consumed_alt_without_text_stays_a_chord() {
+        // Nothing was typed, so nothing was spent: alt+backspace is alt.
+        let event = KeyEvent {
+            key: Some(Key::Backspace),
+            mods: Modifiers::ALT,
+            consumed_mods: Modifiers::ALT,
+            ..Default::default()
+        };
+        assert_eq!(
+            encode(&event, &kitty(KittyFlags::DISAMBIGUATE)),
+            Some(b"\x1b[127;3u".to_vec())
+        );
+    }
+
+    #[test]
+    fn associated_text_skips_control_characters() {
+        let event = typed('a', Modifiers::SHIFT, "A\n");
+        assert_eq!(encode(&event, &yazi()), Some(b"\x1b[97;2;65u".to_vec()));
+    }
+
+    #[test]
+    fn release_names_the_same_shifted_key_as_the_press() {
+        let ctx = kitty(
+            KittyFlags::REPORT_ALL_AS_ESC
+                | KittyFlags::REPORT_EVENT_TYPES
+                | KittyFlags::REPORT_ALTERNATE_KEYS
+                | KittyFlags::REPORT_ASSOCIATED_TEXT,
+        );
+        let mut release = typed('g', Modifiers::SHIFT, "G");
+        release.action = KeyAction::Release;
+        assert_eq!(encode(&release, &ctx), Some(b"\x1b[103:71;2:3u".to_vec()));
+    }
+
+    #[test]
+    fn associated_text_needs_report_all() {
+        // Without report-all, text keys arrive as plain text anyway.
+        let ctx = kitty(KittyFlags::DISAMBIGUATE | KittyFlags::REPORT_ASSOCIATED_TEXT);
+        let event = typed('g', Modifiers::SHIFT, "G");
+        assert_eq!(encode(&event, &ctx), Some(b"G".to_vec()));
     }
 }

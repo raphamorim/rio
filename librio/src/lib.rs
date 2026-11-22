@@ -539,8 +539,7 @@ impl Engine {
 }
 
 /// Translate the terminal's kitty keyboard flags into the encoder's own set.
-/// Only the flags that change what a key produces are carried across; see the
-/// note in [`key`] about the two that are not implemented.
+/// Only the flags that change what a key produces are carried across.
 fn kitty_flags(modes: rio_vt::ansi::KeyboardModes) -> key::KittyFlags {
     use rio_vt::ansi::KeyboardModes;
     let mut flags = key::KittyFlags::empty();
@@ -552,6 +551,12 @@ fn kitty_flags(modes: rio_vt::ansi::KeyboardModes) -> key::KittyFlags {
     }
     if modes.contains(KeyboardModes::REPORT_ALL_KEYS_AS_ESC) {
         flags |= key::KittyFlags::REPORT_ALL_AS_ESC;
+    }
+    if modes.contains(KeyboardModes::REPORT_ALTERNATE_KEYS) {
+        flags |= key::KittyFlags::REPORT_ALTERNATE_KEYS;
+    }
+    if modes.contains(KeyboardModes::REPORT_ASSOCIATED_TEXT) {
+        flags |= key::KittyFlags::REPORT_ASSOCIATED_TEXT;
     }
     flags
 }
@@ -1696,6 +1701,48 @@ mod tests {
         let before = delegate.wakeups.load(Ordering::SeqCst);
         surface.inject_output(b"restored\x1b[2J");
         assert!(delegate.wakeups.load(Ordering::SeqCst) > before);
+    }
+
+    // Issue #2119: yazi pushes kitty flags 1|4|8|16 and matches keys on the
+    // shifted character. The flags it sets must reach the encoder, or
+    // shift+g arrives as a bare `g` and shift looks dead.
+    #[test]
+    fn yazi_keyboard_flags_reach_the_encoder() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".to_string()),
+                args: vec!["-c".to_string(), "sleep 300".to_string()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+
+        surface.inject_output(b"\x1b[>29u");
+        let flags = kitty_flags(surface.terminal.lock().keyboard_mode());
+        assert_eq!(
+            flags,
+            key::KittyFlags::DISAMBIGUATE
+                | key::KittyFlags::REPORT_ALL_AS_ESC
+                | key::KittyFlags::REPORT_ALTERNATE_KEYS
+                | key::KittyFlags::REPORT_ASSOCIATED_TEXT
+        );
+
+        let shift_g = KeyEvent {
+            key: Some(key::Key::Char('g')),
+            mods: Modifiers::SHIFT,
+            text: Some("G".to_string()),
+            ..KeyEvent::default()
+        };
+        let ctx = key::EncodeContext {
+            kitty: flags,
+            ..key::EncodeContext::default()
+        };
+        assert_eq!(
+            key::encode(&shift_g, &ctx),
+            Some(b"\x1b[103:71;2;71u".to_vec())
+        );
     }
 
     // The wheel means different things to different programs. A pager on
