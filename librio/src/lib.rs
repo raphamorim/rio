@@ -1042,6 +1042,7 @@ impl Surface {
             let terminal = self.terminal.lock();
             key::EncodeContext {
                 app_cursor: terminal.mode().contains(Mode::APP_CURSOR),
+                app_keypad: terminal.mode().contains(Mode::APP_KEYPAD),
                 kitty: kitty_flags(terminal.keyboard_mode()),
                 modify_other_keys: terminal.modify_other_keys(),
                 alt_is_meta: self.alt_is_meta.load(Ordering::Relaxed),
@@ -1753,6 +1754,43 @@ mod tests {
             ..key::EncodeContext::default()
         };
         assert_eq!(key::encode(&shift_g, &ctx), Some(b"G".to_vec()));
+    }
+
+    // DECKPAM and DECKPNM reach the encoder: a numpad key sends its SS3
+    // code while a program has the application keypad on, and types again
+    // once it's off.
+    #[test]
+    fn application_keypad_mode_reaches_the_encoder() {
+        let engine = Engine::new(Arc::new(CountingDelegate {
+            wakeups: AtomicUsize::new(0),
+        }));
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".to_string()),
+                args: vec!["-c".to_string(), "sleep 300".to_string()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        let keypad_1 = KeyEvent {
+            key: Some(key::Key::Keypad(key::Keypad::Digit(1))),
+            text: Some("1".to_string()),
+            ..KeyEvent::default()
+        };
+        let ctx = |surface: &Surface| {
+            let terminal = surface.terminal.lock();
+            key::EncodeContext {
+                app_keypad: terminal.mode().contains(Mode::APP_KEYPAD),
+                ..key::EncodeContext::default()
+            }
+        };
+
+        surface.inject_output(b"\x1b=");
+        assert_eq!(
+            key::encode(&keypad_1, &ctx(&surface)),
+            Some(b"\x1bOq".to_vec())
+        );
+        surface.inject_output(b"\x1b>");
+        assert_eq!(key::encode(&keypad_1, &ctx(&surface)), Some(b"1".to_vec()));
     }
 
     // Each kitty flag a program can set maps to the encoder's own, one to

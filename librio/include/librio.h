@@ -90,6 +90,10 @@ typedef size_t rio_surface_id_t;
 #define RIO_KEY_ALT_RIGHT 23u
 #define RIO_KEY_SUPER_LEFT 24u
 #define RIO_KEY_SUPER_RIGHT 25u
+/* A numpad key; codepoint is the symbol on it: '0' to '9', '.', '/', '*',
+ * '-', '+', '=', or '\r' for Enter. Sent apart from the main keys, it gets
+ * its own codes in application keypad mode (DECKPAM) and in kitty mode. */
+#define RIO_KEY_KEYPAD 26u
 
 #define RIO_KEY_ACTION_PRESS 0u
 #define RIO_KEY_ACTION_REPEAT 1u

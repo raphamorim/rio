@@ -67,6 +67,10 @@ pub enum Key {
     Insert,
     Delete,
     F(u8),
+    /// A numpad key, apart from the main keys with the same symbols: in
+    /// application keypad mode (DECKPAM) and in kitty mode it has codes of
+    /// its own.
+    Keypad(Keypad),
     // Modifier keys as keys, for the kitty protocol's report-all mode
     // (its only consumer: legacy encodings have nothing to send for a
     // bare modifier).
@@ -79,6 +83,83 @@ pub enum Key {
     AltRight,
     SuperLeft,
     SuperRight,
+}
+
+/// The numpad keys a terminal encodes apart from the main keyboard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Keypad {
+    /// 0 to 9.
+    Digit(u8),
+    Decimal,
+    Divide,
+    Multiply,
+    Subtract,
+    Add,
+    Enter,
+    Equal,
+}
+
+impl Keypad {
+    /// The key from the symbol on it, as the C API carries it: `'0'` to
+    /// `'9'`, `.`, `/`, `*`, `-`, `+`, `=`, and `'\r'` for Enter.
+    pub fn from_symbol(symbol: char) -> Option<Self> {
+        let key = match symbol {
+            '0'..='9' => Keypad::Digit(symbol as u8 - b'0'),
+            '.' => Keypad::Decimal,
+            '/' => Keypad::Divide,
+            '*' => Keypad::Multiply,
+            '-' => Keypad::Subtract,
+            '+' => Keypad::Add,
+            '=' => Keypad::Equal,
+            '\r' => Keypad::Enter,
+            _ => return None,
+        };
+        Some(key)
+    }
+
+    /// What the key types outside application keypad mode.
+    fn symbol(self) -> char {
+        match self {
+            Keypad::Digit(digit) => char::from(b'0' + digit.min(9)),
+            Keypad::Decimal => '.',
+            Keypad::Divide => '/',
+            Keypad::Multiply => '*',
+            Keypad::Subtract => '-',
+            Keypad::Add => '+',
+            Keypad::Equal => '=',
+            Keypad::Enter => '\r',
+        }
+    }
+
+    /// The final byte of its `SS3` form in application keypad mode, as
+    /// xterm and ghostty send it. Equal has none there and types `=`.
+    fn ss3_final(self) -> Option<char> {
+        let final_byte = match self {
+            Keypad::Digit(digit) => char::from(b'p' + digit.min(9)),
+            Keypad::Decimal => 'n',
+            Keypad::Divide => 'o',
+            Keypad::Multiply => 'j',
+            Keypad::Subtract => 'm',
+            Keypad::Add => 'k',
+            Keypad::Enter => 'M',
+            Keypad::Equal => return None,
+        };
+        Some(final_byte)
+    }
+
+    /// Kitty's code for it, from the protocol's private range.
+    fn kitty_code(self) -> u32 {
+        match self {
+            Keypad::Digit(digit) => 57399 + u32::from(digit.min(9)),
+            Keypad::Decimal => 57409,
+            Keypad::Divide => 57410,
+            Keypad::Multiply => 57411,
+            Keypad::Subtract => 57412,
+            Keypad::Add => 57413,
+            Keypad::Enter => 57414,
+            Keypad::Equal => 57415,
+        }
+    }
 }
 
 impl Key {
@@ -122,10 +203,12 @@ pub struct KeyEvent {
 pub struct EncodeContext {
     /// DECCKM. Arrows and Home/End switch from `CSI` to `SS3`.
     pub app_cursor: bool,
+    /// DECKPAM. Numpad keys send `SS3` codes instead of what they type.
+    pub app_keypad: bool,
     pub kitty: KittyFlags,
-    /// `CSI > 4 ; n m`. Levels 1 and 2 are treated alike: both ask for
-    /// unambiguous reporting of modified keys, and the difference between them
-    /// only concerns keys this encoder already reports unambiguously.
+    /// `CSI > 4 ; n m`, xterm's `modifyOtherKeys`. Level 1 reports only the
+    /// chords legacy has no bytes for (ctrl+`;`), so ctrl+a is still `^A`;
+    /// level 2 reports every modified key that types, as `CSI 27 ; m ; c ~`.
     pub modify_other_keys: Option<u8>,
     /// Whether alt should act as meta, prefixing with ESC, instead of letting
     /// the platform's text through. Terminals default this on; on macOS it is
@@ -262,6 +345,7 @@ fn kitty_codepoint(key: Key) -> u32 {
         Key::Home => 57423,
         Key::End => 57424,
         Key::F(n) => 57363 + n as u32 - 1,
+        Key::Keypad(key) => key.kitty_code(),
         Key::CapsLock => 57358,
         Key::ShiftLeft => 57441,
         Key::ControlLeft => 57442,
@@ -406,7 +490,7 @@ fn associated_text(
         || !ctx.kitty.contains(KittyFlags::REPORT_ALL_AS_ESC)
         || action == KeyAction::Release
         || chord
-        || !matches!(key, Key::Char(_))
+        || !matches!(key, Key::Char(_) | Key::Keypad(_))
     {
         return None;
     }
@@ -421,6 +505,91 @@ fn associated_text(
 /// `CSI 27 ; mods ; codepoint ~`, xterm's unambiguous form for a modified key.
 fn encode_modify_other_keys(codepoint: u32, mods: Modifiers) -> Vec<u8> {
     format!("\x1b[27;{};{}~", mods.param(), codepoint).into_bytes()
+}
+
+/// A numpad key outside kitty mode. In application keypad mode it sends its
+/// `SS3` code, with the modifier parameter when one is held (`ESC O 5 q` for
+/// ctrl+1); otherwise it types its symbol, whatever is held, and Enter is
+/// Enter. `modifyOtherKeys` leaves the numpad alone, as in ghostty.
+fn encode_keypad(
+    key: Keypad,
+    mods: Modifiers,
+    text: Option<&str>,
+    ctx: &EncodeContext,
+) -> Vec<u8> {
+    if ctx.app_keypad {
+        if let Some(final_byte) = key.ss3_final() {
+            return if mods.is_empty() {
+                format!("\x1bO{final_byte}").into_bytes()
+            } else {
+                format!("\x1bO{}{final_byte}", mods.param()).into_bytes()
+            };
+        }
+    }
+    if key == Keypad::Enter {
+        return b"\r".to_vec();
+    }
+    match text.filter(|text| !text.is_empty() && !text.chars().any(char::is_control)) {
+        Some(text) => text.as_bytes().to_vec(),
+        None => key.symbol().to_string().into_bytes(),
+    }
+}
+
+/// The codepoint `modifyOtherKeys` reports for a text key: the character it
+/// typed when that is one printable character (`A` for shift+a, as xterm
+/// reports the keysym), else the key itself.
+fn modify_other_keys_codepoint(c: char, text: Option<&str>) -> u32 {
+    let mut chars = text.unwrap_or("").chars();
+    match (chars.next(), chars.next()) {
+        (Some(typed), None) if !typed.is_control() => typed as u32,
+        _ => c as u32,
+    }
+}
+
+/// Whether `modifyOtherKeys` reports this text key as `CSI 27`. Level 2
+/// follows xterm's `ModifyOtherKeys` (and ghostty): any modifier on a key in
+/// the control range (`@` to DEL, letters included), anything but shift
+/// alone on the rest, and shift+space. Level 1 only reports the chords legacy
+/// can't express: ctrl on a key with no control byte, such as ctrl+`;`.
+fn modify_other_keys_reports(
+    level: u8,
+    c: char,
+    codepoint: u32,
+    mods: Modifiers,
+) -> bool {
+    if mods.is_empty() {
+        return false;
+    }
+    if level >= 2 {
+        let control_range = (0x40..=0x7f).contains(&codepoint);
+        let beyond_shift = !mods.difference(Modifiers::SHIFT).is_empty();
+        return control_range || beyond_shift || codepoint == u32::from(' ');
+    }
+    mods.contains(Modifiers::CTRL) && ctrl_byte(c).is_none()
+}
+
+/// Enter, Tab and Backspace under `modifyOtherKeys`, from ghostty's (and
+/// xterm's) tables. Level 1 keeps the forms legacy already sends apart (alt
+/// as an ESC prefix, shift+tab as back tab, backspace's bytes); everything
+/// else, and every modified key at level 2, is `CSI 27 ; m ; code ~`.
+/// ctrl+backspace stays ^H at both levels.
+fn modify_other_keys_editing(key: Key, level: u8, mods: Modifiers) -> Option<Vec<u8>> {
+    if mods.is_empty() || mods.contains(Modifiers::SUPER) {
+        return None;
+    }
+    let (code, legacy_at_level_1) = match key {
+        Key::Enter => (13, mods == Modifiers::ALT),
+        Key::Tab => (9, mods == Modifiers::ALT || mods == Modifiers::SHIFT),
+        Key::Backspace => (127, true),
+        _ => return None,
+    };
+    if level < 2 && legacy_at_level_1 {
+        return None;
+    }
+    if key == Key::Backspace && mods == Modifiers::CTRL {
+        return None;
+    }
+    Some(encode_modify_other_keys(code, mods))
 }
 
 /// The legacy encoding: what terminals send with no keyboard protocol active.
@@ -457,6 +626,10 @@ fn encode_legacy(
     let alt = mods.contains(Modifiers::ALT);
     let ctrl = mods.contains(Modifiers::CTRL);
 
+    if let Key::Keypad(keypad) = key {
+        return Some(encode_keypad(keypad, mods, text, ctx));
+    }
+
     let base: Vec<u8> = match key {
         Key::Enter => vec![if ctrl || mods.contains(Modifiers::SHIFT) {
             b'\n'
@@ -469,7 +642,9 @@ fn encode_legacy(
             }
             vec![b'\t']
         }
-        Key::Backspace => vec![0x7f],
+        // ctrl+backspace is ^H, as in xterm and ghostty, so a shell can bind
+        // it apart from backspace (usually to delete a word).
+        Key::Backspace => vec![if ctrl { 0x08 } else { 0x7f }],
         Key::Escape => vec![0x1b],
         Key::Char(c) => {
             if ctrl {
@@ -507,7 +682,8 @@ fn encode_legacy(
         | Key::Delete
         | Key::PageUp
         | Key::PageDown
-        | Key::F(_) => return None,
+        | Key::F(_)
+        | Key::Keypad(_) => return None,
     };
 
     if alt && ctx.alt_is_meta {
@@ -528,12 +704,18 @@ fn needs_disambiguation(key: Key, mods: Modifiers) -> bool {
     if mods.contains(Modifiers::CTRL) || mods.contains(Modifiers::ALT) {
         return true;
     }
-    // Shift+Enter is the legacy form's Enter, so the chord needs a sequence
-    // of its own when the terminal asked to see modified keys.
-    if key == Key::Enter && mods.contains(Modifiers::SHIFT) {
+    // Enter, Tab and Backspace keep their legacy bytes only unmodified, as
+    // in kitty and ghostty: shift+enter, shift+tab and shift+backspace each
+    // need a sequence of their own when the terminal asked to see modified
+    // keys. The numpad is the same: its keys type unmodified, and are
+    // reported by their own codes otherwise. Keypad Enter types no text, so
+    // it is always its own code.
+    if mods.contains(Modifiers::SHIFT)
+        && matches!(key, Key::Enter | Key::Tab | Key::Backspace | Key::Keypad(_))
+    {
         return true;
     }
-    matches!(key, Key::Escape)
+    matches!(key, Key::Escape | Key::Keypad(Keypad::Enter))
 }
 
 pub fn encode(event: &KeyEvent, ctx: &EncodeContext) -> Option<Vec<u8>> {
@@ -601,7 +783,7 @@ pub fn encode(event: &KeyEvent, ctx: &EncodeContext) -> Option<Vec<u8>> {
         // A key that goes out as plain text on press does so on repeat too:
         // holding `g` types `ggg`, not escape codes. Only releases, and keys
         // that are escape codes anyway, carry the event type.
-        let typed_text = matches!(key, Key::Char(_))
+        let typed_text = matches!(key, Key::Char(_) | Key::Keypad(_))
             && text.is_some_and(|text| {
                 !text.is_empty() && !text.chars().any(char::is_control)
             })
@@ -626,15 +808,32 @@ pub fn encode(event: &KeyEvent, ctx: &EncodeContext) -> Option<Vec<u8>> {
                 ctx,
             ));
         }
+
+        // An unmodified numpad key types under kitty's lower levels, whatever
+        // the keypad mode: DECKPAM is the legacy encoding's, and kitty gives
+        // the numpad codes of its own for when they're asked for.
+        if let Key::Keypad(keypad) = key {
+            let typing = EncodeContext {
+                app_keypad: false,
+                ..*ctx
+            };
+            return Some(encode_keypad(keypad, mods, text, &typing));
+        }
     }
 
     // Text keys with a modifier the legacy form mangles, when the program has
     // asked for the unambiguous form.
-    if ctx.modify_other_keys.is_some_and(|level| level >= 1) {
+    if let Some(level) = ctx.modify_other_keys.filter(|level| *level >= 1) {
         if let Key::Char(c) = key {
-            if mods.contains(Modifiers::CTRL) || mods.contains(Modifiers::ALT) {
-                return Some(encode_modify_other_keys(c as u32, mods));
+            let codepoint = modify_other_keys_codepoint(c, text);
+            if !mods.contains(Modifiers::SUPER)
+                && modify_other_keys_reports(level, c, codepoint, mods)
+            {
+                return Some(encode_modify_other_keys(codepoint, mods));
             }
+        }
+        if let Some(bytes) = modify_other_keys_editing(key, level, mods) {
+            return Some(bytes);
         }
     }
 
@@ -1289,6 +1488,299 @@ mod tests {
             encode(&release, &event_types()),
             Some(b"\x1b[103;1:3u".to_vec())
         );
+    }
+
+    fn mok(level: u8) -> EncodeContext {
+        EncodeContext {
+            modify_other_keys: Some(level),
+            ..legacy()
+        }
+    }
+
+    fn keypad(symbol: char) -> KeyEvent {
+        let key = Keypad::from_symbol(symbol).expect("a numpad symbol");
+        KeyEvent {
+            key: Some(Key::Keypad(key)),
+            text: (symbol != '\r').then(|| symbol.to_string()),
+            ..Default::default()
+        }
+    }
+
+    fn app_keypad() -> EncodeContext {
+        EncodeContext {
+            app_keypad: true,
+            ..legacy()
+        }
+    }
+
+    #[test]
+    fn modify_other_keys_level_1_keeps_control_bytes() {
+        // Level 1 leaves the chords legacy already sends alone.
+        assert_eq!(
+            encode(&typed('a', Modifiers::CTRL, "a"), &mok(1)),
+            Some(vec![0x01])
+        );
+        assert_eq!(
+            encode(&typed('2', Modifiers::CTRL, "2"), &mok(1)),
+            Some(vec![0x00])
+        );
+        assert_eq!(
+            encode(&typed('a', Modifiers::ALT, "a"), &mok(1)),
+            Some(b"\x1ba".to_vec())
+        );
+        assert_eq!(
+            encode(&typed('a', Modifiers::SHIFT, "A"), &mok(1)),
+            Some(b"A".to_vec())
+        );
+    }
+
+    #[test]
+    fn modify_other_keys_level_1_reports_what_legacy_cannot() {
+        // ctrl+; and ctrl+1 have no control byte: level 1 is how a program
+        // gets to see them.
+        assert_eq!(
+            encode(&typed(';', Modifiers::CTRL, ";"), &mok(1)),
+            Some(b"\x1b[27;5;59~".to_vec())
+        );
+        assert_eq!(
+            encode(&typed('1', Modifiers::CTRL, "1"), &mok(1)),
+            Some(b"\x1b[27;5;49~".to_vec())
+        );
+    }
+
+    #[test]
+    fn modify_other_keys_level_2_reports_modified_keys() {
+        let ctx = mok(2);
+        assert_eq!(
+            encode(&typed('a', Modifiers::CTRL, "a"), &ctx),
+            Some(b"\x1b[27;5;97~".to_vec())
+        );
+        assert_eq!(
+            encode(&typed('a', Modifiers::ALT, "a"), &ctx),
+            Some(b"\x1b[27;3;97~".to_vec())
+        );
+        // Letters are in the control range, so shift alone is reported, with
+        // the character typed, as xterm reports the keysym.
+        assert_eq!(
+            encode(&typed('a', Modifiers::SHIFT, "A"), &ctx),
+            Some(b"\x1b[27;2;65~".to_vec())
+        );
+        assert_eq!(
+            encode(&typed(' ', Modifiers::SHIFT, " "), &ctx),
+            Some(b"\x1b[27;2;32~".to_vec())
+        );
+    }
+
+    #[test]
+    fn modify_other_keys_level_2_leaves_shifted_symbols_and_typing_alone() {
+        let ctx = mok(2);
+        // Shift alone on a symbol outside the control range types it.
+        assert_eq!(
+            encode(&typed('1', Modifiers::SHIFT, "!"), &ctx),
+            Some(b"!".to_vec())
+        );
+        assert_eq!(
+            encode(&typed('a', Modifiers::empty(), "a"), &ctx),
+            Some(b"a".to_vec())
+        );
+        // Option typing © on a Mac isn't a chord.
+        let mut option = typed('g', Modifiers::ALT, "\u{a9}");
+        option.consumed_mods = Modifiers::ALT;
+        assert_eq!(encode(&option, &ctx), Some("\u{a9}".as_bytes().to_vec()));
+        // Super is the platform's, here as everywhere.
+        assert_eq!(encode(&typed('c', Modifiers::SUPER, "c"), &ctx), None);
+    }
+
+    #[test]
+    fn modify_other_keys_level_1_editing_keys() {
+        let ctx = mok(1);
+        let cases: [(Key, Modifiers, &[u8]); 9] = [
+            (Key::Enter, Modifiers::SHIFT, b"\x1b[27;2;13~"),
+            (Key::Enter, Modifiers::CTRL, b"\x1b[27;5;13~"),
+            (Key::Enter, Modifiers::ALT, b"\x1b\r"),
+            (Key::Tab, Modifiers::SHIFT, b"\x1b[Z"),
+            (Key::Tab, Modifiers::ALT, b"\x1b\t"),
+            (Key::Tab, Modifiers::CTRL, b"\x1b[27;5;9~"),
+            (Key::Tab, Modifiers::ALT | Modifiers::SHIFT, b"\x1b[27;4;9~"),
+            (Key::Backspace, Modifiers::SHIFT, b"\x7f"),
+            (Key::Backspace, Modifiers::CTRL, b"\x08"),
+        ];
+        for (key, mods, expected) in cases {
+            assert_eq!(
+                encode(&with_mods(key, mods), &ctx),
+                Some(expected.to_vec()),
+                "{key:?} {mods:?}"
+            );
+        }
+        assert_eq!(
+            encode(&with_mods(Key::Backspace, Modifiers::ALT), &ctx),
+            Some(b"\x1b\x7f".to_vec())
+        );
+    }
+
+    #[test]
+    fn modify_other_keys_level_2_editing_keys() {
+        let ctx = mok(2);
+        let cases: [(Key, Modifiers, &[u8]); 7] = [
+            (Key::Enter, Modifiers::ALT, b"\x1b[27;3;13~"),
+            (Key::Enter, Modifiers::SHIFT, b"\x1b[27;2;13~"),
+            (Key::Tab, Modifiers::SHIFT, b"\x1b[27;2;9~"),
+            (Key::Tab, Modifiers::ALT, b"\x1b[27;3;9~"),
+            (Key::Backspace, Modifiers::SHIFT, b"\x1b[27;2;127~"),
+            (
+                Key::Backspace,
+                Modifiers::CTRL | Modifiers::SHIFT,
+                b"\x1b[27;6;127~",
+            ),
+            // ctrl+backspace is ^H at every level.
+            (Key::Backspace, Modifiers::CTRL, b"\x08"),
+        ];
+        for (key, mods, expected) in cases {
+            assert_eq!(
+                encode(&with_mods(key, mods), &ctx),
+                Some(expected.to_vec()),
+                "{key:?} {mods:?}"
+            );
+        }
+        // Unmodified, they stay what they are.
+        assert_eq!(encode(&press(Key::Enter), &ctx), Some(b"\r".to_vec()));
+        assert_eq!(encode(&press(Key::Tab), &ctx), Some(b"\t".to_vec()));
+        assert_eq!(encode(&press(Key::Backspace), &ctx), Some(vec![0x7f]));
+    }
+
+    #[test]
+    fn ctrl_backspace_is_ctrl_h() {
+        assert_eq!(
+            encode(&with_mods(Key::Backspace, Modifiers::CTRL), &legacy()),
+            Some(vec![0x08])
+        );
+        assert_eq!(
+            encode(
+                &with_mods(Key::Backspace, Modifiers::CTRL | Modifiers::ALT),
+                &legacy()
+            ),
+            Some(b"\x1b\x08".to_vec())
+        );
+        assert_eq!(encode(&press(Key::Backspace), &legacy()), Some(vec![0x7f]));
+    }
+
+    #[test]
+    fn kitty_disambiguates_shifted_tab_and_backspace() {
+        let ctx = kitty(KittyFlags::DISAMBIGUATE);
+        assert_eq!(
+            encode(&with_mods(Key::Tab, Modifiers::SHIFT), &ctx),
+            Some(b"\x1b[9;2u".to_vec())
+        );
+        assert_eq!(
+            encode(&with_mods(Key::Backspace, Modifiers::SHIFT), &ctx),
+            Some(b"\x1b[127;2u".to_vec())
+        );
+        assert_eq!(
+            encode(&with_mods(Key::Enter, Modifiers::SHIFT), &ctx),
+            Some(b"\x1b[13;2u".to_vec())
+        );
+        // Unmodified they keep legacy bytes, so a shell still works.
+        assert_eq!(encode(&press(Key::Tab), &ctx), Some(b"\t".to_vec()));
+        assert_eq!(encode(&press(Key::Backspace), &ctx), Some(vec![0x7f]));
+    }
+
+    #[test]
+    fn held_shift_tab_repeats_like_its_press() {
+        let ctx = event_types();
+        let repeat = repeated(with_mods(Key::Tab, Modifiers::SHIFT));
+        assert_eq!(encode(&repeat, &ctx), Some(b"\x1b[9;2:2u".to_vec()));
+    }
+
+    #[test]
+    fn keypad_symbols_round_trip() {
+        for symbol in "0123456789./*-+=\r".chars() {
+            let key = Keypad::from_symbol(symbol).expect("numpad symbol");
+            assert_eq!(key.symbol(), symbol);
+        }
+        assert_eq!(Keypad::from_symbol('a'), None);
+        assert_eq!(Keypad::from_symbol('\n'), None);
+    }
+
+    #[test]
+    fn keypad_types_in_normal_mode() {
+        assert_eq!(encode(&keypad('1'), &legacy()), Some(b"1".to_vec()));
+        assert_eq!(encode(&keypad('+'), &legacy()), Some(b"+".to_vec()));
+        assert_eq!(encode(&keypad('\r'), &legacy()), Some(b"\r".to_vec()));
+        // Modifiers don't change what a numpad key types here, as in ghostty.
+        let mut ctrl = keypad('1');
+        ctrl.mods = Modifiers::CTRL;
+        assert_eq!(encode(&ctrl, &legacy()), Some(b"1".to_vec()));
+    }
+
+    #[test]
+    fn keypad_application_mode_sends_ss3() {
+        let ctx = app_keypad();
+        let cases = [
+            ('0', "\x1bOp"),
+            ('1', "\x1bOq"),
+            ('9', "\x1bOy"),
+            ('.', "\x1bOn"),
+            ('/', "\x1bOo"),
+            ('*', "\x1bOj"),
+            ('-', "\x1bOm"),
+            ('+', "\x1bOk"),
+            ('\r', "\x1bOM"),
+        ];
+        for (symbol, expected) in cases {
+            assert_eq!(
+                encode(&keypad(symbol), &ctx),
+                Some(expected.as_bytes().to_vec()),
+                "{symbol:?}"
+            );
+        }
+        // Equal has no SS3 form there; it types.
+        assert_eq!(encode(&keypad('='), &ctx), Some(b"=".to_vec()));
+    }
+
+    #[test]
+    fn keypad_application_mode_carries_modifiers() {
+        let mut ctrl = keypad('1');
+        ctrl.mods = Modifiers::CTRL;
+        assert_eq!(encode(&ctrl, &app_keypad()), Some(b"\x1bO5q".to_vec()));
+        // modifyOtherKeys level 2 leaves the numpad to the keypad mode, as
+        // ghostty's tests have it.
+        let both = EncodeContext {
+            modify_other_keys: Some(2),
+            ..app_keypad()
+        };
+        assert_eq!(encode(&ctrl, &both), Some(b"\x1bO5q".to_vec()));
+        assert_eq!(encode(&ctrl, &mok(2)), Some(b"1".to_vec()));
+    }
+
+    #[test]
+    fn keypad_in_kitty_mode() {
+        // Below report-all an unmodified numpad digit types, even in
+        // application keypad mode.
+        let ctx = EncodeContext {
+            app_keypad: true,
+            ..kitty(KittyFlags::DISAMBIGUATE)
+        };
+        assert_eq!(encode(&keypad('1'), &ctx), Some(b"1".to_vec()));
+        // Modified, or Enter, it is its own kitty code.
+        let mut shifted = keypad('1');
+        shifted.mods = Modifiers::SHIFT;
+        assert_eq!(encode(&shifted, &ctx), Some(b"\x1b[57400;2u".to_vec()));
+        assert_eq!(encode(&keypad('\r'), &ctx), Some(b"\x1b[57414u".to_vec()));
+        // Report-all with text: its code, then what it typed.
+        assert_eq!(
+            encode(&keypad('5'), &yazi()),
+            Some(b"\x1b[57404;;53u".to_vec())
+        );
+        assert_eq!(
+            encode(&keypad('='), &yazi()),
+            Some(b"\x1b[57415;;61u".to_vec())
+        );
+    }
+
+    #[test]
+    fn held_keypad_digit_repeats_as_text() {
+        let repeat = repeated(keypad('7'));
+        assert_eq!(encode(&repeat, &event_types()), Some(b"7".to_vec()));
     }
 
     #[test]
