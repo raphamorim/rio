@@ -78,6 +78,9 @@ pub const RIO_KEY_ALT_LEFT: u32 = 22;
 pub const RIO_KEY_ALT_RIGHT: u32 = 23;
 pub const RIO_KEY_SUPER_LEFT: u32 = 24;
 pub const RIO_KEY_SUPER_RIGHT: u32 = 25;
+/// A numpad key; `codepoint` is the symbol on it: `'0'` to `'9'`, `.`, `/`,
+/// `*`, `-`, `+`, `=`, or `'\r'` for Enter.
+pub const RIO_KEY_KEYPAD: u32 = 26;
 
 pub const RIO_KEY_ACTION_PRESS: u32 = 0;
 pub const RIO_KEY_ACTION_REPEAT: u32 = 1;
@@ -884,6 +887,12 @@ pub unsafe extern "C" fn rio_surface_key(
             RIO_KEY_ALT_RIGHT => Some(Key::AltRight),
             RIO_KEY_SUPER_LEFT => Some(Key::SuperLeft),
             RIO_KEY_SUPER_RIGHT => Some(Key::SuperRight),
+            RIO_KEY_KEYPAD => match char::from_u32(event.codepoint)
+                .and_then(crate::key::Keypad::from_symbol)
+            {
+                Some(keypad) => Some(Key::Keypad(keypad)),
+                None => return false,
+            },
             _ => return false,
         };
 
