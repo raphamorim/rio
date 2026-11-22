@@ -578,10 +578,33 @@ pub fn encode(event: &KeyEvent, ctx: &EncodeContext) -> Option<Vec<u8>> {
     let kitty_active = !ctx.kitty.is_empty();
     if kitty_active {
         let all = ctx.kitty.contains(KittyFlags::REPORT_ALL_AS_ESC);
-        let event_types = ctx.kitty.contains(KittyFlags::REPORT_EVENT_TYPES)
-            && event.action != KeyAction::Press;
         let disambiguate = ctx.kitty.contains(KittyFlags::DISAMBIGUATE)
             && needs_disambiguation(key, mods);
+
+        // Below report-all, Enter, Tab and Backspace keep their legacy bytes
+        // so a shell stays usable after a program that set the mode crashes,
+        // and the spec gives them no release events either.
+        let legacy_editing_key = matches!(key, Key::Enter | Key::Tab | Key::Backspace);
+        if !all && legacy_editing_key && event.action == KeyAction::Release {
+            return None;
+        }
+
+        // A key that goes out as plain text on press does so on repeat too:
+        // holding `g` types `ggg`, not escape codes. Only releases, and keys
+        // that are escape codes anyway, carry the event type.
+        let typed_text = matches!(key, Key::Char(_))
+            && text.is_some_and(|text| {
+                !text.is_empty() && !text.chars().any(char::is_control)
+            })
+            && !mods.contains(Modifiers::SUPER);
+        let repeats_as_press =
+            !all && !disambiguate && (typed_text || legacy_editing_key);
+        let event_types = ctx.kitty.contains(KittyFlags::REPORT_EVENT_TYPES)
+            && match event.action {
+                KeyAction::Press => false,
+                KeyAction::Repeat => !repeats_as_press,
+                KeyAction::Release => true,
+            };
 
         if all || event_types || disambiguate {
             let shifted = alternate_key(key, event.mods, text, ctx.kitty);
@@ -1149,6 +1172,79 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(encode(&event, &legacy()), Some(b"\x1b\x7f".to_vec()));
+    }
+
+    fn event_types() -> EncodeContext {
+        kitty(KittyFlags::DISAMBIGUATE | KittyFlags::REPORT_EVENT_TYPES)
+    }
+
+    fn repeated(mut event: KeyEvent) -> KeyEvent {
+        event.action = KeyAction::Repeat;
+        event
+    }
+
+    #[test]
+    fn held_text_keys_repeat_as_text() {
+        // Holding `g` in an editor types `ggg`, as kitty and ghostty send it.
+        let plain = repeated(typed('g', Modifiers::empty(), "g"));
+        assert_eq!(encode(&plain, &event_types()), Some(b"g".to_vec()));
+        let shifted = repeated(typed('g', Modifiers::SHIFT, "G"));
+        assert_eq!(encode(&shifted, &event_types()), Some(b"G".to_vec()));
+    }
+
+    #[test]
+    fn held_chords_and_named_keys_repeat_as_escapes() {
+        // ctrl+g is an escape on press, so its repeat carries the event type.
+        let mut ctrl = repeated(typed('g', Modifiers::CTRL, "g"));
+        ctrl.text = Some("g".into());
+        assert_eq!(
+            encode(&ctrl, &event_types()),
+            Some(b"\x1b[103;5:2u".to_vec())
+        );
+        // Arrows are escape codes either way, so the repeat says so.
+        let up = repeated(press(Key::Up));
+        assert_eq!(encode(&up, &event_types()), Some(b"\x1b[1;1:2A".to_vec()));
+    }
+
+    #[test]
+    fn held_enter_tab_and_backspace_keep_legacy_bytes() {
+        let ctx = event_types();
+        assert_eq!(
+            encode(&repeated(press(Key::Enter)), &ctx),
+            Some(b"\r".to_vec())
+        );
+        assert_eq!(
+            encode(&repeated(press(Key::Tab)), &ctx),
+            Some(b"\t".to_vec())
+        );
+        assert_eq!(
+            encode(&repeated(press(Key::Backspace)), &ctx),
+            Some(vec![0x7f])
+        );
+    }
+
+    #[test]
+    fn enter_tab_and_backspace_release_only_with_report_all() {
+        for key in [Key::Enter, Key::Tab, Key::Backspace] {
+            let mut release = press(key);
+            release.action = KeyAction::Release;
+            assert_eq!(encode(&release, &event_types()), None, "{key:?}");
+        }
+        let all = kitty(KittyFlags::REPORT_EVENT_TYPES | KittyFlags::REPORT_ALL_AS_ESC);
+        let mut enter = press(Key::Enter);
+        enter.action = KeyAction::Release;
+        assert_eq!(encode(&enter, &all), Some(b"\x1b[13;1:3u".to_vec()));
+    }
+
+    #[test]
+    fn text_keys_still_release_as_escapes() {
+        // Releases never insert text: they are always the escape form.
+        let mut release = typed('g', Modifiers::empty(), "g");
+        release.action = KeyAction::Release;
+        assert_eq!(
+            encode(&release, &event_types()),
+            Some(b"\x1b[103;1:3u".to_vec())
+        );
     }
 
     #[test]
