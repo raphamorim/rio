@@ -1057,6 +1057,101 @@ mod tests {
     }
 
     #[test]
+    fn repeat_keeps_the_shifted_key_and_text() {
+        let ctx = EncodeContext {
+            kitty: yazi().kitty | KittyFlags::REPORT_EVENT_TYPES,
+            ..yazi()
+        };
+        let mut repeat = typed('g', Modifiers::SHIFT, "G");
+        repeat.action = KeyAction::Repeat;
+        assert_eq!(encode(&repeat, &ctx), Some(b"\x1b[103:71;2:2;71u".to_vec()));
+        // A plain repeat writes the event type, so the text follows it
+        // directly rather than after an empty slot.
+        let mut plain = typed('g', Modifiers::empty(), "g");
+        plain.action = KeyAction::Repeat;
+        assert_eq!(encode(&plain, &ctx), Some(b"\x1b[103;1:2;103u".to_vec()));
+    }
+
+    #[test]
+    fn caps_lock_capital_is_text_not_a_shifted_key() {
+        // Caps lock types `G` with no shift held: there is no shifted key,
+        // and the text says what was typed.
+        let event = typed('g', Modifiers::empty(), "G");
+        assert_eq!(encode(&event, &yazi()), Some(b"\x1b[103;;71u".to_vec()));
+    }
+
+    #[test]
+    fn shifted_key_on_a_non_latin_layout() {
+        // Russian layout: shift+п is П.
+        let event = typed('\u{43f}', Modifiers::SHIFT, "\u{41f}");
+        assert_eq!(
+            encode(&event, &yazi()),
+            Some(b"\x1b[1087:1055;2;1055u".to_vec())
+        );
+    }
+
+    #[test]
+    fn text_of_several_codepoints_is_colon_separated() {
+        // An `e` followed by a combining acute, as some layouts and dead
+        // keys produce. Not one character, so no shifted key either.
+        let event = typed('e', Modifiers::SHIFT, "E\u{301}");
+        assert_eq!(
+            encode(&event, &yazi()),
+            Some(b"\x1b[101;2;69:769u".to_vec())
+        );
+    }
+
+    #[test]
+    fn shift_space_has_no_shifted_key() {
+        // Shift doesn't change a space, so only the text is added.
+        let event = typed(' ', Modifiers::SHIFT, " ");
+        assert_eq!(encode(&event, &yazi()), Some(b"\x1b[32;2;32u".to_vec()));
+    }
+
+    #[test]
+    fn super_chord_carries_no_text() {
+        let event = typed('g', Modifiers::SUPER, "g");
+        assert_eq!(encode(&event, &yazi()), Some(b"\x1b[103;9u".to_vec()));
+    }
+
+    #[test]
+    fn alternate_keys_alone_leave_shifted_text_as_text() {
+        // Without report-all, shift+g is still plain text: the alternate
+        // only enriches keys that are sent as escape codes.
+        let ctx = kitty(KittyFlags::DISAMBIGUATE | KittyFlags::REPORT_ALTERNATE_KEYS);
+        let event = typed('g', Modifiers::SHIFT, "G");
+        assert_eq!(encode(&event, &ctx), Some(b"G".to_vec()));
+        // A chord that is an escape gets no alternate when ctrl is held.
+        let mut ctrl = typed('g', Modifiers::SHIFT | Modifiers::CTRL, "G");
+        ctrl.text = None;
+        assert_eq!(encode(&ctrl, &ctx), Some(b"\x1b[103;6u".to_vec()));
+    }
+
+    #[test]
+    fn bare_modifiers_report_every_modifier_held() {
+        let ctx = kitty(KittyFlags::REPORT_ALL_AS_ESC);
+        let event = KeyEvent {
+            key: Some(Key::ShiftLeft),
+            mods: Modifiers::SHIFT | Modifiers::ALT,
+            consumed_mods: Modifiers::ALT,
+            ..Default::default()
+        };
+        assert_eq!(encode(&event, &ctx), Some(b"\x1b[57441;4u".to_vec()));
+    }
+
+    #[test]
+    fn legacy_consumed_alt_without_text_is_still_meta() {
+        // Nothing typed, nothing spent: alt+backspace stays meta+DEL.
+        let event = KeyEvent {
+            key: Some(Key::Backspace),
+            mods: Modifiers::ALT,
+            consumed_mods: Modifiers::ALT,
+            ..Default::default()
+        };
+        assert_eq!(encode(&event, &legacy()), Some(b"\x1b\x7f".to_vec()));
+    }
+
+    #[test]
     fn associated_text_needs_report_all() {
         // Without report-all, text keys arrive as plain text anyway.
         let ctx = kitty(KittyFlags::DISAMBIGUATE | KittyFlags::REPORT_ASSOCIATED_TEXT);

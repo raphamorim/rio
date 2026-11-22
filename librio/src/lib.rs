@@ -1743,6 +1743,49 @@ mod tests {
             key::encode(&shift_g, &ctx),
             Some(b"\x1b[103:71;2;71u".to_vec())
         );
+
+        // Leaving, yazi pops its flags: shift+g is plain text again.
+        surface.inject_output(b"\x1b[<u");
+        let flags = kitty_flags(surface.terminal.lock().keyboard_mode());
+        assert!(flags.is_empty());
+        let ctx = key::EncodeContext {
+            kitty: flags,
+            ..key::EncodeContext::default()
+        };
+        assert_eq!(key::encode(&shift_g, &ctx), Some(b"G".to_vec()));
+    }
+
+    // Each kitty flag a program can set maps to the encoder's own, one to
+    // one, so no flag is silently dropped on the way.
+    #[test]
+    fn every_kitty_flag_reaches_the_encoder() {
+        use rio_vt::ansi::KeyboardModes;
+        let cases = [
+            (
+                KeyboardModes::DISAMBIGUATE_ESC_CODES,
+                key::KittyFlags::DISAMBIGUATE,
+            ),
+            (
+                KeyboardModes::REPORT_EVENT_TYPES,
+                key::KittyFlags::REPORT_EVENT_TYPES,
+            ),
+            (
+                KeyboardModes::REPORT_ALTERNATE_KEYS,
+                key::KittyFlags::REPORT_ALTERNATE_KEYS,
+            ),
+            (
+                KeyboardModes::REPORT_ALL_KEYS_AS_ESC,
+                key::KittyFlags::REPORT_ALL_AS_ESC,
+            ),
+            (
+                KeyboardModes::REPORT_ASSOCIATED_TEXT,
+                key::KittyFlags::REPORT_ASSOCIATED_TEXT,
+            ),
+        ];
+        for (mode, flag) in cases {
+            assert_eq!(kitty_flags(mode), flag, "{mode:?}");
+        }
+        assert!(kitty_flags(KeyboardModes::empty()).is_empty());
     }
 
     // The wheel means different things to different programs. A pager on
