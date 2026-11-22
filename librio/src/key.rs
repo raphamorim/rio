@@ -12,6 +12,8 @@
 //! associated text. The base layout key (the third alternate) is not reported:
 //! the embedder hands over the key it saw, not the US-layout key in its place.
 
+use std::fmt::Write as _;
+
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub struct Modifiers: u8 {
@@ -369,11 +371,10 @@ fn push_mods_and_event(
     if mods.is_empty() && !report_event {
         return;
     }
-    out.push(';');
-    out.push_str(&mods.param().to_string());
+    // Writing into a String can't fail.
+    let _ = write!(out, ";{}", mods.param());
     if report_event {
-        out.push(':');
-        out.push_str(&action.kitty_param().to_string());
+        let _ = write!(out, ":{}", action.kitty_param());
     }
 }
 
@@ -389,7 +390,7 @@ fn encode_kitty(
 ) -> Vec<u8> {
     let mut out = String::from("\x1b[");
     if let Some(number) = tilde_number(key) {
-        out.push_str(&number.to_string());
+        let _ = write!(out, "{number}");
         push_mods_and_event(&mut out, mods, action, ctx.kitty);
         out.push('~');
         return out.into_bytes();
@@ -409,10 +410,9 @@ fn encode_kitty(
         return out.into_bytes();
     }
 
-    out.push_str(&kitty_codepoint(key).to_string());
+    let _ = write!(out, "{}", kitty_codepoint(key));
     if let Some(shifted) = shifted {
-        out.push(':');
-        out.push_str(&shifted.to_string());
+        let _ = write!(out, ":{shifted}");
     }
     let associated = associated_text(key, mods, action, text, ctx);
     if associated.is_some() && mods.is_empty() && !has_event_param(action, ctx.kitty) {
@@ -422,10 +422,11 @@ fn encode_kitty(
     } else {
         push_mods_and_event(&mut out, mods, action, ctx.kitty);
     }
-    if let Some(codepoints) = associated {
-        for (index, codepoint) in codepoints.iter().enumerate() {
-            out.push(if index == 0 { ';' } else { ':' });
-            out.push_str(&codepoint.to_string());
+    if let Some(text) = associated {
+        let typed = text.chars().filter(|c| !c.is_control());
+        for (index, c) in typed.enumerate() {
+            let separator = if index == 0 { ';' } else { ':' };
+            let _ = write!(out, "{separator}{}", u32::from(c));
         }
     }
     out.push('u');
@@ -477,13 +478,13 @@ fn alternate_key(
 ///
 /// Control characters are skipped one by one, so what's left is only what
 /// can be typed.
-fn associated_text(
+fn associated_text<'a>(
     key: Key,
     mods: Modifiers,
     action: KeyAction,
-    text: Option<&str>,
+    text: Option<&'a str>,
     ctx: &EncodeContext,
-) -> Option<Vec<u32>> {
+) -> Option<&'a str> {
     let chord = mods.intersects(Modifiers::CTRL | Modifiers::SUPER)
         || (mods.contains(Modifiers::ALT) && ctx.alt_is_meta);
     if !ctx.kitty.contains(KittyFlags::REPORT_ASSOCIATED_TEXT)
@@ -494,12 +495,9 @@ fn associated_text(
     {
         return None;
     }
-    let codepoints: Vec<u32> = text?
-        .chars()
-        .filter(|c| !c.is_control())
-        .map(u32::from)
-        .collect();
-    (!codepoints.is_empty()).then_some(codepoints)
+    // The caller writes it without the control characters; there has to be
+    // something left.
+    text.filter(|text| text.chars().any(|c| !c.is_control()))
 }
 
 /// `CSI 27 ; mods ; codepoint ~`, xterm's unambiguous form for a modified key.
