@@ -269,7 +269,10 @@ pub(crate) type InlineImages = Arc<InlineImageStore>;
 /// answer, in request order. The front is always a query.
 #[cfg(feature = "graphics")]
 enum Held {
-    Query(u32),
+    /// A query for `cp`, and whether `cp` was registered when it
+    /// arrived: the answer says what the program saw at that point, not
+    /// what a later `r` or `c` made of it before the host answered.
+    Query(u32, bool),
     Reply(Cow<'static, [u8]>),
 }
 
@@ -281,9 +284,10 @@ pub(crate) struct Listener {
     surface_id: SurfaceId,
     delegate: Arc<dyn SurfaceDelegate>,
     inline_images: InlineImages,
-    /// The delegate answers glyph queries: it draws some format.
+    /// The terminal's glyph registry when the delegate draws some
+    /// format, so it answers glyph queries.
     #[cfg(feature = "graphics")]
-    glyph_queries: bool,
+    glyphs: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
     #[cfg(feature = "graphics")]
     held: HeldReplies,
     #[cfg(feature = "pty")]
@@ -333,8 +337,14 @@ impl Listener {
                 self.pass_back(Cow::Owned(text.into_bytes()));
             }
             #[cfg(feature = "graphics")]
-            RioEvent::GlyphProtocolQuery { cp, .. } if self.glyph_queries => {
-                self.held.lock().unwrap().push_back(Held::Query(cp));
+            RioEvent::GlyphProtocolQuery { cp, .. } if self.glyphs.is_some() => {
+                // Under the terminal lock, so no registration can land
+                // between the query and this read.
+                let registered = self.glyphs.as_ref().is_some_and(|g| g.contains(cp));
+                self.held
+                    .lock()
+                    .unwrap()
+                    .push_back(Held::Query(cp, registered));
                 self.delegate.glyph_query(self.surface_id, cp);
             }
             // Not answered here. The terminal is told the query is
@@ -737,12 +747,17 @@ impl Surface {
         } else {
             &[]
         };
+        // Made now so the listener and the surface hold it; a full reset
+        // empties it in place.
+        #[cfg(feature = "graphics")]
+        let glyphs = (!glyph_formats.is_empty())
+            .then(rio_graphics::glyph::glyph_registry::GlyphRegistry::default);
         let listener = Listener {
             surface_id: id,
             delegate: engine.delegate.clone(),
             inline_images: inline_images.clone(),
             #[cfg(feature = "graphics")]
-            glyph_queries: !glyph_formats.is_empty(),
+            glyphs: glyphs.clone(),
             #[cfg(feature = "graphics")]
             held: HeldReplies::default(),
             #[cfg(feature = "pty")]
@@ -766,15 +781,10 @@ impl Surface {
         );
         terminal.set_program_status_enabled(engine.delegate.handles_program_status());
         terminal.set_glyph_formats(glyph_formats);
-        // Made now so the surface holds it; a full reset empties it in
-        // place.
         #[cfg(feature = "graphics")]
-        let glyphs = (!glyph_formats.is_empty()).then(|| {
-            terminal
-                .glyph_registry
-                .get_or_insert_with(Default::default)
-                .clone()
-        });
+        {
+            terminal.glyph_registry = glyphs.clone();
+        }
         // On wasm the delegate (and so the whole graph) is single-threaded
         // by design; Arc stays because the pty build shares it with the IO
         // thread and the API is one type on every target.
@@ -894,15 +904,15 @@ impl Surface {
     #[cfg(feature = "graphics")]
     pub fn glyph_query_reply(&self, system: bool) -> bool {
         use rio_vt::ansi::glyph_protocol::{format_query_response, QueryStatus};
-        let Some(glyphs) = &self.glyphs else {
+        if self.glyphs.is_none() {
             return false;
-        };
+        }
         let mut held = self.replies.held.lock().unwrap();
-        let Some(&Held::Query(cp)) = held.front() else {
+        let Some(&Held::Query(cp, registered)) = held.front() else {
             return false;
         };
         held.pop_front();
-        let status = QueryStatus::new(glyphs.contains(cp), system);
+        let status = QueryStatus::new(registered, system);
         let answer = format_query_response(cp, status).into_bytes();
         self.replies.deliver(Cow::Owned(answer));
         while let Some(Held::Reply(_)) = held.front() {
@@ -3319,12 +3329,34 @@ mod tests {
         {
             let held = surface.replies.held.lock().unwrap();
             assert_eq!(held.len(), 2);
-            assert!(matches!(held[0], Held::Query(0x100000)));
+            assert!(matches!(held[0], Held::Query(0x100000, true)));
             assert!(matches!(held[1], Held::Reply(_)));
         }
         assert!(surface.glyph_query_reply(false));
         assert!(!surface.glyph_query_reply(false), "one answer per query");
         shown("q;cp=100000;status=glossary^[\\^[_25a1;s;fmt=glyf^[\\");
+    }
+
+    // A query answers for the registry as it was when the query arrived:
+    // a registration the program sends right after it, before the host
+    // answers, doesn't show up in the answer.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_query_answers_for_the_moment_it_was_asked() {
+        let engine = Engine::new(Arc::new(GlyphHost(Mutex::new(Vec::new()))));
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec!["-c".into(), "sleep 300".into()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        surface.inject_output(b"\x1b_25a1;q;cp=100000\x1b\\");
+        register_glyf(&surface, 1000);
+        surface.inject_output(b"\x1b_25a1;q;cp=100000\x1b\\");
+        let held = surface.replies.held.lock().unwrap();
+        assert!(matches!(held[0], Held::Query(0x100000, false)));
+        assert!(matches!(held[1], Held::Query(0x100000, true)));
     }
 
     // A host whose font lookup is cheap answers inside the callback.

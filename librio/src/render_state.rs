@@ -911,11 +911,6 @@ impl RenderState {
         copy_rgba(&image.data, buf)
     }
 
-    /// The Glyph Protocol registration `square` was printed with, as a
-    /// version for [`crate::Surface::glyph`]: set for a registration
-    /// block codepoint printed while it was registered. Every other cell,
-    /// including one printed before its codepoint was registered, draws
-    /// as text whatever is registered now.
     /// The surface's Glyph Protocol registry, which
     /// [`Self::glyph_version`]'s versions index (see
     /// [`crate::Surface::glyph`]). `None` when the delegate draws no
@@ -928,6 +923,11 @@ impl RenderState {
         self.glyphs.as_ref()
     }
 
+    /// The Glyph Protocol registration `square` was printed with, as a
+    /// version for [`crate::Surface::glyph`]: set for a registration
+    /// block codepoint printed while it was registered. Every other cell,
+    /// including one printed before its codepoint was registered, draws
+    /// as text whatever is registered now.
     #[cfg(feature = "graphics")]
     pub fn glyph_version(&self, square: &Square) -> Option<u32> {
         // Checked first: a bg-only cell's other bits are a colour.

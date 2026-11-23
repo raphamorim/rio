@@ -226,7 +226,7 @@ typedef struct {
   uint16_t width;  /* span cells wide, one cell tall */
   uint16_t height;
   uint16_t span;   /* cells covered from the cell rightward: 1 or 2 */
-  bool is_color;   /* RGBA8 with the foreground applied; else coverage */
+  bool is_color;   /* premultiplied RGBA8, foreground applied; else coverage */
   bool uses_foreground; /* pixels depend on fg: key a cache on it */
 } sl_glyph_raster_t;
 
@@ -239,8 +239,14 @@ bool sl_glyph_rasterize(const void *render_state, uint16_t line, uint16_t column
                         uint16_t cell_w, uint16_t cell_h, float baseline,
                         const uint8_t fg[4], uint8_t *out, size_t out_len,
                         sl_glyph_raster_t *info);
-/* Whether a font this renderer draws with covers cp: the `system` answer
- * to a Glyph Protocol query. Never loads a font. */
+/* How many cells a registered glyph at (line, column) may span: 2 when the
+ * next cell is blank for a width=2 glyph to overflow into, else 1, by the
+ * grid's rule. It decides sl_glyph_rasterize's span, so key a raster cache
+ * on it. 0 when out of range. */
+uint16_t sl_glyph_room(const void *render_state, uint16_t line, uint16_t column);
+/* Whether this renderer draws cp without a registration (a loaded font
+ * covers it, or the grid draws it itself): the `system` answer to a Glyph
+ * Protocol query. Never loads a font. */
 bool sl_covers_codepoint(const sl_sugarloaf_t *sl, uint32_t cp);
 
 /* --- Render --- */

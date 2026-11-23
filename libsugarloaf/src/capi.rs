@@ -1103,8 +1103,9 @@ pub struct SlGlyphRaster {
     pub height: u16,
     /// Cells the bitmap covers from the cell rightward (1 or 2).
     pub span: u16,
-    /// `true`: straight RGBA8, foreground already applied. `false`: one
-    /// coverage byte per pixel, to tint with the cell's foreground.
+    /// `true`: premultiplied RGBA8, foreground already applied, as the
+    /// grid's colour atlas takes it. `false`: one coverage byte per
+    /// pixel, to tint with the cell's foreground.
     pub is_color: bool,
     /// Whether the pixels depend on `fg`, so a cache keys on it.
     pub uses_foreground: bool,
@@ -1186,15 +1187,47 @@ pub unsafe extern "C" fn sl_glyph_rasterize(
     .unwrap_or(false)
 }
 
-/// Whether a font this renderer draws with covers `cp`, as a Glyph
-/// Protocol `q` reports it (`status=system`). Never loads a font.
+/// How many cells a registered glyph at (`line`, `column`) may span:
+/// 2 when the next cell is blank for a `width=2` glyph to overflow
+/// into, else 1, by the grid's own rule (§8.5.2). With the cell's
+/// registration it decides the span [`sl_glyph_rasterize`] draws, so a
+/// host keys its raster cache on it. 0 for a cell out of range.
+#[no_mangle]
+pub unsafe extern "C" fn sl_glyph_room(
+    render_state: *const c_void,
+    line: u16,
+    column: u16,
+) -> u16 {
+    if render_state.is_null() {
+        return 0;
+    }
+    catch_unwind(AssertUnwindSafe(|| {
+        let rs = &*(render_state as *const librio::RenderState);
+        let (line, column, cols) = (line as usize, column as usize, rs.columns());
+        match rs.rows().get(line) {
+            Some(row) if column < cols => {
+                rio_grid::glyph_protocol_span(row, column, cols, 2)
+            }
+            _ => 0,
+        }
+    }))
+    .unwrap_or(0)
+}
+
+/// Whether this renderer draws `cp` without a registration, as a Glyph
+/// Protocol `q` reports it (`status=system`): a font it has loaded
+/// covers it, or the grid draws it itself (box drawing, blocks). Never
+/// loads a font.
 #[no_mangle]
 pub unsafe extern "C" fn sl_covers_codepoint(sl: *const Sl, cp: u32) -> bool {
     let Some(sl) = sl.as_ref() else {
         return false;
     };
-    catch_unwind(AssertUnwindSafe(|| sl.font_library().covers_codepoint(cp)))
-        .unwrap_or(false)
+    catch_unwind(AssertUnwindSafe(|| {
+        (sl.palette.use_drawable_chars && sugarloaf::sprite::is_drawable(cp))
+            || sl.font_library().covers_codepoint(cp)
+    }))
+    .unwrap_or(false)
 }
 
 /// Render one terminal surface into `grid` and present it. `render_state`
@@ -1584,5 +1617,9 @@ mod glyph_protocol_tests {
 
         // A blank cell has no registration.
         assert!(draw(2).is_none());
+
+        // The room the span comes from, by the same rule.
+        let room = |column| unsafe { sl_glyph_room(rs, 0, column) };
+        assert_eq!((room(1), room(3), room(500)), (2, 1, 0));
     }
 }
