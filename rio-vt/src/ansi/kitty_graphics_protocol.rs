@@ -3313,6 +3313,57 @@ mod tests {
         assert!(!exists, "nested temp file must be removed");
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn test_temp_file_parent_dir_through_marked_dir_is_kept() {
+        let temp = std::env::temp_dir();
+        let marked = temp.join(format!(
+            "rio-tty-graphics-protocol-dotdot-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&marked).unwrap();
+        let victim = temp.join(format!("rio-dotdot-victim-{}", std::process::id()));
+        std::fs::write(&victim, [1, 2, 3, 4]).unwrap();
+        let victim = TestFile(victim);
+
+        let path = marked.join("..").join(victim.0.file_name().unwrap());
+        let result =
+            create_graphic_data(&file_command(TransmissionMedium::TempFile, &path, 0, 0));
+        let _ = std::fs::remove_dir_all(&marked);
+        assert!(matches!(result, Err(GraphicError::InvalidData)));
+        assert!(
+            victim.0.exists(),
+            "unmarked file reached via .. must be kept"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_temp_file_parent_dir_to_outside_temp_dir_is_kept() {
+        let Some(outside) = outside_temp_dir() else {
+            return;
+        };
+        let marked = std::fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!(
+                "rio-tty-graphics-protocol-escape-{}",
+                std::process::id()
+            ));
+        std::fs::create_dir_all(&marked).unwrap();
+        let victim = TestFile::new(&outside, "dotdot-outside", &[1, 2, 3, 4]);
+
+        let mut path = marked.clone();
+        for _ in marked.components().skip(1) {
+            path.push("..");
+        }
+        path.push(victim.0.strip_prefix("/").unwrap());
+        let result =
+            create_graphic_data(&file_command(TransmissionMedium::TempFile, &path, 0, 0));
+        let _ = std::fs::remove_dir_all(&marked);
+        assert!(matches!(result, Err(GraphicError::InvalidData)));
+        assert!(victim.0.exists(), "file outside temp dirs must be kept");
+    }
+
     #[test]
     fn test_file_implied_size_larger_than_file_is_rejected() {
         let file = TestFile::new(&std::env::temp_dir(), "file-implied", &[0u8; 4]);
