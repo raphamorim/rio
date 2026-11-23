@@ -2982,6 +2982,18 @@ fn emit_preedit_caret(
 }
 
 /// A registration's render span in cells, given the room at its cell.
+/// How many cells a registered glyph declared `declared_width` wide
+/// paints across at `col` of `row` (§8.5.2), for a host that draws
+/// registered glyphs outside the grid: the span this emitter uses.
+pub fn glyph_protocol_span(
+    row: &Row<Square>,
+    col: usize,
+    cols: usize,
+    declared_width: u8,
+) -> u16 {
+    custom_glyph_span(declared_width, custom_glyph_room(row, col, cols))
+}
+
 fn custom_glyph_span(declared_width: u8, room: u16) -> u16 {
     (declared_width as u16).clamp(1, 2).min(room)
 }

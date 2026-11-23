@@ -135,6 +135,41 @@ pub struct rio_runtime_config_s {
     pub close_surface_cb: Option<extern "C" fn(*mut c_void, usize)>,
     pub program_status_cb:
         Option<extern "C" fn(*mut c_void, usize, *const rio_program_status_s)>,
+    /// Glyph Protocol payload formats the host draws, as
+    /// `RIO_GLYPH_FORMAT_*` bits. Zero, or no `glyph_query_cb`, leaves the
+    /// protocol off.
+    pub glyph_formats: u32,
+    pub glyph_query_cb: Option<extern "C" fn(*mut c_void, usize, u32)>,
+}
+
+/// Glyph Protocol payload formats (spec §8), for
+/// `rio_runtime_config_s::glyph_formats`. One bit per format, in the
+/// order of [`crate::GlyphFormat::ALL`].
+pub const RIO_GLYPH_FORMAT_GLYF: u32 = 1 << 0;
+pub const RIO_GLYPH_FORMAT_COLRV0: u32 = 1 << 1;
+pub const RIO_GLYPH_FORMAT_COLRV1: u32 = 1 << 2;
+pub const RIO_GLYPH_FORMAT_VG: u32 = 1 << 3;
+
+/// The formats named by `RIO_GLYPH_FORMAT_*` bits, as the `'static`
+/// list [`SurfaceDelegate::glyph_formats`] hands out. Unknown bits are
+/// ignored.
+fn glyph_formats_from_bits(bits: u32) -> &'static [crate::GlyphFormat] {
+    use crate::GlyphFormat;
+    use std::sync::OnceLock;
+    static SUBSETS: OnceLock<Vec<Vec<GlyphFormat>>> = OnceLock::new();
+    let all = GlyphFormat::ALL;
+    let subsets = SUBSETS.get_or_init(|| {
+        (0..1u32 << all.len())
+            .map(|mask| {
+                all.iter()
+                    .enumerate()
+                    .filter(|(i, _)| mask & (1 << i) != 0)
+                    .map(|(_, f)| *f)
+                    .collect()
+            })
+            .collect()
+    });
+    &subsets[(bits & ((1 << all.len()) - 1)) as usize]
 }
 
 #[repr(C)]
@@ -229,6 +264,9 @@ pub struct rio_key_event_s {
 
 struct CDelegate {
     config: rio_runtime_config_s,
+    /// From `config.glyph_formats`; empty without a `glyph_query_cb`,
+    /// since a query nobody answers would hold every later reply.
+    glyph_formats: &'static [crate::GlyphFormat],
 }
 
 unsafe impl Send for CDelegate {}
@@ -352,6 +390,16 @@ impl SurfaceDelegate for CDelegate {
 
     fn handles_program_status(&self) -> bool {
         self.config.program_status_cb.is_some()
+    }
+
+    fn glyph_formats(&self) -> &'static [crate::GlyphFormat] {
+        self.glyph_formats
+    }
+
+    fn glyph_query(&self, surface: SurfaceId, cp: u32) {
+        if let Some(cb) = self.config.glyph_query_cb {
+            cb(self.config.userdata, surface, cp);
+        }
     }
 }
 
@@ -677,8 +725,15 @@ pub unsafe extern "C" fn rio_engine_new(
         if config.is_null() {
             return std::ptr::null_mut();
         }
+        let config = unsafe { *config };
+        let glyph_formats = if config.glyph_query_cb.is_some() {
+            glyph_formats_from_bits(config.glyph_formats)
+        } else {
+            &[]
+        };
         let delegate = Arc::new(CDelegate {
-            config: unsafe { *config },
+            config,
+            glyph_formats,
         });
         Box::into_raw(Box::new(Engine::new(delegate)))
     }))
@@ -1300,6 +1355,74 @@ fn cell_style(state: &RenderState, line: u16, column: u16) -> Option<(&Square, S
     let square = state.square(line as usize, column as usize)?;
     let style = state.style_at(line as usize, column as usize, square);
     Some((square, style))
+}
+
+/// The Glyph Protocol registration a cell was printed with, as the
+/// version `rio_surface_glyph_query_reply`'s registry keys it by: a
+/// host that draws glyphs itself looks it up to rasterize, and can key
+/// a cache on it, since a version always means the same glyph. False
+/// for every other cell, a NULL state, or when the host draws no
+/// formats.
+#[no_mangle]
+pub unsafe extern "C" fn rio_render_state_cell_glyph(
+    state: *const RenderState,
+    line: u16,
+    column: u16,
+    version: *mut u32,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if state.is_null() {
+            return false;
+        }
+        let state = unsafe { &*state };
+        let Some(square) = state.square(line as usize, column as usize) else {
+            return false;
+        };
+        // Without `graphics` no registration is stored.
+        #[cfg(feature = "graphics")]
+        let found = state.glyph_version(square);
+        #[cfg(not(feature = "graphics"))]
+        let found: Option<u32> = {
+            let _ = square;
+            None
+        };
+        let Some(found) = found else {
+            return false;
+        };
+        if !version.is_null() {
+            unsafe { *version = found };
+        }
+        true
+    }))
+    .unwrap_or(false)
+}
+
+/// Answer the oldest Glyph Protocol query `glyph_query_cb` reported for
+/// this surface: `system` says whether the host's fonts draw its
+/// codepoint; whether a program registered it is filled in here. Call
+/// once per query, in order, from any thread, but not from inside a
+/// librio callback other than `glyph_query_cb` itself. Replies the
+/// terminal made after the query wait for this answer. False, sending
+/// nothing, when no query is waiting.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_glyph_query_reply(
+    surface: *const Surface,
+    system: bool,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() {
+            return false;
+        }
+        #[cfg(feature = "graphics")]
+        return unsafe { &*surface }.glyph_query_reply(system);
+        // Without `graphics` no query is ever held.
+        #[cfg(not(feature = "graphics"))]
+        {
+            let _ = system;
+            false
+        }
+    }))
+    .unwrap_or(false)
 }
 
 /// The cell's explicit SGR 58 underline color, or kind
@@ -2243,5 +2366,126 @@ mod persistence_tests {
         std::thread::sleep(std::time::Duration::from_millis(50));
         let dump = surface.dump();
         assert!(dump.contains("hello persistence"), "dump was: {dump:?}");
+    }
+}
+
+#[cfg(all(test, feature = "graphics"))]
+mod glyph_protocol_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[test]
+    fn format_bits_name_the_formats_in_reply_order() {
+        use crate::GlyphFormat;
+        assert!(glyph_formats_from_bits(0).is_empty());
+        assert_eq!(
+            glyph_formats_from_bits(RIO_GLYPH_FORMAT_VG),
+            [GlyphFormat::Vg]
+        );
+        assert_eq!(
+            glyph_formats_from_bits(RIO_GLYPH_FORMAT_VG | RIO_GLYPH_FORMAT_GLYF),
+            [GlyphFormat::Glyf, GlyphFormat::Vg]
+        );
+        // Bits no format has yet are ignored.
+        assert_eq!(
+            glyph_formats_from_bits(1 << 31 | RIO_GLYPH_FORMAT_COLRV1),
+            [GlyphFormat::ColrV1]
+        );
+    }
+
+    static QUERIES: Mutex<Vec<(usize, u32)>> = Mutex::new(Vec::new());
+
+    extern "C" fn record_query(_userdata: *mut c_void, surface: usize, cp: u32) {
+        QUERIES.lock().unwrap().push((surface, cp));
+    }
+
+    extern "C" fn ignore_wakeup(_userdata: *mut c_void, _surface: usize) {}
+
+    unsafe fn sleeper(formats: u32, query: bool) -> (*mut Engine, *mut Surface) {
+        let mut config: rio_runtime_config_s = unsafe { std::mem::zeroed() };
+        config.wakeup_cb = Some(ignore_wakeup);
+        config.glyph_formats = formats;
+        if query {
+            config.glyph_query_cb = Some(record_query);
+        }
+        let engine = unsafe { rio_engine_new(&config) };
+        assert!(!engine.is_null());
+        let shell = CString::new("/bin/sh").unwrap();
+        let args = [
+            CString::new("-c").unwrap(),
+            CString::new("sleep 300").unwrap(),
+        ];
+        let argv: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
+        let desc = rio_surface_config_s {
+            shell: shell.as_ptr(),
+            working_dir: std::ptr::null(),
+            cols: 80,
+            rows: 24,
+            pixel_width: 800,
+            pixel_height: 480,
+            scrollback: 100,
+            args: argv.as_ptr(),
+            args_len: argv.len(),
+        };
+        let surface = unsafe { rio_surface_new(engine, &desc) };
+        assert!(!surface.is_null());
+        (engine, surface)
+    }
+
+    const VG_SQUARE: &[u8] =
+        b"\x1b_25a1;r;cp=100000;fmt=vg;vb=0,0,24,24;reply=0;fill=nonzero,fg:M4 4h16v16H4Z\x1b\\\xf4\x80\x80\x80";
+
+    fn cell_glyph(surface: *mut Surface) -> Option<u32> {
+        unsafe {
+            let state = rio_render_state_new(surface);
+            rio_render_state_update(state);
+            let mut version = 0;
+            let found = rio_render_state_cell_glyph(state, 0, 0, &mut version);
+            rio_render_state_free(state);
+            found.then_some(version)
+        }
+    }
+
+    // A host that lists `vg` and answers queries gets `vg` registrations
+    // bound to the cells printed with them, and its answer goes out.
+    #[test]
+    fn a_host_that_lists_vg_draws_what_programs_register() {
+        unsafe {
+            let (engine, surface) = sleeper(RIO_GLYPH_FORMAT_VG, true);
+            rio_surface_inject_output(
+                surface,
+                VG_SQUARE.as_ptr().cast(),
+                VG_SQUARE.len(),
+            );
+            let version = cell_glyph(surface).expect("the cell keeps its registration");
+            assert!((*surface).glyph(version).is_some());
+
+            let query = b"\x1b_25a1;q;cp=100000\x1b\\";
+            rio_surface_inject_output(surface, query.as_ptr().cast(), query.len());
+            let id = rio_surface_id(surface);
+            assert!(QUERIES.lock().unwrap().contains(&(id, 0x100000)));
+            assert!(rio_surface_glyph_query_reply(surface, false));
+            assert!(!rio_surface_glyph_query_reply(surface, false));
+
+            rio_surface_free(surface);
+            rio_engine_free(engine);
+        }
+    }
+
+    // Without a query callback nobody would answer `q`, so the formats
+    // are dropped and the protocol stays off.
+    #[test]
+    fn formats_without_a_query_callback_leave_the_protocol_off() {
+        unsafe {
+            let (engine, surface) = sleeper(RIO_GLYPH_FORMAT_VG, false);
+            rio_surface_inject_output(
+                surface,
+                VG_SQUARE.as_ptr().cast(),
+                VG_SQUARE.len(),
+            );
+            assert_eq!(cell_glyph(surface), None);
+            rio_surface_free(surface);
+            rio_engine_free(engine);
+        }
     }
 }
