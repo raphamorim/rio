@@ -279,6 +279,13 @@ enum Held {
 #[cfg(feature = "graphics")]
 type HeldReplies = Arc<std::sync::Mutex<std::collections::VecDeque<Held>>>;
 
+/// How many queries and replies may wait on the host. A program
+/// flooding `q` faster than the host answers gets the rest answered at
+/// once, in order, with `system` unknown and so reported off, instead
+/// of a queue (and a host backlog) that grows without bound.
+#[cfg(feature = "graphics")]
+const MAX_HELD: usize = 1024;
+
 #[derive(Clone)]
 pub(crate) struct Listener {
     surface_id: SurfaceId,
@@ -341,10 +348,18 @@ impl Listener {
                 // Under the terminal lock, so no registration can land
                 // between the query and this read.
                 let registered = self.glyphs.as_ref().is_some_and(|g| g.contains(cp));
-                self.held
-                    .lock()
-                    .unwrap()
-                    .push_back(Held::Query(cp, registered));
+                let mut held = self.held.lock().unwrap();
+                if held.len() >= MAX_HELD {
+                    use rio_vt::ansi::glyph_protocol::{
+                        format_query_response, QueryStatus,
+                    };
+                    let status = QueryStatus::new(registered, false);
+                    let answer = format_query_response(cp, status).into_bytes();
+                    held.push_back(Held::Reply(Cow::Owned(answer)));
+                    return;
+                }
+                held.push_back(Held::Query(cp, registered));
+                drop(held);
                 self.delegate.glyph_query(self.surface_id, cp);
             }
             // Not answered here. The terminal is told the query is
@@ -894,6 +909,17 @@ impl Surface {
         version: u32,
     ) -> Option<rio_graphics::glyph::glyph_registry::RegisteredGlyph> {
         self.glyphs.as_ref()?.get_version(version)
+    }
+
+    /// The codepoint of the oldest unanswered
+    /// [`SurfaceDelegate::glyph_query`], so a host can answer every
+    /// waiting query in one pass instead of one hop per callback.
+    #[cfg(feature = "graphics")]
+    pub fn glyph_query_pending(&self) -> Option<u32> {
+        match self.replies.held.lock().unwrap().front() {
+            Some(&Held::Query(cp, _)) => Some(cp),
+            _ => None,
+        }
     }
 
     /// Answer the oldest unanswered [`SurfaceDelegate::glyph_query`]:
@@ -3357,6 +3383,37 @@ mod tests {
         let held = surface.replies.held.lock().unwrap();
         assert!(matches!(held[0], Held::Query(0x100000, false)));
         assert!(matches!(held[1], Held::Query(0x100000, true)));
+    }
+
+    // A flood of queries the host hasn't answered stops growing the
+    // queue: the overflow is answered in place, in order, and the host
+    // drains what it was told about in one pass.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_query_flood_is_bounded() {
+        let engine = Engine::new(Arc::new(GlyphHost(Mutex::new(Vec::new()))));
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec!["-c".into(), "sleep 300".into()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        let flood = b"\x1b_25a1;q;cp=e0a0\x1b\\".repeat(MAX_HELD + 10);
+        surface.inject_output(&flood);
+        {
+            let held = surface.replies.held.lock().unwrap();
+            assert_eq!(held.len(), MAX_HELD + 10);
+            assert!(matches!(held[MAX_HELD - 1], Held::Query(0xe0a0, false)));
+            assert!(matches!(held[MAX_HELD], Held::Reply(_)));
+        }
+        let mut answered = 0;
+        while surface.glyph_query_pending() == Some(0xe0a0) {
+            assert!(surface.glyph_query_reply(true));
+            answered += 1;
+        }
+        assert_eq!(answered, MAX_HELD);
+        assert!(surface.replies.held.lock().unwrap().is_empty());
     }
 
     // A host whose font lookup is cheap answers inside the callback.

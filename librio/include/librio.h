@@ -165,7 +165,8 @@ typedef struct {
   /* A program asked what draws cp (Glyph Protocol q). Called with the
      terminal locked: answer with rio_surface_glyph_query_reply, once per
      query and in order, here or later from any thread. Replies made
-     after the query wait for its answer. */
+     after the query wait for its answer. Past 1024 waiting, further
+     queries are answered at once with system off and not reported. */
   void (*glyph_query_cb)(void *userdata, rio_surface_id_t surface, uint32_t cp);
 } rio_runtime_config_s;
 
@@ -309,6 +310,10 @@ void rio_set_colors(const rio_colors_s *colors);
 
 rio_surface_t *rio_surface_new(rio_engine_t *engine,
                                const rio_surface_config_s *config);
+/* The codepoint of the oldest glyph_query_cb query still unanswered, in
+ * *cp, so a host can answer every waiting one in a single pass. False
+ * when none is waiting. */
+bool rio_surface_glyph_query_pending(const rio_surface_t *surface, uint32_t *cp);
 /* Answer the oldest glyph_query_cb query for this surface: system says
  * whether the host's fonts draw its codepoint. Any thread, but not from
  * inside another librio callback. False when no query is waiting. */

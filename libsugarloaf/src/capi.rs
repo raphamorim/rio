@@ -1103,6 +1103,9 @@ pub struct SlGlyphRaster {
     pub height: u16,
     /// Cells the bitmap covers from the cell rightward (1 or 2).
     pub span: u16,
+    /// The registration's own `width` (1 or 2). The span is this, cut
+    /// to [`sl_glyph_room`], so a cache keys on `min(width, room)`.
+    pub declared_width: u16,
     /// `true`: premultiplied RGBA8, foreground already applied, as the
     /// grid's colour atlas takes it. `false`: one coverage byte per
     /// pixel, to tint with the cell's foreground.
@@ -1152,6 +1155,11 @@ pub unsafe extern "C" fn sl_glyph_rasterize(
         let Some(row) = rs.rows().get(line) else {
             return false;
         };
+        // Worked out once per registration, as the grid does.
+        let state = &entry.render_state;
+        if state.unrenderable.load(std::sync::atomic::Ordering::Relaxed) {
+            return false;
+        }
         let span = rio_grid::glyph_protocol_span(row, column, rs.columns(), entry.width);
         let span_w = cell_w as u32 * span as u32;
         if span_w == 0 || cell_h == 0 || span_w > u16::MAX as u32 {
@@ -1167,6 +1175,9 @@ pub unsafe extern "C" fn sl_glyph_rasterize(
             &entry.layout,
             baseline,
         ) else {
+            state
+                .unrenderable
+                .store(true, std::sync::atomic::Ordering::Relaxed);
             return false;
         };
         if raster.data.len() > out_len {
@@ -1177,10 +1188,11 @@ pub unsafe extern "C" fn sl_glyph_rasterize(
             width: raster.width,
             height: raster.height,
             span,
+            declared_width: (entry.width as u16).clamp(1, 2),
             is_color: raster.is_color,
-            uses_foreground: sugarloaf::glyph_protocol::payload_uses_foreground(
-                &entry.payload,
-            ),
+            uses_foreground: *state.uses_foreground.get_or_init(|| {
+                sugarloaf::glyph_protocol::payload_uses_foreground(&entry.payload)
+            }),
         };
         true
     }))
@@ -1190,8 +1202,9 @@ pub unsafe extern "C" fn sl_glyph_rasterize(
 /// How many cells a registered glyph at (`line`, `column`) may span:
 /// 2 when the next cell is blank for a `width=2` glyph to overflow
 /// into, else 1, by the grid's own rule (§8.5.2). With the cell's
-/// registration it decides the span [`sl_glyph_rasterize`] draws, so a
-/// host keys its raster cache on it. 0 for a cell out of range.
+/// registration's `width` it decides the span [`sl_glyph_rasterize`]
+/// draws, so a host keys its raster cache on both. 0 for a cell out of
+/// range.
 #[no_mangle]
 pub unsafe extern "C" fn sl_glyph_room(
     render_state: *const c_void,
@@ -1608,12 +1621,14 @@ mod glyph_protocol_tests {
         let mono = draw(0).expect("a registered cell");
         assert!(!mono.is_color && !mono.uses_foreground);
         assert_eq!((mono.width, mono.height, mono.span), (cell_w, cell_h, 1));
+        assert_eq!(mono.declared_width, 1);
 
         let wide = draw(1).expect("a registered cell");
         assert!(wide.is_color);
         assert_eq!((wide.width, wide.span), (2 * cell_w, 2));
         // The next cell isn't blank, so it keeps to its own.
-        assert_eq!(draw(3).expect("a registered cell").span, 1);
+        let cut = draw(3).expect("a registered cell");
+        assert_eq!((cut.span, cut.declared_width), (1, 2));
 
         // A blank cell has no registration.
         assert!(draw(2).is_none());

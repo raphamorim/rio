@@ -1397,6 +1397,28 @@ pub unsafe extern "C" fn rio_render_state_cell_glyph(
     .unwrap_or(false)
 }
 
+/// The codepoint of the oldest Glyph Protocol query still waiting for
+/// [`rio_surface_glyph_query_reply`], in `*cp`. A host answers them all
+/// in one pass: `while pending { reply }`. False when none is waiting.
+#[no_mangle]
+pub unsafe extern "C" fn rio_surface_glyph_query_pending(
+    surface: *const Surface,
+    cp: *mut u32,
+) -> bool {
+    catch_unwind(AssertUnwindSafe(|| {
+        if surface.is_null() || cp.is_null() {
+            return false;
+        }
+        #[cfg(feature = "graphics")]
+        if let Some(pending) = unsafe { &*surface }.glyph_query_pending() {
+            unsafe { *cp = pending };
+            return true;
+        }
+        false
+    }))
+    .unwrap_or(false)
+}
+
 /// Answer the oldest Glyph Protocol query `glyph_query_cb` reported for
 /// this surface: `system` says whether the host's fonts draw its
 /// codepoint; whether a program registered it is filled in here. Call
