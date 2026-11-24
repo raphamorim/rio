@@ -21,6 +21,7 @@ pub mod pos;
 pub mod search;
 pub mod square;
 pub mod style;
+pub mod url;
 pub mod vi_mode;
 
 use crate::ansi::graphics::Graphics;
