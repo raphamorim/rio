@@ -4203,6 +4203,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 {
                     self.grid[row].semantic_prompt = SemanticPrompt::None;
                 }
+                if let Some((prompt, _)) = self.prompt_start_at_or_above(row) {
+                    self.grid[prompt].command_start = true;
+                }
             }
             SemanticMark::CommandEnd => {
                 state.content = SemanticContent::Output;

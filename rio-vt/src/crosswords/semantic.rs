@@ -52,12 +52,21 @@ impl<U: EventListener> Crosswords<U> {
             return self.command_output_from(current, cursor_line, running);
         }
 
-        let (current, _) = current?;
-        let above = current - 1;
-        if above < self.grid.topmost_line() {
-            return None;
+        let (mut current, _) = current?;
+        loop {
+            let above = current - 1;
+            if above < self.grid.topmost_line() {
+                return None;
+            }
+            let prompt = self.prompt_start_at_or_above(above);
+            let out = self.command_output_from(prompt, above, false)?;
+            let ran = out.output.is_some()
+                || prompt.is_some_and(|(line, _)| self.grid[line].command_start);
+            match prompt {
+                Some((line, _)) if !ran => current = line,
+                _ => return Some(out),
+            }
         }
-        self.command_output_from(self.prompt_start_at_or_above(above), above, false)
     }
 
     pub fn command_output_at(&self, line: Line) -> Option<CommandOutput> {
@@ -163,7 +172,7 @@ impl<U: EventListener> Crosswords<U> {
         Some((start, end))
     }
 
-    fn prompt_start_at_or_above(&self, line: Line) -> Option<(Line, bool)> {
+    pub(crate) fn prompt_start_at_or_above(&self, line: Line) -> Option<(Line, bool)> {
         let top = self.grid.topmost_line();
         let mark = |line: Line| self.grid[line].semantic_prompt;
         let mut line = line;
@@ -229,6 +238,34 @@ mod tests {
             .replace("<D>", "\x1b]133;D;0\x07")
             .replace("<Ps>", "\x1b]133;P;k=s\x07");
         Processor::default().advance(cw, bytes.as_bytes());
+    }
+
+    fn last_text(cw: &Crosswords<VoidListener>) -> Option<String> {
+        cw.command_output_text(&cw.last_command_output()?)
+    }
+
+    #[test]
+    fn abandoned_prompts_do_not_hide_the_last_command() {
+        let mut cw = term(30, 8, 100);
+        feed(
+            &mut cw,
+            "<A>$ <B>ls\r\n<C>out\r\n<D><A>$ <B>half\r\n<A>$ <B>",
+        );
+        assert_eq!(last_text(&cw).as_deref(), Some("out"));
+
+        let mut cw = term(30, 8, 100);
+        feed(
+            &mut cw,
+            "<A>$ <B>ls\r\n<C>out\r\n<D><A>$ <B>\x1b[H\x1b[2J<A>$ <B>",
+        );
+        assert_eq!(last_text(&cw).as_deref(), Some("out"));
+
+        let mut cw = term(30, 8, 100);
+        feed(
+            &mut cw,
+            "<A>$ <B>ls\r\n<C>out\r\n<D><A>$ <B>true\r\n<C><D><A>$ <B>\r\n<A>$ <B>",
+        );
+        assert_eq!(cw.last_command_output().unwrap().output, None);
     }
 
     #[test]

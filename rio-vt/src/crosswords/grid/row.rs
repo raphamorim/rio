@@ -53,6 +53,8 @@ pub struct Row<T> {
     /// scrollback; cleared when the row is recycled.
     pub semantic_prompt: SemanticPrompt,
 
+    pub command_start: bool,
+
     /// Per-row dirty bit set on every write through `IndexMut` /
     /// `last_mut` / `iter_mut` / `reset` / `append*` / `front_split_off`.
     /// Read + cleared by the renderer's snapshot path so it can copy
@@ -71,6 +73,7 @@ impl<T> Default for Row<T> {
             has_extras: false,
             has_styles: false,
             semantic_prompt: SemanticPrompt::None,
+            command_start: false,
             dirty: true,
         }
     }
@@ -111,6 +114,7 @@ impl<T: Clone + Default> Row<T> {
             has_extras: false,
             has_styles: false,
             semantic_prompt: SemanticPrompt::None,
+            command_start: false,
             dirty: true,
         }
     }
@@ -129,6 +133,7 @@ impl<T: Clone + Default> Row<T> {
         self.has_extras = src.has_extras;
         self.has_styles = src.has_styles;
         self.semantic_prompt = src.semantic_prompt;
+        self.command_start = src.command_start;
     }
 
     /// Reset a recycled row back to a blank `columns`-wide row, reusing the
@@ -146,6 +151,7 @@ impl<T: Clone + Default> Row<T> {
         self.has_extras = false;
         self.has_styles = false;
         self.semantic_prompt = SemanticPrompt::None;
+        self.command_start = false;
         self.dirty = true;
     }
 
@@ -232,6 +238,7 @@ impl<T: Clone + Default> Row<T> {
         self.has_extras = false;
         self.has_styles = template.carries_style();
         self.semantic_prompt = SemanticPrompt::None;
+        self.command_start = false;
         self.dirty = true;
     }
 }
@@ -251,6 +258,7 @@ impl<T> Row<T> {
             has_extras: true,
             has_styles,
             semantic_prompt: SemanticPrompt::None,
+            command_start: false,
             dirty: true,
         }
     }
