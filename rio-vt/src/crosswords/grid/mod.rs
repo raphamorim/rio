@@ -96,6 +96,8 @@ pub struct Grid<T> {
     /// Output of the last tracked column reflow; `None` when tracking
     /// was off or the column count did not change.
     pub reflow_remap: Option<ReflowRemap>,
+
+    pub semantic: crate::crosswords::semantic::SemanticState,
 }
 
 /// Exact row mapping recorded during a column reflow, in oldest-first
@@ -332,6 +334,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
             total_lines_scrolled: 0,
             track_reflow_remap: false,
             reflow_remap: None,
+            semantic: Default::default(),
             display_offset: 0,
             saved_cursor: Cursor::default(),
             cursor: Cursor::default(),
@@ -561,6 +564,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
         self.saved_cursor = Cursor::default();
         self.cursor = Cursor::default();
+        self.semantic = Default::default();
         self.display_offset = 0;
 
         // Reset all visible lines.

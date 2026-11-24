@@ -19,6 +19,7 @@ pub mod formatter;
 pub mod grid;
 pub mod pos;
 pub mod search;
+pub mod semantic;
 pub mod square;
 pub mod style;
 pub mod vi_mode;
@@ -897,12 +898,14 @@ impl<U: EventListener> Crosswords<U> {
         let screen_lines = self.grid.screen_lines() as i32;
         let top = -display_offset;
 
-        let is_marked =
-            |line: i32| self.grid[Line(line)].semantic_prompt != SemanticPrompt::None;
-        // First row of a prompt run: marked, with an unmarked row (or
-        // the top of history) above it.
-        let is_prompt_start =
-            |line: i32| is_marked(line) && (line == -history || !is_marked(line - 1));
+        let mark = |line: i32| self.grid[Line(line)].semantic_prompt;
+        let is_prompt_start = |line: i32| match mark(line) {
+            SemanticPrompt::Prompt => true,
+            SemanticPrompt::PromptContinuation => {
+                line == -history || mark(line - 1) == SemanticPrompt::None
+            }
+            SemanticPrompt::None => false,
+        };
 
         let target = if forward {
             (top + 1..screen_lines).find(|line| is_prompt_start(*line))
@@ -1344,6 +1347,7 @@ impl<U: EventListener> Crosswords<U> {
 
         self.grid.cursor_cell().set_wrapline(true);
 
+        let semantic = self.grid.semantic;
         if self.grid.cursor.pos.row + 1 >= self.scroll_region.end {
             self.linefeed();
         } else {
@@ -1354,6 +1358,35 @@ impl<U: EventListener> Crosswords<U> {
         self.grid.cursor.pos.col = Column(0);
         self.grid.cursor.should_wrap = false;
         self.damage_cursor();
+
+        if semantic.content != crate::crosswords::square::SemanticContent::Output {
+            self.grid.semantic = semantic;
+            if semantic.content == crate::crosswords::square::SemanticContent::Prompt
+                || !semantic.clear_eol
+            {
+                let row = self.grid.cursor.pos.row;
+                self.grid[row].semantic_prompt =
+                    crate::crosswords::grid::row::SemanticPrompt::PromptContinuation;
+            }
+        }
+    }
+
+    #[inline]
+    fn semantic_line_feed(&mut self) {
+        use crate::crosswords::square::SemanticContent;
+
+        let state = &mut self.grid.semantic;
+        if state.content == SemanticContent::Output {
+            return;
+        }
+        if state.clear_eol {
+            state.content = SemanticContent::Output;
+            state.clear_eol = false;
+        } else {
+            let row = self.grid.cursor.pos.row;
+            self.grid[row].semantic_prompt =
+                crate::crosswords::grid::row::SemanticPrompt::PromptContinuation;
+        }
     }
 
     pub fn history_size(&self) -> usize {
@@ -2482,6 +2515,10 @@ impl<U: EventListener> Crosswords<U> {
         t.set_style_id(self.grid.cursor.template.style_id());
         t.set_extras_id(self.grid.cursor.template.extras_id());
         t.set_cell_flags(self.grid.cursor.template.cell_flags());
+        let content = self.grid.semantic.content;
+        if content != crate::crosswords::square::SemanticContent::Output {
+            t.set_semantic_content(content);
+        }
         t
     }
 
@@ -2935,6 +2972,8 @@ impl<U: EventListener> Crosswords<U> {
                     .template
                     .set_extras_id(new_id.filter(|&id| id != 0));
             }
+
+            self.inactive_grid.semantic = Default::default();
 
             // Drop information about the primary screens saved cursor.
             self.grid.saved_cursor = self.grid.cursor.clone();
@@ -4134,12 +4173,42 @@ impl<U: EventListener> Handler for Crosswords<U> {
         );
     }
 
-    fn set_semantic_prompt(
-        &mut self,
-        mark: crate::crosswords::grid::row::SemanticPrompt,
-    ) {
+    fn set_semantic_mark(&mut self, mark: crate::crosswords::semantic::SemanticMark) {
+        use crate::crosswords::grid::row::SemanticPrompt;
+        use crate::crosswords::semantic::SemanticMark;
+        use crate::crosswords::square::SemanticContent;
+
         let row = self.grid.cursor.pos.row;
-        self.grid[row].semantic_prompt = mark;
+        let state = &mut self.grid.semantic;
+        match mark {
+            SemanticMark::Prompt(kind) => {
+                state.content = SemanticContent::Prompt;
+                state.clear_eol = false;
+                state.seen = true;
+                self.grid[row].semantic_prompt = kind;
+            }
+            SemanticMark::Input { until_eol } => {
+                state.content = SemanticContent::Input;
+                state.clear_eol = until_eol;
+            }
+            SemanticMark::Output => {
+                state.content = SemanticContent::Output;
+                state.clear_eol = false;
+                let row_ref = &self.grid[row];
+                if row_ref.semantic_prompt != SemanticPrompt::None
+                    && (self.grid.cursor.pos.col == Column(0)
+                        || row_ref.inner.iter().all(|cell| {
+                            cell.semantic_content() == SemanticContent::Output
+                        }))
+                {
+                    self.grid[row].semantic_prompt = SemanticPrompt::None;
+                }
+            }
+            SemanticMark::CommandEnd => {
+                state.content = SemanticContent::Output;
+                state.clear_eol = false;
+            }
+        }
     }
 
     #[inline]
@@ -4933,6 +5002,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
             self.grid.cursor.pos.row += 1;
             self.damage_cursor();
         }
+        self.semantic_line_feed();
     }
 
     #[inline]
@@ -8414,12 +8484,14 @@ mod tests {
     #[test]
     fn semantic_prompt_marks_and_navigation() {
         use crate::crosswords::grid::row::SemanticPrompt;
+        use crate::crosswords::semantic::SemanticMark;
 
         let mut cw = make_crosswords();
         // Three prompts, each followed by two lines of output. The
         // 4-row screen pushes earlier prompts into scrollback.
         for _ in 0..3 {
-            cw.set_semantic_prompt(SemanticPrompt::Prompt);
+            cw.set_semantic_mark(SemanticMark::Prompt(SemanticPrompt::Prompt));
+            cw.set_semantic_mark(SemanticMark::CommandEnd);
             cw.linefeed();
             cw.linefeed();
             cw.linefeed();
