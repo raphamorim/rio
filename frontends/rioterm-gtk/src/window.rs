@@ -123,6 +123,74 @@ impl Window {
                 }
             }
         ));
+        // Closing a tab or the window running a program asks first.
+        tabs.connect_close_page(glib::clone!(
+            #[weak]
+            window,
+            #[strong]
+            shared,
+            #[upgrade_or]
+            glib::Propagation::Proceed,
+            move |tabs, page| {
+                let running = page
+                    .child()
+                    .downcast::<TerminalView>()
+                    .ok()
+                    .and_then(|view| view.foreground_program());
+                let Some(program) =
+                    running.filter(|_| shared.config.borrow().confirm_before_quit)
+                else {
+                    return glib::Propagation::Proceed;
+                };
+                let (tabs, page) = (tabs.clone(), page.clone());
+                crate::dialog::confirm(
+                    Some(window.upcast_ref()),
+                    "Close this tab?",
+                    &format!("“{program}” is still running in it."),
+                    "Close Tab",
+                    move |close| tabs.close_page_finish(&page, close),
+                );
+                glib::Propagation::Stop
+            }
+        ));
+        window.connect_close_request(glib::clone!(
+            #[weak]
+            tabs,
+            #[strong]
+            shared,
+            #[upgrade_or]
+            glib::Propagation::Proceed,
+            move |window| {
+                if !shared.config.borrow().confirm_before_quit {
+                    return glib::Propagation::Proceed;
+                }
+                let running: Vec<String> = (0..tabs.n_pages())
+                    .filter_map(|i| {
+                        tabs.nth_page(i)
+                            .child()
+                            .downcast::<TerminalView>()
+                            .ok()?
+                            .foreground_program()
+                    })
+                    .collect();
+                if running.is_empty() {
+                    return glib::Propagation::Proceed;
+                }
+                let target = window.clone();
+                crate::dialog::confirm(
+                    Some(window.upcast_ref()),
+                    "Close this window?",
+                    &format!("Still running: {}.", running.join(", ")),
+                    "Close Window",
+                    move |close| {
+                        if close {
+                            target.destroy();
+                        }
+                    },
+                );
+                glib::Propagation::Stop
+            }
+        ));
         // A tab dropped outside every window gets a window of its own.
         tabs.connect_create_window(glib::clone!(
             #[weak]

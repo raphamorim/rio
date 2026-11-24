@@ -79,35 +79,27 @@ impl TerminalView {
         self.confirm_paste(text);
     }
 
-    #[allow(deprecated)]
     fn confirm_paste(&self, text: String) {
         let window = WidgetExt::root(self).and_downcast::<gtk::Window>();
         let preview: String = text.chars().take(400).collect();
-        let dialog = gtk::MessageDialog::builder()
-            .modal(true)
-            .message_type(gtk::MessageType::Warning)
-            .text("Paste text that may run commands?")
-            .secondary_text(preview)
-            .build();
-        dialog.set_transient_for(window.as_ref());
-        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
-        dialog.add_button("Paste", gtk::ResponseType::Accept);
-        dialog.set_default_response(gtk::ResponseType::Cancel);
         let view = self.downgrade();
-        dialog.connect_response(move |dialog, response| {
-            if response == gtk::ResponseType::Accept {
-                if let Some(session) =
-                    view.upgrade().as_ref().and_then(|v| v.imp().session())
-                {
-                    session.paste(text.clone());
+        crate::dialog::confirm(
+            window.as_ref(),
+            "Paste text that may run commands?",
+            &preview,
+            "Paste",
+            move |accepted| {
+                let Some(view) = view.upgrade() else {
+                    return;
+                };
+                if accepted {
+                    if let Some(session) = view.imp().session() {
+                        session.paste(text.clone());
+                    }
                 }
-            }
-            dialog.close();
-            if let Some(view) = view.upgrade() {
                 view.grab_focus();
-            }
-        });
-        dialog.present();
+            },
+        );
     }
 
     /// Text typed into the terminal, as if from the keyboard.
@@ -716,6 +708,11 @@ mod imp {
             let (Some(session), Some(event)) = (self.session(), key_event(keys)) else {
                 return glib::Propagation::Proceed;
             };
+            if let Some(scroll) = scrollback_key(session, keyval, event.modifier_state())
+            {
+                session.scroll(scroll);
+                return glib::Propagation::Stop;
+            }
             self.in_key_press.set(true);
             let filtered = self
                 .im
@@ -896,6 +893,30 @@ mod imp {
             width * 4,
         )
         .upcast()
+    }
+
+    /// Shift with Page Up/Down, Home and End move the scrollback, except
+    /// on the alternate screen, where the program gets them.
+    fn scrollback_key(
+        session: &Session,
+        keyval: gdk::Key,
+        state: gdk::ModifierType,
+    ) -> Option<Scroll> {
+        let mods = state & gtk::accelerator_get_default_mod_mask();
+        if mods != gdk::ModifierType::SHIFT_MASK {
+            return None;
+        }
+        let scroll = match keyval {
+            gdk::Key::Page_Up | gdk::Key::KP_Page_Up => Scroll::PageUp,
+            gdk::Key::Page_Down | gdk::Key::KP_Page_Down => Scroll::PageDown,
+            gdk::Key::Home | gdk::Key::KP_Home => Scroll::Top,
+            gdk::Key::End | gdk::Key::KP_End => Scroll::Bottom,
+            _ => return None,
+        };
+        let alt_screen = session
+            .mode()
+            .contains(rio_vt::crosswords::Mode::ALT_SCREEN);
+        (!alt_screen).then_some(scroll)
     }
 
     fn key_event(keys: &gtk::EventControllerKey) -> Option<gdk::KeyEvent> {

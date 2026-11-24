@@ -157,6 +157,7 @@ pub struct Session {
     shell_pid: u32,
     #[cfg(unix)]
     terminator: teletypewriter::ChildTerminator,
+    shell: String,
 }
 
 /// Set once at startup, before any shell runs, as Rio does: the shells
@@ -269,6 +270,7 @@ impl Session {
             shell_pid,
             #[cfg(unix)]
             terminator,
+            shell: shell_name(config),
         })
     }
 
@@ -481,7 +483,8 @@ impl Session {
             }
             let name =
                 teletypewriter::foreground_process_name(self.main_fd, self.shell_pid);
-            (!name.is_empty()).then_some(name)
+            let name = name.trim_start_matches('-');
+            (!name.is_empty() && name != self.shell).then(|| name.to_string())
         }
         #[cfg(not(unix))]
         None
@@ -494,6 +497,19 @@ impl Drop for Session {
         #[cfg(unix)]
         let _ = self.terminator.hangup();
     }
+}
+
+fn shell_name(config: &Config) -> String {
+    let program = config
+        .shell
+        .program
+        .clone()
+        .or_else(|| std::env::var("SHELL").ok())
+        .unwrap_or_default();
+    std::path::Path::new(&program)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or(program)
 }
 
 fn pack(width: u32, height: u32) -> u32 {
