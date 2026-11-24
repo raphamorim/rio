@@ -442,6 +442,12 @@ mod imp {
         pub(super) search: RefCell<Search>,
         pub(super) focus_order: Cell<u64>,
         pub(super) program_title: RefCell<String>,
+        scrollbar: OnceCell<gtk::Scrollbar>,
+        scrollbar_hide: RefCell<Option<glib::SourceId>>,
+        /// The scrollback position the scrollbar shows: lines of history
+        /// and how far up the view is.
+        scrolled: Cell<(usize, usize)>,
+        syncing_scrollbar: Cell<bool>,
         /// Keyboard hint mode: labeled matches to pick by typing.
         hint_mode: RefCell<Option<rio_backend::hints::HintState>>,
     }
@@ -482,11 +488,18 @@ mod imp {
             self.scale.set(1);
             self.blink_visible.set(true);
             self.input();
+            self.scrollbar();
         }
 
         fn dispose(&self) {
             if let Some(source) = self.blink.take() {
                 source.remove();
+            }
+            if let Some(source) = self.scrollbar_hide.take() {
+                source.remove();
+            }
+            while let Some(child) = self.obj().first_child() {
+                child.unparent();
             }
             if let Some(shared) = self.shared.get() {
                 shared.unregister(self.id.get());
@@ -526,6 +539,14 @@ mod imp {
                     popover.present();
                 }
             }
+            if let Some(scrollbar) = self.scrollbar.get() {
+                let (_, natural, _, _) =
+                    scrollbar.measure(gtk::Orientation::Horizontal, -1);
+                scrollbar.size_allocate(
+                    &gtk::Allocation::new(width - natural, 0, natural, height),
+                    -1,
+                );
+            }
         }
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
@@ -541,6 +562,10 @@ mod imp {
                 let height = texture.height() as f32 / scale;
                 snapshot
                     .append_texture(texture, &graphene::Rect::new(0.0, y, width, height));
+            }
+            drop(strips);
+            if let Some(scrollbar) = self.scrollbar.get().filter(|s| s.width() > 0) {
+                self.obj().snapshot_child(scrollbar, snapshot);
             }
         }
 
@@ -653,10 +678,20 @@ mod imp {
                 return;
             };
             shared.awake(self.id.get());
-            let (blinking, offset) = {
+            let (blinking, offset, history) = {
                 let term = session.terminal.lock();
-                (term.blinking_cursor, term.display_offset() as i32)
+                (
+                    term.blinking_cursor,
+                    term.display_offset() as i32,
+                    term.history_size(),
+                )
             };
+            if self.scrolled.get() != (history, offset as usize) {
+                let obj = self.obj().clone();
+                glib::idle_add_local_once(move || {
+                    obj.imp().sync_scrollbar(history, offset as usize)
+                });
+            }
             let spans = self.hover_spans(offset);
             let labels = self.hint_labels();
             let preedit = self.preedit.borrow();
@@ -676,6 +711,96 @@ mod imp {
             if let Some(frame) = render.draw(&session.terminal, self.id.get(), &inputs) {
                 self.upload(&frame);
             }
+        }
+
+        fn scrollbar(&self) {
+            let adjustment = gtk::Adjustment::new(0.0, 0.0, 1.0, 1.0, 1.0, 1.0);
+            let scrollbar =
+                gtk::Scrollbar::new(gtk::Orientation::Vertical, Some(&adjustment));
+            scrollbar.add_css_class("overlay-indicator");
+            scrollbar.set_cursor_from_name(Some("default"));
+            scrollbar.set_opacity(0.0);
+            scrollbar.set_parent(&*self.obj());
+            adjustment.connect_value_changed(glib::clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |adjustment| {
+                    if this.syncing_scrollbar.get() {
+                        return;
+                    }
+                    let Some(session) = this.session() else {
+                        return;
+                    };
+                    let (history, offset) = this.scrolled.get();
+                    let wanted = history as f64 - adjustment.value().round();
+                    let delta = wanted as i32 - offset as i32;
+                    if delta != 0 {
+                        session.scroll(Scroll::Delta(delta));
+                    }
+                    this.reveal_scrollbar();
+                }
+            ));
+            let _ = self.scrollbar.set(scrollbar);
+        }
+
+        /// Show where the view is in the scrollback, and briefly the
+        /// scrollbar itself when that moved.
+        fn sync_scrollbar(&self, history: usize, offset: usize) {
+            let Some(scrollbar) = self.scrollbar.get() else {
+                return;
+            };
+            let enabled = self
+                .shared
+                .get()
+                .is_some_and(|shared| shared.config.borrow().enable_scroll_bar);
+            let visible = enabled && history > 0;
+            if scrollbar.is_visible() != visible {
+                scrollbar.set_visible(visible);
+                self.obj().queue_allocate();
+            }
+            let last = self.scrolled.replace((history, offset));
+            if last == (history, offset) {
+                return;
+            }
+            let lines = self.cells.get().1 as f64;
+            let adjustment = scrollbar.adjustment();
+            self.syncing_scrollbar.set(true);
+            adjustment.configure(
+                (history - offset.min(history)) as f64,
+                0.0,
+                history as f64 + lines,
+                1.0,
+                lines,
+                lines,
+            );
+            self.syncing_scrollbar.set(false);
+            if last.1 != offset {
+                self.reveal_scrollbar();
+            }
+        }
+
+        fn reveal_scrollbar(&self) {
+            let Some(scrollbar) = self.scrollbar.get() else {
+                return;
+            };
+            scrollbar.set_opacity(1.0);
+            if let Some(source) = self.scrollbar_hide.take() {
+                source.remove();
+            }
+            let source = glib::timeout_add_local_once(
+                std::time::Duration::from_millis(2000),
+                glib::clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move || {
+                        this.scrollbar_hide.replace(None);
+                        if let Some(scrollbar) = this.scrollbar.get() {
+                            scrollbar.set_opacity(0.0);
+                        }
+                    }
+                ),
+            );
+            self.scrollbar_hide.replace(Some(source));
         }
 
         /// Strip boundaries for a frame `height` pixels tall: the top

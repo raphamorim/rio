@@ -64,6 +64,9 @@ cargo run -p rioterm-gtk
 | Scroll a page, to the top or bottom | Shift+PageUp / PageDown / Home / End |
 | Font size bigger / smaller / reset | Ctrl+= / Ctrl+- / Ctrl+0 |
 
+With `enable-scroll-bar`, an overlay scrollbar shows where the view is in
+the scrollback while it moves, and can be dragged.
+
 Right-click opens a menu with the clipboard, split and tab actions (when
 no program is reading the mouse), and files dropped on a terminal are
 pasted as their paths, escaped for the shell.
