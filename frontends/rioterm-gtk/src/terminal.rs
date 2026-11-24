@@ -443,6 +443,7 @@ mod imp {
         pub(super) focus_order: Cell<u64>,
         pub(super) program_title: RefCell<String>,
         scrollbar: OnceCell<gtk::Scrollbar>,
+        im_cursor: Cell<(i32, usize)>,
         scrollbar_hide: RefCell<Option<glib::SourceId>>,
         /// The scrollback position the scrollbar shows: lines of history
         /// and how far up the view is.
@@ -678,14 +679,17 @@ mod imp {
                 return;
             };
             shared.awake(self.id.get());
-            let (blinking, offset, history) = {
+            let (blinking, offset, history, cursor) = {
                 let term = session.terminal.lock();
+                let cursor = term.grid.cursor.pos;
                 (
                     term.blinking_cursor,
                     term.display_offset() as i32,
                     term.history_size(),
+                    (cursor.row.0 + term.display_offset() as i32, cursor.col.0),
                 )
             };
+            self.place_input_method(cursor);
             if self.scrolled.get() != (history, offset as usize) {
                 let obj = self.obj().clone();
                 glib::idle_add_local_once(move || {
@@ -711,6 +715,27 @@ mod imp {
             if let Some(frame) = render.draw(&session.terminal, self.id.get(), &inputs) {
                 self.upload(&frame);
             }
+        }
+
+        /// Tell the input method where the cursor is, for its candidate
+        /// window.
+        fn place_input_method(&self, (line, col): (i32, usize)) {
+            if self.im_cursor.replace((line, col)) == (line, col) {
+                return;
+            }
+            let Some(im) = self.im.get() else {
+                return;
+            };
+            let scale = self.scale.get().max(1) as f32;
+            let (left, top) = self.origin.get();
+            let (cell_w, cell_h) = self.cell_size.get();
+            let rect = gdk::Rectangle::new(
+                ((left + col as f32 * cell_w) / scale) as i32,
+                ((top + line as f32 * cell_h) / scale) as i32,
+                (cell_w / scale).ceil() as i32,
+                (cell_h / scale).ceil() as i32,
+            );
+            im.set_cursor_location(&rect);
         }
 
         fn scrollbar(&self) {
