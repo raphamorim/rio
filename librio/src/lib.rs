@@ -1,7 +1,7 @@
 #[cfg(feature = "pty")]
 pub mod capi;
 
-pub mod key;
+pub use rio_vt::key;
 mod render_state;
 
 pub use key::{
@@ -631,41 +631,6 @@ pub struct Surface {
     )>,
 }
 
-/// Encode one mouse report. SGR (`CSI < b ; x ; y M`) when the program
-/// asked for it, else the original X10 form, whose coordinates are
-/// offset by 32 and cannot exceed 223 without the UTF-8 extension.
-fn mouse_report(
-    button: u8,
-    col: u16,
-    row: u16,
-    pressed: bool,
-    sgr: bool,
-    utf8: bool,
-) -> Vec<u8> {
-    let x = col.saturating_add(1);
-    let y = row.saturating_add(1);
-    if sgr {
-        // SGR keeps the real button and marks a release with lowercase `m`.
-        let end = if pressed { 'M' } else { 'm' };
-        return format!("\x1b[<{button};{x};{y}{end}").into_bytes();
-    }
-    // The X10/normal form has no release code: the button field collapses to
-    // 3, but the modifier/motion bits (bit 3 and up) are kept, matching xterm.
-    let encoded = if pressed { button } else { button | 3 };
-    let mut out = vec![0x1b, b'[', b'M', 32u8.saturating_add(encoded)];
-    for value in [x, y] {
-        if utf8 && value >= 95 {
-            // Two-byte UTF-8 for the extended range.
-            let encoded = char::from_u32(32 + value as u32).unwrap_or('\u{20}');
-            let mut buffer = [0u8; 4];
-            out.extend_from_slice(encoded.encode_utf8(&mut buffer).as_bytes());
-        } else {
-            out.push(32u8.saturating_add(value.min(223) as u8));
-        }
-    }
-    out
-}
-
 /// A pty with the shell `desc` names, or the user's login shell.
 #[cfg(feature = "pty")]
 fn spawn_pty(desc: &SurfaceDesc) -> std::io::Result<teletypewriter::Pty> {
@@ -1091,59 +1056,17 @@ impl Surface {
         if lines == 0 {
             return false;
         }
-        let (mouse_mode, alt_screen, alt_scroll, app_cursor, sgr, utf8) = {
-            let terminal = self.terminal.lock();
-            let mode = terminal.mode();
-            (
-                mode.intersects(Mode::MOUSE_MODE),
-                mode.contains(Mode::ALT_SCREEN),
-                mode.contains(Mode::ALTERNATE_SCROLL),
-                mode.contains(Mode::APP_CURSOR),
-                mode.contains(Mode::SGR_MOUSE),
-                mode.contains(Mode::UTF8_MOUSE),
-            )
-        };
-        let shift = mods.contains(Modifiers::SHIFT);
-
-        if mouse_mode && !shift {
-            // Wheel buttons are 64 (up) and 65 (down), with the modifier
-            // bits every mouse report carries.
-            let mut button = if lines > 0 { 64 } else { 65 };
-            if mods.contains(Modifiers::SHIFT) {
-                button += 4;
+        let mode = self.terminal.lock().mode();
+        match rio_vt::mouse::wheel(mode, lines, col, row, mods) {
+            rio_vt::mouse::Wheel::Program(bytes) => {
+                self.write(bytes);
+                true
             }
-            if mods.contains(Modifiers::ALT) {
-                button += 8;
+            rio_vt::mouse::Wheel::Scrollback => {
+                self.scroll(lines);
+                false
             }
-            if mods.contains(Modifiers::CTRL) {
-                button += 16;
-            }
-            let mut out = Vec::new();
-            for _ in 0..lines.abs() {
-                out.extend_from_slice(&mouse_report(button, col, row, true, sgr, utf8));
-            }
-            self.write(out);
-            return true;
         }
-
-        if alt_screen && alt_scroll && !shift {
-            let up = lines > 0;
-            let seq: &[u8] = match (app_cursor, up) {
-                (true, true) => b"\x1bOA",
-                (true, false) => b"\x1bOB",
-                (false, true) => b"\x1b[A",
-                (false, false) => b"\x1b[B",
-            };
-            let mut out = Vec::with_capacity(seq.len() * lines.unsigned_abs() as usize);
-            for _ in 0..lines.abs() {
-                out.extend_from_slice(seq);
-            }
-            self.write(out);
-            return true;
-        }
-
-        self.scroll(lines);
-        false
     }
 
     /// Report a mouse button press/release to the program when it asked for
@@ -1160,34 +1083,14 @@ impl Surface {
         pressed: bool,
         mods: Modifiers,
     ) -> bool {
-        let (mouse_mode, x10, sgr, utf8) = {
-            let mode = self.terminal.lock().mode();
-            (
-                mode.intersects(Mode::MOUSE_MODE),
-                mode.contains(Mode::MOUSE_REPORT_X10),
-                mode.contains(Mode::SGR_MOUSE),
-                mode.contains(Mode::UTF8_MOUSE),
-            )
-        };
-        if !mouse_mode || mods.contains(Modifiers::SHIFT) {
-            return false;
-        }
-        // X10 (mode 9) reports only presses of the three main buttons, with
-        // no modifiers and no release.
-        if x10 && (!pressed || button > 2) {
-            return false;
-        }
-        let mut encoded = button;
-        if !x10 {
-            if mods.contains(Modifiers::ALT) {
-                encoded += 8;
+        let mode = self.terminal.lock().mode();
+        match rio_vt::mouse::button(mode, col, row, button, pressed, mods) {
+            Some(report) => {
+                self.write(report);
+                true
             }
-            if mods.contains(Modifiers::CTRL) {
-                encoded += 16;
-            }
+            None => false,
         }
-        self.write(mouse_report(encoded, col, row, pressed, sgr, utf8));
-        true
     }
 
     /// Report pointer motion for button-event (1002, a button held) and
@@ -1195,33 +1098,14 @@ impl Surface {
     /// held during a drag, or 3 when none is held. Returns true when a report
     /// was written.
     pub fn mouse_motion(&self, col: u16, row: u16, button: u8, mods: Modifiers) -> bool {
-        let (drag, motion, sgr, utf8) = {
-            let mode = self.terminal.lock().mode();
-            (
-                mode.contains(Mode::MOUSE_DRAG),
-                mode.contains(Mode::MOUSE_MOTION),
-                mode.contains(Mode::SGR_MOUSE),
-                mode.contains(Mode::UTF8_MOUSE),
-            )
-        };
-        if mods.contains(Modifiers::SHIFT) {
-            return false;
+        let mode = self.terminal.lock().mode();
+        match rio_vt::mouse::motion(mode, col, row, button, mods) {
+            Some(report) => {
+                self.write(report);
+                true
+            }
+            None => false,
         }
-        // 1002 reports motion only while a button is down; 1003 reports all.
-        let wanted = if button >= 3 { motion } else { drag || motion };
-        if !wanted {
-            return false;
-        }
-        // The motion bit (32) rides on top of the button.
-        let mut encoded = button.saturating_add(32);
-        if mods.contains(Modifiers::ALT) {
-            encoded += 8;
-        }
-        if mods.contains(Modifiers::CTRL) {
-            encoded += 16;
-        }
-        self.write(mouse_report(encoded, col, row, true, sgr, utf8));
-        true
     }
 
     pub fn scroll(&self, delta_lines: i32) {
@@ -2088,35 +1972,6 @@ mod tests {
         assert_eq!(state.cell_cluster_text(0, 2).as_deref(), Some("e\u{301}"));
         // Plain cells report nothing.
         assert_eq!(state.cell_cluster_text(0, 3), None);
-    }
-
-    // SGR is the modern form; the X10 fallback offsets by 32.
-    #[test]
-    fn mouse_reports_encode_both_forms() {
-        // SGR press keeps the button and ends in `M`; release ends in `m`.
-        assert_eq!(
-            mouse_report(64, 4, 2, true, true, false),
-            b"\x1b[<64;5;3M".to_vec()
-        );
-        assert_eq!(
-            mouse_report(0, 4, 2, false, true, false),
-            b"\x1b[<0;5;3m".to_vec()
-        );
-        // X10 press offsets by 32; release collapses to button 3.
-        assert_eq!(
-            mouse_report(65, 0, 0, true, false, false),
-            vec![0x1b, b'[', b'M', 32 + 65, 33, 33]
-        );
-        assert_eq!(
-            mouse_report(0, 0, 0, false, false, false),
-            vec![0x1b, b'[', b'M', 32 + 3, 33, 33]
-        );
-        // A legacy release keeps the modifier bits: ctrl+left release is
-        // 16 | 3 = 19, not a bare 3.
-        assert_eq!(
-            mouse_report(16, 0, 0, false, false, false),
-            vec![0x1b, b'[', b'M', 32 + 19, 33, 33]
-        );
     }
 
     // Clicks and drags report only when the program asked; shift bypasses to

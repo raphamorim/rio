@@ -21,6 +21,8 @@ pub mod crosswords;
 pub mod error;
 pub mod event;
 pub mod grapheme_lut;
+pub mod key;
+pub mod mouse;
 pub mod paste;
 pub mod performer;
 pub mod selection;
