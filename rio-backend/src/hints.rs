@@ -1,9 +1,9 @@
-use rio_backend::config::hints::Hint;
-use rio_backend::crosswords::grid::Dimensions;
-use rio_backend::crosswords::pos::{Column, Line, Pos};
-use rio_backend::crosswords::square::Wide;
-use rio_backend::crosswords::Crosswords;
-use rio_backend::event::EventListener;
+use crate::config::hints::Hint;
+use crate::crosswords::grid::Dimensions;
+use crate::crosswords::pos::{Column, Line, Pos};
+use crate::crosswords::square::Wide;
+use crate::crosswords::Crosswords;
+use crate::event::EventListener;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -75,7 +75,7 @@ impl HintState {
     /// Update visible matches for the current hint
     pub fn update_matches<T: EventListener>(
         &mut self,
-        term: &rio_backend::crosswords::Crosswords<T>,
+        term: &crate::crosswords::Crosswords<T>,
     ) {
         self.matches.clear();
 
@@ -115,7 +115,7 @@ impl HintState {
     /// Handle keyboard input during hint selection
     pub fn keyboard_input<T: EventListener>(
         &mut self,
-        term: &rio_backend::crosswords::Crosswords<T>,
+        term: &crate::crosswords::Crosswords<T>,
         c: char,
     ) -> Option<HintMatch> {
         match c {
@@ -205,7 +205,7 @@ impl HintState {
 
     fn find_regex_matches<T: EventListener>(
         &mut self,
-        term: &rio_backend::crosswords::Crosswords<T>,
+        term: &crate::crosswords::Crosswords<T>,
         regex: &onig::Regex,
         hint: Rc<Hint>,
     ) {
@@ -254,7 +254,7 @@ impl HintState {
 
     fn find_hyperlink_matches<T: EventListener>(
         &mut self,
-        term: &rio_backend::crosswords::Crosswords<T>,
+        term: &crate::crosswords::Crosswords<T>,
         hint: Rc<Hint>,
     ) {
         // Walk the visible region looking for OSC 8 hyperlink spans.
@@ -310,7 +310,7 @@ impl HintState {
 
     fn extract_line_text<T: EventListener>(
         &self,
-        term: &rio_backend::crosswords::Crosswords<T>,
+        term: &crate::crosswords::Crosswords<T>,
         line: Line,
     ) -> String {
         let grid = &term.grid;
@@ -696,7 +696,7 @@ pub fn resolve_path_for_opening(text: &str, cwd: Option<&Path>) -> Option<PathBu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rio_backend::config::hints::{HintAction, HintInternalAction};
+    use crate::config::hints::{HintAction, HintInternalAction};
 
     #[test]
     fn test_label_generator() {
@@ -770,13 +770,13 @@ mod tests {
         state.matches = vec![
             HintMatch {
                 text: "match0".to_string(),
-                start: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(0),
+                start: crate::crosswords::pos::Pos::new(
+                    crate::crosswords::pos::Line(0),
+                    crate::crosswords::pos::Column(0),
                 ),
-                end: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(5),
+                end: crate::crosswords::pos::Pos::new(
+                    crate::crosswords::pos::Line(0),
+                    crate::crosswords::pos::Column(5),
                 ),
                 hint: Rc::new(Hint {
                     regex: Some("test".to_string()),
@@ -792,13 +792,13 @@ mod tests {
             },
             HintMatch {
                 text: "match1".to_string(),
-                start: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(10),
+                start: crate::crosswords::pos::Pos::new(
+                    crate::crosswords::pos::Line(0),
+                    crate::crosswords::pos::Column(10),
                 ),
-                end: rio_backend::crosswords::pos::Pos::new(
-                    rio_backend::crosswords::pos::Line(0),
-                    rio_backend::crosswords::pos::Column(15),
+                end: crate::crosswords::pos::Pos::new(
+                    crate::crosswords::pos::Line(0),
+                    crate::crosswords::pos::Column(15),
                 ),
                 hint: Rc::new(Hint {
                     regex: Some("test".to_string()),
@@ -956,10 +956,10 @@ mod tests {
         }
     }
 
-    use rio_backend::ansi::CursorShape;
-    use rio_backend::config::hints::DEFAULT_URL_REGEX;
-    use rio_backend::crosswords::CrosswordsSize;
-    use rio_backend::event::{VoidListener, WindowId};
+    use crate::ansi::CursorShape;
+    use crate::config::hints::DEFAULT_URL_REGEX;
+    use crate::crosswords::CrosswordsSize;
+    use crate::event::{VoidListener, WindowId};
     use rio_unicode::UnicodeWidthChar;
 
     /// Build a terminal from literal content, the same way rio-vt's

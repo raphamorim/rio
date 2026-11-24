@@ -10,7 +10,7 @@ mod cli;
 mod constants;
 mod context;
 mod global_hotkey;
-mod hints;
+use rio_backend::hints;
 mod ime;
 mod layout;
 mod messenger;

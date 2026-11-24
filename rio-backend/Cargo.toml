@@ -19,11 +19,15 @@ tracing = { workspace = true }
 # Most of the former dependencies (corcovado, copypasta, onig-based search,
 # simd, image_rs, …) moved with the terminal core to `rio-vt`. What remains
 # here is config loading + the sugarloaf renderer glue.
+[dev-dependencies]
+rio-unicode = { workspace = true }
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 toml = "0.9.2"
 base64 = { workspace = true }
 regex = { workspace = true }
 onig = { workspace = true }
+onig_sys = { workspace = true }
 dirs = "6.0.0"
 serde = { workspace = true }
 rio-graphics = { workspace = true, features = ["glyph"] }
