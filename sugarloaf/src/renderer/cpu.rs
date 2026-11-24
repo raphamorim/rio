@@ -337,6 +337,9 @@ pub fn render_cpu(
         let inst_bytes: &[u8] = bytemuck::cast_slice(quad_instances);
         h.write(inst_bytes);
         h.write_usize(grids.len());
+        for (grid, _) in grids.iter() {
+            h.write_usize(std::ptr::from_ref::<crate::grid::GridRenderer>(grid) as usize);
+        }
         // Image overlays: geometry plus the pixel store identity (a
         // retransmitted image gets a fresh handle id).
         h.write_usize(image_overlays.len());
