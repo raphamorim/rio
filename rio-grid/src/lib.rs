@@ -58,9 +58,11 @@ fn bound_glyph_version(extras_table: &ExtrasMap, sq: Square) -> Option<u32> {
     extras_table.get(&sq.extras_id_checked()?)?.glyph
 }
 
+mod kitty_virtual;
 mod palette;
 pub mod preedit;
 
+pub use kitty_virtual::{push_virtual_placeholder_overlays, VirtualSources};
 pub use palette::Palette;
 use preedit::{PreeditCaret, PreeditCell, PreeditLine};
 
