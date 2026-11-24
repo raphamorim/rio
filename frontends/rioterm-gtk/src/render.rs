@@ -670,6 +670,68 @@ mod bench {
         }
     }
 
+    fn frame(render: &mut Renderer, session: &Session, inputs: &Inputs<'_>) -> Vec<u32> {
+        render
+            .draw(&session.terminal, 1, inputs)
+            .map(|frame| frame.pixels.to_vec())
+            .unwrap_or_default()
+    }
+
+    // Frames that repaint only damaged rows, or move scrolled rows, end
+    // up with exactly the pixels of a frame drawn from scratch.
+    #[cfg(unix)]
+    #[test]
+    fn partial_frames_match_full_repaints() {
+        let (w, h) = (640u32, 400u32);
+        let mut config = Config::default();
+        config.shell.program = Some("/bin/sleep".into());
+        config.shell.args = vec!["1000".into()];
+        let mut render = Renderer::new(&config, 1.0);
+        let (cw, ch) = render.cell_size();
+        let padding = [4.0, 0.0, 0.0, 6.0];
+        let cols = ((w as f32 - 6.0) / cw) as usize;
+        let lines = ((h as f32 - 4.0) / ch) as usize;
+        render.resize(w, h, padding, cols, lines);
+        let size = rio_vt::crosswords::CrosswordsSize::new_with_dimensions(
+            cols, lines, w, h, cw as u32, ch as u32,
+        );
+        let session = Session::spawn(1, &config, None, Arc::new(Quiet), size).unwrap();
+        let mut parser = rio_vt::performer::handler::Processor::default();
+        let inputs = Inputs {
+            cursor: [255, 0, 255],
+            focused: true,
+            blinking: false,
+            blink_visible: true,
+            preedit: None,
+            spans: &[],
+        };
+        let steps: Vec<Vec<u8>> = (0..lines + 30)
+            .map(|i| {
+                format!(
+                    "line {i} \x1b[3{}mgy\x1b[0m {}\r\n",
+                    i % 8,
+                    "q".repeat(i % 40)
+                )
+                .into_bytes()
+            })
+            .chain([
+                b"typed".to_vec(),
+                b"\x1b[5;3Hmoved".to_vec(),
+                b"\x1b[2J\x1b[H".to_vec(),
+                b"\r\n\r\n\r\nafter blank lines\r\n".to_vec(),
+            ])
+            .collect();
+        for (i, step) in steps.iter().enumerate() {
+            parser.advance(&mut *session.terminal.lock(), step);
+            let got = frame(&mut render, &session, &inputs);
+            let mut fresh = Renderer::new(&config, 1.0);
+            fresh.resize(w, h, padding, cols, lines);
+            let want = frame(&mut fresh, &session, &inputs);
+            let diff = got.iter().zip(&want).filter(|(a, b)| a != b).count();
+            assert_eq!(diff, 0, "step {i}: {diff} pixels differ");
+        }
+    }
+
     /// `cargo test --release -p rioterm-gtk frames -- --ignored --nocapture`
     #[test]
     #[ignore]
