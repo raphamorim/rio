@@ -9,6 +9,7 @@
 mod dialog;
 mod hints;
 mod input;
+mod panes;
 mod render;
 mod session;
 mod shared;

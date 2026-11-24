@@ -2,6 +2,7 @@
 //! tabs reorder by dragging, drag out into a new window or into another
 //! window, have a context menu, and flag a bell in the background.
 
+use crate::panes;
 use crate::shared::Shared;
 use crate::terminal::TerminalView;
 use adw::prelude::*;
@@ -14,7 +15,15 @@ use std::rc::Rc;
 const SHORTCUTS: &[(&str, &[&str])] = &[
     ("app.new-window", &["<Ctrl><Shift>n"]),
     ("win.new-tab", &["<Ctrl><Shift>t"]),
-    ("win.close-tab", &["<Ctrl><Shift>w"]),
+    ("win.close", &["<Ctrl><Shift>w"]),
+    ("win.split-right", &["<Ctrl><Shift>r"]),
+    ("win.split-down", &["<Ctrl><Shift>d"]),
+    ("win.next-split-or-tab", &["<Ctrl><Shift>bracketright"]),
+    ("win.previous-split-or-tab", &["<Ctrl><Shift>bracketleft"]),
+    ("win.divider-up", &["<Ctrl><Shift><Alt>Up"]),
+    ("win.divider-down", &["<Ctrl><Shift><Alt>Down"]),
+    ("win.divider-left", &["<Ctrl><Shift><Alt>Left"]),
+    ("win.divider-right", &["<Ctrl><Shift><Alt>Right"]),
     ("win.copy", &["<Ctrl><Shift>c"]),
     ("win.paste", &["<Ctrl><Shift>v"]),
     ("win.paste-selection", &["<Shift>Insert"]),
@@ -26,17 +35,10 @@ const SHORTCUTS: &[(&str, &[&str])] = &[
     ),
     ("win.zoom-out", &["<Ctrl>minus", "<Ctrl>KP_Subtract"]),
     ("win.zoom-reset", &["<Ctrl>0", "<Ctrl>KP_0"]),
-    (
-        "win.next-tab",
-        &["<Ctrl>Page_Down", "<Ctrl>Tab", "<Ctrl><Shift>bracketright"],
-    ),
+    ("win.next-tab", &["<Ctrl>Page_Down", "<Ctrl>Tab"]),
     (
         "win.previous-tab",
-        &[
-            "<Ctrl>Page_Up",
-            "<Ctrl><Shift>ISO_Left_Tab",
-            "<Ctrl><Shift>bracketleft",
-        ],
+        &["<Ctrl>Page_Up", "<Ctrl><Shift>ISO_Left_Tab"],
     ),
     ("win.move-tab-left", &["<Ctrl><Shift>Page_Up"]),
     ("win.move-tab-right", &["<Ctrl><Shift>Page_Down"]),
@@ -117,7 +119,9 @@ impl Window {
                 if let Some(page) = tabs.selected_page() {
                     window.set_title(Some(&page.title()));
                     page.set_needs_attention(false);
-                    page.child().grab_focus();
+                    if let Some(view) = panes::focused(&page) {
+                        view.grab_focus();
+                    }
                 }
             }
         ));
@@ -139,13 +143,11 @@ impl Window {
             #[upgrade_or]
             glib::Propagation::Proceed,
             move |tabs, page| {
-                let running = page
-                    .child()
-                    .downcast::<TerminalView>()
-                    .ok()
-                    .and_then(|view| view.foreground_program());
-                let Some(program) =
-                    running.filter(|_| shared.config.borrow().confirm_before_quit)
+                let running = running_in(std::slice::from_ref(page));
+                let Some(program) = running
+                    .first()
+                    .filter(|_| shared.config.borrow().confirm_before_quit)
+                    .cloned()
                 else {
                     return glib::Propagation::Proceed;
                 };
@@ -171,15 +173,9 @@ impl Window {
                 if !shared.config.borrow().confirm_before_quit {
                     return glib::Propagation::Proceed;
                 }
-                let running: Vec<String> = (0..tabs.n_pages())
-                    .filter_map(|i| {
-                        tabs.nth_page(i)
-                            .child()
-                            .downcast::<TerminalView>()
-                            .ok()?
-                            .foreground_program()
-                    })
-                    .collect();
+                let pages: Vec<adw::TabPage> =
+                    (0..tabs.n_pages()).map(|i| tabs.nth_page(i)).collect();
+                let running = running_in(&pages);
                 if running.is_empty() {
                     return glib::Propagation::Proceed;
                 }
@@ -260,6 +256,35 @@ impl Window {
                 ))
                 .build(),
             on_tab("close-tab", |tabs, page| tabs.close_page(page)),
+            gio::ActionEntry::builder("close")
+                .activate(glib::clone!(
+                    #[weak]
+                    tabs,
+                    #[weak]
+                    window,
+                    #[strong]
+                    shared,
+                    move |_: &adw::ApplicationWindow, _, _| {
+                        close_focused(&window, &tabs, &shared)
+                    }
+                ))
+                .build(),
+            split_action(&tabs, shared, "split-right", gtk::Orientation::Horizontal),
+            split_action(&tabs, shared, "split-down", gtk::Orientation::Vertical),
+            cycle_action(&tabs, "next-split-or-tab", true),
+            cycle_action(&tabs, "previous-split-or-tab", false),
+            on_view(&tabs, "divider-up", |view| {
+                panes::resize(view, gtk::Orientation::Vertical, -0.05)
+            }),
+            on_view(&tabs, "divider-down", |view| {
+                panes::resize(view, gtk::Orientation::Vertical, 0.05)
+            }),
+            on_view(&tabs, "divider-left", |view| {
+                panes::resize(view, gtk::Orientation::Horizontal, -0.05)
+            }),
+            on_view(&tabs, "divider-right", |view| {
+                panes::resize(view, gtk::Orientation::Horizontal, 0.05)
+            }),
             on_tab("close-other-tabs", |tabs, page| {
                 tabs.close_other_pages(page)
             }),
@@ -346,6 +371,120 @@ impl Window {
 
         tabs
     }
+}
+
+/// Programs running in `pages`' terminals.
+fn running_in(pages: &[adw::TabPage]) -> Vec<String> {
+    pages
+        .iter()
+        .flat_map(|page| panes::views(&page.child()))
+        .filter_map(|view| view.foreground_program())
+        .collect()
+}
+
+/// Close the focused split, or its tab when it is the only one, asking
+/// first when a program runs in it.
+fn close_focused(
+    window: &adw::ApplicationWindow,
+    tabs: &adw::TabView,
+    shared: &Rc<Shared>,
+) {
+    let Some(page) = tabs.selected_page() else {
+        return;
+    };
+    if panes::views(&page.child()).len() < 2 {
+        tabs.close_page(&page);
+        return;
+    }
+    let Some(view) = panes::focused(&page) else {
+        return;
+    };
+    let running = view
+        .foreground_program()
+        .filter(|_| shared.config.borrow().confirm_before_quit);
+    let Some(program) = running else {
+        panes::remove(&view);
+        return;
+    };
+    crate::dialog::confirm(
+        Some(window.upcast_ref()),
+        "Close this split?",
+        &format!("“{program}” is still running in it."),
+        "Close",
+        move |close| {
+            if close {
+                panes::remove(&view);
+            }
+        },
+    );
+}
+
+fn split_action(
+    tabs: &adw::TabView,
+    shared: &Rc<Shared>,
+    name: &str,
+    orientation: gtk::Orientation,
+) -> gio::ActionEntry<adw::ApplicationWindow> {
+    gio::ActionEntry::builder(name)
+        .activate(glib::clone!(
+            #[weak]
+            tabs,
+            #[strong]
+            shared,
+            move |_: &adw::ApplicationWindow, _, _| {
+                if !shared.config.borrow().navigation.use_split {
+                    return;
+                }
+                let Some(view) = selected(&tabs) else {
+                    return;
+                };
+                let dir = inherited_dir(&tabs, &shared);
+                let new = match TerminalView::new(&shared, dir) {
+                    Ok(new) => new,
+                    Err(err) => {
+                        tracing::error!("could not start the shell: {err}");
+                        return;
+                    }
+                };
+                connect_view(&new);
+                panes::split(&view, &new, orientation);
+                new.grab_focus();
+            }
+        ))
+        .build()
+}
+
+/// Focus the next (or previous) split, or tab when the tab has none.
+fn cycle_action(
+    tabs: &adw::TabView,
+    name: &str,
+    forward: bool,
+) -> gio::ActionEntry<adw::ApplicationWindow> {
+    gio::ActionEntry::builder(name)
+        .activate(glib::clone!(
+            #[weak]
+            tabs,
+            move |_: &adw::ApplicationWindow, _, _| {
+                if let Some(next) =
+                    selected(&tabs).and_then(|v| panes::neighbor(&v, forward))
+                {
+                    next.grab_focus();
+                    return;
+                }
+                let n = tabs.n_pages();
+                if n == 0 {
+                    return;
+                }
+                let current = tabs.selected_page().map_or(0, |p| tabs.page_position(&p));
+                let next = if forward {
+                    (current + 1) % n
+                } else {
+                    (current + n - 1) % n
+                };
+                tabs.set_selected_page(&tabs.nth_page(next));
+            }
+        ))
+        .build()
 }
 
 /// The window's search bar, searching the selected terminal.
@@ -473,7 +612,7 @@ impl SearchUi {
     /// A new tab was selected: only it shows matches.
     fn retarget(&self, tabs: &adw::TabView) {
         for i in 0..tabs.n_pages() {
-            if let Ok(view) = tabs.nth_page(i).child().downcast::<TerminalView>() {
+            for view in panes::views(&tabs.nth_page(i).child()) {
                 view.search_clear();
             }
         }
@@ -524,23 +663,12 @@ fn inherited_dir(tabs: &adw::TabView, shared: &Rc<Shared>) -> Option<String> {
     selected(tabs)?.working_dir()
 }
 
+/// The selected tab's focused terminal.
 fn selected(tabs: &adw::TabView) -> Option<TerminalView> {
-    tabs.selected_page()?.child().downcast().ok()
+    panes::focused(&tabs.selected_page()?)
 }
 
-/// The tab view a terminal is in now: a tab dragged to another window
-/// moves there, so this is looked up rather than remembered.
-fn tabs_of(view: &TerminalView) -> Option<(adw::TabView, adw::TabPage)> {
-    let tabs = view
-        .ancestor(adw::TabView::static_type())
-        .and_downcast::<adw::TabView>()?;
-    let page = tabs.page(view);
-    Some((tabs, page))
-}
-
-/// A new tab running the shell, selected. Its title follows the
-/// program's, a bell in the background marks it, and it closes when the
-/// shell exits.
+/// A new tab running the shell, selected.
 fn add_tab(tabs: &adw::TabView, shared: &Rc<Shared>, working_dir: Option<String>) {
     let view = match TerminalView::new(shared, working_dir) {
         Ok(view) => view,
@@ -549,35 +677,28 @@ fn add_tab(tabs: &adw::TabView, shared: &Rc<Shared>, working_dir: Option<String>
             return;
         }
     };
-    let page = tabs.append(&view);
-    view.bind_property("title", &page, "title")
-        .transform_to(|_, title: String| {
-            Some(if title.is_empty() {
-                "Rio".to_string()
-            } else {
-                title
-            })
-        })
-        .sync_create()
-        .build();
-    view.bind_property("busy", &page, "loading")
-        .sync_create()
-        .build();
-    view.connect_title_notify(|view| {
-        let Some((tabs, page)) = tabs_of(view) else {
-            return;
-        };
-        if tabs.selected_page().as_ref() == Some(&page) {
-            if let Some(window) = tabs.root().and_downcast::<gtk::Window>() {
-                window.set_title(Some(&page.title()));
-            }
-        }
-    });
+    connect_view(&view);
+    let page = tabs.append(&panes::new_root(&view));
+    page.set_title("Rio");
+    tabs.set_selected_page(&page);
+    view.grab_focus();
+}
+
+/// A tab shows its focused terminal's title and progress, a bell in the
+/// background marks it, and a terminal whose shell exits closes.
+fn connect_view(view: &TerminalView) {
+    view.connect_title_notify(sync_page);
+    view.connect_busy_notify(sync_page);
+    view.connect_closure(
+        "focused",
+        false,
+        glib::closure_local!(move |view: TerminalView| sync_page(&view)),
+    );
     view.connect_closure(
         "bell",
         false,
         glib::closure_local!(move |view: TerminalView| {
-            if let Some((tabs, page)) = tabs_of(&view) {
+            if let Some((tabs, page)) = panes::page_of(&view) {
                 if tabs.selected_page().as_ref() != Some(&page) {
                     page.set_needs_attention(true);
                 }
@@ -588,11 +709,38 @@ fn add_tab(tabs: &adw::TabView, shared: &Rc<Shared>, working_dir: Option<String>
         "exited",
         false,
         glib::closure_local!(move |view: TerminalView| {
-            if let Some((tabs, page)) = tabs_of(&view) {
+            let Some((tabs, page)) = panes::page_of(&view) else {
+                return;
+            };
+            if !panes::remove(&view) {
                 tabs.close_page(&page);
             }
         }),
     );
-    tabs.set_selected_page(&page);
-    view.grab_focus();
+}
+
+fn sync_page(view: &TerminalView) {
+    let Some((tabs, page)) = panes::page_of(view) else {
+        return;
+    };
+    let views = panes::views(&page.child());
+    let focused = panes::focused(&page);
+    if let Some(shared) = view.shared() {
+        let opacity = shared.config.borrow().navigation.unfocused_split_opacity as f64;
+        for other in &views {
+            let dim = views.len() > 1 && Some(other) != focused.as_ref();
+            other.set_opacity(if dim { opacity } else { 1.0 });
+        }
+    }
+    if focused.as_ref() != Some(view) {
+        return;
+    }
+    let title = view.title();
+    page.set_title(if title.is_empty() { "Rio" } else { &title });
+    page.set_loading(views.iter().any(|v| v.busy()));
+    if tabs.selected_page().as_ref() == Some(&page) {
+        if let Some(window) = tabs.root().and_downcast::<gtk::Window>() {
+            window.set_title(Some(&page.title()));
+        }
+    }
 }

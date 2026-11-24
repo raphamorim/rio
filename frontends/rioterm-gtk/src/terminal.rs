@@ -138,6 +138,16 @@ impl TerminalView {
         self.queue_draw();
     }
 
+    pub fn shared(&self) -> Option<Rc<Shared>> {
+        self.imp().shared.get().cloned()
+    }
+
+    /// Grows each time a terminal gets focus: the highest in a tab is
+    /// the one it last focused.
+    pub fn focus_order(&self) -> u64 {
+        self.imp().focus_order.get()
+    }
+
     /// Text typed into the terminal, as if from the keyboard.
     pub fn type_text(&self, text: &str) {
         if let Some(session) = self.imp().session() {
@@ -349,6 +359,7 @@ mod imp {
         hints: crate::hints::MouseHints,
         hover: RefCell<Option<rio_backend::hints::HintMatch>>,
         pub(super) search: RefCell<Search>,
+        pub(super) focus_order: Cell<u64>,
     }
 
     #[glib::object_subclass]
@@ -370,6 +381,7 @@ mod imp {
                 vec![
                     Signal::builder("exited").build(),
                     Signal::builder("bell").build(),
+                    Signal::builder("focused").build(),
                 ]
             })
         }
@@ -934,6 +946,11 @@ mod imp {
         }
 
         fn set_focused(&self, focused: bool) {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static FOCUS: AtomicU64 = AtomicU64::new(1);
+            if focused {
+                self.focus_order.set(FOCUS.fetch_add(1, Ordering::Relaxed));
+            }
             self.focused.set(focused);
             if !focused {
                 self.held.borrow_mut().clear();
@@ -950,6 +967,9 @@ mod imp {
             }
             self.restart_blink();
             self.obj().queue_draw();
+            if focused {
+                self.obj().emit_by_name::<()>("focused", &[]);
+            }
         }
 
         fn pressed(&self, click: &gtk::GestureClick, n_press: i32, x: f64, y: f64) {

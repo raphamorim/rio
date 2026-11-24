@@ -38,8 +38,11 @@ cargo run -p rioterm-gtk
 | | |
 |---|---|
 | New tab / window | Ctrl+Shift+T / Ctrl+Shift+N |
-| Close tab | Ctrl+Shift+W |
-| Next / previous tab | Ctrl+Tab, Ctrl+PageDown, Ctrl+Shift+] / Ctrl+Shift+Tab, Ctrl+PageUp, Ctrl+Shift+[ |
+| Close split or tab | Ctrl+Shift+W |
+| Split right / down | Ctrl+Shift+R / Ctrl+Shift+D |
+| Next / previous split (or tab without splits) | Ctrl+Shift+] / Ctrl+Shift+[ |
+| Move a divider | Ctrl+Shift+Alt+Arrows |
+| Next / previous tab | Ctrl+Tab, Ctrl+PageDown / Ctrl+Shift+Tab, Ctrl+PageUp |
 | Move tab left / right | Ctrl+Shift+PageUp / Ctrl+Shift+PageDown |
 | Tab 1–8 / last tab | Alt+1–8 / Alt+9 |
 | Copy / paste | Ctrl+Shift+C / Ctrl+Shift+V |
