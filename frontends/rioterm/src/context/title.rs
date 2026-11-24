@@ -1,5 +1,4 @@
 use crate::context::Context;
-use std::path::Path;
 
 #[derive(PartialEq)]
 pub struct ContextTitle {
@@ -23,50 +22,7 @@ impl Default for ContextTitle {
 // - `COLUMNS`: current columns
 // - `LINES`: current lines
 
-/// Shorten an absolute path for display:
-/// - Replace home directory prefix with `~`
-/// - If 4+ components deep, show `…/last/three/components`
-fn shorten_path(absolute: &str) -> String {
-    let path = Path::new(absolute);
-
-    // Replace home prefix with ~
-    #[cfg(unix)]
-    let display_path = {
-        if let Some(home) = dirs::home_dir() {
-            if let Ok(stripped) = path.strip_prefix(&home) {
-                let s = stripped.to_string_lossy();
-                if s.is_empty() {
-                    "~".to_string()
-                } else {
-                    format!("~/{s}")
-                }
-            } else {
-                absolute.to_string()
-            }
-        } else {
-            absolute.to_string()
-        }
-    };
-
-    #[cfg(not(unix))]
-    let display_path = absolute.to_string();
-
-    // If 4+ components, show …/last3
-    let components: Vec<&str> =
-        display_path.split('/').filter(|s| !s.is_empty()).collect();
-    if components.len() >= 4 {
-        format!("…/{}", components[components.len() - 3..].join("/"))
-    } else {
-        display_path
-    }
-}
-
-/// Whether the title has `{{ }}` variables to render; anything else is
-/// shown as-is.
-#[inline]
-pub fn is_template(title: &str) -> bool {
-    title.contains("{{")
-}
+pub use rio_backend::config::title::is_template;
 
 #[inline]
 /// Render the title template. Every variable is event-known, so this
@@ -86,8 +42,6 @@ pub fn update_title<T: rio_backend::event::EventListener>(
     if !is_template(template) {
         return template.to_string();
     }
-
-    let mut new_template = template.to_owned();
     let lowered = template.to_lowercase();
     let needs_title = lowered.contains("title");
     let needs_path = lowered.contains("path");
@@ -104,101 +58,16 @@ pub fn update_title<T: rio_backend::event::EventListener>(
         } else {
             (prefetched_title.unwrap_or_default().to_string(), None)
         };
-    // Compiled once: titles are now rendered per OSC title change, not on
-    // a 2s poll, so a per-call `Regex::new` would sit in the hot path.
-    static RE: std::sync::LazyLock<regex::Regex> =
-        std::sync::LazyLock::new(|| regex::Regex::new(r"\{\{(.*?)\}\}").unwrap());
-    for (to_replace_str, [variable]) in RE.captures_iter(template).map(|c| c.extract()) {
-        let variables = if to_replace_str.contains("||") {
-            variable.split("||").collect()
-        } else {
-            vec![variable]
-        };
-
-        let mut matched = false;
-        for (i, scoped_variable) in variables.iter().enumerate() {
-            if matched {
-                break;
-            }
-
-            let var = scoped_variable.to_owned().trim().to_lowercase();
-            match var.as_str() {
-                "columns" => {
-                    new_template = new_template
-                        .replace(to_replace_str, &context.dimension.columns.to_string());
-                    matched = true;
-                }
-                "lines" => {
-                    new_template = new_template
-                        .replace(to_replace_str, &context.dimension.lines.to_string());
-                    matched = true;
-                }
-                "title" => {
-                    // In case it has a fallback and title is empty
-                    // or
-                    // In case is the last then we need to erase variables either way
-                    let is_only_one = variables.len() == 1;
-                    let is_last = i == variables.len() - 1;
-                    if is_only_one || is_last {
-                        new_template =
-                            new_template.replace(to_replace_str, &terminal_title);
-                        continue;
-                    }
-
-                    if !terminal_title.is_empty() {
-                        new_template =
-                            new_template.replace(to_replace_str, &terminal_title);
-                        matched = true;
-                    }
-                }
-                "program" => {
-                    new_template =
-                        new_template.replace(to_replace_str, &context.spawned_program);
-                    matched = true;
-                }
-                "absolute_path" => {
-                    let path = current_directory
-                        .as_ref()
-                        .and_then(|d| d.clone().into_os_string().into_string().ok())
-                        .unwrap_or_default();
-
-                    let is_only_one = variables.len() == 1;
-                    let is_last = i == variables.len() - 1;
-                    if is_only_one || is_last {
-                        new_template = new_template.replace(to_replace_str, &path);
-                        continue;
-                    }
-
-                    if !path.is_empty() {
-                        new_template = new_template.replace(to_replace_str, &path);
-                        matched = true;
-                    }
-                }
-                "relative_path" => {
-                    let path = current_directory
-                        .as_ref()
-                        .and_then(|d| d.clone().into_os_string().into_string().ok())
-                        .map(|d| shorten_path(&d))
-                        .unwrap_or_default();
-
-                    let is_only_one = variables.len() == 1;
-                    let is_last = i == variables.len() - 1;
-                    if is_only_one || is_last {
-                        new_template = new_template.replace(to_replace_str, &path);
-                        continue;
-                    }
-
-                    if !path.is_empty() {
-                        new_template = new_template.replace(to_replace_str, &path);
-                        matched = true;
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    new_template
+    rio_backend::config::title::render(
+        template,
+        &rio_backend::config::title::TitleVars {
+            title: &terminal_title,
+            program: &context.spawned_program,
+            directory: current_directory.as_deref(),
+            columns: context.dimension.columns,
+            lines: context.dimension.lines,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -207,6 +76,7 @@ pub mod test {
     use crate::context::create_mock_context;
     use crate::context::ContextDimension;
     use rio_backend::config::layout::Margin;
+    use rio_backend::config::title::shorten_path;
     use rio_backend::event::VoidListener;
     use rio_backend::event::WindowId;
     use rio_backend::sugarloaf::layout::TextDimensions;
