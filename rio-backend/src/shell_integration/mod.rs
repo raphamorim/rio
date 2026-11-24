@@ -637,10 +637,10 @@ mod test {
     #[cfg(unix)]
     #[test]
     fn zsh_integration_reports_finished_commands_through_the_parser() {
-        use rio_backend::ansi::CursorShape;
-        use rio_backend::crosswords::{Crosswords, CrosswordsSize};
-        use rio_backend::event::{EventListener, RioEvent, WindowId};
-        use rio_backend::performer::handler::Processor;
+        use crate::ansi::CursorShape;
+        use crate::crosswords::{Crosswords, CrosswordsSize};
+        use crate::event::{EventListener, RioEvent, WindowId};
+        use crate::performer::handler::Processor;
         use std::cell::RefCell;
         use std::io::{Read as _, Write as _};
         use std::rc::Rc;

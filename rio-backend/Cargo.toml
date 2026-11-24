@@ -32,6 +32,7 @@ dirs = "6.0.0"
 serde = { workspace = true }
 rio-graphics = { workspace = true, features = ["glyph"] }
 rio-vt = { workspace = true }
+teletypewriter = { workspace = true }
 sugarloaf = { workspace = true, optional = true }
 url = { workspace = true }
 # `wgpu` is only needed when the corresponding sugarloaf feature is on.

@@ -10,6 +10,8 @@ pub use rio_vt::{
 
 pub mod config;
 pub mod hints;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod shell_integration;
 
 #[cfg(test)]
 mod graphics;
