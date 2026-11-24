@@ -31,6 +31,10 @@ pub struct CpuCache {
     glyphs: FxHashMap<GlyphKey, CachedGlyph>,
     last_frame_hash: u64,
     has_last: bool,
+    /// Scratch for the rows a grid reports damaged and the pixel bands
+    /// they repaint.
+    damaged_rows: Vec<u32>,
+    bands: Vec<(u32, u32)>,
 }
 
 impl CpuCache {
@@ -306,17 +310,16 @@ pub fn render_cpu(
     let quad_instances = renderer.instances();
     let text_instances = text.instances();
 
-    // Frame skip.
+    // Frame skip and partial frames.
     //
-    // Hash includes the buffer size (a resized buffer holds no frame, so
-    // it must be drawn even when nothing else changed), the bg color, the
-    // overlay vertex stream, and each grid's uniforms + bg cells. Per-glyph fg state is hashed by
-    // length only — full fg-row hashing is too expensive on large
-    // panels (and a column of glyphs that swap colors will still
-    // change `cell_size` / `cursor_pos` / something downstream that's
-    // covered here). If you see stale text on the CPU backend after a
-    // pure-fg-color edit, expand this to hash bytemuck::cast_slice of
-    // each row.
+    // Everything but the grids' cells is hashed: the buffer size (a
+    // resized buffer holds no frame, so it must be drawn even when
+    // nothing else changed), the bg color, the overlay vertex stream,
+    // UI quads and text, and the image overlays. The grids report the
+    // rows that changed since their last paint themselves. When only
+    // grid rows changed, an offscreen frame repaints just their pixel
+    // bands over the previous frame, which it still holds; a window's
+    // buffer may not, and is repainted whole.
     let frame_hash = {
         let mut h = rustc_hash::FxHasher::default();
         h.write_u32(ctx.width_px);
@@ -333,12 +336,7 @@ pub fn render_cpu(
         h.write(bytes);
         let inst_bytes: &[u8] = bytemuck::cast_slice(quad_instances);
         h.write(inst_bytes);
-        for (grid, uniforms) in grids.iter() {
-            h.write(bytemuck::bytes_of(uniforms));
-            if let crate::grid::GridRenderer::Cpu(cpu_grid) = &**grid {
-                cpu_grid.hash_state(&mut h);
-            }
-        }
+        h.write_usize(grids.len());
         // Image overlays: geometry plus the pixel store identity (a
         // retransmitted image gets a fresh handle id).
         h.write_usize(image_overlays.len());
@@ -375,16 +373,45 @@ pub fn render_cpu(
         h.finish()
     };
 
-    if cache.has_last && cache.last_frame_hash == frame_hash {
+    let buf_w = ctx.width_px as i32;
+    let buf_h = ctx.height_px as i32;
+    let mut bands = std::mem::take(&mut cache.bands);
+    bands.clear();
+    let mut grids_full = false;
+    for (grid, uniforms) in grids.iter_mut() {
+        match grid.take_damage_cpu(uniforms, &mut cache.damaged_rows) {
+            crate::grid::cpu::GridDamage::None => {}
+            crate::grid::cpu::GridDamage::Full => grids_full = true,
+            crate::grid::cpu::GridDamage::Rows => {
+                push_row_bands(&mut bands, &cache.damaged_rows, uniforms, ctx.height_px)
+            }
+        }
+    }
+    let rest_unchanged = cache.has_last && cache.last_frame_hash == frame_hash;
+    if rest_unchanged && !grids_full && bands.is_empty() {
+        cache.bands = bands;
         return;
     }
     cache.last_frame_hash = frame_hash;
     cache.has_last = true;
 
-    let buf_w = ctx.width_px as i32;
-    let buf_h = ctx.height_px as i32;
     if buf_w == 0 || buf_h == 0 {
+        cache.bands = bands;
         return;
+    }
+
+    let partial = rest_unchanged
+        && !grids_full
+        && image_overlays.is_empty()
+        && quad_instances.is_empty()
+        && vertices.is_empty()
+        && text_instances.is_empty()
+        && matches!(ctx.target, crate::context::cpu::CpuTarget::Offscreen { .. });
+    if partial {
+        merge_bands(&mut bands);
+    } else {
+        bands.clear();
+        bands.push((0, ctx.height_px));
     }
 
     // A window's buffer is borrowed from softbuffer and presented at the
@@ -397,12 +424,19 @@ pub fn render_cpu(
                 Ok(b) => window_buffer.insert(b),
                 Err(e) => {
                     tracing::error!("softbuffer buffer_mut failed: {e}");
+                    cache.bands = bands;
                     return;
                 }
             }
         }
-        crate::context::cpu::CpuTarget::Offscreen { pixels, generation } => {
+        crate::context::cpu::CpuTarget::Offscreen {
+            pixels,
+            generation,
+            damage,
+        } => {
             *generation += 1;
+            damage.clear();
+            damage.extend_from_slice(&bands);
             pixels
         }
     };
@@ -428,6 +462,28 @@ pub fn render_cpu(
         ),
         None => 0,
     };
+    if partial {
+        let stride = ctx.width_px as usize;
+        for &(y0, y1) in &bands {
+            buffer[y0 as usize * stride..y1 as usize * stride].fill(bg_u32);
+            for text in [false, true] {
+                for (grid, uniforms) in grids.iter() {
+                    grid.render_band_cpu(
+                        buffer,
+                        ctx.width_px,
+                        ctx.height_px,
+                        uniforms,
+                        y0,
+                        y1,
+                        text,
+                    );
+                }
+            }
+        }
+        cache.bands = bands;
+        return;
+    }
+    cache.bands = bands;
     buffer.fill(bg_u32);
 
     // Grid passes: paint each panel's terminal cells (bg + glyphs)
@@ -569,6 +625,51 @@ pub fn render_cpu(
             tracing::error!("softbuffer present failed: {e}");
         }
     }
+}
+
+/// The pixel rows a grid's damaged rows repaint: each row with its
+/// neighbors, whose glyphs can reach into it, the first and last rows
+/// out to the frame's edges to cover the padding.
+fn push_row_bands(
+    bands: &mut Vec<(u32, u32)>,
+    rows: &[u32],
+    uniforms: &crate::grid::GridUniforms,
+    buf_h: u32,
+) {
+    let grid_rows = uniforms.grid_size[1];
+    let cell_h = uniforms.cell_size[1];
+    let pad_top = uniforms.grid_padding[0];
+    if grid_rows == 0 || cell_h <= 0.0 {
+        return;
+    }
+    let last = grid_rows - 1;
+    let edge =
+        |row: u32| ((pad_top + row as f32 * cell_h).round().max(0.0) as u32).min(buf_h);
+    for &row in rows {
+        let lo = row.saturating_sub(1).min(last);
+        let hi = (row + 1).min(last);
+        let y0 = if lo == 0 { 0 } else { edge(lo) };
+        let y1 = if hi == last { buf_h } else { edge(hi + 1) };
+        if y1 > y0 {
+            bands.push((y0, y1));
+        }
+    }
+}
+
+/// Sort bands and join the ones that touch or overlap.
+fn merge_bands(bands: &mut Vec<(u32, u32)>) {
+    bands.sort_unstable();
+    let mut out = 0;
+    for i in 0..bands.len() {
+        let band = bands[i];
+        if out > 0 && band.0 <= bands[out - 1].1 {
+            bands[out - 1].1 = bands[out - 1].1.max(band.1);
+        } else {
+            bands[out] = band;
+            out += 1;
+        }
+    }
+    bands.truncate(out);
 }
 
 /// Draw a batch of image overlays into the buffer.
@@ -1006,6 +1107,26 @@ fn draw_quad_instance(
             let idx = (y as usize) * stride + (x as usize);
             buf[idx] = blend_over_swar(src_premul, buf[idx]);
         }
+    }
+}
+
+#[cfg(test)]
+mod band_tests {
+    use super::*;
+    use bytemuck::Zeroable;
+
+    #[test]
+    fn damaged_rows_repaint_with_their_neighbors_and_merge() {
+        let mut u = crate::grid::GridUniforms::zeroed();
+        u.cell_size = [10.0, 20.0];
+        u.grid_size = [4, 10];
+        u.grid_padding = [5.0, 0.0, 0.0, 0.0];
+        let mut bands = Vec::new();
+        push_row_bands(&mut bands, &[5, 0, 9, 6], &u, 300);
+        merge_bands(&mut bands);
+        // Row 0 reaches the frame's top, row 9 its bottom, and the
+        // bands of rows 5, 6 and 9 touch.
+        assert_eq!(bands, vec![(0, 45), (85, 300)]);
     }
 }
 

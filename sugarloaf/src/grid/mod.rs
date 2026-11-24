@@ -289,6 +289,41 @@ impl GridRenderer {
         }
     }
 
+    /// Software pass of both layers limited to the pixel rows `y0..y1`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_band_cpu(
+        &self,
+        buf: &mut [u32],
+        buf_w: u32,
+        buf_h: u32,
+        uniforms: &GridUniforms,
+        y0: u32,
+        y1: u32,
+        text: bool,
+    ) {
+        if let GridRenderer::Cpu(r) = self {
+            if text {
+                r.render_text_band(buf, buf_w, buf_h, uniforms, y0, y1);
+            } else {
+                r.render_bg_band(buf, buf_w, buf_h, uniforms, y0, y1);
+            }
+        }
+    }
+
+    /// What changed in a software grid since its last paint; GPU grids
+    /// are always reported as fully changed.
+    pub fn take_damage_cpu(
+        &mut self,
+        uniforms: &GridUniforms,
+        rows: &mut Vec<u32>,
+    ) -> cpu::GridDamage {
+        match self {
+            GridRenderer::Cpu(r) => r.take_damage(uniforms, rows),
+            #[allow(unreachable_patterns)]
+            _ => cpu::GridDamage::Full,
+        }
+    }
+
     /// Whether this backend actually renders grid cells. All backends
     /// — including CPU — render through the grid path now, so this
     /// always returns `true`. Kept for backwards compatibility with

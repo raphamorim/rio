@@ -54,6 +54,9 @@ pub enum CpuTarget {
         /// Counts the frames drawn into `pixels`, so the host can tell a
         /// new frame from one the renderer skipped as unchanged.
         generation: u64,
+        /// The pixel rows the last frame repainted, as `y0..y1` bands
+        /// in order; the rest kept the frame before it.
+        damage: Vec<(u32, u32)>,
     },
 }
 
@@ -64,6 +67,10 @@ pub struct CpuFrame<'a> {
     pub width: u32,
     pub height: u32,
     pub generation: u64,
+    /// The pixel rows this frame repainted (`y0..y1`, in order), the
+    /// rest being the previous generation's. A host that missed a
+    /// generation must take the whole frame.
+    pub damage: &'a [(u32, u32)],
 }
 
 pub struct CpuContext {
@@ -124,6 +131,7 @@ impl CpuContext {
             target: CpuTarget::Offscreen {
                 pixels: vec![0; width as usize * height as usize],
                 generation: 0,
+                damage: Vec::new(),
             },
         }
     }
@@ -145,11 +153,16 @@ impl CpuContext {
     pub fn frame(&self) -> Option<CpuFrame<'_>> {
         match &self.target {
             CpuTarget::Window { .. } => None,
-            CpuTarget::Offscreen { pixels, generation } => Some(CpuFrame {
+            CpuTarget::Offscreen {
+                pixels,
+                generation,
+                damage,
+            } => Some(CpuFrame {
                 pixels,
                 width: self.width_px,
                 height: self.height_px,
                 generation: *generation,
+                damage,
             }),
         }
     }

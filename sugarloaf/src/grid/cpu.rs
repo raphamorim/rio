@@ -189,6 +189,24 @@ pub struct CpuGridRenderer {
     atlas_grayscale: CpuGridAtlas,
     atlas_color: CpuGridAtlas,
     needs_full_rebuild: bool,
+    /// Rows whose cells changed since the last paint, for a frame that
+    /// repaints only those.
+    damaged: Vec<bool>,
+    /// Every row must be repainted: fresh buffers or a new atlas.
+    damaged_full: bool,
+    /// The uniforms of the last paint, to tell a cursor move (two rows)
+    /// from a change that touches every cell.
+    painted: Option<GridUniforms>,
+}
+
+/// What changed in a grid since its last paint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GridDamage {
+    None,
+    /// The rows written to the list passed to
+    /// [`CpuGridRenderer::take_damage`].
+    Rows,
+    Full,
 }
 
 impl CpuGridRenderer {
@@ -201,6 +219,9 @@ impl CpuGridRenderer {
             atlas_grayscale: CpuGridAtlas::new_grayscale(),
             atlas_color: CpuGridAtlas::new_color(),
             needs_full_rebuild: true,
+            damaged: vec![false; rows as usize],
+            damaged_full: true,
+            painted: None,
         }
     }
 
@@ -215,54 +236,115 @@ impl CpuGridRenderer {
         // Fresh buffers = zero contents; emission path must rewrite
         // every row on the next frame even if no damage came in.
         self.needs_full_rebuild = true;
+        self.damaged = vec![false; rows as usize];
+        self.damaged_full = true;
+    }
+
+    fn damage_row(&mut self, row: usize) {
+        if let Some(flag) = self.damaged.get_mut(row) {
+            *flag = true;
+        }
     }
 
     pub fn write_row(&mut self, row: u32, bg: &[CellBg], fg: &[CellText]) {
         let idx = (row as usize) + 1;
+        let mut changed = false;
         if let Some(slot) = self.fg_rows.get_mut(idx) {
-            slot.clear();
-            slot.extend_from_slice(fg);
+            if slot.as_slice() != fg {
+                slot.clear();
+                slot.extend_from_slice(fg);
+                changed = true;
+            }
         }
 
-        if row >= self.rows {
-            return;
+        if row < self.rows {
+            let cols = self.cols as usize;
+            let row_start = (row as usize) * cols;
+            let row_len = cols.min(bg.len());
+            let dst = &mut self.bg_cells[row_start..row_start + cols];
+            if dst[..row_len] != bg[..row_len]
+                || dst[row_len..].iter().any(|c| *c != CellBg::TRANSPARENT)
+            {
+                dst[..row_len].copy_from_slice(&bg[..row_len]);
+                dst[row_len..].fill(CellBg::TRANSPARENT);
+                changed = true;
+            }
         }
-        let cols = self.cols as usize;
-        let row_start = (row as usize) * cols;
-        let row_len = cols.min(bg.len());
-        let dst = &mut self.bg_cells[row_start..row_start + cols];
-        dst[..row_len].copy_from_slice(&bg[..row_len]);
-        for slot in &mut dst[row_len..] {
-            *slot = CellBg::TRANSPARENT;
+        if changed {
+            self.damage_row(row as usize);
         }
     }
 
     pub fn clear_row(&mut self, row: u32) {
-        let idx = (row as usize) + 1;
-        if let Some(slot) = self.fg_rows.get_mut(idx) {
-            slot.clear();
-        }
-        if row >= self.rows {
-            return;
-        }
-        let cols = self.cols as usize;
-        let row_start = (row as usize) * cols;
-        for slot in &mut self.bg_cells[row_start..row_start + cols] {
-            *slot = CellBg::TRANSPARENT;
-        }
+        self.write_row(row, &[], &[]);
     }
 
     pub fn set_cursor(&mut self, block: &[CellText], non_block: &[CellText]) {
-        if let Some(slot) = self.fg_rows.first_mut() {
-            slot.clear();
-            slot.extend_from_slice(block);
-        }
         let last = self.fg_rows.len().saturating_sub(1);
-        if last > 0 {
-            if let Some(slot) = self.fg_rows.get_mut(last) {
-                slot.clear();
-                slot.extend_from_slice(non_block);
+        for (slot, cells) in [(0, block), (last, non_block)] {
+            let Some(current) = self.fg_rows.get_mut(slot) else {
+                continue;
+            };
+            if current.as_slice() == cells {
+                continue;
             }
+            for cell in current.iter().chain(cells) {
+                if let Some(flag) = self.damaged.get_mut(cell.grid_pos[1] as usize) {
+                    *flag = true;
+                }
+            }
+            current.clear();
+            current.extend_from_slice(cells);
+        }
+    }
+
+    /// What changed since the last call: nothing, the rows pushed to
+    /// `rows`, or everything. `uniforms` are the ones this paint uses;
+    /// a moved or recolored cursor damages the rows it left and
+    /// entered, any other uniform change the whole grid.
+    pub fn take_damage(
+        &mut self,
+        uniforms: &GridUniforms,
+        rows: &mut Vec<u32>,
+    ) -> GridDamage {
+        rows.clear();
+        let mut full = std::mem::take(&mut self.damaged_full);
+        match self.painted.replace(*uniforms) {
+            None => full = true,
+            Some(last) => {
+                let without_cursor = |u: &GridUniforms| {
+                    let mut u = *u;
+                    u.cursor_pos = [0; 2];
+                    u.cursor_color = [0.0; 4];
+                    u.cursor_bg_color = [0.0; 4];
+                    u
+                };
+                if bytemuck::bytes_of(&without_cursor(&last))
+                    != bytemuck::bytes_of(&without_cursor(uniforms))
+                {
+                    full = true;
+                } else if last.cursor_pos != uniforms.cursor_pos
+                    || last.cursor_color != uniforms.cursor_color
+                    || last.cursor_bg_color != uniforms.cursor_bg_color
+                {
+                    self.damage_row(last.cursor_pos[1] as usize);
+                    self.damage_row(uniforms.cursor_pos[1] as usize);
+                }
+            }
+        }
+        if full {
+            self.damaged.fill(false);
+            return GridDamage::Full;
+        }
+        for (row, flag) in self.damaged.iter_mut().enumerate() {
+            if std::mem::take(flag) {
+                rows.push(row as u32);
+            }
+        }
+        if rows.is_empty() {
+            GridDamage::None
+        } else {
+            GridDamage::Rows
         }
     }
 
@@ -277,6 +359,7 @@ impl CpuGridRenderer {
         self.atlas_grayscale.clear();
         self.atlas_color.clear();
         self.needs_full_rebuild = true;
+        self.damaged_full = true;
     }
 
     pub fn insert_glyph(
@@ -297,6 +380,7 @@ impl CpuGridRenderer {
             }
             self.atlas_grayscale.clear();
             self.needs_full_rebuild = true;
+            self.damaged_full = true;
             cleared = true;
         }
     }
@@ -324,6 +408,7 @@ impl CpuGridRenderer {
             }
             self.atlas_color.clear();
             self.needs_full_rebuild = true;
+            self.damaged_full = true;
             cleared = true;
         }
     }
@@ -346,20 +431,6 @@ impl CpuGridRenderer {
         self.needs_full_rebuild = true;
     }
 
-    /// Hash all state that affects what `render` will paint. The CPU
-    /// rasterizer's frame-skip path uses this to short-circuit when
-    /// the previous frame's output is still valid.
-    pub fn hash_state<H: std::hash::Hasher>(&self, h: &mut H) {
-        // bg_cells is a flat `Vec<CellBg>` — hash as raw bytes.
-        h.write(bytemuck::cast_slice(self.bg_cells.as_slice()));
-        // Per-row CellText bytes. Length-prefix so two adjacent rows
-        // can't be confused with one wider row.
-        for row in &self.fg_rows {
-            h.write_usize(row.len());
-            h.write(bytemuck::cast_slice(row.as_slice()));
-        }
-    }
-
     /// Paint the grid (bg cells + cursor + fg glyphs) into the
     /// caller's `0x00RRGGBB` u32 buffer. Mirrors the bg + text passes
     /// of `grid.metal`'s shaders, in the same draw order so glyphs
@@ -372,6 +443,19 @@ impl CpuGridRenderer {
         buf_w: u32,
         buf_h: u32,
         uniforms: &GridUniforms,
+    ) {
+        self.render_bg_band(buf, buf_w, buf_h, uniforms, 0, buf_h);
+    }
+
+    /// [`Self::render_bg`] limited to the pixel rows `y0..y1`.
+    pub fn render_bg_band(
+        &self,
+        buf: &mut [u32],
+        buf_w: u32,
+        buf_h: u32,
+        uniforms: &GridUniforms,
+        y0: u32,
+        y1: u32,
     ) {
         let cell_w = uniforms.cell_size[0];
         let cell_h = uniforms.cell_size[1];
@@ -387,7 +471,7 @@ impl CpuGridRenderer {
         let pad_left = uniforms.grid_padding[3];
 
         let buf_w_i = buf_w as i32;
-        let buf_h_i = buf_h as i32;
+        let clip = (y0 as i32, y1.min(buf_h) as i32);
         let cursor_x = uniforms.cursor_pos[0];
         let cursor_y = uniforms.cursor_pos[1];
         let cursor_bg_active = uniforms.cursor_bg_color[3] > 0.0;
@@ -397,6 +481,11 @@ impl CpuGridRenderer {
         let row_count = (rows as usize).min(self.rows as usize);
         let col_count = (cols as usize).min(self.cols as usize);
         for row in 0..row_count {
+            let y0 = (pad_top + (row as f32) * cell_h).round() as i32;
+            let y1 = (pad_top + ((row + 1) as f32) * cell_h).round() as i32;
+            if y1 <= clip.0 || y0 >= clip.1 {
+                continue;
+            }
             let row_off = row * buf_cols;
             for col in 0..col_count {
                 let mut rgba = self.bg_cells[row_off + col].rgba;
@@ -408,10 +497,8 @@ impl CpuGridRenderer {
                 }
 
                 let x0 = (pad_left + (col as f32) * cell_w).round() as i32;
-                let y0 = (pad_top + (row as f32) * cell_h).round() as i32;
                 let x1 = (pad_left + ((col + 1) as f32) * cell_w).round() as i32;
-                let y1 = (pad_top + ((row + 1) as f32) * cell_h).round() as i32;
-                fill_rect(buf, buf_w_i, buf_h_i, x0, y0, x1, y1, rgba);
+                fill_rect(buf, buf_w_i, clip, x0, y0, x1, y1, rgba);
             }
         }
     }
@@ -426,6 +513,21 @@ impl CpuGridRenderer {
         buf_h: u32,
         uniforms: &GridUniforms,
     ) {
+        self.render_text_band(buf, buf_w, buf_h, uniforms, 0, buf_h);
+    }
+
+    /// [`Self::render_text`] limited to the pixel rows `y0..y1`. Glyphs
+    /// of the rows next to the band are drawn too, clipped, since they
+    /// can reach into it.
+    pub fn render_text_band(
+        &self,
+        buf: &mut [u32],
+        buf_w: u32,
+        buf_h: u32,
+        uniforms: &GridUniforms,
+        y0: u32,
+        y1: u32,
+    ) {
         let cell_w = uniforms.cell_size[0];
         let cell_h = uniforms.cell_size[1];
         if cell_w <= 0.0 || cell_h <= 0.0 {
@@ -440,7 +542,12 @@ impl CpuGridRenderer {
         let pad_left = uniforms.grid_padding[3];
 
         let buf_w_i = buf_w as i32;
-        let buf_h_i = buf_h as i32;
+        let clip = (y0 as i32, y1.min(buf_h) as i32);
+        // Content rows that can reach the band: those it covers and one
+        // more on each side, for glyphs taller than their cell.
+        let first_row = (((clip.0 as f32 - pad_top) / cell_h).floor() as i64 - 1).max(0);
+        let last_row = ((clip.1 as f32 - pad_top) / cell_h).ceil() as i64 + 1;
+        let cursor_slot = self.fg_rows.len().saturating_sub(1);
         let cursor_x = uniforms.cursor_pos[0];
         let cursor_y = uniforms.cursor_pos[1];
         let cursor_fg_active = uniforms.cursor_color[3] > 0.0;
@@ -451,7 +558,13 @@ impl CpuGridRenderer {
         let color_atlas = self.atlas_color.pixels();
         let color_side = self.atlas_color.side as usize;
 
-        for fg in &self.fg_rows {
+        for (slot, fg) in self.fg_rows.iter().enumerate() {
+            if slot != 0 && slot != cursor_slot {
+                let row = slot as i64 - 1;
+                if row < first_row || row > last_row {
+                    continue;
+                }
+            }
             for glyph in fg {
                 let gw = glyph.glyph_size[0] as i32;
                 let gh = glyph.glyph_size[1] as i32;
@@ -480,7 +593,7 @@ impl CpuGridRenderer {
                     blit_color(
                         buf,
                         buf_w_i,
-                        buf_h_i,
+                        clip,
                         glyph_x,
                         glyph_y,
                         gw,
@@ -492,7 +605,7 @@ impl CpuGridRenderer {
                     );
                 } else {
                     blit_mask(
-                        buf, buf_w_i, buf_h_i, glyph_x, glyph_y, gw, gh, mask, mask_side,
+                        buf, buf_w_i, clip, glyph_x, glyph_y, gw, gh, mask, mask_side,
                         ax, ay, color,
                     );
                 }
@@ -546,7 +659,7 @@ use crate::premul::{blend_premul_over as blend_over, pack_opaque};
 fn fill_rect(
     buf: &mut [u32],
     buf_w: i32,
-    buf_h: i32,
+    clip: (i32, i32),
     x0: i32,
     y0: i32,
     x1: i32,
@@ -554,9 +667,9 @@ fn fill_rect(
     rgba: [u8; 4],
 ) {
     let x0 = x0.max(0);
-    let y0 = y0.max(0);
+    let y0 = y0.max(clip.0);
     let x1 = x1.min(buf_w);
-    let y1 = y1.min(buf_h);
+    let y1 = y1.min(clip.1);
     if x1 <= x0 || y1 <= y0 {
         return;
     }
@@ -584,7 +697,7 @@ fn fill_rect(
 fn blit_mask(
     buf: &mut [u32],
     buf_w: i32,
-    buf_h: i32,
+    clip: (i32, i32),
     glyph_x: i32,
     glyph_y: i32,
     gw: i32,
@@ -601,9 +714,9 @@ fn blit_mask(
     let stride = buf_w as usize;
     // Clip glyph rect to buffer + atlas bounds in one step.
     let x_start = glyph_x.max(0);
-    let y_start = glyph_y.max(0);
+    let y_start = glyph_y.max(clip.0);
     let x_end = (glyph_x + gw).min(buf_w);
-    let y_end = (glyph_y + gh).min(buf_h);
+    let y_end = (glyph_y + gh).min(clip.1);
     if x_end <= x_start || y_end <= y_start {
         return;
     }
@@ -647,7 +760,7 @@ fn blit_mask(
 fn blit_color(
     buf: &mut [u32],
     buf_w: i32,
-    buf_h: i32,
+    clip: (i32, i32),
     glyph_x: i32,
     glyph_y: i32,
     gw: i32,
@@ -659,9 +772,9 @@ fn blit_color(
 ) {
     let stride = buf_w as usize;
     let x_start = glyph_x.max(0);
-    let y_start = glyph_y.max(0);
+    let y_start = glyph_y.max(clip.0);
     let x_end = (glyph_x + gw).min(buf_w);
-    let y_end = (glyph_y + gh).min(buf_h);
+    let y_end = (glyph_y + gh).min(clip.1);
     if x_end <= x_start || y_end <= y_start {
         return;
     }
@@ -691,5 +804,92 @@ fn blit_color(
             let idx = buf_row + (dst_x as usize);
             buf[idx] = blend_over(src, buf[idx]);
         }
+    }
+}
+
+#[cfg(test)]
+mod damage_tests {
+    use super::*;
+    use bytemuck::Zeroable;
+
+    fn uniforms(cursor: [u32; 2]) -> GridUniforms {
+        let mut u = GridUniforms::zeroed();
+        u.cell_size = [10.0, 20.0];
+        u.grid_size = [4, 5];
+        u.cursor_pos = cursor;
+        u
+    }
+
+    fn glyph(col: u16, row: u16) -> CellText {
+        CellText {
+            glyph_size: [1, 1],
+            grid_pos: [col, row],
+            color: [255; 4],
+            ..CellText::default()
+        }
+    }
+
+    fn painted(grid: &mut CpuGridRenderer, u: &GridUniforms) -> (GridDamage, Vec<u32>) {
+        let mut rows = Vec::new();
+        let damage = grid.take_damage(u, &mut rows);
+        (damage, rows)
+    }
+
+    #[test]
+    fn first_paint_and_resize_are_full() {
+        let mut grid = CpuGridRenderer::new(4, 5);
+        let u = uniforms([0, 0]);
+        assert_eq!(painted(&mut grid, &u).0, GridDamage::Full);
+        assert_eq!(painted(&mut grid, &u).0, GridDamage::None);
+        grid.resize(4, 6);
+        assert_eq!(painted(&mut grid, &u).0, GridDamage::Full);
+    }
+
+    #[test]
+    fn only_rows_that_change_are_damaged() {
+        let mut grid = CpuGridRenderer::new(4, 5);
+        let u = uniforms([0, 0]);
+        painted(&mut grid, &u);
+        let red = [CellBg {
+            rgba: [255, 0, 0, 255],
+        }];
+        grid.write_row(1, &red, &[glyph(0, 1)]);
+        grid.write_row(3, &[], &[]);
+        assert_eq!(painted(&mut grid, &u), (GridDamage::Rows, vec![1]));
+        grid.write_row(1, &red, &[glyph(0, 1)]);
+        assert_eq!(painted(&mut grid, &u).0, GridDamage::None, "same cells");
+        grid.clear_row(1);
+        assert_eq!(painted(&mut grid, &u), (GridDamage::Rows, vec![1]));
+    }
+
+    #[test]
+    fn a_cursor_damages_the_rows_it_leaves_and_enters() {
+        let mut grid = CpuGridRenderer::new(4, 5);
+        painted(&mut grid, &uniforms([0, 0]));
+        assert_eq!(
+            painted(&mut grid, &uniforms([2, 3])),
+            (GridDamage::Rows, vec![0, 3])
+        );
+        grid.set_cursor(&[], &[glyph(1, 2)]);
+        assert_eq!(
+            painted(&mut grid, &uniforms([2, 3])),
+            (GridDamage::Rows, vec![2])
+        );
+        grid.set_cursor(&[], &[glyph(1, 4)]);
+        assert_eq!(
+            painted(&mut grid, &uniforms([2, 3])),
+            (GridDamage::Rows, vec![2, 4])
+        );
+    }
+
+    #[test]
+    fn other_uniform_changes_and_a_new_atlas_are_full() {
+        let mut grid = CpuGridRenderer::new(4, 5);
+        let mut u = uniforms([0, 0]);
+        painted(&mut grid, &u);
+        u.cell_size = [11.0, 20.0];
+        assert_eq!(painted(&mut grid, &u).0, GridDamage::Full);
+        grid.clear_atlas();
+        assert_eq!(painted(&mut grid, &u).0, GridDamage::Full);
     }
 }
