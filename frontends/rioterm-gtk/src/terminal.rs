@@ -1,6 +1,7 @@
 //! The terminal widget: one session, drawn by Sugarloaf's CPU renderer
-//! into a frame GTK shows as textures, one per strip of rows, so a
-//! frame that changed a few rows uploads only their strips.
+//! into a frame GTK shows as textures, one per terminal row (and the
+//! padding around them): a frame that changed a few rows uploads only
+//! theirs, and a scroll moves the textures of the rows it kept.
 
 use crate::input;
 use crate::render::{Inputs, Renderer};
@@ -15,9 +16,6 @@ use rio_vt::crosswords::pos::Side;
 use rio_vt::crosswords::CrosswordsSize;
 use rio_vt::key::{KeyAction, Modifiers};
 use std::rc::Rc;
-
-/// Rows of pixels per texture.
-const STRIP: u32 = 64;
 
 glib::wrapper! {
     pub struct TerminalView(ObjectSubclass<imp::TerminalView>)
@@ -347,6 +345,8 @@ mod imp {
 
     #[derive(Default)]
     struct Strips {
+        /// Strip boundaries in pixel rows, top to bottom.
+        edges: Vec<u32>,
         textures: Vec<gdk::Texture>,
         width: u32,
         height: u32,
@@ -475,8 +475,8 @@ mod imp {
             }
             let scale = self.scale.get().max(1) as f32;
             let width = strips.width as f32 / scale;
-            for (i, texture) in strips.textures.iter().enumerate() {
-                let y = (i as u32 * STRIP) as f32 / scale;
+            for (texture, &y) in strips.textures.iter().zip(&strips.edges) {
+                let y = y as f32 / scale;
                 let height = texture.height() as f32 / scale;
                 snapshot
                     .append_texture(texture, &graphene::Rect::new(0.0, y, width, height));
@@ -613,26 +613,65 @@ mod imp {
             }
         }
 
+        /// Strip boundaries for a frame `height` pixels tall: the top
+        /// padding, each row, and what is left below them.
+        fn strip_edges(&self, height: u32) -> Vec<u32> {
+            let (_, top) = self.origin.get();
+            let (_, cell_h) = self.cell_size.get();
+            let lines = self.cells.get().1 as u32;
+            let mut edges = vec![0];
+            let top = top.round() as u32;
+            if cell_h.fract() == 0.0 && cell_h >= 1.0 {
+                let mut y = top;
+                for _ in 0..=lines {
+                    if y > 0 && y < height {
+                        edges.push(y);
+                    }
+                    y += cell_h as u32;
+                }
+            }
+            edges.dedup();
+            edges.push(height);
+            edges
+        }
+
         fn upload(&self, frame: &CpuFrame<'_>) {
             let mut strips = self.strips.borrow_mut();
             if frame.generation == strips.generation && !strips.textures.is_empty() {
                 return;
             }
-            let count = frame.height.div_ceil(STRIP) as usize;
+            let edges = self.strip_edges(frame.height);
             let whole = strips.width != frame.width
                 || strips.height != frame.height
                 || frame.generation != strips.generation + 1
-                || strips.textures.len() != count;
+                || strips.edges != edges;
+            let bands: Vec<(u32, u32)> = edges.windows(2).map(|e| (e[0], e[1])).collect();
             if whole {
-                strips.textures = (0..count).map(|i| strip(frame, i as u32)).collect();
+                strips.textures = bands.iter().map(|&band| strip(frame, band)).collect();
             } else {
-                for (i, texture) in strips.textures.iter_mut().enumerate() {
-                    let (y0, y1) = (i as u32 * STRIP, (i as u32 + 1) * STRIP);
-                    if frame.damage.iter().any(|&(a, b)| a < y1 && b > y0) {
-                        *texture = strip(frame, i as u32);
-                    }
-                }
+                let old = std::mem::take(&mut strips.textures);
+                let index = |y: u32| bands.iter().position(|&(y0, _)| y0 == y);
+                strips.textures = bands
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &(y0, y1))| {
+                        let damaged = frame.damage.iter().any(|&(a, b)| a < y1 && b > y0);
+                        let source = match frame.moved {
+                            Some((from, to, count)) if y0 >= to && y1 <= to + count => {
+                                index(y0 + from - to)
+                                    .filter(|&j| bands[j].1 - bands[j].0 == y1 - y0)
+                            }
+                            Some((_, to, count)) if y0 < to + count && y1 > to => None,
+                            _ => Some(i),
+                        };
+                        match source {
+                            Some(j) if !damaged => old[j].clone(),
+                            _ => strip(frame, (y0, y1)),
+                        }
+                    })
+                    .collect();
             }
+            strips.edges = edges;
             strips.width = frame.width;
             strips.height = frame.height;
             strips.generation = frame.generation;
@@ -1119,14 +1158,13 @@ mod imp {
         }
     }
 
-    fn strip(frame: &CpuFrame<'_>, index: u32) -> gdk::Texture {
+    fn strip(frame: &CpuFrame<'_>, (y0, y1): (u32, u32)) -> gdk::Texture {
         #[cfg(target_endian = "little")]
         let format = gdk::MemoryFormat::B8g8r8a8Premultiplied;
         #[cfg(target_endian = "big")]
         let format = gdk::MemoryFormat::A8r8g8b8Premultiplied;
         let width = frame.width as usize;
-        let y0 = (index * STRIP).min(frame.height) as usize;
-        let y1 = ((index + 1) * STRIP).min(frame.height) as usize;
+        let (y0, y1) = (y0 as usize, y1 as usize);
         let pixels = &frame.pixels[y0 * width..y1 * width];
         let bytes = glib::Bytes::from(bytemuck::cast_slice::<u32, u8>(pixels));
         gdk::MemoryTexture::new(
