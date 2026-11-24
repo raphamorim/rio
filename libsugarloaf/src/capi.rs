@@ -995,7 +995,8 @@ impl Sl {
 
     /// Rio's color settings (`[colors]`): the palette cells resolve
     /// against, and the background shown wherever a cell has none. Mark
-    /// grids for a full rebuild so every row repaints in the new colors.
+    /// each grid for a full rebuild afterwards, so every row is emitted
+    /// again and repaints in the new colors.
     pub fn set_colors(&mut self, colors: &Colors) {
         self.palette.set_colors(*colors);
         self.inner.set_background_color(Some(colors.background.1));
