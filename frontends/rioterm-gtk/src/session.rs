@@ -300,11 +300,14 @@ impl Session {
         }
         {
             let mut term = self.terminal.lock();
+            let mut changed = term.selection.take().is_some();
             if term.display_offset() != 0 {
                 term.scroll_display(Scroll::Bottom);
+                changed = true;
             }
-            if term.selection.take().is_some() {
+            if changed {
                 term.mark_fully_damaged();
+                term.request_render();
             }
         }
         let _ = self.channel.send(Msg::Input(bytes));
@@ -530,6 +533,13 @@ impl Session {
     /// Matches of `pattern` across scrollback and screen, top to bottom,
     /// at most `max`. A pattern that isn't a valid regex is searched as
     /// text.
+    /// Absolute index of the oldest line kept: grid line numbers shift
+    /// by its change.
+    pub fn top_line(&self) -> i64 {
+        let term = self.terminal.lock();
+        term.lines_evicted() as i64 + term.history_size() as i64
+    }
+
     pub fn search(&self, pattern: &str, max: usize) -> Vec<(Pos, Pos)> {
         use rio_vt::crosswords::pos::Direction;
         use rio_vt::crosswords::search::{RegexIter, RegexSearch};

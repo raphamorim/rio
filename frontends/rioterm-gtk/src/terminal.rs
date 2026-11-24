@@ -109,18 +109,37 @@ impl TerminalView {
         let Some(session) = imp.session() else {
             return (0, 0);
         };
+        let top = session.top_line();
         let mut search = imp.search.borrow_mut();
         if search.pattern != pattern {
             search.pattern = pattern.to_string();
             search.matches = session.search(pattern, 10_000);
             search.focused = search.matches.len().checked_sub(1);
-        } else if let (Some(focused), Some(up)) = (search.focused, up) {
-            let count = search.matches.len();
-            search.focused = Some(if up {
-                (focused + count - 1) % count
-            } else {
-                (focused + 1) % count
-            });
+            search.top = top;
+            search.searched = top;
+        } else {
+            if search.searched != top {
+                let history = session.terminal.lock().history_size();
+                search.follow(top, history);
+                let at = search.focused.map(|i| search.matches[i].0);
+                search.matches = session.search(pattern, 10_000);
+                search.searched = top;
+                let last = search.matches.len().checked_sub(1);
+                search.focused = match at {
+                    Some(at) => last.map(|last| {
+                        search.matches.partition_point(|m| m.0 < at).min(last)
+                    }),
+                    None => last,
+                };
+            }
+            if let (Some(focused), Some(up)) = (search.focused, up) {
+                let count = search.matches.len();
+                search.focused = Some(if up {
+                    (focused + count - 1) % count
+                } else {
+                    (focused + 1) % count
+                });
+            }
         }
         if let Some(&(start, _)) = search.focused.and_then(|i| search.matches.get(i)) {
             session.reveal(start.row);
@@ -392,6 +411,33 @@ mod imp {
         pub pattern: String,
         pub matches: Vec<(rio_vt::crosswords::pos::Pos, rio_vt::crosswords::pos::Pos)>,
         pub focused: Option<usize>,
+        pub top: i64,
+        pub searched: i64,
+    }
+
+    impl Search {
+        /// Keep the matches on their text after output moved it.
+        pub fn follow(&mut self, top: i64, history: usize) {
+            let shift = top - std::mem::replace(&mut self.top, top);
+            if shift == 0 || self.matches.is_empty() {
+                return;
+            }
+            let shift = shift as i32;
+            let oldest = -(history as i32);
+            let focused = self.focused.map(|i| self.matches[i]);
+            for (start, end) in &mut self.matches {
+                start.row.0 -= shift;
+                end.row.0 -= shift;
+            }
+            self.matches.retain(|(start, _)| start.row.0 >= oldest);
+            self.focused = focused.and_then(|(start, _)| {
+                let start = rio_vt::crosswords::pos::Pos::new(
+                    rio_vt::crosswords::pos::Line(start.row.0 - shift),
+                    start.col,
+                );
+                self.matches.iter().position(|m| m.0 == start)
+            });
+        }
     }
 
     #[derive(Default)]
@@ -679,7 +725,7 @@ mod imp {
                 return;
             };
             shared.awake(self.id.get());
-            let (blinking, offset, history, cursor) = {
+            let (blinking, offset, history, cursor, top) = {
                 let term = session.terminal.lock();
                 let cursor = term.grid.cursor.pos;
                 (
@@ -687,8 +733,10 @@ mod imp {
                     term.display_offset() as i32,
                     term.history_size(),
                     (cursor.row.0 + term.display_offset() as i32, cursor.col.0),
+                    term.lines_evicted() as i64 + term.history_size() as i64,
                 )
             };
+            self.search.borrow_mut().follow(top, history);
             self.place_input_method(cursor);
             if self.scrolled.get() != (history, offset as usize) {
                 let obj = self.obj().clone();
@@ -1005,13 +1053,22 @@ mod imp {
         }
 
         /// A key while hints are labeled: picks, narrows or cancels.
-        fn hint_key(&self, session: &Session, keyval: gdk::Key) -> glib::Propagation {
+        fn hint_key(
+            &self,
+            session: &Session,
+            keyval: gdk::Key,
+            ctrl: bool,
+        ) -> glib::Propagation {
             let mut mode = self.hint_mode.borrow_mut();
             let Some(state) = mode.as_mut() else {
                 return glib::Propagation::Proceed;
             };
             let picked = match keyval {
                 gdk::Key::Escape => {
+                    *mode = None;
+                    None
+                }
+                gdk::Key::c | gdk::Key::C if ctrl => {
                     *mode = None;
                     None
                 }
@@ -1204,7 +1261,9 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |keys, _, keycode, _| {
-                    this.held.borrow_mut().remove(&keycode);
+                    if !this.held.borrow_mut().remove(&keycode) {
+                        return;
+                    }
                     let (Some(session), Some(event)) = (this.session(), key_event(keys))
                     else {
                         return;
@@ -1249,6 +1308,14 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |click, _, x, y| this.released(click, x, y)
+            ));
+            click.connect_cancel(glib::clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _| {
+                    this.button.set(None);
+                    this.selecting.set(false);
+                }
             ));
             obj.add_controller(click);
 
@@ -1312,7 +1379,8 @@ mod imp {
                 return glib::Propagation::Proceed;
             };
             if self.hint_mode.borrow().is_some() {
-                return self.hint_key(session, keyval);
+                let ctrl = event.modifier_state().contains(gdk::ModifierType::CONTROL_MASK);
+                return self.hint_key(session, keyval, ctrl);
             }
             let mods = event.modifier_state() & gtk::accelerator_get_default_mod_mask();
             if crate::vi::is_toggle(keyval, mods) {
@@ -1501,7 +1569,10 @@ mod imp {
                     self.selecting.set(true);
                 }
                 1 => obj.paste_from(WidgetExt::primary_clipboard(&*obj)),
-                _ => self.context_menu(x, y),
+                _ => {
+                    self.button.set(None);
+                    self.context_menu(x, y)
+                }
             }
         }
 
