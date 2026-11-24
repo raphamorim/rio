@@ -378,12 +378,29 @@ pub fn render_cpu(
     let mut bands = std::mem::take(&mut cache.bands);
     bands.clear();
     let mut grids_full = false;
+    // Pixel rows to move up for a scrolled grid: (from, to, count).
+    let mut scroll: Option<(usize, usize, usize)> = None;
+    let single = grids.len() == 1;
     for (grid, uniforms) in grids.iter_mut() {
         match grid.take_damage_cpu(uniforms, &mut cache.damaged_rows) {
             crate::grid::cpu::GridDamage::None => {}
             crate::grid::cpu::GridDamage::Full => grids_full = true,
             crate::grid::cpu::GridDamage::Rows => {
                 push_row_bands(&mut bands, &cache.damaged_rows, uniforms, ctx.height_px)
+            }
+            crate::grid::cpu::GridDamage::Scroll(rows) => {
+                match scroll_move(rows, uniforms, ctx.height_px).filter(|_| single) {
+                    Some(moved) => {
+                        scroll = Some(moved);
+                        push_row_bands(
+                            &mut bands,
+                            &cache.damaged_rows,
+                            uniforms,
+                            ctx.height_px,
+                        );
+                    }
+                    None => grids_full = true,
+                }
             }
         }
     }
@@ -412,6 +429,7 @@ pub fn render_cpu(
     } else {
         bands.clear();
         bands.push((0, ctx.height_px));
+        scroll = None;
     }
 
     // A window's buffer is borrowed from softbuffer and presented at the
@@ -436,7 +454,11 @@ pub fn render_cpu(
         } => {
             *generation += 1;
             damage.clear();
-            damage.extend_from_slice(&bands);
+            if scroll.is_some() {
+                damage.push((0, ctx.height_px));
+            } else {
+                damage.extend_from_slice(&bands);
+            }
             pixels
         }
     };
@@ -464,6 +486,9 @@ pub fn render_cpu(
     };
     if partial {
         let stride = ctx.width_px as usize;
+        if let Some((from, to, count)) = scroll {
+            buffer.copy_within(from * stride..(from + count) * stride, to * stride);
+        }
         for &(y0, y1) in &bands {
             buffer[y0 as usize * stride..y1 as usize * stride].fill(bg_u32);
             for text in [false, true] {
@@ -654,6 +679,26 @@ fn push_row_bands(
             bands.push((y0, y1));
         }
     }
+}
+
+/// The pixel rows a grid scrolled `rows` up moves: `(from, to, count)`.
+/// `None` when the cells don't sit on whole pixels, so the move can't be
+/// exact.
+fn scroll_move(
+    rows: u32,
+    uniforms: &crate::grid::GridUniforms,
+    buf_h: u32,
+) -> Option<(usize, usize, usize)> {
+    let cell_h = uniforms.cell_size[1];
+    let pad_top = uniforms.grid_padding[0];
+    if cell_h.fract() != 0.0 || pad_top.fract() != 0.0 {
+        return None;
+    }
+    let top = pad_top as usize;
+    let shift = rows as usize * cell_h as usize;
+    let bottom =
+        (top + uniforms.grid_size[1] as usize * cell_h as usize).min(buf_h as usize);
+    (top + shift < bottom).then(|| (top + shift, top, bottom - top - shift))
 }
 
 /// Sort bands and join the ones that touch or overlap.

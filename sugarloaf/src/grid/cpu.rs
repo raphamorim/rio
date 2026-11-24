@@ -197,6 +197,13 @@ pub struct CpuGridRenderer {
     /// The uniforms of the last paint, to tell a cursor move (two rows)
     /// from a change that touches every cell.
     painted: Option<GridUniforms>,
+    /// What each row holds, whichever row it is on, and what each held
+    /// at the last paint: a frame whose rows are the last one's moved up
+    /// is a scroll.
+    keys: Vec<u64>,
+    painted_keys: Vec<u64>,
+    /// Rows the cursor was drawn on at the last paint.
+    painted_cursor: Vec<u32>,
 }
 
 /// What changed in a grid since its last paint.
@@ -206,6 +213,9 @@ pub enum GridDamage {
     /// The rows written to the list passed to
     /// [`CpuGridRenderer::take_damage`].
     Rows,
+    /// The last paint's rows moved up this many rows; then the rows in
+    /// the list, as with `Rows`.
+    Scroll(u32),
     Full,
 }
 
@@ -222,6 +232,9 @@ impl CpuGridRenderer {
             damaged: vec![false; rows as usize],
             damaged_full: true,
             painted: None,
+            keys: vec![0; rows as usize],
+            painted_keys: vec![0; rows as usize],
+            painted_cursor: Vec::new(),
         }
     }
 
@@ -238,6 +251,8 @@ impl CpuGridRenderer {
         self.needs_full_rebuild = true;
         self.damaged = vec![false; rows as usize];
         self.damaged_full = true;
+        self.keys = vec![0; rows as usize];
+        self.painted_keys = vec![0; rows as usize];
     }
 
     fn damage_row(&mut self, row: usize) {
@@ -272,6 +287,9 @@ impl CpuGridRenderer {
         }
         if changed {
             self.damage_row(row as usize);
+            if let Some(key) = self.keys.get_mut(row as usize) {
+                *key = row_key(bg, fg);
+            }
         }
     }
 
@@ -332,8 +350,11 @@ impl CpuGridRenderer {
                 }
             }
         }
+        let cursor = self.cursor_rows(uniforms);
         if full {
             self.damaged.fill(false);
+            self.painted_keys.copy_from_slice(&self.keys);
+            self.painted_cursor = cursor;
             return GridDamage::Full;
         }
         for (row, flag) in self.damaged.iter_mut().enumerate() {
@@ -341,11 +362,72 @@ impl CpuGridRenderer {
                 rows.push(row as u32);
             }
         }
-        if rows.is_empty() {
-            GridDamage::None
+        let total = self.keys.len();
+        let scroll = if rows.len() * 4 >= total {
+            self.find_scroll(rows)
         } else {
-            GridDamage::Rows
+            None
+        };
+        let damage = match scroll {
+            Some(shift) => {
+                rows.clear();
+                let shift = shift as usize;
+                for row in 0..total {
+                    let moved = self.painted_keys.get(row + shift);
+                    if row == 0 || moved != Some(&self.keys[row]) {
+                        rows.push(row as u32);
+                    }
+                }
+                for &row in &self.painted_cursor {
+                    if let Some(row) = (row as usize).checked_sub(shift) {
+                        rows.push(row as u32);
+                    }
+                }
+                rows.extend_from_slice(&cursor);
+                rows.sort_unstable();
+                rows.dedup();
+                GridDamage::Scroll(shift as u32)
+            }
+            None if rows.is_empty() => GridDamage::None,
+            None => GridDamage::Rows,
+        };
+        self.painted_keys.copy_from_slice(&self.keys);
+        self.painted_cursor = cursor;
+        damage
+    }
+
+    /// Rows the cursor draws on with `uniforms`: its sprites and the cell
+    /// a block cursor tints.
+    fn cursor_rows(&self, uniforms: &GridUniforms) -> Vec<u32> {
+        let last = self.fg_rows.len().saturating_sub(1);
+        let mut rows: Vec<u32> = [0, last]
+            .iter()
+            .filter_map(|&slot| self.fg_rows.get(slot))
+            .flatten()
+            .map(|cell| cell.grid_pos[1] as u32)
+            .collect();
+        if uniforms.cursor_pos[1] != u32::MAX {
+            rows.push(uniforms.cursor_pos[1]);
         }
+        rows
+    }
+
+    /// How many rows the content moved up since the last paint, when most
+    /// of it did. Anchored on a damaged row that differs from the row
+    /// below it, so runs of blank rows don't decide.
+    fn find_scroll(&self, damaged: &[u32]) -> Option<u32> {
+        let total = self.keys.len();
+        let anchor = damaged
+            .iter()
+            .map(|&r| r as usize)
+            .find(|&r| r + 1 < total && self.keys[r] != self.keys[r + 1])?;
+        let key = self.keys[anchor];
+        let shift =
+            (anchor + 1..total).find(|&old| self.painted_keys[old] == key)? - anchor;
+        let kept = (0..total - shift)
+            .filter(|&row| self.keys[row] == self.painted_keys[row + shift])
+            .count();
+        (kept * 4 >= (total - shift) * 3).then_some(shift as u32)
     }
 
     #[inline]
@@ -614,6 +696,19 @@ impl CpuGridRenderer {
     }
 }
 
+/// What a row holds, independent of which row it is on.
+fn row_key(bg: &[CellBg], fg: &[CellText]) -> u64 {
+    use std::hash::Hasher;
+    let mut h = rustc_hash::FxHasher::default();
+    h.write(bytemuck::cast_slice(bg));
+    for cell in fg {
+        let mut cell = *cell;
+        cell.grid_pos[1] = 0;
+        h.write(bytemuck::bytes_of(&cell));
+    }
+    h.finish()
+}
+
 #[inline]
 fn bg_capacity(cols: u32, rows: u32) -> usize {
     (cols as usize) * (rows as usize)
@@ -879,6 +974,37 @@ mod damage_tests {
         assert_eq!(
             painted(&mut grid, &uniforms([2, 3])),
             (GridDamage::Rows, vec![2, 4])
+        );
+    }
+
+    #[test]
+    fn content_moved_up_is_a_scroll() {
+        let mut grid = CpuGridRenderer::new(4, 5);
+        let u = uniforms([u32::MAX, u32::MAX]);
+        let line = |n: u8, row: u16| {
+            let mut cell = glyph(0, row);
+            cell.glyph_pos = [n as u32, 0];
+            (
+                [CellBg {
+                    rgba: [n, 0, 0, 255],
+                }],
+                [cell],
+            )
+        };
+        for row in 0..5u16 {
+            let (bg, fg) = line(row as u8, row);
+            grid.write_row(row as u32, &bg, &fg);
+        }
+        painted(&mut grid, &u);
+        for row in 0..5u16 {
+            let (bg, fg) = line(row as u8 + 2, row);
+            grid.write_row(row as u32, &bg, &fg);
+        }
+        // Rows 0..3 hold what rows 2..5 held; row 0 is always repainted,
+        // for what the old top row left in the padding above it.
+        assert_eq!(
+            painted(&mut grid, &u),
+            (GridDamage::Scroll(2), vec![0, 3, 4])
         );
     }
 
