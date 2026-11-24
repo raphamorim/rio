@@ -32,6 +32,7 @@ sugarloaf = { workspace = true }
 rio-backend = { path = "../../rio-backend", default-features = false, features = ["renderer", "graphics"] }
 async-channel = "2.5.0"
 libc = { workspace = true }
+onig = { workspace = true }
 bytemuck = { workspace = true }
 rustc-hash = { workspace = true }
 tracing = { workspace = true }

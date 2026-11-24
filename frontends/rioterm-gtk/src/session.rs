@@ -444,6 +444,39 @@ impl Session {
         }
     }
 
+    /// Select from `start` to `end`, both inclusive, in grid lines.
+    pub fn select_range(&self, start: Pos, end: Pos) {
+        let mut term = self.terminal.lock();
+        let mut selection = Selection::new(SelectionType::Simple, start, Side::Left);
+        selection.update(end, Side::Right);
+        term.selection = Some(selection);
+        term.mark_fully_damaged();
+        term.request_render();
+    }
+
+    /// Run `program` detached, in the shell's directory.
+    pub fn exec(&self, program: &str, args: &[String]) {
+        #[cfg(unix)]
+        let result =
+            teletypewriter::spawn_daemon(program, args, self.main_fd, self.shell_pid);
+        #[cfg(windows)]
+        let result = teletypewriter::spawn_daemon(program, args);
+        if let Err(err) = result {
+            tracing::warn!("could not run {program}: {err}");
+        }
+    }
+
+    pub fn open(&self, target: &str) {
+        #[cfg(target_os = "macos")]
+        self.exec("open", &[target.to_string()]);
+        #[cfg(not(target_os = "macos"))]
+        self.exec("xdg-open", &[target.to_string()]);
+    }
+
+    pub fn current_directory(&self) -> Option<std::path::PathBuf> {
+        self.terminal.lock().current_directory.clone()
+    }
+
     pub fn selection_text(&self) -> Option<String> {
         self.terminal
             .lock()

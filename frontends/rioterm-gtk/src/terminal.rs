@@ -302,6 +302,9 @@ mod imp {
         selecting: Cell<bool>,
         pointer: Cell<(f64, f64)>,
         scroll: Cell<f64>,
+        mods: Cell<Modifiers>,
+        hints: crate::hints::MouseHints,
+        hover: RefCell<Option<rio_backend::hints::HintMatch>>,
     }
 
     #[glib::object_subclass]
@@ -424,6 +427,7 @@ mod imp {
             self.id.set(id);
             let _ = self.shared.set(shared.clone());
             let config = shared.config.borrow();
+            self.hints.set_rules(&config.hints.rules);
             let render = Renderer::new(&config, 1.0);
             let (cell_w, cell_h) = render.cell_size();
             self.cell_size.set((cell_w, cell_h));
@@ -500,7 +504,11 @@ mod imp {
                 return;
             };
             shared.awake(self.id.get());
-            let blinking = session.terminal.lock().blinking_cursor;
+            let (blinking, offset) = {
+                let term = session.terminal.lock();
+                (term.blinking_cursor, term.display_offset() as i32)
+            };
+            let spans = self.hover_spans(offset);
             let preedit = self.preedit.borrow();
             let mut render = self.render.borrow_mut();
             let Some(render) = render.as_mut() else {
@@ -512,7 +520,7 @@ mod imp {
                 blinking,
                 blink_visible: self.blink_visible.get(),
                 preedit: Some(preedit.as_str()).filter(|p| !p.is_empty()),
-                spans: &[],
+                spans: &spans,
             };
             if let Some(frame) = render.draw(&session.terminal, self.id.get(), &inputs) {
                 self.upload(&frame);
@@ -542,6 +550,108 @@ mod imp {
             strips.width = frame.width;
             strips.height = frame.height;
             strips.generation = frame.generation;
+        }
+
+        fn hover_spans(&self, offset: i32) -> Vec<crate::render::Span> {
+            let hover = self.hover.borrow();
+            let Some(hover) = hover.as_ref() else {
+                return Vec::new();
+            };
+            let (cols, lines) = self.cells.get();
+            let last = cols.saturating_sub(1) as u16;
+            (hover.start.row.0..=hover.end.row.0)
+                .filter_map(|line| {
+                    let viewport = line + offset;
+                    if viewport < 0 || viewport >= lines as i32 {
+                        return None;
+                    }
+                    let lo = if line == hover.start.row.0 {
+                        hover.start.col.0 as u16
+                    } else {
+                        0
+                    };
+                    let hi = if line == hover.end.row.0 {
+                        hover.end.col.0 as u16
+                    } else {
+                        last
+                    };
+                    Some(crate::render::Span {
+                        line: viewport as u16,
+                        lo,
+                        hi,
+                        tag: rio_grid::HintTag::HyperlinkHover,
+                    })
+                })
+                .collect()
+        }
+
+        /// Find the hint under the pointer with the modifiers held now.
+        fn update_hover(&self) {
+            let Some(session) = self.session() else {
+                return;
+            };
+            let found = if self.selecting.get() || self.button.get().is_some() {
+                None
+            } else {
+                let (x, y) = self.pointer.get();
+                let (col, row, _) = self.cell_at(x, y);
+                let term = session.terminal.lock();
+                let point = rio_vt::crosswords::pos::Pos::new(
+                    rio_vt::crosswords::pos::Line(
+                        row as i32 - term.display_offset() as i32,
+                    ),
+                    rio_vt::crosswords::pos::Column(col as usize),
+                );
+                self.hints.at(&term, point, self.mods.get())
+            };
+            let changed = {
+                let hover = self.hover.borrow();
+                match (hover.as_ref(), found.as_ref()) {
+                    (None, None) => false,
+                    (Some(a), Some(b)) => {
+                        a.start != b.start || a.end != b.end || a.text != b.text
+                    }
+                    _ => true,
+                }
+            };
+            if !changed {
+                return;
+            }
+            let obj = self.obj();
+            obj.set_cursor_from_name(Some(if found.is_some() {
+                "pointer"
+            } else {
+                "text"
+            }));
+            obj.set_tooltip_text(found.as_ref().map(|hint| hint.text.as_str()));
+            self.hover.replace(found);
+            obj.queue_draw();
+        }
+
+        /// Run the hovered hint's action. False when nothing is hovered.
+        fn activate_hover(&self) -> bool {
+            let Some(hint) = self.hover.borrow().clone() else {
+                return false;
+            };
+            let Some(session) = self.session() else {
+                return false;
+            };
+            let cwd = session.current_directory();
+            let obj = self.obj();
+            match crate::hints::outcome(&hint, cwd.as_deref()) {
+                crate::hints::Outcome::Copy(text) => {
+                    WidgetExt::clipboard(&*obj).set_text(&text)
+                }
+                crate::hints::Outcome::Paste(text) => obj.paste_text(text),
+                crate::hints::Outcome::Select(start, end) => {
+                    session.select_range(start, end)
+                }
+                crate::hints::Outcome::Open(target) => session.open(&target),
+                crate::hints::Outcome::Run(program, args) => {
+                    session.exec(&program, &args)
+                }
+            }
+            true
         }
 
         pub(super) fn restart_blink(&self) {
@@ -647,6 +757,17 @@ mod imp {
                         return;
                     };
                     session.key(&input::key_event(&event, KeyAction::Release, None));
+                }
+            ));
+            keys.connect_modifiers(glib::clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[upgrade_or]
+                glib::Propagation::Proceed,
+                move |_, state| {
+                    this.mods.set(input::modifiers(state));
+                    this.update_hover();
+                    glib::Propagation::Proceed
                 }
             ));
             obj.add_controller(keys);
@@ -780,6 +901,12 @@ mod imp {
                 3 => 2,
                 _ => return,
             };
+            self.pointer.set((x, y));
+            self.mods.set(mods);
+            self.update_hover();
+            if button == 0 && self.activate_hover() {
+                return;
+            }
             let (col, row, side) = self.cell_at(x, y);
             self.button.set(Some(button));
             if session.mouse_button(col, row, button, true, mods) {
@@ -836,9 +963,12 @@ mod imp {
             let Some(session) = self.session() else {
                 return;
             };
-            if self.pointer.replace((x, y)) != (x, y) {
+            let moved = self.pointer.replace((x, y)) != (x, y);
+            self.mods.set(input::modifiers(state));
+            if moved && self.hover.borrow().is_none() {
                 self.obj().set_cursor_from_name(Some("text"));
             }
+            self.update_hover();
             let (col, row, side) = self.cell_at(x, y);
             if self.selecting.get() {
                 session.selection_update(row, col, side);

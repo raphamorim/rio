@@ -51,3 +51,8 @@ Selecting text copies it to the primary selection (and to the clipboard
 with `copy-on-select`). Pastes that could run commands are confirmed
 first, as in Rio (`paste-protection`). New tabs open in the current
 tab's directory (`navigation.current-working-directory`).
+
+Links work as in Rio's hints (`[hints]`): with a rule's modifiers held,
+Alt by default, the URL, path or OSC 8 link under the pointer is
+underlined, and clicking it runs the rule's action (open, copy, paste,
+select or a command).

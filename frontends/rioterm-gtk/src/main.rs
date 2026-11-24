@@ -7,6 +7,7 @@
 //! Rio's config file.
 
 mod dialog;
+mod hints;
 mod input;
 mod render;
 mod session;
