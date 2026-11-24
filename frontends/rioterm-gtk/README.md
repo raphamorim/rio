@@ -5,12 +5,16 @@ Rio as a GTK 4 / libadwaita app, an alternative to `rioterm` on Linux.
 - The terminal is [rio-vt](../../rio-vt), the same state machine, PTY
   driver and input encoding Rio runs.
 - It is drawn the way Rio draws it, rio-grid's cells on Sugarloaf's CPU
-  renderer, into a frame the terminal widget hands GTK as textures. Only
-  the rows that changed are repainted, and only the strips of the frame
-  holding them are uploaded.
+  renderer, into a frame the terminal widget hands GTK as one texture per
+  row. Only the rows that changed are repainted and uploaded; when the
+  terminal scrolls, the rows it keeps are moved, in the frame and as
+  textures, rather than drawn again.
 - The window is GNOME's own: `AdwApplicationWindow`, with `AdwTabBar` tabs
   that reorder, drag out into a new window or into another window, and have
   a context menu.
+- Shells start with Rio's shell integration (`shell-integration`): the
+  working directory follows `cd` (OSC 7), and zsh and fish mark prompts
+  and commands (OSC 133), which `notify-on-command-finish` uses.
 - Images show as in Rio: kitty graphics (with virtual placements),
   sixel and iTerm2 inline images.
 - Settings come from Rio's config file and apply as soon as it is saved:

@@ -224,26 +224,33 @@ impl Session {
         let terminal = Arc::new(TerminalLock::new(terminal));
 
         let working_dir = working_dir.or_else(|| config.working_dir.clone());
+        let integration = if config.shell_integration {
+            rio_backend::shell_integration::prepare(
+                config.shell.program.as_deref(),
+                &config.shell.args,
+            )
+        } else {
+            Default::default()
+        };
+        let (program, args) = match &integration.command {
+            Some((program, args)) => (program.as_deref(), args.clone()),
+            None => (config.shell.program.as_deref(), config.shell.args.clone()),
+        };
+        let env = (!integration.env.is_empty()).then(|| integration.env.clone());
         #[cfg(unix)]
         let pty = teletypewriter::create_pty_with_spawn(
-            config.shell.program.as_deref(),
-            config.shell.args.clone(),
+            program,
+            args,
             &working_dir,
-            None,
+            env,
             cols,
             rows,
             width,
             height,
         )?;
         #[cfg(windows)]
-        let pty = teletypewriter::create_pty(
-            config.shell.program.as_deref(),
-            config.shell.args.clone(),
-            &working_dir,
-            None,
-            cols,
-            rows,
-        )?;
+        let pty =
+            teletypewriter::create_pty(program, args, &working_dir, env, cols, rows)?;
 
         #[cfg(unix)]
         let (main_fd, shell_pid, terminator) =
