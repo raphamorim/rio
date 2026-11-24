@@ -244,6 +244,29 @@ impl TerminalView {
         });
     }
 
+    /// Take the shared config as it is now.
+    pub(crate) fn apply_config(&self) {
+        let imp = self.imp();
+        let Some(shared) = imp.shared.get() else {
+            return;
+        };
+        let config = shared.config.borrow();
+        imp.hints.set_rules(&config.hints.rules);
+        let cursor = config.colors.cursor;
+        imp.cursor
+            .set([0, 1, 2].map(|i| (cursor[i] * 255.0).round() as u8));
+        if let Some(render) = imp.render.borrow_mut().as_mut() {
+            render.reconfigure(&config);
+        }
+        if let Some(session) = imp.session() {
+            session.reconfigure(&config);
+        }
+        drop(config);
+        imp.relayout();
+        imp.restart_blink();
+        self.queue_resize();
+    }
+
     pub(crate) fn apply_graphics(&self, queues: rio_vt::ansi::graphics::UpdateQueues) {
         if let Some(render) = self.imp().render.borrow_mut().as_mut() {
             render.apply_graphics(queues);
@@ -350,7 +373,7 @@ mod imp {
         cell_size: Cell<(f32, f32)>,
         origin: Cell<(f32, f32)>,
         focused: Cell<bool>,
-        cursor: Cell<[u8; 3]>,
+        pub(super) cursor: Cell<[u8; 3]>,
         blink_visible: Cell<bool>,
         blink: RefCell<Option<glib::SourceId>>,
         im: OnceCell<gtk::IMMulticontext>,
@@ -363,7 +386,7 @@ mod imp {
         pointer: Cell<(f64, f64)>,
         scroll: Cell<f64>,
         mods: Cell<Modifiers>,
-        hints: crate::hints::MouseHints,
+        pub(super) hints: crate::hints::MouseHints,
         hover: RefCell<Option<rio_backend::hints::HintMatch>>,
         pub(super) search: RefCell<Search>,
         pub(super) focus_order: Cell<u64>,

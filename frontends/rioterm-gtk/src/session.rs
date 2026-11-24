@@ -275,6 +275,14 @@ impl Session {
         })
     }
 
+    pub fn reconfigure(&self, config: &Config) {
+        let mut term = self.terminal.lock();
+        term.set_default_colors(List::from(&config.colors));
+        term.set_default_cursor_style(config.cursor.shape, config.cursor.blinking);
+        term.set_grapheme_clustering(config.grapheme_clustering);
+        term.mark_fully_damaged();
+    }
+
     /// Input from the user: back to the live screen, selection dropped.
     pub fn write<B: Into<Cow<'static, [u8]>>>(&self, bytes: B) {
         let bytes = bytes.into();

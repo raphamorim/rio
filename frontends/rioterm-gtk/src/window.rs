@@ -7,6 +7,7 @@ use crate::shared::Shared;
 use crate::terminal::TerminalView;
 use adw::prelude::*;
 use gtk::{gdk, gio, glib};
+use rio_backend::config::window::{Decorations, WindowMode};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -29,6 +30,7 @@ const SHORTCUTS: &[(&str, &[&str])] = &[
     ("win.paste-selection", &["<Shift>Insert"]),
     ("win.select-all", &["<Ctrl><Shift>a"]),
     ("win.find", &["<Ctrl><Shift>f"]),
+    ("win.fullscreen", &["F11"]),
     (
         "win.zoom-in",
         &["<Ctrl>equal", "<Ctrl>plus", "<Ctrl>KP_Add"],
@@ -46,6 +48,15 @@ const SHORTCUTS: &[(&str, &[&str])] = &[
 
 /// The app's actions and shortcuts, once at startup.
 pub fn install(app: &adw::Application) {
+    let css = gtk::CssProvider::new();
+    css.load_from_data("window.rio-translucent { background-color: transparent; }");
+    if let Some(display) = gtk::gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &css,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
     let new_window = gio::ActionEntry::builder("new-window")
         .activate(|app: &adw::Application, _, _| app.activate())
         .build();
@@ -69,9 +80,18 @@ impl Window {
     pub fn open(app: &adw::Application, shared: &Rc<Shared>) {
         let tabs = Self::build(app, shared);
         add_tab(&tabs, shared, None);
-        if let Some(window) = tabs.root().and_downcast::<gtk::Window>() {
-            window.present();
+        let Some(window) = tabs.root().and_downcast::<gtk::Window>() else {
+            return;
+        };
+        let config = shared.config.borrow();
+        window.set_default_size(config.window.width, config.window.height);
+        match config.window.mode {
+            WindowMode::Maximized => window.maximize(),
+            WindowMode::Fullscreen => window.fullscreen(),
+            WindowMode::Windowed => {}
         }
+        drop(config);
+        window.present();
     }
 
     /// A new, empty window, presented. Returns its tab view.
@@ -84,16 +104,25 @@ impl Window {
         new_tab.add_css_class("flat");
         // Always shown, so the tabs and the new tab button are where the
         // user looks for them even with one tab open.
+        let config = shared.config.borrow();
         let tab_bar = adw::TabBar::builder()
             .view(&tabs)
-            .autohide(false)
+            .autohide(config.navigation.hide_if_single)
             .end_action_widget(&new_tab)
             .build();
 
         let search = SearchUi::new(&tabs);
 
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        content.append(&adw::HeaderBar::new());
+        let decorations = config.window.decorations;
+        if decorations != Decorations::Disabled {
+            let header = adw::HeaderBar::new();
+            if decorations == Decorations::Buttonless {
+                header.set_show_start_title_buttons(false);
+                header.set_show_end_title_buttons(false);
+            }
+            content.append(&header);
+        }
         content.append(&tab_bar);
         content.append(&search.bar);
         content.append(&tabs);
@@ -103,6 +132,10 @@ impl Window {
             .title("Rio")
             .content(&content)
             .build();
+        if config.window.opacity < 1.0 {
+            window.add_css_class("rio-translucent");
+        }
+        drop(config);
         // Natural size: the terminal's own (80x24 cells).
         window.set_default_size(-1, -1);
 
@@ -355,6 +388,15 @@ impl Window {
             on_view(&tabs, "zoom-in", |view| view.zoom(Some(1.0))),
             on_view(&tabs, "zoom-out", |view| view.zoom(Some(-1.0))),
             on_view(&tabs, "zoom-reset", |view| view.zoom(None)),
+            gio::ActionEntry::builder("fullscreen")
+                .activate(|window: &adw::ApplicationWindow, _, _| {
+                    if window.is_fullscreen() {
+                        window.unfullscreen();
+                    } else {
+                        window.fullscreen();
+                    }
+                })
+                .build(),
             gio::ActionEntry::builder("find")
                 .activate(glib::clone!(
                     #[strong]

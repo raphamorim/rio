@@ -13,8 +13,12 @@ Rio as a GTK 4 / libadwaita app, an alternative to `rioterm` on Linux.
   a context menu.
 - Images show as in Rio: kitty graphics (with virtual placements),
   sixel and iTerm2 inline images.
-- Settings come from Rio's config file (fonts, colors, shell, working
-  directory, padding, scrollback).
+- Settings come from Rio's config file and apply as soon as it is saved:
+  fonts, colors (with `adaptive-colors` following the desktop's light or
+  dark style, or `force-theme`), cursor, shell, working directory,
+  padding, scrollback, window size, mode, decorations and opacity, and
+  `navigation.hide-if-single` for the tab bar. The window's own style
+  follows the terminal's background.
 
 ## Building
 
@@ -50,6 +54,7 @@ cargo run -p rioterm-gtk
 | Copy / paste | Ctrl+Shift+C / Ctrl+Shift+V |
 | Paste the primary selection | Shift+Insert, middle click |
 | Select all | Ctrl+Shift+A |
+| Fullscreen | F11 |
 | Find (Enter / Shift+Enter for older / newer matches) | Ctrl+Shift+F |
 | Scroll a page, to the top or bottom | Shift+PageUp / PageDown / Home / End |
 | Font size bigger / smaller / reset | Ctrl+= / Ctrl+- / Ctrl+0 |

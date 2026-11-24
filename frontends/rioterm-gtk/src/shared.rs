@@ -32,7 +32,11 @@ impl Sink for ChannelSink {
 }
 
 pub struct Shared {
+    /// The config as the file has it.
+    pub base: RefCell<Config>,
+    /// What terminals use: `base` with the colors for the current style.
     pub config: RefCell<Config>,
+    monitor: RefCell<Option<gtk::gio::FileMonitor>>,
     sink: Arc<ChannelSink>,
     next_id: Cell<usize>,
     views: RefCell<FxHashMap<usize, glib::WeakRef<TerminalView>>>,
@@ -41,8 +45,11 @@ pub struct Shared {
 impl Shared {
     pub fn start(config: Config) -> Rc<Self> {
         let (sender, receiver) = async_channel::unbounded();
+        let dark = adw::StyleManager::default().is_dark();
         let shared = Rc::new(Shared {
-            config: RefCell::new(config),
+            config: RefCell::new(crate::config::effective(&config, dark)),
+            base: RefCell::new(config),
+            monitor: RefCell::default(),
             sink: Arc::new(ChannelSink {
                 events: sender,
                 awake: Mutex::default(),
@@ -59,7 +66,43 @@ impl Shared {
                 shared.dispatch(id, event);
             }
         });
+        let monitor = crate::config::watch(&shared);
+        shared.monitor.replace(monitor);
         shared
+    }
+
+    /// A new config from the file.
+    pub fn reload(&self, base: Config) {
+        if *self.base.borrow() == base {
+            return;
+        }
+        adw::StyleManager::default().set_color_scheme(crate::config::color_scheme(&base));
+        let dark = adw::StyleManager::default().is_dark();
+        *self.config.borrow_mut() = crate::config::effective(&base, dark);
+        *self.base.borrow_mut() = base;
+        self.apply();
+    }
+
+    /// The desktop switched between light and dark.
+    pub fn restyle(&self, dark: bool) {
+        let config = crate::config::effective(&self.base.borrow(), dark);
+        if config.colors == self.config.borrow().colors {
+            return;
+        }
+        *self.config.borrow_mut() = config;
+        self.apply();
+    }
+
+    fn apply(&self) {
+        let views: Vec<TerminalView> = self
+            .views
+            .borrow()
+            .values()
+            .filter_map(|view| view.upgrade())
+            .collect();
+        for view in views {
+            view.apply_config();
+        }
     }
 
     pub fn sink(&self) -> Arc<dyn Sink> {

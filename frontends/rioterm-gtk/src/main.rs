@@ -6,6 +6,7 @@
 //! an `AdwApplicationWindow` with `AdwTabBar` tabs. Settings come from
 //! Rio's config file.
 
+mod config;
 mod dialog;
 mod hints;
 mod input;
@@ -37,13 +38,7 @@ fn main() -> glib::ExitCode {
     app.connect_startup({
         let shared = shared.clone();
         move |app| {
-            let config = match rio_backend::config::Config::try_load() {
-                Ok(config) => config,
-                Err(err) => {
-                    tracing::warn!("using the default config: {err:?}");
-                    rio_backend::config::Config::default()
-                }
-            };
+            let config = config::load();
             session::setup_environment(&config);
             let _ = shared.set(shared::Shared::start(config));
             window::install(app);

@@ -45,6 +45,8 @@ pub struct Renderer {
     rasterizer: rio_grid::GridGlyphRasterizer,
     pub palette: Palette,
     fonts: SugarloafFonts,
+    /// The config's font size, before any zoom.
+    base_size: f32,
     font_size: f32,
     line_height: f32,
     scale: f32,
@@ -80,18 +82,15 @@ impl Renderer {
             &font_library,
             RootStyle::new(scale, font_size, line_height),
         );
-        let mut palette = Palette::new(config.colors);
-        palette.draw_bold_text_with_light_colors =
-            config.draw_bold_text_with_light_colors;
-        palette.ignore_selection_fg_color = config.ignore_selection_fg_color;
-        sugarloaf.set_background_color(Some(config.colors.background.1));
+        sugarloaf.set_background_color(Some(background(config)));
         let grid = GridRenderer::new(&sugarloaf.ctx, 1, 1);
         Self {
             sugarloaf,
             grid,
             rasterizer: rio_grid::GridGlyphRasterizer::new(),
-            palette,
+            palette: palette(config),
             fonts,
+            base_size: font_size,
             font_size,
             line_height,
             scale,
@@ -148,6 +147,34 @@ impl Renderer {
         self.rasterizer.clear_font_caches();
         self.sugarloaf.rescale(self.scale);
         self.grid.clear_atlas();
+        self.grid.request_full_rebuild();
+    }
+
+    /// A new config: colors, and fonts when they changed (which resets a
+    /// zoom).
+    pub fn reconfigure(&mut self, config: &Config) {
+        self.palette = palette(config);
+        self.sugarloaf
+            .set_background_color(Some(background(config)));
+        let mut fonts = config.fonts.clone();
+        fonts.size = self.fonts.size;
+        if fonts != self.fonts
+            || config.line_height != self.line_height
+            || self.base_size != config.fonts.size
+        {
+            self.fonts = config.fonts.clone();
+            self.base_size = config.fonts.size;
+            self.font_size = config.fonts.size;
+            self.line_height = config.line_height;
+            let style = self.sugarloaf.style_mut();
+            style.font_size = self.font_size;
+            style.line_height = self.line_height.max(1.0);
+            let (font_library, _) = FontLibrary::new(self.fonts.clone());
+            self.sugarloaf.update_font(&font_library);
+            self.rasterizer.clear_font_caches();
+            self.sugarloaf.rescale(self.scale);
+            self.grid.clear_atlas();
+        }
         self.grid.request_full_rebuild();
     }
 
@@ -581,6 +608,22 @@ impl Renderer {
         );
         self.sugarloaf.text_mut().draw(x, y, preedit, &opts);
     }
+}
+
+fn palette(config: &Config) -> Palette {
+    let mut palette = Palette::new(config.colors);
+    palette.draw_bold_text_with_light_colors = config.draw_bold_text_with_light_colors;
+    palette.ignore_selection_fg_color = config.ignore_selection_fg_color;
+    palette.opacity_cells = config.window.opacity_cells;
+    palette.cell_bg_alpha = (config.window.opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
+    palette
+}
+
+/// The frame's background, with the window's opacity.
+fn background(config: &Config) -> sugarloaf::Color {
+    let mut color = config.colors.background.1;
+    color.a = config.window.opacity.clamp(0.0, 1.0) as f64;
+    color
 }
 
 #[derive(Default)]
