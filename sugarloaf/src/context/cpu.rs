@@ -57,6 +57,9 @@ pub enum CpuTarget {
         /// The pixel rows the last frame repainted, as `y0..y1` bands
         /// in order; the rest kept the frame before it.
         damage: Vec<(u32, u32)>,
+        /// Pixel rows the last frame moved before repainting, as
+        /// `(from, to, count)`.
+        moved: Option<(u32, u32, u32)>,
     },
 }
 
@@ -71,6 +74,11 @@ pub struct CpuFrame<'a> {
     /// rest being the previous generation's. A host that missed a
     /// generation must take the whole frame.
     pub damage: &'a [(u32, u32)],
+    /// Rows `from..from + count` of the previous generation moved to
+    /// `to..to + count` before `damage` was repainted, as when the
+    /// terminal scrolled; a host that can't move what it shows takes
+    /// `to..to + count` as damaged too.
+    pub moved: Option<(u32, u32, u32)>,
 }
 
 pub struct CpuContext {
@@ -132,6 +140,7 @@ impl CpuContext {
                 pixels: vec![0; width as usize * height as usize],
                 generation: 0,
                 damage: Vec::new(),
+                moved: None,
             },
         }
     }
@@ -157,12 +166,14 @@ impl CpuContext {
                 pixels,
                 generation,
                 damage,
+                moved,
             } => Some(CpuFrame {
                 pixels,
                 width: self.width_px,
                 height: self.height_px,
                 generation: *generation,
                 damage,
+                moved: *moved,
             }),
         }
     }

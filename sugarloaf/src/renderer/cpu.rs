@@ -451,14 +451,13 @@ pub fn render_cpu(
             pixels,
             generation,
             damage,
+            moved,
         } => {
             *generation += 1;
             damage.clear();
-            if scroll.is_some() {
-                damage.push((0, ctx.height_px));
-            } else {
-                damage.extend_from_slice(&bands);
-            }
+            damage.extend_from_slice(&bands);
+            *moved =
+                scroll.map(|(from, to, count)| (from as u32, to as u32, count as u32));
             pixels
         }
     };
