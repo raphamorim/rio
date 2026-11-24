@@ -15,6 +15,8 @@ pub enum Act {
     Scroll(Scroll),
     ClearHistory,
     ToggleTheme,
+    /// Label the matches of the hint rule at this index.
+    Hint(usize),
     /// Leave the key to the terminal, over any shortcut on it.
     PassThrough,
 }
@@ -68,6 +70,36 @@ impl Binding {
     }
 }
 
+/// The config's bindings: hint rules' first, then `[bindings]`, which
+/// win over them.
+pub fn from_config(config: &rio_backend::config::Config) -> Vec<Binding> {
+    let mut all: Vec<Binding> = config
+        .hints
+        .rules
+        .iter()
+        .enumerate()
+        .filter_map(|(index, rule)| {
+            let binding = rule.binding.as_ref()?;
+            let parsed = parse_one(&KeyBinding {
+                key: binding.key.clone(),
+                with: binding.mods.join("|"),
+                action: String::new(),
+                esc: String::new(),
+                mode: binding.mode.join("|"),
+            });
+            match parsed {
+                Ok(mut parsed) => {
+                    parsed.act = Act::Hint(index);
+                    Some(parsed)
+                }
+                Err(_) => None,
+            }
+        })
+        .collect();
+    all.extend(parse(&config.bindings.keys));
+    all
+}
+
 pub fn parse(bindings: &[KeyBinding]) -> Vec<Binding> {
     bindings
         .iter()
@@ -101,6 +133,8 @@ fn parse_one(binding: &KeyBinding) -> Result<Binding, String> {
     }
     let act = if !binding.esc.is_empty() {
         Act::Esc(binding.esc.clone())
+    } else if binding.action.is_empty() {
+        Act::PassThrough
     } else {
         parse_action(&binding.action.to_lowercase())
             .ok_or_else(|| format!("unknown action {:?}", binding.action))?

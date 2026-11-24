@@ -183,6 +183,13 @@ impl TerminalView {
         self.imp().focus_order.get()
     }
 
+    /// Label the matches of the config's hint rule `rule`.
+    pub fn start_hints(&self, rule: usize) {
+        if let Some(session) = self.imp().session() {
+            self.imp().start_hints(session, rule);
+        }
+    }
+
     /// Text typed into the terminal, as if from the keyboard.
     pub fn type_text(&self, text: &str) {
         if let Some(session) = self.imp().session() {
@@ -429,6 +436,8 @@ mod imp {
         pub(super) search: RefCell<Search>,
         pub(super) focus_order: Cell<u64>,
         pub(super) program_title: RefCell<String>,
+        /// Keyboard hint mode: labeled matches to pick by typing.
+        hint_mode: RefCell<Option<rio_backend::hints::HintState>>,
     }
 
     #[glib::object_subclass]
@@ -643,6 +652,7 @@ mod imp {
                 (term.blinking_cursor, term.display_offset() as i32)
             };
             let spans = self.hover_spans(offset);
+            let labels = self.hint_labels();
             let preedit = self.preedit.borrow();
             let mut render = self.render.borrow_mut();
             let Some(render) = render.as_mut() else {
@@ -655,6 +665,7 @@ mod imp {
                 blink_visible: self.blink_visible.get(),
                 preedit: Some(preedit.as_str()).filter(|p| !p.is_empty()),
                 spans: &spans,
+                labels: &labels,
             };
             if let Some(frame) = render.draw(&session.terminal, self.id.get(), &inputs) {
                 self.upload(&frame);
@@ -783,7 +794,106 @@ mod imp {
             if let Some(hover) = self.hover.borrow().as_ref() {
                 push(hover.start, hover.end, HintTag::HyperlinkHover);
             }
+            if let Some(state) = self.hint_mode.borrow().as_ref() {
+                for hint in state.matches() {
+                    push(hint.start, hint.end, HintTag::Match);
+                }
+            }
             spans
+        }
+
+        fn hint_labels(&self) -> Vec<rio_grid::HintLabel> {
+            let state = self.hint_mode.borrow();
+            let Some(state) = state.as_ref() else {
+                return Vec::new();
+            };
+            let matches = state.matches();
+            let mut labels = Vec::new();
+            for (index, remaining) in state.visible_labels() {
+                let Some(hint) = matches.get(index) else {
+                    continue;
+                };
+                for (i, &label) in remaining.iter().enumerate() {
+                    labels.push(rio_grid::HintLabel {
+                        position: rio_vt::crosswords::pos::Pos::new(
+                            hint.start.row,
+                            hint.start.col + i,
+                        ),
+                        label,
+                        is_first: i == 0,
+                    });
+                }
+            }
+            labels
+        }
+
+        /// Label the matches of a hint rule, to pick one by typing.
+        pub(super) fn start_hints(&self, session: &Session, rule: usize) {
+            let Some(shared) = self.shared.get() else {
+                return;
+            };
+            let config = shared.config.borrow();
+            let Some(rule) = config.hints.rules.get(rule) else {
+                return;
+            };
+            let mut state =
+                rio_backend::hints::HintState::new(config.hints.alphabet.clone());
+            state.start(Rc::new(rule.clone()));
+            state.update_matches(&session.terminal.lock());
+            drop(config);
+            if state.matches().is_empty() {
+                return;
+            }
+            self.hint_mode.replace(Some(state));
+            self.obj().queue_draw();
+        }
+
+        /// A key while hints are labeled: picks, narrows or cancels.
+        fn hint_key(&self, session: &Session, keyval: gdk::Key) -> glib::Propagation {
+            let mut mode = self.hint_mode.borrow_mut();
+            let Some(state) = mode.as_mut() else {
+                return glib::Propagation::Proceed;
+            };
+            let picked = match keyval {
+                gdk::Key::Escape => {
+                    *mode = None;
+                    None
+                }
+                gdk::Key::BackSpace => {
+                    state.keyboard_input(&session.terminal.lock(), '\x08')
+                }
+                _ => match keyval.to_unicode().filter(|c| !c.is_control()) {
+                    Some(c) => state.keyboard_input(&session.terminal.lock(), c),
+                    None => None,
+                },
+            };
+            if picked.is_some() {
+                *mode = None;
+            }
+            drop(mode);
+            if let Some(hint) = picked {
+                self.run_hint(session, &hint);
+            }
+            self.obj().queue_draw();
+            glib::Propagation::Stop
+        }
+
+        fn run_hint(&self, session: &Session, hint: &rio_backend::hints::HintMatch) {
+            let cwd = session.current_directory();
+            let obj = self.obj();
+            match crate::hints::outcome(hint, cwd.as_deref()) {
+                crate::hints::Outcome::Copy(text) => {
+                    WidgetExt::clipboard(&*obj).set_text(&text)
+                }
+                crate::hints::Outcome::Paste(text) => obj.paste_text(text),
+                crate::hints::Outcome::Select(start, end) => {
+                    session.select_range(start, end)
+                }
+                crate::hints::Outcome::Open(target) => session.open(&target),
+                crate::hints::Outcome::Run(program, args) => {
+                    session.exec(&program, &args)
+                }
+            }
         }
 
         /// Find the hint under the pointer with the modifiers held now.
@@ -837,21 +947,7 @@ mod imp {
             let Some(session) = self.session() else {
                 return false;
             };
-            let cwd = session.current_directory();
-            let obj = self.obj();
-            match crate::hints::outcome(&hint, cwd.as_deref()) {
-                crate::hints::Outcome::Copy(text) => {
-                    WidgetExt::clipboard(&*obj).set_text(&text)
-                }
-                crate::hints::Outcome::Paste(text) => obj.paste_text(text),
-                crate::hints::Outcome::Select(start, end) => {
-                    session.select_range(start, end)
-                }
-                crate::hints::Outcome::Open(target) => session.open(&target),
-                crate::hints::Outcome::Run(program, args) => {
-                    session.exec(&program, &args)
-                }
-            }
+            self.run_hint(session, &hint);
             true
         }
 
@@ -1059,6 +1155,9 @@ mod imp {
             let (Some(session), Some(event)) = (self.session(), key_event(keys)) else {
                 return glib::Propagation::Proceed;
             };
+            if self.hint_mode.borrow().is_some() {
+                return self.hint_key(session, keyval);
+            }
             if self.run_binding(session, keyval, event.modifier_state()) {
                 return glib::Propagation::Stop;
             }
@@ -1139,6 +1238,7 @@ mod imp {
                 Act::Run(program, args) => session.exec(&program, &args),
                 Act::ClearHistory => obj.clear_history(),
                 Act::ToggleTheme => shared.toggle_theme(),
+                Act::Hint(rule) => self.start_hints(session, rule),
                 Act::Scroll(by) => match by {
                     By::Lines(n) => session.scroll(Scroll::Delta(n)),
                     By::Pages(n) => session.scroll(Scroll::Delta(n * lines)),

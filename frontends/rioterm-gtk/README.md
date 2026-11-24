@@ -80,4 +80,5 @@ Ctrl+Shift+, opens the config file.
 Links work as in Rio's hints (`[hints]`): with a rule's modifiers held,
 Alt by default, the URL, path or OSC 8 link under the pointer is
 underlined, and clicking it runs the rule's action (open, copy, paste,
-select or a command).
+select or a command). A rule's key binding, Ctrl+Shift+O by default,
+labels every match on screen instead, to pick one by typing its label.

@@ -37,6 +37,8 @@ pub struct Inputs<'a> {
     pub blink_visible: bool,
     pub preedit: Option<&'a str>,
     pub spans: &'a [Span],
+    /// Keyboard hint labels, over the cells they label.
+    pub labels: &'a [rio_grid::HintLabel],
 }
 
 pub struct Renderer {
@@ -62,6 +64,7 @@ pub struct Renderer {
     /// The highlights and selection the rows were last emitted with.
     painted_spans: Vec<Span>,
     painted_selection: Option<SelectionRange>,
+    painted_labels: Vec<rio_grid::HintLabel>,
     images: Images,
     bg: Vec<CellBg>,
     fg: Vec<CellText>,
@@ -106,6 +109,7 @@ impl Renderer {
             shaped_cursor: None,
             painted_spans: Vec::new(),
             painted_selection: None,
+            painted_labels: Vec::new(),
             images: Images::default(),
             bg: Vec::new(),
             fg: Vec::new(),
@@ -325,8 +329,11 @@ impl Renderer {
 
         let full = self.grid.needs_full_rebuild()
             || snap.selection != self.painted_selection
-            || inputs.spans != self.painted_spans.as_slice();
+            || inputs.spans != self.painted_spans.as_slice()
+            || inputs.labels != self.painted_labels.as_slice();
         if full {
+            self.painted_labels.clear();
+            self.painted_labels.extend_from_slice(inputs.labels);
             self.painted_selection = snap.selection;
             self.painted_spans.clear();
             self.painted_spans.extend_from_slice(inputs.spans);
@@ -336,9 +343,12 @@ impl Renderer {
         }
         let cols_max = cols.saturating_sub(1) as u16;
 
+        let label_styles = rio_grid::hint_label_styles(
+            self.palette.named.hint_foreground,
+            self.palette.named.hint_background,
+        );
         for y in 0..rows {
-            let row = &self.rows[y];
-            if !full && !row.dirty {
+            if !full && !self.rows[y].dirty {
                 continue;
             }
             let row_sel = rio_grid::row_selection_for(
@@ -358,10 +368,27 @@ impl Renderer {
                     });
                 }
             }
+            let labelled = if inputs.labels.is_empty() {
+                None
+            } else {
+                rio_grid::overlay_hint_labels(
+                    &self.rows[y],
+                    &self.styles[y],
+                    inputs.labels,
+                    y,
+                    snap.display_offset as i32,
+                    label_styles,
+                    &mut self.hints,
+                )
+            };
+            let (row, styles) = match &labelled {
+                Some((row, styles)) => (row, styles.as_slice()),
+                None => (&self.rows[y], self.styles[y].as_slice()),
+            };
             rio_grid::build_row_bg(
                 row,
                 cols,
-                &self.styles[y],
+                styles,
                 &self.palette,
                 &self.term_colors,
                 row_sel,
@@ -375,7 +402,7 @@ impl Renderer {
                 row,
                 cols,
                 y as u16,
-                &self.styles[y],
+                styles,
                 &self.extras,
                 &self.palette,
                 &self.term_colors,
@@ -704,6 +731,7 @@ mod bench {
             blink_visible: true,
             preedit: None,
             spans: &[],
+            labels: &[],
         };
         let steps: Vec<Vec<u8>> = (0..lines + 30)
             .map(|i| {
@@ -758,6 +786,7 @@ mod bench {
             blink_visible: true,
             preedit: None,
             spans: &[],
+            labels: &[],
         };
         let line = "the quick brown fox jumps over the lazy dog 0123456789 ".repeat(4);
         for i in 0..lines {

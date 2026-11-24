@@ -47,7 +47,7 @@ impl Shared {
     pub fn start(config: Config) -> Rc<Self> {
         let (sender, receiver) = async_channel::unbounded();
         let dark = adw::StyleManager::default().is_dark();
-        let bindings = crate::bindings::parse(&config.bindings.keys);
+        let bindings = crate::bindings::from_config(&config);
         let shared = Rc::new(Shared {
             bindings: RefCell::new(bindings),
             config: RefCell::new(crate::config::effective(&config, dark)),
@@ -83,7 +83,7 @@ impl Shared {
         adw::StyleManager::default().set_color_scheme(crate::config::color_scheme(&base));
         let dark = adw::StyleManager::default().is_dark();
         *self.config.borrow_mut() = crate::config::effective(&base, dark);
-        *self.bindings.borrow_mut() = crate::bindings::parse(&base.bindings.keys);
+        *self.bindings.borrow_mut() = crate::bindings::from_config(&base);
         *self.base.borrow_mut() = base;
         self.apply_shortcuts();
         self.apply();
