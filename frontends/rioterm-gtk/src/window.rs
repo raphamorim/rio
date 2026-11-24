@@ -98,10 +98,11 @@ pub fn apply_shortcuts(app: &gtk::Application, bindings: &[crate::bindings::Bind
             )
         })
         .collect();
-    // Alt+1..8 picks that tab, Alt+9 the last, as in GNOME's terminals.
-    for n in 1..=9 {
+    // Alt+1..8 picks that tab, Alt+9 (tab 0) the last, as in GNOME's terminals.
+    for n in 1..=8 {
         all.push((format!("win.select-tab({n})"), vec![format!("<Alt>{n}")]));
     }
+    all.push(("win.select-tab(0)".into(), vec!["<Alt>9".into()]));
     for (action, accels) in all {
         let accels = free(&accels);
         let accels: Vec<&str> = accels.iter().map(String::as_str).collect();
@@ -376,7 +377,7 @@ impl Window {
                         if n == 0 {
                             return;
                         }
-                        let index = if wanted >= 9 {
+                        let index = if wanted <= 0 {
                             n - 1
                         } else {
                             (wanted - 1).min(n - 1)

@@ -232,7 +232,7 @@ fn parse_action(action: &str) -> Option<Act> {
         "closeunfocusedtabs" => window("close-other-tabs"),
         "selectprevtab" => window("previous-tab"),
         "selectnexttab" => window("next-tab"),
-        "selectlasttab" => window("select-tab(9)"),
+        "selectlasttab" => window("select-tab(0)"),
         "splitright" => window("split-right"),
         "splitdown" => window("split-down"),
         "selectnextsplit" | "selectnextsplitortab" => window("next-split-or-tab"),
@@ -263,8 +263,8 @@ fn parse_action(action: &str) -> Option<Act> {
                     .map(str::trim)
             };
             if let Some(n) = argument("selecttab") {
-                let n: i32 = n.parse().ok()?;
-                return window(&format!("select-tab({})", n + 1));
+                let n: u16 = n.parse().ok()?;
+                return window(&format!("select-tab({})", u32::from(n) + 1));
             }
             if let Some(lines) = argument("scroll") {
                 return Some(Act::Scroll(Scroll::Lines(lines.parse().unwrap_or(1))));

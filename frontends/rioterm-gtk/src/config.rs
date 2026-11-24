@@ -82,8 +82,12 @@ pub fn watch(shared: &Rc<Shared>) -> Option<gio::FileMonitor> {
         ) {
             return;
         }
-        if let Some(shared) = weak.upgrade() {
-            shared.reload(load());
+        let Some(shared) = weak.upgrade() else {
+            return;
+        };
+        match Config::try_load() {
+            Ok(config) => shared.reload(config),
+            Err(err) => tracing::warn!("keeping the current config: {err:?}"),
         }
     });
     Some(monitor)

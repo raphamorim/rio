@@ -650,6 +650,7 @@ fn palette(config: &Config) -> Palette {
     palette.draw_bold_text_with_light_colors = config.draw_bold_text_with_light_colors;
     palette.ignore_selection_fg_color = config.ignore_selection_fg_color;
     palette.opacity_cells = config.window.opacity_cells;
+    palette.use_drawable_chars = config.fonts.use_drawable_chars;
     palette.cell_bg_alpha = (config.window.opacity.clamp(0.0, 1.0) * 255.0).round() as u8;
     palette
 }
