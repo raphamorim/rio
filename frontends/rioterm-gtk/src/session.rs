@@ -21,6 +21,7 @@ pub type Formatter = Arc<dyn Fn(&str) -> String + Sync + Send + 'static>;
 
 pub enum Event {
     Wakeup,
+    Graphics(rio_vt::ansi::graphics::UpdateQueues),
     Title(String),
     Bell,
     Clipboard(ClipboardType, String),
@@ -58,10 +59,10 @@ impl Listener {
 impl EventListener for Listener {
     fn send_event(&self, event: RioEvent, _id: WindowId) {
         let event = match event {
+            RioEvent::UpdateGraphics { queues, .. } => Event::Graphics(queues),
             RioEvent::TerminalDamaged(_)
             | RioEvent::Render
-            | RioEvent::RenderRoute(_)
-            | RioEvent::UpdateGraphics { .. } => {
+            | RioEvent::RenderRoute(_) => {
                 if !self.sink.wake(self.id) {
                     return;
                 }

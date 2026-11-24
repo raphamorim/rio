@@ -244,6 +244,13 @@ impl TerminalView {
         });
     }
 
+    pub(crate) fn apply_graphics(&self, queues: rio_vt::ansi::graphics::UpdateQueues) {
+        if let Some(render) = self.imp().render.borrow_mut().as_mut() {
+            render.apply_graphics(queues);
+        }
+        self.queue_draw();
+    }
+
     pub(crate) fn restart_blink(&self) {
         self.imp().restart_blink();
     }

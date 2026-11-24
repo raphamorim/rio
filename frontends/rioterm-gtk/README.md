@@ -11,6 +11,8 @@ Rio as a GTK 4 / libadwaita app, an alternative to `rioterm` on Linux.
 - The window is GNOME's own: `AdwApplicationWindow`, with `AdwTabBar` tabs
   that reorder, drag out into a new window or into another window, and have
   a context menu.
+- Images show as in Rio: kitty graphics (with virtual placements),
+  sixel and iTerm2 inline images.
 - Settings come from Rio's config file (fonts, colors, shell, working
   directory, padding, scrollback).
 

@@ -5,6 +5,7 @@
 use crate::session::Terminal;
 use rio_backend::config::Config;
 use rio_grid::{HintTag, Palette, RowHint};
+use rio_vt::ansi::graphics::UpdateQueues;
 use rio_vt::config::colors::term::TermColors;
 use rio_vt::crosswords::grid::row::Row;
 use rio_vt::crosswords::square::{Extras, Square};
@@ -18,7 +19,7 @@ use sugarloaf::font::FontLibrary;
 use sugarloaf::grid::cell::{CellBg, CellText};
 use sugarloaf::grid::{GridRenderer, GridUniforms};
 use sugarloaf::layout::RootStyle;
-use sugarloaf::{Sugarloaf, SugarloafWindowSize};
+use sugarloaf::{GraphicDataEntry, GraphicOverlay, Sugarloaf, SugarloafWindowSize};
 
 /// A highlighted run on a visible row: `line`, columns `lo..=hi`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +58,7 @@ pub struct Renderer {
     term_colors: TermColors,
     shaped_cursor: Option<(usize, usize)>,
     had_overlay: bool,
+    images: Images,
     bg: Vec<CellBg>,
     fg: Vec<CellText>,
     hints: Vec<RowHint>,
@@ -102,6 +104,7 @@ impl Renderer {
             term_colors: TermColors::default(),
             shaped_cursor: None,
             had_overlay: false,
+            images: Images::default(),
             bg: Vec::new(),
             fg: Vec::new(),
             hints: Vec::new(),
@@ -171,6 +174,25 @@ impl Renderer {
         }
     }
 
+    /// Image pixels the terminal sent: new ones in, dropped ones out.
+    pub fn apply_graphics(&mut self, queues: UpdateQueues) {
+        for data in queues.pending {
+            let key = sugarloaf::atlas_image_key(data.id.get());
+            self.sugarloaf
+                .image_data
+                .insert(key, GraphicDataEntry::from_graphic_data(data));
+        }
+        for key in queues.remove_queue {
+            self.sugarloaf.remove_image(key);
+        }
+        for (image_id, data) in queues.pending_images {
+            self.sugarloaf.image_data.insert(
+                sugarloaf::kitty_image_key(image_id),
+                GraphicDataEntry::from_graphic_data(data),
+            );
+        }
+    }
+
     pub fn invalidate(&mut self) {
         self.grid.request_full_rebuild();
     }
@@ -218,7 +240,28 @@ impl Renderer {
             .selection
             .as_ref()
             .and_then(|selection| selection.to_range(&term));
+        self.images.history = term.lines_evicted() as i64 + term.history_size() as i64;
+        self.images.display_offset = display_offset as i64;
+        let queues = term.graphics.take_queues();
+        if term.graphics.kitty_graphics_dirty {
+            let graphics = &term.graphics;
+            self.images.virtual_placements = graphics.kitty_virtual_placements.clone();
+            self.images.kitty_images = graphics.kitty_images.clone();
+            let mut placements: Vec<_> = graphics
+                .kitty_placements
+                .values()
+                .filter(|p| graphics.kitty_images.contains_key(&p.image_id))
+                .cloned()
+                .collect();
+            placements.sort_by_key(|p| (p.z_index, p.image_id, p.placement_id));
+            self.images.kitty_placements = placements;
+            self.images.atlas_placements = graphics.atlas_placements.clone();
+            term.graphics.kitty_graphics_dirty = false;
+        }
         drop(term);
+        if let Some(queues) = queues {
+            self.apply_graphics(queues);
+        }
 
         let line = cursor.pos.row.0.max(0) as usize;
         let col = cursor.pos.col.0;
@@ -392,8 +435,103 @@ impl Renderer {
                 );
             }
         }
+        self.place_images(cell_w, cell_h, cols, rows);
         let mut grids = [(&mut self.grid, uniforms)];
         self.sugarloaf.render_with_grids(&mut grids);
+    }
+
+    /// This frame's image overlays: sixel and iTerm2 images under the
+    /// text, kitty placements by z-index, clipped to the grid.
+    fn place_images(&mut self, cell_w: f32, cell_h: f32, cols: usize, rows: usize) {
+        use rio_vt::ansi::graphics::{
+            atlas_overlay_geometry, clip_overlay_to_rect, kitty_overlay_geometry,
+            OverlayViewport,
+        };
+        let images = &self.images;
+        let any = !images.atlas_placements.is_empty()
+            || !images.kitty_placements.is_empty()
+            || !images.virtual_placements.is_empty();
+        if !any {
+            if images.placed {
+                self.sugarloaf.clear_image_overlays_for(0);
+                self.images.placed = false;
+            }
+            return;
+        }
+        let origin_x = self.padding[3].round();
+        let origin_y = self.padding[0].round();
+        let clip = (
+            origin_x,
+            origin_y,
+            origin_x + cols as f32 * cell_w,
+            origin_y + rows as f32 * cell_h,
+        );
+        let viewport = OverlayViewport {
+            cell_width: cell_w,
+            cell_height: cell_h,
+            origin_x,
+            origin_y,
+            history_size: images.history,
+            display_offset: images.display_offset,
+            screen_lines: rows as i64,
+        };
+        let mut overlays = Vec::new();
+        let mut push = |mut overlay: GraphicOverlay| {
+            if clip_overlay_to_rect(&mut overlay, clip.0, clip.1, clip.2, clip.3) {
+                overlays.push(overlay);
+            }
+        };
+        for p in &images.atlas_placements {
+            if let Some(g) = atlas_overlay_geometry(p, &viewport) {
+                push(GraphicOverlay {
+                    image_id: p.image_key,
+                    x: g.x,
+                    y: g.y,
+                    width: g.width,
+                    height: g.height,
+                    z_index: -1,
+                    source_rect: g.source_rect,
+                });
+            }
+        }
+        for p in &images.kitty_placements {
+            let (width, height) = images
+                .kitty_images
+                .get(&p.image_id)
+                .map_or((0, 0), |image| (image.data.width, image.data.height));
+            if let Some(g) = kitty_overlay_geometry(p, width, height, &viewport) {
+                push(GraphicOverlay {
+                    image_id: sugarloaf::kitty_image_key(p.image_id),
+                    x: g.x,
+                    y: g.y,
+                    width: g.width,
+                    height: g.height,
+                    z_index: p.z_index,
+                    source_rect: g.source_rect,
+                });
+            }
+        }
+        if !images.virtual_placements.is_empty() {
+            rio_grid::push_virtual_placeholder_overlays(
+                &mut overlays,
+                &rio_grid::VirtualSources {
+                    rows: &self.rows,
+                    row_styles: &self.styles,
+                    extras: &self.extras,
+                    placements: &images.virtual_placements,
+                    images: &images.kitty_images,
+                },
+                &sugarloaf::kitty_image_key,
+                origin_x,
+                origin_y,
+                cell_w,
+                cell_h,
+                clip,
+            );
+        }
+        let slot = self.sugarloaf.image_overlays.entry(0).or_default();
+        *slot = overlays;
+        self.images.placed = true;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -443,6 +581,18 @@ impl Renderer {
         );
         self.sugarloaf.text_mut().draw(x, y, preedit, &opts);
     }
+}
+
+#[derive(Default)]
+struct Images {
+    atlas_placements: Vec<rio_vt::ansi::graphics::AtlasPlacement>,
+    kitty_placements: Vec<rio_vt::ansi::graphics::KittyPlacement>,
+    kitty_images: FxHashMap<u32, rio_vt::ansi::graphics::StoredImage>,
+    virtual_placements: FxHashMap<(u32, u32), rio_vt::ansi::graphics::VirtualPlacement>,
+    history: i64,
+    display_offset: i64,
+    /// Overlays were pushed to the renderer last frame.
+    placed: bool,
 }
 
 struct Snapshot {
