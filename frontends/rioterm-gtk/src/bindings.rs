@@ -19,6 +19,8 @@ pub enum Act {
     Hint(usize),
     /// Leave the key to the terminal, over any shortcut on it.
     PassThrough,
+    /// Swallow the key: neither a shortcut nor the terminal gets it.
+    Nothing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -134,7 +136,7 @@ fn parse_one(binding: &KeyBinding) -> Result<Binding, String> {
     let act = if !binding.esc.is_empty() {
         Act::Esc(binding.esc.clone())
     } else if binding.action.is_empty() {
-        Act::PassThrough
+        Act::Nothing
     } else {
         parse_action(&binding.action.to_lowercase())
             .ok_or_else(|| format!("unknown action {:?}", binding.action))?
@@ -250,7 +252,8 @@ fn parse_action(action: &str) -> Option<Act> {
         "scrolltobottom" => Some(Act::Scroll(Scroll::Bottom)),
         "scrolltoprevprompt" => Some(Act::Scroll(Scroll::Prompt(false))),
         "scrolltonextprompt" => Some(Act::Scroll(Scroll::Prompt(true))),
-        "receivechar" | "none" => Some(Act::PassThrough),
+        "receivechar" => Some(Act::PassThrough),
+        "none" => Some(Act::Nothing),
         _ => {
             let argument = |name: &str| {
                 action

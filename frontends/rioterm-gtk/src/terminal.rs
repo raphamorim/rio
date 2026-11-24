@@ -1402,6 +1402,7 @@ mod imp {
             let lines = self.cells.get().1 as i32;
             match act {
                 Act::PassThrough => return false,
+                Act::Nothing => {}
                 Act::Action(detailed) => {
                     if let Ok((name, target)) =
                         gio::Action::parse_detailed_name(&detailed)
