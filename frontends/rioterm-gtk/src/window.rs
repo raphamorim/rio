@@ -794,7 +794,10 @@ fn connect_view(view: &TerminalView) {
         "bell",
         false,
         glib::closure_local!(move |view: TerminalView| {
-            if let Some((tabs, page)) = panes::page_of(&view) {
+            let indicator = view
+                .shared()
+                .is_some_and(|shared| shared.config.borrow().bell.tab_indicator);
+            if let Some((tabs, page)) = panes::page_of(&view).filter(|_| indicator) {
                 if tabs.selected_page().as_ref() != Some(&page) {
                     page.set_needs_attention(true);
                 }

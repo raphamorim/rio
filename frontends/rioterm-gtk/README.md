@@ -63,6 +63,10 @@ cargo run -p rioterm-gtk
 | Scroll a page, to the top or bottom | Shift+PageUp / PageDown / Home / End |
 | Font size bigger / smaller / reset | Ctrl+= / Ctrl+- / Ctrl+0 |
 
+Right-click opens a menu with the clipboard, split and tab actions (when
+no program is reading the mouse), and files dropped on a terminal are
+pasted as their paths, escaped for the shell.
+
 Selecting text copies it to the primary selection (and to the clipboard
 with `copy-on-select`). Pastes that could run commands are confirmed
 first, as in Rio (`paste-protection`). New tabs open in the current

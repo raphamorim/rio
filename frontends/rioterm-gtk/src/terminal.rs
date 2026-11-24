@@ -504,6 +504,13 @@ mod imp {
         fn size_allocate(&self, width: i32, height: i32, _baseline: i32) {
             self.allocation.set((width, height));
             self.relayout();
+            let mut child = self.obj().first_child();
+            while let Some(widget) = child {
+                child = widget.next_sibling();
+                if let Some(popover) = widget.downcast_ref::<gtk::Popover>() {
+                    popover.present();
+                }
+            }
         }
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
@@ -1001,6 +1008,35 @@ mod imp {
             ));
             obj.add_controller(motion);
 
+            let drop = gtk::DropTarget::new(glib::Type::INVALID, gdk::DragAction::COPY);
+            drop.set_types(&[gdk::FileList::static_type(), glib::Type::STRING]);
+            drop.connect_drop(glib::clone!(
+                #[weak(rename_to = this)]
+                self,
+                #[upgrade_or]
+                false,
+                move |_, value, _, _| {
+                    let text = if let Ok(files) = value.get::<gdk::FileList>() {
+                        files
+                            .files()
+                            .iter()
+                            .filter_map(|file| file.path())
+                            .map(|path| {
+                                rio_vt::paste::shell_escape(&path.to_string_lossy()) + " "
+                            })
+                            .collect::<String>()
+                    } else if let Ok(text) = value.get::<String>() {
+                        text
+                    } else {
+                        return false;
+                    };
+                    this.obj().grab_focus();
+                    this.obj().paste_text(text);
+                    true
+                }
+            ));
+            obj.add_controller(drop);
+
             let scroll = gtk::EventControllerScroll::new(
                 gtk::EventControllerScrollFlags::VERTICAL,
             );
@@ -1189,8 +1225,40 @@ mod imp {
                     self.selecting.set(true);
                 }
                 1 => obj.paste_from(WidgetExt::primary_clipboard(&*obj)),
-                _ => {}
+                _ => self.context_menu(x, y),
             }
+        }
+
+        /// The right-click menu: clipboard, splits and tabs.
+        fn context_menu(&self, x: f64, y: f64) {
+            let menu = gio::Menu::new();
+            let edit = gio::Menu::new();
+            edit.append(Some("Copy"), Some("win.copy"));
+            edit.append(Some("Paste"), Some("win.paste"));
+            edit.append(Some("Select All"), Some("win.select-all"));
+            edit.append(Some("Find…"), Some("win.find"));
+            menu.append_section(None, &edit);
+            let layout = gio::Menu::new();
+            layout.append(Some("Split Right"), Some("win.split-right"));
+            layout.append(Some("Split Down"), Some("win.split-down"));
+            layout.append(Some("New Tab"), Some("win.new-tab"));
+            layout.append(Some("Close"), Some("win.close"));
+            menu.append_section(None, &layout);
+            let more = gio::Menu::new();
+            more.append(Some("Open Config"), Some("win.open-config"));
+            menu.append_section(None, &more);
+
+            let obj = self.obj();
+            let popover = gtk::PopoverMenu::from_model(Some(&menu));
+            popover.set_parent(&*obj);
+            popover.set_has_arrow(false);
+            popover.set_halign(gtk::Align::Start);
+            popover.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+            popover.connect_closed(|popover| {
+                let popover = popover.clone();
+                glib::idle_add_local_once(move || popover.unparent());
+            });
+            popover.popup();
         }
 
         fn released(&self, click: &gtk::GestureClick, x: f64, y: f64) {
