@@ -68,6 +68,11 @@ with `copy-on-select`). Pastes that could run commands are confirmed
 first, as in Rio (`paste-protection`). New tabs open in the current
 tab's directory (`navigation.current-working-directory`).
 
+Key bindings in the config's `[bindings]` work as in Rio (same keys,
+modifiers, actions, `esc` and `mode`), and take precedence over the
+shortcuts above; `ReceiveChar` leaves a shortcut's keys to the program.
+Ctrl+Shift+, opens the config file.
+
 Links work as in Rio's hints (`[hints]`): with a rule's modifiers held,
 Alt by default, the URL, path or OSC 8 link under the pointer is
 underlined, and clicking it runs the rule's action (open, copy, paste,

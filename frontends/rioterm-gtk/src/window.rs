@@ -31,6 +31,7 @@ const SHORTCUTS: &[(&str, &[&str])] = &[
     ("win.select-all", &["<Ctrl><Shift>a"]),
     ("win.find", &["<Ctrl><Shift>f"]),
     ("win.fullscreen", &["F11"]),
+    ("win.open-config", &["<Ctrl><Shift>comma"]),
     (
         "win.zoom-in",
         &["<Ctrl>equal", "<Ctrl>plus", "<Ctrl>KP_Add"],
@@ -60,16 +61,51 @@ pub fn install(app: &adw::Application) {
     let new_window = gio::ActionEntry::builder("new-window")
         .activate(|app: &adw::Application, _, _| app.activate())
         .build();
-    app.add_action_entries([new_window]);
-    for (action, accels) in SHORTCUTS {
-        app.set_accels_for_action(action, accels);
-    }
+    let quit = gio::ActionEntry::builder("quit")
+        .activate(|app: &adw::Application, _, _| {
+            for window in app.windows() {
+                window.close();
+            }
+        })
+        .build();
+    app.add_action_entries([new_window, quit]);
+}
+
+/// The shortcuts, less those the config binds to something else.
+pub fn apply_shortcuts(app: &gtk::Application, bindings: &[crate::bindings::Binding]) {
+    let taken: Vec<String> = bindings
+        .iter()
+        .filter_map(|binding| binding.accelerator())
+        .collect();
+    let free = |accels: &[String]| -> Vec<String> {
+        accels
+            .iter()
+            .filter(|accel| {
+                let parsed = gtk::accelerator_parse(accel.as_str());
+                !taken
+                    .iter()
+                    .any(|t| gtk::accelerator_parse(t.as_str()) == parsed)
+            })
+            .cloned()
+            .collect()
+    };
+    let mut all: Vec<(String, Vec<String>)> = SHORTCUTS
+        .iter()
+        .map(|(action, accels)| {
+            (
+                action.to_string(),
+                accels.iter().map(|a| a.to_string()).collect(),
+            )
+        })
+        .collect();
     // Alt+1..8 picks that tab, Alt+9 the last, as in GNOME's terminals.
     for n in 1..=9 {
-        app.set_accels_for_action(
-            &format!("win.select-tab({n})"),
-            &[&format!("<Alt>{n}")],
-        );
+        all.push((format!("win.select-tab({n})"), vec![format!("<Alt>{n}")]));
+    }
+    for (action, accels) in all {
+        let accels = free(&accels);
+        let accels: Vec<&str> = accels.iter().map(String::as_str).collect();
+        app.set_accels_for_action(&action, &accels);
     }
 }
 
@@ -394,6 +430,24 @@ impl Window {
                         window.unfullscreen();
                     } else {
                         window.fullscreen();
+                    }
+                })
+                .build(),
+            gio::ActionEntry::builder("open-config")
+                .activate(|window: &adw::ApplicationWindow, _, _| {
+                    let path = rio_backend::config::config_file_path();
+                    if !path.exists() {
+                        if let Some(dir) = path.parent() {
+                            let _ = std::fs::create_dir_all(dir);
+                        }
+                        let _ = std::fs::write(&path, "");
+                    }
+                    let uri = gio::File::for_path(&path).uri();
+                    let context = WidgetExt::display(window).app_launch_context();
+                    if let Err(err) =
+                        gio::AppInfo::launch_default_for_uri(&uri, Some(&context))
+                    {
+                        tracing::warn!("could not open {uri}: {err}");
                     }
                 })
                 .build(),

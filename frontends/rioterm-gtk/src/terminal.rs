@@ -974,6 +974,9 @@ mod imp {
             let (Some(session), Some(event)) = (self.session(), key_event(keys)) else {
                 return glib::Propagation::Proceed;
             };
+            if self.run_binding(session, keyval, event.modifier_state()) {
+                return glib::Propagation::Stop;
+            }
             if let Some(scroll) = scrollback_key(session, keyval, event.modifier_state())
             {
                 session.scroll(scroll);
@@ -1006,6 +1009,61 @@ mod imp {
                 return glib::Propagation::Stop;
             }
             glib::Propagation::Proceed
+        }
+
+        /// Run the config's binding for this key, if it has one. False
+        /// when the key is left to the terminal.
+        fn run_binding(
+            &self,
+            session: &Session,
+            keyval: gdk::Key,
+            state: gdk::ModifierType,
+        ) -> bool {
+            use crate::bindings::{Act, Scroll as By};
+            let Some(shared) = self.shared.get() else {
+                return false;
+            };
+            let key = crate::bindings::normalize(keyval);
+            let mods = state & gtk::accelerator_get_default_mod_mask();
+            let bindings = shared.bindings.borrow();
+            if bindings.is_empty() {
+                return false;
+            }
+            let mode = session.mode();
+            let Some(act) = bindings
+                .iter()
+                .rev()
+                .find(|binding| binding.matches(key, mods, mode))
+                .map(|binding| binding.act.clone())
+            else {
+                return false;
+            };
+            drop(bindings);
+            let obj = self.obj();
+            let lines = self.cells.get().1 as i32;
+            match act {
+                Act::PassThrough => return false,
+                Act::Action(detailed) => {
+                    if let Ok((name, target)) =
+                        gio::Action::parse_detailed_name(&detailed)
+                    {
+                        let _ = obj.activate_action(&name, target.as_ref());
+                    }
+                }
+                Act::Esc(bytes) => session.write(bytes.into_bytes()),
+                Act::Run(program, args) => session.exec(&program, &args),
+                Act::ClearHistory => obj.clear_history(),
+                Act::ToggleTheme => shared.toggle_theme(),
+                Act::Scroll(by) => match by {
+                    By::Lines(n) => session.scroll(Scroll::Delta(n)),
+                    By::Pages(n) => session.scroll(Scroll::Delta(n * lines)),
+                    By::HalfPages(n) => session.scroll(Scroll::Delta(n * lines / 2)),
+                    By::Top => session.scroll(Scroll::Top),
+                    By::Bottom => session.scroll(Scroll::Bottom),
+                    By::Prompt(forward) => session.scroll_to_prompt(forward),
+                },
+            }
+            true
         }
 
         fn hide_pointer(&self) -> bool {

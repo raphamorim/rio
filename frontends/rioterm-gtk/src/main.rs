@@ -6,6 +6,7 @@
 //! an `AdwApplicationWindow` with `AdwTabBar` tabs. Settings come from
 //! Rio's config file.
 
+mod bindings;
 mod config;
 mod dialog;
 mod hints;

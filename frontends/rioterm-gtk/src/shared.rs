@@ -37,6 +37,7 @@ pub struct Shared {
     /// What terminals use: `base` with the colors for the current style.
     pub config: RefCell<Config>,
     monitor: RefCell<Option<gtk::gio::FileMonitor>>,
+    pub bindings: RefCell<Vec<crate::bindings::Binding>>,
     sink: Arc<ChannelSink>,
     next_id: Cell<usize>,
     views: RefCell<FxHashMap<usize, glib::WeakRef<TerminalView>>>,
@@ -46,7 +47,9 @@ impl Shared {
     pub fn start(config: Config) -> Rc<Self> {
         let (sender, receiver) = async_channel::unbounded();
         let dark = adw::StyleManager::default().is_dark();
+        let bindings = crate::bindings::parse(&config.bindings.keys);
         let shared = Rc::new(Shared {
+            bindings: RefCell::new(bindings),
             config: RefCell::new(crate::config::effective(&config, dark)),
             base: RefCell::new(config),
             monitor: RefCell::default(),
@@ -66,6 +69,7 @@ impl Shared {
                 shared.dispatch(id, event);
             }
         });
+        shared.apply_shortcuts();
         let monitor = crate::config::watch(&shared);
         shared.monitor.replace(monitor);
         shared
@@ -79,8 +83,28 @@ impl Shared {
         adw::StyleManager::default().set_color_scheme(crate::config::color_scheme(&base));
         let dark = adw::StyleManager::default().is_dark();
         *self.config.borrow_mut() = crate::config::effective(&base, dark);
+        *self.bindings.borrow_mut() = crate::bindings::parse(&base.bindings.keys);
         *self.base.borrow_mut() = base;
+        self.apply_shortcuts();
         self.apply();
+    }
+
+    fn apply_shortcuts(&self) {
+        let app = gtk::gio::Application::default().and_downcast::<gtk::Application>();
+        if let Some(app) = app {
+            crate::window::apply_shortcuts(&app, &self.bindings.borrow());
+        }
+    }
+
+    /// Switch the window style between light and dark, and the colors
+    /// with it when the config has adaptive ones.
+    pub fn toggle_theme(&self) {
+        let style = adw::StyleManager::default();
+        style.set_color_scheme(if style.is_dark() {
+            adw::ColorScheme::ForceLight
+        } else {
+            adw::ColorScheme::ForceDark
+        });
     }
 
     /// The desktop switched between light and dark.

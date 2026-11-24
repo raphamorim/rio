@@ -416,6 +416,14 @@ impl Session {
         }
     }
 
+    /// Scroll to the previous or next prompt the shell marked.
+    pub fn scroll_to_prompt(&self, forward: bool) {
+        let mut term = self.terminal.lock();
+        term.scroll_to_prompt(forward);
+        term.mark_fully_damaged();
+        term.request_render();
+    }
+
     pub fn scroll(&self, scroll: Scroll) {
         let mut term = self.terminal.lock();
         term.scroll_display(scroll);
