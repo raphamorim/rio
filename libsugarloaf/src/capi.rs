@@ -14,9 +14,8 @@ use raw_window_handle::{
 // Color / style types the grid-emit palette resolves against. These are
 // `rio_vt` re-exports; rio-grid names them via `rio_backend`, which
 // re-exports the same crate, so they're the identical nominal types.
-use rio_vt::config::colors::term::{List, TermColors, DIM_FACTOR};
-use rio_vt::config::colors::{AnsiColor, ColorArray, ColorWGPU, Colors, NamedColor};
-use rio_vt::crosswords::style::{Style, StyleFlags};
+use rio_vt::config::colors::term::List;
+use rio_vt::config::colors::{ColorWGPU, Colors};
 use sugarloaf::font::fonts::SugarloafFonts;
 use sugarloaf::font::FontLibrary;
 use sugarloaf::grid::atlas::{GlyphKey, RasterizedGlyph};
@@ -802,127 +801,28 @@ pub unsafe extern "C" fn sl_orthographic_projection(
 
 // MARK: - Terminal surface rendering
 
-/// The `GridPalette` the grid-emit engine (rio-grid) calls into to
-/// resolve cell colors. Starts on Rio's default theme (`Colors::default()`)
-/// and the derived 256-color `List`; the host overrides it with
-/// `sl_set_theme` (see `apply_theme`) so cell/selection/cursor colors track
-/// the user's configured scheme. The color-resolution bodies are ported
-/// verbatim from rioterm's `Renderer` (`frontends/rioterm/src/renderer/mod.rs`).
-struct HostPalette {
-    named: Colors,
-    list: List,
-    draw_bold_text_with_light_colors: bool,
-    use_drawable_chars: bool,
-    opacity_cells: bool,
-    cell_bg_alpha: u8,
-    ignore_selection_fg_color: bool,
+/// The palette the grid-emit engine (rio-grid) resolves cell colors
+/// against. Starts on Rio's default theme (`Colors::default()`); the host
+/// overrides it with `sl_set_theme` (see `apply_theme`) so
+/// cell/selection/cursor colors track the user's configured scheme.
+struct HostPalette(rio_grid::Palette);
+
+impl std::ops::Deref for HostPalette {
+    type Target = rio_grid::Palette;
+    fn deref(&self) -> &rio_grid::Palette {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for HostPalette {
+    fn deref_mut(&mut self) -> &mut rio_grid::Palette {
+        &mut self.0
+    }
 }
 
 impl HostPalette {
     fn new() -> Self {
-        let named = Colors::default();
-        let list = List::from(&named);
-        Self {
-            named,
-            list,
-            draw_bold_text_with_light_colors: false,
-            use_drawable_chars: true,
-            opacity_cells: false,
-            cell_bg_alpha: 255,
-            ignore_selection_fg_color: false,
-        }
-    }
-
-    fn compute_color(
-        &self,
-        color: &AnsiColor,
-        flags: StyleFlags,
-        term_colors: &TermColors,
-    ) -> ColorArray {
-        let dim = flags.contains(StyleFlags::DIM);
-        let bold = flags.contains(StyleFlags::BOLD);
-        match color {
-            AnsiColor::Named(ansi) => {
-                match (self.draw_bold_text_with_light_colors, dim, bold) {
-                    (_, true, true)
-                        if ansi == &NamedColor::Foreground
-                            && self.named.light_foreground.is_none() =>
-                    {
-                        self.color(NamedColor::DimForeground as usize, term_colors)
-                    }
-                    (true, false, true) => {
-                        self.color(ansi.to_light() as usize, term_colors)
-                    }
-                    (_, true, false) | (false, true, true) => {
-                        self.color(ansi.to_dim() as usize, term_colors)
-                    }
-                    _ => self.color(*ansi as usize, term_colors),
-                }
-            }
-            AnsiColor::Spec(rgb) => {
-                if !dim {
-                    rgb.to_arr()
-                } else {
-                    rgb.to_arr_with_dim()
-                }
-            }
-            AnsiColor::Indexed(index) => {
-                let index = match (dim, index) {
-                    (true, 8..=15) => *index as usize - 8,
-                    (true, 0..=7) => NamedColor::DimBlack as usize + *index as usize,
-                    _ => *index as usize,
-                };
-                self.color(index, term_colors)
-            }
-        }
-    }
-
-    fn compute_bg_color(
-        &self,
-        cell_style: &Style,
-        term_colors: &TermColors,
-    ) -> ColorArray {
-        let inverse = cell_style.flags.contains(StyleFlags::INVERSE);
-        let dim = inverse && cell_style.flags.contains(StyleFlags::DIM);
-        let bold = inverse && cell_style.flags.contains(StyleFlags::BOLD);
-        match cell_style.bg {
-            AnsiColor::Named(ansi) => {
-                let idx = match (self.draw_bold_text_with_light_colors, dim, bold) {
-                    (_, true, true)
-                        if ansi == NamedColor::Foreground
-                            && self.named.light_foreground.is_none() =>
-                    {
-                        NamedColor::DimForeground as usize
-                    }
-                    (true, false, true) => ansi.to_light() as usize,
-                    (_, true, false) | (false, true, true) => ansi.to_dim() as usize,
-                    _ => ansi as usize,
-                };
-                self.color(idx, term_colors)
-            }
-            AnsiColor::Spec(rgb) => {
-                if dim {
-                    (&(rgb * DIM_FACTOR)).into()
-                } else {
-                    (&rgb).into()
-                }
-            }
-            AnsiColor::Indexed(idx) => {
-                let idx = match (self.draw_bold_text_with_light_colors, dim, bold, idx) {
-                    (true, false, true, 0..=7) => idx as usize + 8,
-                    (false, true, false, 8..=15) => idx as usize - 8,
-                    (false, true, false, 0..=7) => {
-                        NamedColor::DimBlack as usize + idx as usize
-                    }
-                    _ => idx as usize,
-                };
-                self.color(idx, term_colors)
-            }
-        }
-    }
-
-    fn color(&self, idx: usize, term_colors: &TermColors) -> ColorArray {
-        term_colors[idx].unwrap_or(self.list[idx])
+        Self(rio_grid::Palette::default())
     }
 
     /// Replace the base theme with the host's colors, then rederive the
@@ -983,43 +883,7 @@ impl HostPalette {
         c.search_focused_match_foreground = [0.06, 0.05, 0.05, 1.0];
         c.search_match_background = [0.85, 0.70, 0.20, 1.0];
         c.search_match_foreground = [0.06, 0.05, 0.05, 1.0];
-        self.list = List::from(&self.named);
-    }
-}
-
-impl rio_grid::GridPalette for HostPalette {
-    fn named_colors(&self) -> &Colors {
-        &self.named
-    }
-    fn compute_color(
-        &self,
-        color: &AnsiColor,
-        flags: StyleFlags,
-        term_colors: &TermColors,
-    ) -> ColorArray {
-        HostPalette::compute_color(self, color, flags, term_colors)
-    }
-    fn compute_bg_color(
-        &self,
-        cell_style: &Style,
-        term_colors: &TermColors,
-    ) -> ColorArray {
-        HostPalette::compute_bg_color(self, cell_style, term_colors)
-    }
-    fn color(&self, idx: usize, term_colors: &TermColors) -> ColorArray {
-        HostPalette::color(self, idx, term_colors)
-    }
-    fn use_drawable_chars(&self) -> bool {
-        self.use_drawable_chars
-    }
-    fn opacity_cells(&self) -> bool {
-        self.opacity_cells
-    }
-    fn cell_bg_alpha(&self) -> u8 {
-        self.cell_bg_alpha
-    }
-    fn ignore_selection_fg_color(&self) -> bool {
-        self.ignore_selection_fg_color
+        self.0.list = List::from(&self.0.named);
     }
 }
 
@@ -1133,8 +997,7 @@ impl Sl {
     /// against, and the background shown wherever a cell has none. Mark
     /// grids for a full rebuild so every row repaints in the new colors.
     pub fn set_colors(&mut self, colors: &Colors) {
-        self.palette.named = *colors;
-        self.palette.list = List::from(&self.palette.named);
+        self.palette.set_colors(*colors);
         self.inner.set_background_color(Some(colors.background.1));
     }
 
@@ -1251,7 +1114,7 @@ impl Sl {
         let input_colorspace = sl.input_colorspace();
         let window_size = sl.window_size();
 
-        let palette = &sl.palette;
+        let palette = &sl.palette.0;
 
         let cols = rs.columns();
         let rows = rs.lines();

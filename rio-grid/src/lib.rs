@@ -58,7 +58,10 @@ fn bound_glyph_version(extras_table: &ExtrasMap, sq: Square) -> Option<u32> {
     extras_table.get(&sq.extras_id_checked()?)?.glyph
 }
 
+mod palette;
 pub mod preedit;
+
+pub use palette::Palette;
 use preedit::{PreeditCaret, PreeditCell, PreeditLine};
 
 /// The IME composition threaded into a row build. Only handed to the
