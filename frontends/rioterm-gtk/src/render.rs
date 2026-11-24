@@ -59,7 +59,9 @@ pub struct Renderer {
     extras: FxHashMap<u16, Extras>,
     term_colors: TermColors,
     shaped_cursor: Option<(usize, usize)>,
-    had_overlay: bool,
+    /// The highlights and selection the rows were last emitted with.
+    painted_spans: Vec<Span>,
+    painted_selection: Option<SelectionRange>,
     images: Images,
     bg: Vec<CellBg>,
     fg: Vec<CellText>,
@@ -102,7 +104,8 @@ impl Renderer {
             extras: FxHashMap::default(),
             term_colors: TermColors::default(),
             shaped_cursor: None,
-            had_overlay: false,
+            painted_spans: Vec::new(),
+            painted_selection: None,
             images: Images::default(),
             bg: Vec::new(),
             fg: Vec::new(),
@@ -320,9 +323,14 @@ impl Renderer {
         let rows = self.rows.len().min(self.lines);
         let preedit = inputs.preedit.filter(|p| !p.is_empty());
 
-        let overlay = snap.selection.is_some() || !inputs.spans.is_empty();
-        let full = self.grid.needs_full_rebuild() || overlay || self.had_overlay;
-        self.had_overlay = overlay;
+        let full = self.grid.needs_full_rebuild()
+            || snap.selection != self.painted_selection
+            || inputs.spans != self.painted_spans.as_slice();
+        if full {
+            self.painted_selection = snap.selection;
+            self.painted_spans.clear();
+            self.painted_spans.extend_from_slice(inputs.spans);
+        }
         if self.grid.needs_full_rebuild() {
             self.grid.mark_full_rebuild_done();
         }
@@ -645,4 +653,79 @@ struct Snapshot {
     cursor_shape: rio_vt::ansi::CursorShape,
     display_offset: usize,
     selection: Option<SelectionRange>,
+}
+
+#[cfg(test)]
+mod bench {
+    use super::*;
+    use crate::session::{Event, Session, Sink};
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    struct Quiet;
+    impl Sink for Quiet {
+        fn send(&self, _: usize, _: Event) {}
+        fn wake(&self, _: usize) -> bool {
+            false
+        }
+    }
+
+    /// `cargo test --release -p rioterm-gtk frames -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn frames() {
+        let (w, h, scale) = (3200u32, 2000u32, 2.0f32);
+        let mut config = Config::default();
+        config.shell.program = Some("/bin/sleep".into());
+        config.shell.args = vec!["1000".into()];
+        let mut render = Renderer::new(&config, scale);
+        let (cw, ch) = render.cell_size();
+        let (cols, lines) = ((w as f32 / cw) as usize, (h as f32 / ch) as usize);
+        render.resize(w, h, [0.0; 4], cols, lines);
+        let size = rio_vt::crosswords::CrosswordsSize::new_with_dimensions(
+            cols, lines, w, h, cw as u32, ch as u32,
+        );
+        let session = Session::spawn(1, &config, None, Arc::new(Quiet), size).unwrap();
+        let mut parser = rio_vt::performer::handler::Processor::default();
+        let mut feed =
+            |bytes: &[u8]| parser.advance(&mut *session.terminal.lock(), bytes);
+        let inputs = Inputs {
+            cursor: [255, 255, 255],
+            focused: true,
+            blinking: false,
+            blink_visible: true,
+            preedit: None,
+            spans: &[],
+        };
+        let line = "the quick brown fox jumps over the lazy dog 0123456789 ".repeat(4);
+        for i in 0..lines {
+            feed(format!("{i} {line}\r\n").as_bytes());
+        }
+        render.draw(&session.terminal, 1, &inputs);
+
+        let n: u32 = std::env::var("BENCH_N")
+            .ok()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(200);
+        let t = Instant::now();
+        for i in 0..n {
+            feed(format!("{i} {line}\r\n").as_bytes());
+            render.draw(&session.terminal, 1, &inputs);
+        }
+        let scroll = t.elapsed() / n;
+        let t = Instant::now();
+        for i in 0..n {
+            feed(if i % 2 == 0 { b"x" } else { b"\x08 \x08" });
+            render.draw(&session.terminal, 1, &inputs);
+        }
+        let typing = t.elapsed() / n;
+        let t = Instant::now();
+        for _ in 0..n {
+            render.draw(&session.terminal, 1, &inputs);
+        }
+        let idle = t.elapsed() / n;
+        println!(
+            "{cols}x{lines} cells, {w}x{h} px: scroll {scroll:?}, typing {typing:?}, idle {idle:?} per frame"
+        );
+    }
 }
