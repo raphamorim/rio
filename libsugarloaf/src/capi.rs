@@ -1064,7 +1064,7 @@ pub struct SurfaceInputs<'a> {
     pub focused: bool,
     /// The cursor should blink (steady when false).
     pub cursor_blinking: bool,
-    /// Current blink phase — the lit half when true. Ignored unless blinking.
+    /// Current blink phase: the lit half when true. Ignored unless blinking.
     pub cursor_blink_visible: bool,
     /// Viewport-relative search-match spans.
     pub search_spans: &'a [SlSearchSpan],
@@ -1075,7 +1075,7 @@ pub struct SurfaceInputs<'a> {
 impl Sl {
     /// Render one terminal surface into `grid` and present it. The caller
     /// MUST have already refreshed `rs` with `RenderState::update` this frame
-    /// — this does NOT re-snapshot.
+    /// (this does NOT re-snapshot).
     ///
     /// Replicates rioterm's per-frame grid loop: for each dirty row (or every
     /// row when the grid needs a full rebuild) it emits `CellBg`/`CellText`

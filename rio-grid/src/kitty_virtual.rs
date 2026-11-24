@@ -23,11 +23,11 @@ pub struct VirtualSources<'a> {
 ///
 /// 1. Per-row `kitty_virtual_placeholder` flag check skips rows
 ///    with no placeholders.
-/// 2. Continuation rules — a cell with missing diacritics inherits
+/// 2. Continuation rules: a cell with missing diacritics inherits
 ///    from the previous cell on the row (`canAppend`).
-/// 3. Run aggregation — consecutive cells with same image / row /
+/// 3. Run aggregation: consecutive cells with same image / row /
 ///    sequential column collapse into one placement.
-/// 4. Per-run source rect with aspect-fit + centering — handles
+/// 4. Per-run source rect with aspect-fit + centering, which handles
 ///    partial visibility (placement scrolled half off-screen) and
 ///    cells that fall in the centering padding.
 #[allow(clippy::too_many_arguments)]
@@ -45,7 +45,7 @@ pub fn push_virtual_placeholder_overlays(
         IncompletePlacement, PlaceholderRun, PLACEHOLDER,
     };
 
-    // Below text by default for virtual placements — apps that
+    // Below text by default for virtual placements; apps that
     // want them above the glyphs set z-index explicitly via the
     // graphics protocol.
     const VIRTUAL_Z_INDEX: i32 = -1;
