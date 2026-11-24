@@ -418,6 +418,53 @@ impl Session {
         }
     }
 
+    pub fn vi_toggle(&self) {
+        let mut term = self.terminal.lock();
+        term.toggle_vi_mode();
+        term.mark_fully_damaged();
+        term.request_render();
+    }
+
+    pub fn vi_motion(&self, motion: rio_vt::crosswords::vi_mode::ViMotion) {
+        let mut term = self.terminal.lock();
+        term.vi_motion(motion);
+        let cursor = term.vi_mode_cursor.pos;
+        term.scroll_to_pos(cursor);
+        term.mark_fully_damaged();
+        term.request_render();
+    }
+
+    /// Start a selection of `ty` at the vi cursor, switch the one there is
+    /// to `ty`, or drop it when it already is.
+    pub fn vi_select(&self, ty: SelectionType) {
+        let mut term = self.terminal.lock();
+        match &mut term.selection {
+            Some(selection) if selection.ty == ty && !selection.is_empty() => {
+                term.selection = None;
+            }
+            Some(selection) if !selection.is_empty() => selection.ty = ty,
+            _ => {
+                let pos = term.vi_mode_cursor.pos;
+                let mut selection = Selection::new(ty, pos, Side::Left);
+                selection.include_all();
+                term.selection = Some(selection);
+            }
+        }
+        term.mark_fully_damaged();
+        term.request_render();
+    }
+
+    /// Scroll so the vi cursor is mid-screen.
+    pub fn vi_center(&self) {
+        let mut term = self.terminal.lock();
+        let offset = term.display_offset() as i32;
+        let target = -offset + term.screen_lines() as i32 / 2 - 1;
+        let line = term.vi_mode_cursor.pos.row.0;
+        term.scroll_display(Scroll::Delta(target - line));
+        term.mark_fully_damaged();
+        term.request_render();
+    }
+
     /// Scroll to the previous or next prompt the shell marked.
     pub fn scroll_to_prompt(&self, forward: bool) {
         let mut term = self.terminal.lock();

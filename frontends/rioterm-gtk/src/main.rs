@@ -16,6 +16,7 @@ mod render;
 mod session;
 mod shared;
 mod terminal;
+mod vi;
 mod window;
 
 use adw::prelude::*;

@@ -183,6 +183,12 @@ impl TerminalView {
         self.imp().focus_order.get()
     }
 
+    pub fn toggle_vi(&self) {
+        if let Some(session) = self.imp().session() {
+            session.vi_toggle();
+        }
+    }
+
     /// Label the matches of the config's hint rule `rule`.
     pub fn start_hints(&self, rule: usize) {
         if let Some(session) = self.imp().session() {
@@ -1157,6 +1163,25 @@ mod imp {
             };
             if self.hint_mode.borrow().is_some() {
                 return self.hint_key(session, keyval);
+            }
+            let mods = event.modifier_state() & gtk::accelerator_get_default_mod_mask();
+            if crate::vi::is_toggle(keyval, mods) {
+                session.vi_toggle();
+                return glib::Propagation::Stop;
+            }
+            let lines = self.cells.get().1 as i32;
+            match crate::vi::key(session, keyval, mods, lines) {
+                crate::vi::Outcome::Unhandled => {}
+                crate::vi::Outcome::Handled => return glib::Propagation::Stop,
+                crate::vi::Outcome::Copy => {
+                    self.obj().copy();
+                    session.selection_clear();
+                    return glib::Propagation::Stop;
+                }
+                crate::vi::Outcome::Find => {
+                    let _ = self.obj().activate_action("win.find", None);
+                    return glib::Propagation::Stop;
+                }
             }
             if self.run_binding(session, keyval, event.modifier_state()) {
                 return glib::Propagation::Stop;

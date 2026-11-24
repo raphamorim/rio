@@ -59,6 +59,7 @@ cargo run -p rioterm-gtk
 | Paste the primary selection | Shift+Insert, middle click |
 | Select all | Ctrl+Shift+A |
 | Fullscreen | F11 |
+| Vi mode (vi keys move, `v`/`V` select, `y` copies, `/` finds, `i` leaves) | Ctrl+Shift+Space, Alt+Shift+Space |
 | Find (Enter / Shift+Enter for older / newer matches) | Ctrl+Shift+F |
 | Scroll a page, to the top or bottom | Shift+PageUp / PageDown / Home / End |
 | Font size bigger / smaller / reset | Ctrl+= / Ctrl+- / Ctrl+0 |
