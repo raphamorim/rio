@@ -14,8 +14,14 @@ pub struct SemanticState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SemanticMark {
-    Prompt(SemanticPrompt),
-    Input { until_eol: bool },
+    Prompt {
+        kind: SemanticPrompt,
+        fresh_line: bool,
+    },
+    FreshLine,
+    Input {
+        until_eol: bool,
+    },
     Output,
     CommandEnd,
 }
@@ -48,7 +54,7 @@ impl<U: EventListener> Crosswords<U> {
         let cursor_line = self.grid.cursor.pos.row;
         let current = self.prompt_start_at_or_above(cursor_line);
         if self.grid.semantic.content == SemanticContent::Output {
-            let running = self.command_started_at.is_some();
+            let running = self.command_running(current);
             return self.command_output_from(current, cursor_line, running);
         }
 
@@ -81,9 +87,14 @@ impl<U: EventListener> Crosswords<U> {
         let prompt = self.prompt_start_at_or_above(line);
         let current = self.prompt_start_at_or_above(self.grid.cursor.pos.row);
         let running = self.grid.semantic.content == SemanticContent::Output
-            && self.command_started_at.is_some()
-            && prompt.map(|p| p.0) == current.map(|p| p.0);
+            && prompt.map(|p| p.0) == current.map(|p| p.0)
+            && self.command_running(current);
         self.command_output_from(prompt, line, running)
+    }
+
+    fn command_running(&self, prompt: Option<(Line, bool)>) -> bool {
+        self.command_started_at.is_some()
+            && prompt.is_none_or(|(line, _)| self.grid[line].command_start)
     }
 
     pub fn command_output_text(&self, output: &CommandOutput) -> Option<String> {
@@ -98,51 +109,59 @@ impl<U: EventListener> Crosswords<U> {
         running: bool,
     ) -> Option<CommandOutput> {
         let top = self.grid.topmost_line();
-        let (scan_from, prompt_line, truncated) = match prompt {
-            Some((line, complete)) => (line, Some(line), !complete),
-            None if self.grid.lines_evicted() > 0 => (top, None, true),
+        let (scan_from, from, prompt_line, truncated) = match prompt {
+            Some((line, complete)) => {
+                (line, self.prompt_begin(line), Some(line), !complete)
+            }
+            None if self.grid.lines_evicted() > 0 => {
+                (top, Pos::new(top, Column(0)), None, true)
+            }
             None => return None,
         };
-        let end_line = self
+        let limit = self
             .next_prompt_start(scan_from.max(within))
-            .map_or(self.grid.bottommost_line(), |next| next - 1);
-        if end_line < scan_from {
-            return None;
-        }
+            .map(|next| self.prompt_begin(next));
 
         Some(CommandOutput {
             prompt: prompt_line,
-            output: self.output_bounds(scan_from, end_line, prompt_line.is_some()),
+            output: self.output_bounds(from, limit),
             running,
             truncated,
         })
     }
 
-    fn output_bounds(
-        &self,
-        from: Line,
-        to: Line,
-        skip_stale: bool,
-    ) -> Option<(Pos, Pos)> {
+    fn prompt_begin(&self, line: Line) -> Pos {
         let columns = self.grid.columns();
+        let bottom = self.grid.bottommost_line();
+        let mut row_line = line;
+        loop {
+            let row = &self.grid[row_line];
+            if let Some(col) = (0..columns).find(|&col| {
+                row[Column(col)].semantic_content() != SemanticContent::Output
+            }) {
+                return Pos::new(row_line, Column(col));
+            }
+            if row_line >= bottom || !row[Column(columns - 1)].wrapline() {
+                return Pos::new(line, Column(0));
+            }
+            row_line += 1;
+        }
+    }
 
-        let first_col = if skip_stale {
-            let row = &self.grid[from];
-            (0..columns)
-                .find(|&col| {
-                    row[Column(col)].semantic_content() != SemanticContent::Output
-                })
-                .unwrap_or(0)
-        } else {
-            0
-        };
+    fn output_bounds(&self, from: Pos, limit: Option<Pos>) -> Option<(Pos, Pos)> {
+        let columns = self.grid.columns();
+        let last = limit.map_or(self.grid.bottommost_line(), |limit| limit.row);
 
         let mut start: Option<Pos> = None;
         let mut end = Pos::default();
-        'rows: for line in (from.0..=to.0).map(Line) {
+        'rows: for line in (from.row.0..=last.0).map(Line) {
             let row = &self.grid[line];
-            let col_start = if line == from { first_col } else { 0 };
+            let col_start = if line == from.row { from.col.0 } else { 0 };
             for col in col_start..columns {
+                let pos = Pos::new(line, Column(col));
+                if limit.is_some_and(|limit| pos >= limit) {
+                    break 'rows;
+                }
                 let cell = row[Column(col)];
                 match cell.semantic_content() {
                     SemanticContent::Prompt | SemanticContent::Input => {
@@ -152,7 +171,6 @@ impl<U: EventListener> Crosswords<U> {
                     }
                     SemanticContent::Output => {
                         if has_text(cell) {
-                            let pos = Pos::new(line, Column(col));
                             start.get_or_insert(pos);
                             end = pos;
                         }
@@ -266,6 +284,50 @@ mod tests {
             "<A>$ <B>ls\r\n<C>out\r\n<D><A>$ <B>true\r\n<C><D><A>$ <B>\r\n<A>$ <B>",
         );
         assert_eq!(cw.last_command_output().unwrap().output, None);
+    }
+
+    #[test]
+    fn prompt_after_unterminated_output_starts_a_fresh_line() {
+        let mut cw = term(20, 6, 100);
+        feed(&mut cw, "<A>$ <B>printf foo\r\n<C>foo<D><A>$ <B>");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(2), Column(2)));
+        assert_eq!(last_text(&cw).as_deref(), Some("foo"));
+
+        let mut cw = term(10, 6, 100);
+        feed(&mut cw, "<A>$ <B>echo\r\n<C>0123456789<D><A>$ <B>");
+        assert_eq!(cw.grid[Line(1)].semantic_prompt, SemanticPrompt::None);
+        assert_eq!(cw.grid[Line(2)].semantic_prompt, SemanticPrompt::Prompt);
+        assert_eq!(last_text(&cw).as_deref(), Some("0123456789"));
+    }
+
+    #[test]
+    fn widening_keeps_a_prompt_that_was_soft_wrapped() {
+        let mut cw = term(10, 6, 100);
+        feed(
+            &mut cw,
+            "<A>$ <B>ls\r\n<C>one\r\n<D><A>$ <B>printf foo\r\n<C>foo<D>%         \r \r<A>$ <B>",
+        );
+        let before = cw.last_command_output().unwrap();
+        assert_eq!(cw.command_output_text(&before).unwrap(), "foo%");
+
+        cw.resize(CrosswordsSize::new(30, 6));
+        let after = cw.last_command_output().unwrap();
+        assert_ne!(after.prompt, Some(Line(0)));
+        assert_eq!(cw.command_output_text(&after).unwrap(), "foo%");
+
+        cw.resize(CrosswordsSize::new(10, 6));
+        assert_eq!(last_text(&cw).as_deref(), Some("foo%"));
+    }
+
+    #[test]
+    fn running_needs_output_start_at_this_prompt() {
+        let mut cw = term(20, 6, 100);
+        feed(&mut cw, "<A>$ <B>sleep\r\n<C>\x1bc<A>$ <I>ls\r\nout\r\n");
+        assert!(!cw.last_command_output().unwrap().running);
+
+        let mut cw = term(20, 8, 100);
+        feed(&mut cw, "<A>$ <B>sleep\r\n<C>\r\n<A>$ <I>ls\r\nout\r\n");
+        assert!(!cw.last_command_output().unwrap().running);
     }
 
     #[test]

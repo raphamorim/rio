@@ -4178,10 +4178,24 @@ impl<U: EventListener> Handler for Crosswords<U> {
         use crate::crosswords::semantic::SemanticMark;
         use crate::crosswords::square::SemanticContent;
 
+        if matches!(
+            mark,
+            SemanticMark::FreshLine
+                | SemanticMark::Prompt {
+                    fresh_line: true,
+                    ..
+                }
+        ) && (self.grid.cursor.pos.col != Column(0) || self.grid.cursor.should_wrap)
+        {
+            self.carriage_return();
+            self.linefeed();
+        }
+
         let row = self.grid.cursor.pos.row;
         let state = &mut self.grid.semantic;
         match mark {
-            SemanticMark::Prompt(kind) => {
+            SemanticMark::FreshLine => {}
+            SemanticMark::Prompt { kind, .. } => {
                 state.content = SemanticContent::Prompt;
                 state.clear_eol = false;
                 state.seen = true;
@@ -8493,7 +8507,10 @@ mod tests {
         // Three prompts, each followed by two lines of output. The
         // 4-row screen pushes earlier prompts into scrollback.
         for _ in 0..3 {
-            cw.set_semantic_mark(SemanticMark::Prompt(SemanticPrompt::Prompt));
+            cw.set_semantic_mark(SemanticMark::Prompt {
+                kind: SemanticPrompt::Prompt,
+                fresh_line: false,
+            });
             cw.set_semantic_mark(SemanticMark::CommandEnd);
             cw.linefeed();
             cw.linefeed();

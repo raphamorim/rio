@@ -2519,11 +2519,21 @@ mod tests {
         use crate::crosswords::semantic::SemanticMark;
         use crate::performer::osc::parse_semantic_mark as parse;
 
-        let prompt = Some(SemanticMark::Prompt(SemanticPrompt::Prompt));
-        let continuation = Some(SemanticMark::Prompt(SemanticPrompt::PromptContinuation));
-        assert_eq!(parse(&[b"133", b"A"]), prompt);
-        assert_eq!(parse(&[b"133", b"A", b"aid=1"]), prompt);
-        assert_eq!(parse(&[b"133", b"N"]), prompt);
+        let fresh_prompt = Some(SemanticMark::Prompt {
+            kind: SemanticPrompt::Prompt,
+            fresh_line: true,
+        });
+        let prompt = Some(SemanticMark::Prompt {
+            kind: SemanticPrompt::Prompt,
+            fresh_line: false,
+        });
+        let continuation = Some(SemanticMark::Prompt {
+            kind: SemanticPrompt::PromptContinuation,
+            fresh_line: false,
+        });
+        assert_eq!(parse(&[b"133", b"A"]), fresh_prompt);
+        assert_eq!(parse(&[b"133", b"A", b"aid=1"]), fresh_prompt);
+        assert_eq!(parse(&[b"133", b"N"]), fresh_prompt);
         assert_eq!(parse(&[b"133", b"P"]), prompt);
         assert_eq!(parse(&[b"133", b"P", b"k=i"]), prompt);
         assert_eq!(parse(&[b"133", b"P", b"k=r"]), prompt);
@@ -2539,7 +2549,7 @@ mod tests {
         );
         assert_eq!(parse(&[b"133", b"C"]), Some(SemanticMark::Output));
         assert_eq!(parse(&[b"133", b"D", b"0"]), Some(SemanticMark::CommandEnd));
-        assert_eq!(parse(&[b"133", b"L"]), None);
+        assert_eq!(parse(&[b"133", b"L"]), Some(SemanticMark::FreshLine));
         assert_eq!(parse(&[b"133"]), None);
         assert_eq!(parse(&[b"133", b""]), None);
     }
