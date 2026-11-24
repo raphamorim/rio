@@ -23,6 +23,7 @@ pub enum Event {
     Wakeup,
     Graphics(rio_vt::ansi::graphics::UpdateQueues),
     Title(String),
+    Directory,
     Bell,
     Clipboard(ClipboardType, String),
     ClipboardLoad(ClipboardType, Formatter),
@@ -72,6 +73,7 @@ impl EventListener for Listener {
                 Event::Title(title)
             }
             RioEvent::ResetTitle => Event::Title(String::new()),
+            RioEvent::CurrentDirectoryChanged(_) => Event::Directory,
             RioEvent::Bell(_) => Event::Bell,
             RioEvent::ClipboardStore(kind, text) => Event::Clipboard(kind, text),
             RioEvent::ClipboardLoad(_, kind, format) => {
@@ -158,7 +160,7 @@ pub struct Session {
     shell_pid: u32,
     #[cfg(unix)]
     terminator: teletypewriter::ChildTerminator,
-    shell: String,
+    pub shell: String,
 }
 
 /// Set once at startup, before any shell runs, as Rio does: the shells

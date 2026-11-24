@@ -27,6 +27,7 @@ impl TerminalView {
     pub fn new(shared: &Rc<Shared>, working_dir: Option<String>) -> Result<Self, String> {
         let view: Self = glib::Object::new();
         view.imp().start(shared, working_dir)?;
+        view.refresh_title();
         Ok(view)
     }
 
@@ -138,6 +139,42 @@ impl TerminalView {
 
     pub fn shared(&self) -> Option<Rc<Shared>> {
         self.imp().shared.get().cloned()
+    }
+
+    /// The title a program set (OSC 0/2).
+    pub(crate) fn set_program_title(&self, title: String) {
+        self.imp().program_title.replace(title);
+        self.refresh_title();
+    }
+
+    /// The title from the config's template (`title.content`).
+    pub(crate) fn refresh_title(&self) {
+        let imp = self.imp();
+        let (Some(shared), Some(session)) = (imp.shared.get(), imp.session()) else {
+            return;
+        };
+        let config = shared.config.borrow();
+        let directory = session.current_directory();
+        let (columns, lines) = imp.cells.get();
+        let title = rio_backend::config::title::render(
+            &config.title.content,
+            &rio_backend::config::title::TitleVars {
+                title: &imp.program_title.borrow(),
+                program: &session.shell,
+                directory: directory.as_deref(),
+                columns,
+                lines,
+            },
+        );
+        let title = if title.trim().is_empty() {
+            config.title.placeholder.clone().unwrap_or_default()
+        } else {
+            title
+        };
+        drop(config);
+        if title != self.title() {
+            self.set_title(title);
+        }
     }
 
     /// Grows each time a terminal gets focus: the highest in a tab is
@@ -262,6 +299,7 @@ impl TerminalView {
         drop(config);
         imp.relayout();
         imp.restart_blink();
+        self.refresh_title();
         self.queue_resize();
     }
 
@@ -390,6 +428,7 @@ mod imp {
         hover: RefCell<Option<rio_backend::hints::HintMatch>>,
         pub(super) search: RefCell<Search>,
         pub(super) focus_order: Cell<u64>,
+        pub(super) program_title: RefCell<String>,
     }
 
     #[glib::object_subclass]
@@ -567,6 +606,8 @@ mod imp {
 
             if (cols, lines) != self.cells.get() || resized_cells || rescaled {
                 self.cells.set((cols, lines));
+                let obj = obj.clone();
+                glib::idle_add_local_once(move || obj.refresh_title());
                 if let Some(session) = self.session.get() {
                     session.resize(CrosswordsSize::new_with_dimensions(
                         cols,
@@ -614,20 +655,28 @@ mod imp {
         }
 
         /// Strip boundaries for a frame `height` pixels tall: the top
-        /// padding, each row, and what is left below them.
+        /// padding, then runs of rows, and what is left below them. A run
+        /// is one row, or as many as it takes to end on a whole logical
+        /// pixel, so no texture edge falls between pixels.
         fn strip_edges(&self, height: u32) -> Vec<u32> {
+            let scale = self.scale.get().max(1) as u32;
             let (_, top) = self.origin.get();
             let (_, cell_h) = self.cell_size.get();
             let lines = self.cells.get().1 as u32;
             let mut edges = vec![0];
             let top = top.round() as u32;
-            if cell_h.fract() == 0.0 && cell_h >= 1.0 {
-                let mut y = top;
-                for _ in 0..=lines {
+            if cell_h.fract() == 0.0 && cell_h >= 1.0 && top.is_multiple_of(scale) {
+                let cell_h = cell_h as u32;
+                let rows = (1..=scale)
+                    .find(|k| (k * cell_h).is_multiple_of(scale))
+                    .unwrap_or(scale);
+                let mut row = 0;
+                while row <= lines {
+                    let y = top + row * cell_h;
                     if y > 0 && y < height {
                         edges.push(y);
                     }
-                    y += cell_h as u32;
+                    row += rows;
                 }
             }
             edges.dedup();

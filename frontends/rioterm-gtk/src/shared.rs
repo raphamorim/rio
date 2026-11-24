@@ -160,7 +160,8 @@ impl Shared {
         match event {
             Event::Wakeup => view.queue_draw(),
             Event::Graphics(queues) => view.apply_graphics(queues),
-            Event::Title(title) => view.set_title(title),
+            Event::Title(title) => view.set_program_title(title),
+            Event::Directory => view.refresh_title(),
             Event::Bell => view.ring_bell(),
             Event::Clipboard(ClipboardType::Clipboard, text) => {
                 WidgetExt::clipboard(&view).set_text(&text)
