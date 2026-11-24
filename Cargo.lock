@@ -4450,12 +4450,16 @@ version = "0.6.0"
 dependencies = [
  "async-channel",
  "bytemuck",
+ "corcovado",
  "gtk4",
  "libadwaita",
- "librio",
- "libsugarloaf",
+ "libc",
  "rio-backend",
+ "rio-grid",
+ "rio-vt",
  "rustc-hash 2.1.3",
+ "sugarloaf",
+ "teletypewriter",
  "tracing",
  "tracing-subscriber",
 ]

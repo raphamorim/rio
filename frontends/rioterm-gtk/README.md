@@ -2,11 +2,12 @@
 
 Rio as a GTK 4 / libadwaita app, an alternative to `rioterm` on Linux.
 
-- The terminal is [librio](../../librio): PTY, parser, state and input
-  encoding, the same core Rio runs.
-- It is drawn by Sugarloaf's CPU renderer, through
-  [libsugarloaf](../../libsugarloaf), into a frame the terminal widget hands
-  GTK as a texture, so text renders exactly as in Rio.
+- The terminal is [rio-vt](../../rio-vt), the same state machine, PTY
+  driver and input encoding Rio runs.
+- It is drawn the way Rio draws it, rio-grid's cells on Sugarloaf's CPU
+  renderer, into a frame the terminal widget hands GTK as textures. Only
+  the rows that changed are repainted, and only the strips of the frame
+  holding them are uploaded.
 - The window is GNOME's own: `AdwApplicationWindow`, with `AdwTabBar` tabs
   that reorder, drag out into a new window or into another window, and have
   a context menu.
@@ -38,9 +39,15 @@ cargo run -p rioterm-gtk
 |---|---|
 | New tab / window | Ctrl+Shift+T / Ctrl+Shift+N |
 | Close tab | Ctrl+Shift+W |
-| Next / previous tab | Ctrl+PageDown / Ctrl+PageUp |
+| Next / previous tab | Ctrl+Tab, Ctrl+PageDown, Ctrl+Shift+] / Ctrl+Shift+Tab, Ctrl+PageUp, Ctrl+Shift+[ |
 | Move tab left / right | Ctrl+Shift+PageUp / Ctrl+Shift+PageDown |
 | Tab 1–8 / last tab | Alt+1–8 / Alt+9 |
 | Copy / paste | Ctrl+Shift+C / Ctrl+Shift+V |
+| Paste the primary selection | Shift+Insert, middle click |
+| Select all | Ctrl+Shift+A |
+| Font size bigger / smaller / reset | Ctrl+= / Ctrl+- / Ctrl+0 |
 
-Selecting text copies it to the primary selection; middle-click pastes it.
+Selecting text copies it to the primary selection (and to the clipboard
+with `copy-on-select`). Pastes that could run commands are confirmed
+first, as in Rio (`paste-protection`). New tabs open in the current
+tab's directory (`navigation.current-working-directory`).

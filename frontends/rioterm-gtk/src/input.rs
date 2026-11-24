@@ -1,11 +1,11 @@
-//! GDK key events as librio sees them. librio's encoder does the rest
+//! GDK key events as rio-vt sees them. Its encoder does the rest
 //! (legacy, modifyOtherKeys, kitty), so this only has to say which key it
 //! was, unshifted, and what text the platform produced for it.
 
 use gtk::gdk;
 use gtk::glib::translate::IntoGlib;
 use gtk::prelude::*;
-use librio::{Key, KeyAction, KeyEvent, Modifiers};
+use rio_vt::key::{Key, KeyAction, KeyEvent, Keypad, Modifiers};
 
 pub fn modifiers(state: gdk::ModifierType) -> Modifiers {
     let mut mods = Modifiers::empty();
@@ -32,7 +32,26 @@ const F24: u32 = 0xffd5;
 fn named(keyval: gdk::Key) -> Option<Key> {
     use gdk::Key as K;
     let key = match keyval {
-        K::Return | K::KP_Enter | K::ISO_Enter => Key::Enter,
+        K::Return | K::ISO_Enter => Key::Enter,
+        K::KP_Enter => Key::Keypad(Keypad::Enter),
+        K::KP_0
+        | K::KP_1
+        | K::KP_2
+        | K::KP_3
+        | K::KP_4
+        | K::KP_5
+        | K::KP_6
+        | K::KP_7
+        | K::KP_8
+        | K::KP_9 => Key::Keypad(Keypad::Digit(
+            (keyval.into_glib() - K::KP_0.into_glib()) as u8,
+        )),
+        K::KP_Decimal | K::KP_Separator => Key::Keypad(Keypad::Decimal),
+        K::KP_Divide => Key::Keypad(Keypad::Divide),
+        K::KP_Multiply => Key::Keypad(Keypad::Multiply),
+        K::KP_Subtract => Key::Keypad(Keypad::Subtract),
+        K::KP_Add => Key::Keypad(Keypad::Add),
+        K::KP_Equal => Key::Keypad(Keypad::Equal),
         K::Tab | K::ISO_Left_Tab | K::KP_Tab => Key::Tab,
         K::BackSpace => Key::Backspace,
         K::Escape => Key::Escape,
@@ -140,7 +159,9 @@ mod tests {
         use gdk::Key as K;
         for (keyval, key) in [
             (K::Return, Key::Enter),
-            (K::KP_Enter, Key::Enter),
+            (K::KP_Enter, Key::Keypad(Keypad::Enter)),
+            (K::KP_7, Key::Keypad(Keypad::Digit(7))),
+            (K::KP_Add, Key::Keypad(Keypad::Add)),
             (K::ISO_Left_Tab, Key::Tab),
             (K::BackSpace, Key::Backspace),
             (K::KP_Up, Key::Up),

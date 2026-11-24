@@ -17,8 +17,26 @@ const SHORTCUTS: &[(&str, &[&str])] = &[
     ("win.close-tab", &["<Ctrl><Shift>w"]),
     ("win.copy", &["<Ctrl><Shift>c"]),
     ("win.paste", &["<Ctrl><Shift>v"]),
-    ("win.next-tab", &["<Ctrl>Page_Down"]),
-    ("win.previous-tab", &["<Ctrl>Page_Up"]),
+    ("win.paste-selection", &["<Shift>Insert"]),
+    ("win.select-all", &["<Ctrl><Shift>a"]),
+    (
+        "win.zoom-in",
+        &["<Ctrl>equal", "<Ctrl>plus", "<Ctrl>KP_Add"],
+    ),
+    ("win.zoom-out", &["<Ctrl>minus", "<Ctrl>KP_Subtract"]),
+    ("win.zoom-reset", &["<Ctrl>0", "<Ctrl>KP_0"]),
+    (
+        "win.next-tab",
+        &["<Ctrl>Page_Down", "<Ctrl>Tab", "<Ctrl><Shift>bracketright"],
+    ),
+    (
+        "win.previous-tab",
+        &[
+            "<Ctrl>Page_Up",
+            "<Ctrl><Shift>ISO_Left_Tab",
+            "<Ctrl><Shift>bracketleft",
+        ],
+    ),
     ("win.move-tab-left", &["<Ctrl><Shift>Page_Up"]),
     ("win.move-tab-right", &["<Ctrl><Shift>Page_Down"]),
 ];
@@ -47,7 +65,10 @@ impl Window {
     /// A new window with one tab.
     pub fn open(app: &adw::Application, shared: &Rc<Shared>) {
         let tabs = Self::build(app, shared);
-        add_tab(&tabs, shared);
+        add_tab(&tabs, shared, None);
+        if let Some(window) = tabs.root().and_downcast::<gtk::Window>() {
+            window.present();
+        }
     }
 
     /// A new, empty window, presented. Returns its tab view.
@@ -110,7 +131,13 @@ impl Window {
             shared,
             #[upgrade_or]
             None,
-            move |_| Some(Self::build(&app, &shared))
+            move |_| {
+                let tabs = Self::build(&app, &shared);
+                if let Some(window) = tabs.root().and_downcast::<gtk::Window>() {
+                    window.present();
+                }
+                Some(tabs)
+            }
         ));
 
         // The tab context menu acts on the tab it was opened on; the
@@ -151,7 +178,10 @@ impl Window {
                     tabs,
                     #[strong]
                     shared,
-                    move |_: &adw::ApplicationWindow, _, _| add_tab(&tabs, &shared)
+                    move |_: &adw::ApplicationWindow, _, _| {
+                        let dir = inherited_dir(&tabs, &shared);
+                        add_tab(&tabs, &shared, dir)
+                    }
                 ))
                 .build(),
             on_tab("close-tab", |tabs, page| tabs.close_page(page)),
@@ -219,17 +249,12 @@ impl Window {
                     }
                 ))
                 .build(),
-            gio::ActionEntry::builder("paste")
-                .activate(glib::clone!(
-                    #[weak]
-                    tabs,
-                    move |_: &adw::ApplicationWindow, _, _| {
-                        if let Some(view) = selected(&tabs) {
-                            view.paste();
-                        }
-                    }
-                ))
-                .build(),
+            on_view(&tabs, "paste", |view| view.paste()),
+            on_view(&tabs, "paste-selection", |view| view.paste_from_primary()),
+            on_view(&tabs, "select-all", |view| view.select_all()),
+            on_view(&tabs, "zoom-in", |view| view.zoom(Some(1.0))),
+            on_view(&tabs, "zoom-out", |view| view.zoom(Some(-1.0))),
+            on_view(&tabs, "zoom-reset", |view| view.zoom(None)),
         ];
         window.add_action_entries(actions);
         // The menu's target is only good while it is open.
@@ -237,7 +262,6 @@ impl Window {
             menu_page.replace(None);
         });
 
-        window.present();
         tabs
     }
 }
@@ -253,6 +277,34 @@ fn tab_menu() -> gio::Menu {
     close.append(Some("Close Tab"), Some("win.close-tab"));
     menu.append_section(None, &close);
     menu
+}
+
+/// An action on the selected tab's terminal.
+fn on_view(
+    tabs: &adw::TabView,
+    name: &str,
+    act: fn(&TerminalView),
+) -> gio::ActionEntry<adw::ApplicationWindow> {
+    gio::ActionEntry::builder(name)
+        .activate(glib::clone!(
+            #[weak]
+            tabs,
+            move |_: &adw::ApplicationWindow, _, _| {
+                if let Some(view) = selected(&tabs) {
+                    act(&view);
+                }
+            }
+        ))
+        .build()
+}
+
+/// Where a new tab starts: the selected terminal's directory, when the
+/// config asks for it.
+fn inherited_dir(tabs: &adw::TabView, shared: &Rc<Shared>) -> Option<String> {
+    if !shared.config.borrow().navigation.current_working_directory {
+        return None;
+    }
+    selected(tabs)?.working_dir()
 }
 
 fn selected(tabs: &adw::TabView) -> Option<TerminalView> {
@@ -272,8 +324,8 @@ fn tabs_of(view: &TerminalView) -> Option<(adw::TabView, adw::TabPage)> {
 /// A new tab running the shell, selected. Its title follows the
 /// program's, a bell in the background marks it, and it closes when the
 /// shell exits.
-fn add_tab(tabs: &adw::TabView, shared: &Rc<Shared>) {
-    let view = match TerminalView::new(shared) {
+fn add_tab(tabs: &adw::TabView, shared: &Rc<Shared>, working_dir: Option<String>) {
+    let view = match TerminalView::new(shared, working_dir) {
         Ok(view) => view,
         Err(err) => {
             tracing::error!("could not start the shell: {err}");
@@ -289,6 +341,9 @@ fn add_tab(tabs: &adw::TabView, shared: &Rc<Shared>) {
                 title
             })
         })
+        .sync_create()
+        .build();
+    view.bind_property("busy", &page, "loading")
         .sync_create()
         .build();
     view.connect_title_notify(|view| {

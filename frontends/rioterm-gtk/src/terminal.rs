@@ -1,13 +1,23 @@
-//! The terminal widget: one librio surface, drawn by Sugarloaf's CPU
-//! renderer into a frame handed to GTK as a texture.
+//! The terminal widget: one session, drawn by Sugarloaf's CPU renderer
+//! into a frame GTK shows as textures, one per strip of rows, so a
+//! frame that changed a few rows uploads only their strips.
 
 use crate::input;
+use crate::render::{Inputs, Renderer};
+use crate::session::{Formatter, SelectionKind, Session};
 use crate::shared::Shared;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use gtk::{gdk, glib, graphene};
-use librio::{KeyAction, Modifiers, SelectionKind, Side};
+use gtk::{gdk, gio, glib, graphene};
+use rio_vt::clipboard::ClipboardType;
+use rio_vt::crosswords::grid::Scroll;
+use rio_vt::crosswords::pos::Side;
+use rio_vt::crosswords::CrosswordsSize;
+use rio_vt::key::{KeyAction, Modifiers};
 use std::rc::Rc;
+
+/// Rows of pixels per texture.
+const STRIP: u32 = 64;
 
 glib::wrapper! {
     pub struct TerminalView(ObjectSubclass<imp::TerminalView>)
@@ -16,46 +26,238 @@ glib::wrapper! {
 }
 
 impl TerminalView {
-    /// A terminal running the configured shell.
-    pub fn new(shared: &Rc<Shared>) -> Result<Self, String> {
+    pub fn new(shared: &Rc<Shared>, working_dir: Option<String>) -> Result<Self, String> {
         let view: Self = glib::Object::new();
-        view.imp().start(shared)?;
+        view.imp().start(shared, working_dir)?;
         Ok(view)
     }
 
     pub fn copy(&self) {
-        if let Some(text) = self.imp().surface().and_then(|s| s.selection_text()) {
+        if let Some(text) = self.imp().session().and_then(|s| s.selection_text()) {
             WidgetExt::clipboard(self).set_text(&text);
         }
     }
 
     pub fn paste(&self) {
+        self.paste_from(WidgetExt::clipboard(self));
+    }
+
+    pub fn paste_from_primary(&self) {
+        self.paste_from(WidgetExt::primary_clipboard(self));
+    }
+
+    fn paste_from(&self, clipboard: gdk::Clipboard) {
         let view = self.downgrade();
-        let clipboard = WidgetExt::clipboard(self);
         glib::spawn_future_local(async move {
             if let Ok(Some(text)) = clipboard.read_text_future().await {
                 if let Some(view) = view.upgrade() {
-                    view.paste_text(text.as_str());
+                    view.paste_text(text.to_string());
                 }
             }
         });
     }
 
-    fn paste_primary(&self) {
+    /// Paste, asking first when the text could run commands.
+    pub fn paste_text(&self, text: String) {
+        let imp = self.imp();
+        let (Some(session), Some(shared)) = (imp.session(), imp.shared.get()) else {
+            return;
+        };
+        let (protect, bracketed_safe) = {
+            let config = shared.config.borrow();
+            (config.paste_protection, config.paste_bracketed_safe)
+        };
+        let safe = if bracketed_safe {
+            session.paste_is_safe(&text)
+        } else {
+            rio_vt::paste::is_safe(&text)
+        };
+        if !protect || safe {
+            session.paste(text);
+            return;
+        }
+        self.confirm_paste(text);
+    }
+
+    #[allow(deprecated)]
+    fn confirm_paste(&self, text: String) {
+        let window = WidgetExt::root(self).and_downcast::<gtk::Window>();
+        let preview: String = text.chars().take(400).collect();
+        let dialog = gtk::MessageDialog::builder()
+            .modal(true)
+            .message_type(gtk::MessageType::Warning)
+            .text("Paste text that may run commands?")
+            .secondary_text(preview)
+            .build();
+        dialog.set_transient_for(window.as_ref());
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+        dialog.add_button("Paste", gtk::ResponseType::Accept);
+        dialog.set_default_response(gtk::ResponseType::Cancel);
         let view = self.downgrade();
-        let clipboard = WidgetExt::primary_clipboard(self);
-        glib::spawn_future_local(async move {
-            if let Ok(Some(text)) = clipboard.read_text_future().await {
-                if let Some(view) = view.upgrade() {
-                    view.paste_text(text.as_str());
+        dialog.connect_response(move |dialog, response| {
+            if response == gtk::ResponseType::Accept {
+                if let Some(session) =
+                    view.upgrade().as_ref().and_then(|v| v.imp().session())
+                {
+                    session.paste(text.clone());
                 }
+            }
+            dialog.close();
+            if let Some(view) = view.upgrade() {
+                view.grab_focus();
+            }
+        });
+        dialog.present();
+    }
+
+    /// Text typed into the terminal, as if from the keyboard.
+    pub fn type_text(&self, text: &str) {
+        if let Some(session) = self.imp().session() {
+            session.text(text);
+        }
+    }
+
+    pub fn select_all(&self) {
+        if let Some(session) = self.imp().session() {
+            let lines = self.imp().cells.get().1;
+            session.selection_begin(0, 0, Side::Left, SelectionKind::Simple);
+            session.selection_update(
+                lines.saturating_sub(1) as u16,
+                u16::MAX,
+                Side::Right,
+            );
+        }
+    }
+
+    pub fn scroll(&self, scroll: Scroll) {
+        if let Some(session) = self.imp().session() {
+            session.scroll(scroll);
+        }
+    }
+
+    pub fn page_lines(&self) -> i32 {
+        self.imp().cells.get().1 as i32
+    }
+
+    pub fn clear_history(&self) {
+        if let Some(session) = self.imp().session() {
+            let mut term = session.terminal.lock();
+            term.clear_saved_history();
+            term.mark_fully_damaged();
+        }
+        self.queue_draw();
+    }
+
+    /// Change the font size by `step` points, or back to the configured
+    /// size with `None`.
+    pub fn zoom(&self, step: Option<f32>) {
+        let imp = self.imp();
+        let Some(shared) = imp.shared.get() else {
+            return;
+        };
+        let base = shared.config.borrow().fonts.size;
+        if let Some(render) = imp.render.borrow_mut().as_mut() {
+            let size = step.map_or(base, |step| render.font_size() + step);
+            render.set_font_size(size);
+        }
+        imp.relayout();
+    }
+
+    pub fn working_dir(&self) -> Option<String> {
+        self.imp().session()?.working_dir()
+    }
+
+    pub fn foreground_program(&self) -> Option<String> {
+        self.imp().session()?.foreground_program()
+    }
+
+    pub(crate) fn ring_bell(&self) {
+        let audio = self
+            .imp()
+            .shared
+            .get()
+            .map(|shared| shared.config.borrow().bell.audio)
+            .unwrap_or(false);
+        if audio {
+            self.error_bell();
+        }
+        self.emit_by_name::<()>("bell", &[]);
+    }
+
+    pub(crate) fn clipboard_load(&self, kind: ClipboardType, format: Formatter) {
+        let clipboard = match kind {
+            ClipboardType::Clipboard => WidgetExt::clipboard(self),
+            ClipboardType::Selection => WidgetExt::primary_clipboard(self),
+        };
+        let view = self.downgrade();
+        glib::spawn_future_local(async move {
+            let text = clipboard.read_text_future().await.ok().flatten();
+            let Some(view) = view.upgrade() else {
+                return;
+            };
+            if let Some(session) = view.imp().session() {
+                let allowed = view.has_focus();
+                let reply = match text {
+                    Some(text) if allowed => format(text.as_str()).into_bytes(),
+                    _ => Vec::new(),
+                };
+                session.reply(reply);
             }
         });
     }
 
-    fn paste_text(&self, text: &str) {
-        if let Some(surface) = self.imp().surface() {
-            surface.paste(text);
+    pub(crate) fn restart_blink(&self) {
+        self.imp().restart_blink();
+    }
+
+    pub(crate) fn set_progress(&self, state: u8, _value: Option<u8>) {
+        self.set_busy(state != 0);
+    }
+
+    pub(crate) fn notify(&self, title: &str, body: &str) {
+        let Some(app) = WidgetExt::root(self)
+            .and_downcast::<gtk::Window>()
+            .and_then(|window| window.application())
+        else {
+            return;
+        };
+        let title = if title.is_empty() { "Rio" } else { title };
+        let notification = gio::Notification::new(title);
+        notification.set_body(Some(body));
+        app.send_notification(None, &notification);
+    }
+
+    pub(crate) fn command_finished(
+        &self,
+        status: Option<i32>,
+        duration: std::time::Duration,
+    ) {
+        use rio_backend::config::command_finished::NotifyWhen;
+        let Some(shared) = self.imp().shared.get() else {
+            return;
+        };
+        let settings = shared.config.borrow().notify_on_command_finish;
+        if duration.as_millis() < settings.after as u128 {
+            return;
+        }
+        let active = WidgetExt::root(self)
+            .and_downcast::<gtk::Window>()
+            .is_some_and(|window| window.is_active())
+            && self.has_focus();
+        match settings.when {
+            NotifyWhen::Never => return,
+            NotifyWhen::Unfocused if active => return,
+            _ => {}
+        }
+        if settings.bell {
+            self.error_bell();
+        }
+        if settings.notify {
+            let body = match status {
+                Some(0) | None => "Command finished".to_string(),
+                Some(code) => format!("Command failed with status {code}"),
+            };
+            self.notify(&self.title(), &body);
         }
     }
 }
@@ -63,51 +265,49 @@ impl TerminalView {
 mod imp {
     use super::*;
     use glib::subclass::Signal;
-    use libsugarloaf::sugarloaf::grid::GridRenderer;
-    use libsugarloaf::{Sl, SurfaceInputs};
+    use rustc_hash::FxHashSet;
     use std::cell::{Cell, OnceCell, RefCell};
     use std::sync::OnceLock;
+    use sugarloaf::context::cpu::CpuFrame;
 
-    /// The renderer state, created with the surface.
-    pub struct Render {
-        pub sl: Sl,
-        pub grid: GridRenderer,
-        pub state: librio::RenderState,
+    #[derive(Default)]
+    struct Strips {
+        textures: Vec<gdk::Texture>,
+        width: u32,
+        height: u32,
+        generation: u64,
     }
 
     #[derive(glib::Properties, Default)]
     #[properties(wrapper_type = super::TerminalView)]
     pub struct TerminalView {
-        /// The title the program set (OSC 0/2).
         #[property(get, set)]
         title: RefCell<String>,
-        shared: OnceCell<Rc<Shared>>,
-        surface: OnceCell<librio::Surface>,
-        render: RefCell<Option<Render>>,
-        /// The last frame as a texture, and which frame it is.
-        texture: RefCell<Option<gdk::Texture>>,
-        generation: Cell<u64>,
-        /// Physical pixels per logical one, and the frame size in physical
-        /// pixels and cells.
+        /// A program reports progress (OSC 9;4).
+        #[property(get, set)]
+        busy: Cell<bool>,
+        pub(super) shared: OnceCell<Rc<Shared>>,
+        id: Cell<usize>,
+        session: OnceCell<Session>,
+        pub(super) render: RefCell<Option<Renderer>>,
+        strips: RefCell<Strips>,
         scale: Cell<i32>,
+        allocation: Cell<(i32, i32)>,
         pixels: Cell<(u32, u32)>,
-        cells: Cell<(u32, u32)>,
-        /// Cell size and grid padding (left, top) in physical pixels.
+        pub(super) cells: Cell<(usize, usize)>,
         cell_size: Cell<(f32, f32)>,
         origin: Cell<(f32, f32)>,
         focused: Cell<bool>,
         cursor: Cell<[u8; 3]>,
+        blink_visible: Cell<bool>,
+        blink: RefCell<Option<glib::SourceId>>,
         im: OnceCell<gtk::IMMulticontext>,
-        /// While a key press runs through the input method: the text it
-        /// commits belongs to that key.
         in_key_press: Cell<bool>,
         committed: RefCell<Option<String>>,
         preedit: RefCell<String>,
-        /// The button held down (0 left, 1 middle, 2 right), and whether
-        /// it is making a local selection rather than a mouse report.
+        held: RefCell<FxHashSet<u32>>,
         button: Cell<Option<u8>>,
         selecting: Cell<bool>,
-        /// The pointer, in widget coordinates, for wheel reports.
         pointer: Cell<(f64, f64)>,
         scroll: Cell<f64>,
     }
@@ -129,9 +329,7 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    // The shell exited.
                     Signal::builder("exited").build(),
-                    // The program rang the bell.
                     Signal::builder("bell").build(),
                 ]
             })
@@ -144,15 +342,19 @@ mod imp {
             obj.set_focus_on_click(true);
             obj.set_hexpand(true);
             obj.set_vexpand(true);
+            obj.set_overflow(gtk::Overflow::Hidden);
             obj.set_cursor_from_name(Some("text"));
             self.scale.set(1);
+            self.blink_visible.set(true);
             self.input();
         }
 
         fn dispose(&self) {
-            if let (Some(shared), Some(surface)) = (self.shared.get(), self.surface.get())
-            {
-                shared.unregister(surface.id());
+            if let Some(source) = self.blink.take() {
+                source.remove();
+            }
+            if let Some(shared) = self.shared.get() {
+                shared.unregister(self.id.get());
             }
         }
     }
@@ -163,197 +365,240 @@ mod imp {
             orientation: gtk::Orientation,
             _for_size: i32,
         ) -> (i32, i32, i32, i32) {
-            // At least one cell; naturally the size the shell was opened
-            // at, so a new window fits 80x24.
             let scale = self.scale.get().max(1) as f32;
             let (cell_w, cell_h) = self.cell_size.get();
             let (cell, count) = match orientation {
                 gtk::Orientation::Horizontal => (cell_w, 80.0),
                 _ => (cell_h, 24.0),
             };
-            let cell = (cell / scale).ceil() as i32;
-            (cell, cell * count as i32, -1, -1)
+            let padding = self.padding();
+            let pad = match orientation {
+                gtk::Orientation::Horizontal => padding[1] + padding[3],
+                _ => padding[0] + padding[2],
+            };
+            let cell_l = (cell / scale).ceil() as i32;
+            let natural = ((cell * count) / scale + pad).ceil() as i32;
+            (cell_l, natural, -1, -1)
         }
 
         fn size_allocate(&self, width: i32, height: i32, _baseline: i32) {
-            self.resize(width, height);
+            self.allocation.set((width, height));
+            self.relayout();
         }
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             self.draw();
-            if let Some(texture) = self.texture.borrow().as_ref() {
-                let obj = self.obj();
-                let bounds = graphene::Rect::new(
-                    0.0,
-                    0.0,
-                    obj.width() as f32,
-                    obj.height() as f32,
-                );
-                snapshot.append_texture(texture, &bounds);
+            let strips = self.strips.borrow();
+            if strips.textures.is_empty() {
+                return;
+            }
+            let scale = self.scale.get().max(1) as f32;
+            let width = strips.width as f32 / scale;
+            for (i, texture) in strips.textures.iter().enumerate() {
+                let y = (i as u32 * STRIP) as f32 / scale;
+                let height = texture.height() as f32 / scale;
+                snapshot
+                    .append_texture(texture, &graphene::Rect::new(0.0, y, width, height));
             }
         }
 
         fn realize(&self) {
             self.parent_realize();
-            self.rescale();
+            self.relayout();
         }
     }
 
     impl TerminalView {
-        pub fn surface(&self) -> Option<&librio::Surface> {
-            self.surface.get()
+        pub fn session(&self) -> Option<&Session> {
+            self.session.get()
         }
 
-        pub fn start(&self, shared: &Rc<Shared>) -> Result<(), String> {
-            let config = &shared.config;
-            let surface = shared
-                .engine
-                .create_surface(&librio::SurfaceDesc {
-                    shell: config.shell.program.clone(),
-                    args: config.shell.args.clone(),
-                    working_dir: config.working_dir.clone(),
-                    scrollback: config.scrollback_history_limit,
-                    ..librio::SurfaceDesc::default()
+        fn padding(&self) -> [f32; 4] {
+            self.shared
+                .get()
+                .map(|shared| {
+                    let p = shared.config.borrow().panel.padding;
+                    [p.top, p.right, p.bottom, p.left]
                 })
-                .map_err(|err| err.to_string())?;
+                .unwrap_or_default()
+        }
 
-            let mut sl = Sl::new_offscreen(
-                1.0,
-                1.0,
-                1.0,
-                config.fonts.clone(),
-                config.line_height,
-            );
-            sl.set_colors(&config.colors);
+        pub fn start(
+            &self,
+            shared: &Rc<Shared>,
+            working_dir: Option<String>,
+        ) -> Result<(), String> {
+            let id = shared.register(&self.obj());
+            self.id.set(id);
+            let _ = self.shared.set(shared.clone());
+            let config = shared.config.borrow();
+            let render = Renderer::new(&config, 1.0);
+            let (cell_w, cell_h) = render.cell_size();
+            self.cell_size.set((cell_w, cell_h));
             let cursor = config.colors.cursor;
             self.cursor
                 .set([0, 1, 2].map(|i| (cursor[i] * 255.0).round() as u8));
-            let metrics = sl.cell_metrics();
-            self.cell_size
-                .set((metrics.cell_width as f32, metrics.cell_height as f32));
-            let grid = sl.new_grid(80, 24);
-            let state = librio::RenderState::new(&surface);
+            let size = CrosswordsSize::new_with_dimensions(
+                80,
+                24,
+                (cell_w * 80.0) as u32,
+                (cell_h * 24.0) as u32,
+                cell_w as u32,
+                cell_h as u32,
+            );
             self.cells.set((80, 24));
-
-            shared.register(surface.id(), &self.obj());
-            *self.render.borrow_mut() = Some(Render { sl, grid, state });
-            let _ = self.surface.set(surface);
-            let _ = self.shared.set(shared.clone());
+            let session = Session::spawn(id, &config, working_dir, shared.sink(), size)
+                .map_err(|err| err.to_string())?;
+            drop(config);
+            *self.render.borrow_mut() = Some(render);
+            let _ = self.session.set(session);
             Ok(())
         }
 
-        /// Follow the display scale: cells are rasterized in physical
-        /// pixels, so a new scale means new metrics and new glyphs.
-        fn rescale(&self) {
-            let scale = self.obj().scale_factor().max(1);
-            if scale == self.scale.get() {
-                return;
-            }
+        /// Fit the grid to the allocation at the display scale and the
+        /// current font size.
+        pub(super) fn relayout(&self) {
+            let obj = self.obj();
+            let scale = WidgetExt::scale_factor(&*obj).max(1);
+            let rescaled = scale != self.scale.get();
             self.scale.set(scale);
-            if let Some(render) = self.render.borrow_mut().as_mut() {
-                render.sl.set_scale(scale as f32);
-                render.grid.clear_atlas();
-                render.grid.request_full_rebuild();
-                let metrics = render.sl.cell_metrics();
-                self.cell_size
-                    .set((metrics.cell_width as f32, metrics.cell_height as f32));
-            }
-            self.obj().queue_resize();
-        }
-
-        fn resize(&self, width: i32, height: i32) {
-            self.rescale();
-            let scale = self.scale.get() as f32;
+            let scale = scale as f32;
+            let (width, height) = self.allocation.get();
             let px_w = (width.max(1) as f32 * scale) as u32;
             let px_h = (height.max(1) as f32 * scale) as u32;
-            let Some(shared) = self.shared.get() else {
-                return;
-            };
-            let padding = &shared.config.panel.padding;
-            let [top, right, bottom, left] =
-                [padding.top, padding.right, padding.bottom, padding.left]
-                    .map(|p| p * scale);
-            let (cell_w, cell_h) = self.cell_size.get();
-            let cols = (((px_w as f32 - left - right) / cell_w).floor() as u32).max(1);
-            let rows = (((px_h as f32 - top - bottom) / cell_h).floor() as u32).max(1);
-            self.origin.set((left, top));
+            let padding = self.padding().map(|p| p * scale);
+            let [top, right, bottom, left] = padding;
 
-            if let Some(render) = self.render.borrow_mut().as_mut() {
-                if self.pixels.get() != (px_w, px_h) {
-                    render.sl.resize(px_w, px_h);
-                    render.sl.set_grid_padding([top, right, bottom, left], 0);
-                    self.pixels.set((px_w, px_h));
-                }
-                if self.cells.get() != (cols, rows) {
-                    render.grid.resize(cols, rows);
-                    self.cells.set((cols, rows));
-                }
-            }
-            if let Some(surface) = self.surface.get() {
-                let clamp = |v: u32| v.min(u16::MAX as u32) as u16;
-                surface.resize(clamp(cols), clamp(rows), clamp(px_w), clamp(px_h));
-            }
-            self.obj().queue_draw();
-        }
-
-        /// Draw the surface's current state and turn a new frame into the
-        /// texture GTK shows.
-        fn draw(&self) {
             let mut render = self.render.borrow_mut();
             let Some(render) = render.as_mut() else {
                 return;
             };
-            render.state.update();
-            let preedit = self.preedit.borrow();
-            render.sl.render_surface(
-                &mut render.grid,
-                &mut render.state,
-                &SurfaceInputs {
-                    cursor: self.cursor.get(),
-                    focused: self.focused.get(),
-                    cursor_blinking: false,
-                    cursor_blink_visible: true,
-                    search_spans: &[],
-                    preedit: Some(preedit.as_str()).filter(|p| !p.is_empty()),
-                },
-            );
-            let Some(frame) = render.sl.cpu_frame() else {
-                return;
-            };
-            if frame.generation == self.generation.get()
-                && self.texture.borrow().is_some()
-            {
-                return;
+            render.set_scale(scale);
+            let (cell_w, cell_h) = render.cell_size();
+            let resized_cells = (cell_w, cell_h) != self.cell_size.get();
+            self.cell_size.set((cell_w, cell_h));
+            let cols = (((px_w as f32 - left - right) / cell_w).floor() as usize).max(2);
+            let lines = (((px_h as f32 - top - bottom) / cell_h).floor() as usize).max(1);
+            self.origin.set((left, top));
+            render.resize(px_w, px_h, padding, cols, lines);
+            self.pixels.set((px_w, px_h));
+
+            if (cols, lines) != self.cells.get() || resized_cells || rescaled {
+                self.cells.set((cols, lines));
+                if let Some(session) = self.session.get() {
+                    session.resize(CrosswordsSize::new_with_dimensions(
+                        cols,
+                        lines,
+                        (cols as f32 * cell_w) as u32,
+                        (lines as f32 * cell_h) as u32,
+                        cell_w as u32,
+                        cell_h as u32,
+                    ));
+                }
             }
-            self.generation.set(frame.generation);
-            // Premultiplied 0xAARRGGBB words: B, G, R, A in memory on
-            // little-endian machines, A, R, G, B on big-endian ones.
-            #[cfg(target_endian = "little")]
-            let format = gdk::MemoryFormat::B8g8r8a8Premultiplied;
-            #[cfg(target_endian = "big")]
-            let format = gdk::MemoryFormat::A8r8g8b8Premultiplied;
-            let bytes = glib::Bytes::from(bytemuck::cast_slice::<u32, u8>(frame.pixels));
-            let texture = gdk::MemoryTexture::new(
-                frame.width as i32,
-                frame.height as i32,
-                format,
-                &bytes,
-                frame.width as usize * 4,
-            );
-            *self.texture.borrow_mut() = Some(texture.upcast());
+            if resized_cells || rescaled {
+                obj.queue_resize();
+            }
+            obj.queue_draw();
         }
 
-        /// The cell under a point in widget coordinates, and which half of
-        /// it the point is on.
+        fn draw(&self) {
+            let (Some(session), Some(shared)) = (self.session.get(), self.shared.get())
+            else {
+                return;
+            };
+            shared.awake(self.id.get());
+            let blinking = session.terminal.lock().blinking_cursor;
+            let preedit = self.preedit.borrow();
+            let mut render = self.render.borrow_mut();
+            let Some(render) = render.as_mut() else {
+                return;
+            };
+            let inputs = Inputs {
+                cursor: self.cursor.get(),
+                focused: self.focused.get(),
+                blinking,
+                blink_visible: self.blink_visible.get(),
+                preedit: Some(preedit.as_str()).filter(|p| !p.is_empty()),
+                spans: &[],
+            };
+            if let Some(frame) = render.draw(&session.terminal, self.id.get(), &inputs) {
+                self.upload(&frame);
+            }
+        }
+
+        fn upload(&self, frame: &CpuFrame<'_>) {
+            let mut strips = self.strips.borrow_mut();
+            if frame.generation == strips.generation && !strips.textures.is_empty() {
+                return;
+            }
+            let count = frame.height.div_ceil(STRIP) as usize;
+            let whole = strips.width != frame.width
+                || strips.height != frame.height
+                || frame.generation != strips.generation + 1
+                || strips.textures.len() != count;
+            if whole {
+                strips.textures = (0..count).map(|i| strip(frame, i as u32)).collect();
+            } else {
+                for (i, texture) in strips.textures.iter_mut().enumerate() {
+                    let (y0, y1) = (i as u32 * STRIP, (i as u32 + 1) * STRIP);
+                    if frame.damage.iter().any(|&(a, b)| a < y1 && b > y0) {
+                        *texture = strip(frame, i as u32);
+                    }
+                }
+            }
+            strips.width = frame.width;
+            strips.height = frame.height;
+            strips.generation = frame.generation;
+        }
+
+        pub(super) fn restart_blink(&self) {
+            if let Some(source) = self.blink.take() {
+                source.remove();
+            }
+            self.blink_visible.set(true);
+            let Some(shared) = self.shared.get() else {
+                return;
+            };
+            let interval = shared.config.borrow().cursor.blinking_interval.max(100);
+            if !self.focused.get() {
+                return;
+            }
+            let source = glib::timeout_add_local(
+                std::time::Duration::from_millis(interval),
+                glib::clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[upgrade_or]
+                    glib::ControlFlow::Break,
+                    move || {
+                        let blinking = this
+                            .session()
+                            .is_some_and(|s| s.terminal.lock().blinking_cursor);
+                        if !blinking {
+                            this.blink_visible.set(true);
+                            this.blink.replace(None);
+                            this.obj().queue_draw();
+                            return glib::ControlFlow::Break;
+                        }
+                        this.blink_visible.set(!this.blink_visible.get());
+                        this.obj().queue_draw();
+                        glib::ControlFlow::Continue
+                    }
+                ),
+            );
+            self.blink.replace(Some(source));
+        }
+
         fn cell_at(&self, x: f64, y: f64) -> (u16, u16, Side) {
             let scale = self.scale.get() as f64;
             let (left, top) = self.origin.get();
             let (cell_w, cell_h) = self.cell_size.get();
-            let (cols, rows) = self.cells.get();
+            let (cols, lines) = self.cells.get();
             let fx = ((x * scale - left as f64) / cell_w as f64).max(0.0);
             let fy = ((y * scale - top as f64) / cell_h as f64).max(0.0);
-            let col = (fx as u32).min(cols.saturating_sub(1));
-            let row = (fy as u32).min(rows.saturating_sub(1));
+            let col = (fx as usize).min(cols.saturating_sub(1));
+            let row = (fy as usize).min(lines.saturating_sub(1));
             let side = if fx.fract() < 0.5 {
                 Side::Left
             } else {
@@ -373,10 +618,8 @@ mod imp {
                 move |_, text| {
                     if this.in_key_press.get() {
                         this.committed.replace(Some(text.to_string()));
-                    } else if let Some(surface) = this.surface() {
-                        // Committed outside a key press: a candidate
-                        // picked in an input method's window.
-                        surface.text(text);
+                    } else if let Some(session) = this.session() {
+                        session.text(text);
                     }
                 }
             ));
@@ -387,7 +630,7 @@ mod imp {
                     let (text, ..) = im.preedit_string();
                     this.preedit.replace(text.to_string());
                     if let Some(render) = this.render.borrow_mut().as_mut() {
-                        render.grid.request_full_rebuild();
+                        render.invalidate();
                     }
                     this.obj().queue_draw();
                 }
@@ -400,17 +643,18 @@ mod imp {
                 self,
                 #[upgrade_or]
                 glib::Propagation::Proceed,
-                move |keys, keyval, _keycode, _state| this.key_pressed(keys, keyval)
+                move |keys, keyval, keycode, _| this.key_pressed(keys, keyval, keycode)
             ));
             keys.connect_key_released(glib::clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |keys, _keyval, _keycode, _state| {
-                    let (Some(surface), Some(event)) = (this.surface(), key_event(keys))
+                move |keys, _, keycode, _| {
+                    this.held.borrow_mut().remove(&keycode);
+                    let (Some(session), Some(event)) = (this.session(), key_event(keys))
                     else {
                         return;
                     };
-                    surface.key(&input::key_event(&event, KeyAction::Release, None));
+                    session.key(&input::key_event(&event, KeyAction::Release, None));
                 }
             ));
             obj.add_controller(keys);
@@ -458,7 +702,7 @@ mod imp {
                 self,
                 #[upgrade_or]
                 glib::Propagation::Proceed,
-                move |scroll, _dx, dy| this.scrolled(scroll.current_event_state(), dy)
+                move |scroll, _dx, dy| this.scrolled(scroll, dy)
             ));
             obj.add_controller(scroll);
         }
@@ -467,12 +711,11 @@ mod imp {
             &self,
             keys: &gtk::EventControllerKey,
             keyval: gdk::Key,
+            keycode: u32,
         ) -> glib::Propagation {
-            let (Some(surface), Some(event)) = (self.surface(), key_event(keys)) else {
+            let (Some(session), Some(event)) = (self.session(), key_event(keys)) else {
                 return glib::Propagation::Proceed;
             };
-            // The input method sees the key first; whatever it commits
-            // during the press is that key's text.
             self.in_key_press.set(true);
             let filtered = self
                 .im
@@ -482,19 +725,37 @@ mod imp {
             self.in_key_press.set(false);
             let committed = self.committed.take();
             if filtered && committed.is_none() {
-                // Composing: the text comes when it commits.
                 return glib::Propagation::Stop;
             }
+            let action = if self.held.borrow_mut().insert(keycode) {
+                KeyAction::Press
+            } else {
+                KeyAction::Repeat
+            };
             let text = committed.or_else(|| input::key_text(keyval));
-            // GDK doesn't mark repeats, so every press is a press.
-            if surface.key(&input::key_event(&event, KeyAction::Press, text)) {
+            if session.key(&input::key_event(&event, action, text)) {
+                if self.blink.borrow().is_some() {
+                    self.restart_blink();
+                }
+                if self.hide_pointer() {
+                    self.obj().set_cursor_from_name(Some("none"));
+                }
                 return glib::Propagation::Stop;
             }
             glib::Propagation::Proceed
         }
 
+        fn hide_pointer(&self) -> bool {
+            self.shared
+                .get()
+                .is_some_and(|shared| shared.config.borrow().hide_cursor_when_typing)
+        }
+
         fn set_focused(&self, focused: bool) {
             self.focused.set(focused);
+            if !focused {
+                self.held.borrow_mut().clear();
+            }
             if let Some(im) = self.im.get() {
                 if focused {
                     im.focus_in();
@@ -502,16 +763,17 @@ mod imp {
                     im.focus_out();
                 }
             }
-            if let Some(surface) = self.surface() {
-                surface.set_focus(focused);
+            if let Some(session) = self.session() {
+                session.set_focus(focused);
             }
+            self.restart_blink();
             self.obj().queue_draw();
         }
 
         fn pressed(&self, click: &gtk::GestureClick, n_press: i32, x: f64, y: f64) {
             let obj = self.obj();
             obj.grab_focus();
-            let Some(surface) = self.surface() else {
+            let Some(session) = self.session() else {
                 return;
             };
             let mods = input::modifiers(click.current_event_state());
@@ -523,9 +785,7 @@ mod imp {
             };
             let (col, row, side) = self.cell_at(x, y);
             self.button.set(Some(button));
-            // A program reading the mouse gets the click; shift keeps it
-            // for a local selection.
-            if surface.mouse_button(col, row, button, true, mods) {
+            if session.mouse_button(col, row, button, true, mods) {
                 self.selecting.set(false);
                 return;
             }
@@ -534,20 +794,23 @@ mod imp {
                     let kind = match n_press {
                         1 if mods.contains(Modifiers::ALT) => SelectionKind::Block,
                         1 => SelectionKind::Simple,
-                        2 => SelectionKind::Word,
-                        _ => SelectionKind::Line,
+                        2 => SelectionKind::Semantic,
+                        _ => SelectionKind::Lines,
                     };
-                    surface.selection_clear();
-                    surface.selection_begin(row as i32, col as usize, kind, side);
+                    session.selection_clear();
+                    session.selection_begin(row, col, side, kind);
+                    if n_press > 1 {
+                        session.selection_update(row, col, side);
+                    }
                     self.selecting.set(true);
                 }
-                1 => obj.paste_primary(),
+                1 => obj.paste_from(WidgetExt::primary_clipboard(&*obj)),
                 _ => {}
             }
         }
 
         fn released(&self, click: &gtk::GestureClick, x: f64, y: f64) {
-            let Some(surface) = self.surface() else {
+            let Some(session) = self.session() else {
                 return;
             };
             let Some(button) = self.button.take() else {
@@ -556,46 +819,83 @@ mod imp {
             let (col, row, _) = self.cell_at(x, y);
             let mods = input::modifiers(click.current_event_state());
             if self.selecting.replace(false) {
-                // Selected text goes to the primary selection, which
-                // middle-click pastes.
-                if let Some(text) = surface.selection_text().filter(|t| !t.is_empty()) {
-                    WidgetExt::primary_clipboard(&*self.obj()).set_text(&text);
+                if let Some(text) = session.selection_text() {
+                    let obj = self.obj();
+                    WidgetExt::primary_clipboard(&*obj).set_text(&text);
+                    let copy = self
+                        .shared
+                        .get()
+                        .is_some_and(|shared| shared.config.borrow().copy_on_select);
+                    if copy {
+                        WidgetExt::clipboard(&*obj).set_text(&text);
+                    }
                 }
                 return;
             }
-            surface.mouse_button(col, row, button, false, mods);
+            session.mouse_button(col, row, button, false, mods);
         }
 
         fn moved(&self, state: gdk::ModifierType, x: f64, y: f64) {
-            let Some(surface) = self.surface() else {
+            let Some(session) = self.session() else {
                 return;
             };
-            self.pointer.set((x, y));
+            if self.pointer.replace((x, y)) != (x, y) {
+                self.obj().set_cursor_from_name(Some("text"));
+            }
             let (col, row, side) = self.cell_at(x, y);
             if self.selecting.get() {
-                surface.selection_update(row as i32, col as usize, side);
+                session.selection_update(row, col, side);
                 return;
             }
             let button = self.button.get().unwrap_or(3);
-            surface.mouse_motion(col, row, button, input::modifiers(state));
+            session.mouse_motion(col, row, button, input::modifiers(state));
         }
 
-        fn scrolled(&self, state: gdk::ModifierType, dy: f64) -> glib::Propagation {
-            let Some(surface) = self.surface() else {
+        fn scrolled(
+            &self,
+            scroll: &gtk::EventControllerScroll,
+            dy: f64,
+        ) -> glib::Propagation {
+            let Some(session) = self.session() else {
                 return glib::Propagation::Proceed;
             };
-            // Three lines a wheel notch; a touchpad's fractions add up.
-            let total = self.scroll.get() + dy * 3.0;
+            let multiplier = self
+                .shared
+                .get()
+                .map(|shared| shared.config.borrow().scroll.multiplier)
+                .unwrap_or(3.0);
+            let lines_per_unit = multiplier;
+            let total = self.scroll.get() + dy * lines_per_unit;
             let lines = total.trunc();
             self.scroll.set(total - lines);
             if lines != 0.0 {
-                // GTK's dy grows downwards; librio counts lines up.
                 let (x, y) = self.pointer.get();
                 let (col, row, _) = self.cell_at(x, y);
-                surface.scroll_wheel(-(lines as i32), col, row, input::modifiers(state));
+                let mods = input::modifiers(scroll.current_event_state());
+                session.wheel(-(lines as i32), col, row, mods);
             }
             glib::Propagation::Stop
         }
+    }
+
+    fn strip(frame: &CpuFrame<'_>, index: u32) -> gdk::Texture {
+        #[cfg(target_endian = "little")]
+        let format = gdk::MemoryFormat::B8g8r8a8Premultiplied;
+        #[cfg(target_endian = "big")]
+        let format = gdk::MemoryFormat::A8r8g8b8Premultiplied;
+        let width = frame.width as usize;
+        let y0 = (index * STRIP).min(frame.height) as usize;
+        let y1 = ((index + 1) * STRIP).min(frame.height) as usize;
+        let pixels = &frame.pixels[y0 * width..y1 * width];
+        let bytes = glib::Bytes::from(bytemuck::cast_slice::<u32, u8>(pixels));
+        gdk::MemoryTexture::new(
+            frame.width as i32,
+            (y1 - y0) as i32,
+            format,
+            &bytes,
+            width * 4,
+        )
+        .upcast()
     }
 
     fn key_event(keys: &gtk::EventControllerKey) -> Option<gdk::KeyEvent> {

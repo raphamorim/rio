@@ -1,138 +1,111 @@
-//! The librio engine all terminals share, and the way its events reach
-//! GTK: librio calls its delegate on its reader threads (and inside
-//! surface calls), where nothing may touch GTK, so the delegate only sends
-//! each event down a channel the main loop drains.
+//! What every terminal shares: the config, and the channel their
+//! sessions' events reach the GTK main loop through. Sessions raise
+//! events on their PTY threads, where nothing may touch GTK.
 
+use crate::session::{Event, Sink};
 use crate::terminal::TerminalView;
 use gtk::glib;
 use gtk::prelude::*;
-use librio::{Action, ClipboardType, SurfaceDelegate, SurfaceId};
 use rio_backend::config::Config;
+use rio_vt::clipboard::ClipboardType;
 use rustc_hash::{FxHashMap, FxHashSet};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-pub enum Event {
-    /// The surface has something new to show.
-    Wakeup,
-    Title(String),
-    Bell,
-    /// A program set the clipboard (OSC 52).
-    Clipboard(ClipboardType, String),
-    /// The shell exited.
-    Exited,
+struct ChannelSink {
+    events: async_channel::Sender<(usize, Event)>,
+    awake: Mutex<FxHashSet<usize>>,
 }
 
-struct Delegate {
-    events: async_channel::Sender<(SurfaceId, Event)>,
-    /// Surfaces with a wakeup on its way to the main loop. librio can wake
-    /// a surface for every chunk of output; one queued redraw covers them
-    /// all, so later ones aren't sent until the main loop takes it.
-    awake: Mutex<FxHashSet<SurfaceId>>,
-}
-
-impl Delegate {
-    fn send(&self, surface: SurfaceId, event: Event) {
-        // Unbounded, so this never blocks; it fails only once the main
-        // loop is gone, when there is nobody left to tell.
-        let _ = self.events.try_send((surface, event));
+impl Sink for ChannelSink {
+    fn send(&self, id: usize, event: Event) {
+        let _ = self.events.try_send((id, event));
     }
-}
 
-impl SurfaceDelegate for Delegate {
-    fn wakeup(&self, surface: SurfaceId) {
-        let newly = self
-            .awake
+    fn wake(&self, id: usize) -> bool {
+        self.awake
             .lock()
-            .map(|mut awake| awake.insert(surface))
-            .unwrap_or(true);
-        if newly {
-            self.send(surface, Event::Wakeup);
-        }
-    }
-
-    fn action(&self, surface: SurfaceId, action: Action) {
-        match action {
-            Action::SetTitle { title, .. } => self.send(surface, Event::Title(title)),
-            Action::RingBell => self.send(surface, Event::Bell),
-            _ => {}
-        }
-    }
-
-    fn clipboard_write(&self, surface: SurfaceId, kind: ClipboardType, text: String) {
-        self.send(surface, Event::Clipboard(kind, text));
-    }
-
-    fn close_surface(&self, surface: SurfaceId) {
-        self.send(surface, Event::Exited);
+            .map(|mut awake| awake.insert(id))
+            .unwrap_or(true)
     }
 }
 
 pub struct Shared {
-    pub engine: librio::Engine,
-    pub config: Config,
-    delegate: Arc<Delegate>,
-    views: RefCell<FxHashMap<SurfaceId, glib::WeakRef<TerminalView>>>,
+    pub config: RefCell<Config>,
+    sink: Arc<ChannelSink>,
+    next_id: Cell<usize>,
+    views: RefCell<FxHashMap<usize, glib::WeakRef<TerminalView>>>,
 }
 
 impl Shared {
-    /// The engine, and the main-loop task that hands its events to the
-    /// terminal they belong to.
     pub fn start(config: Config) -> Rc<Self> {
         let (sender, receiver) = async_channel::unbounded();
-        let delegate = Arc::new(Delegate {
-            events: sender,
-            awake: Mutex::default(),
-        });
         let shared = Rc::new(Shared {
-            engine: librio::Engine::new(delegate.clone()),
-            config,
-            delegate,
+            config: RefCell::new(config),
+            sink: Arc::new(ChannelSink {
+                events: sender,
+                awake: Mutex::default(),
+            }),
+            next_id: Cell::new(1),
             views: RefCell::default(),
         });
         let weak = Rc::downgrade(&shared);
         glib::spawn_future_local(async move {
-            while let Ok((surface, event)) = receiver.recv().await {
+            while let Ok((id, event)) = receiver.recv().await {
                 let Some(shared) = weak.upgrade() else {
                     break;
                 };
-                shared.dispatch(surface, event);
+                shared.dispatch(id, event);
             }
         });
         shared
     }
 
-    pub fn register(&self, surface: SurfaceId, view: &TerminalView) {
-        self.views.borrow_mut().insert(surface, view.downgrade());
+    pub fn sink(&self) -> Arc<dyn Sink> {
+        self.sink.clone()
     }
 
-    pub fn unregister(&self, surface: SurfaceId) {
-        self.views.borrow_mut().remove(&surface);
+    pub fn register(&self, view: &TerminalView) -> usize {
+        let id = self.next_id.get();
+        self.next_id.set(id + 1);
+        self.views.borrow_mut().insert(id, view.downgrade());
+        id
     }
 
-    fn dispatch(&self, surface: SurfaceId, event: Event) {
-        if matches!(event, Event::Wakeup) {
-            if let Ok(mut awake) = self.delegate.awake.lock() {
-                awake.remove(&surface);
-            }
+    pub fn unregister(&self, id: usize) {
+        self.views.borrow_mut().remove(&id);
+    }
+
+    /// Ready for the next wakeup of `id`: called right before a frame
+    /// takes the terminal's state, so output after it isn't lost.
+    pub fn awake(&self, id: usize) {
+        if let Ok(mut awake) = self.sink.awake.lock() {
+            awake.remove(&id);
         }
-        let view = self.views.borrow().get(&surface).and_then(|v| v.upgrade());
+    }
+
+    fn dispatch(&self, id: usize, event: Event) {
+        let view = self.views.borrow().get(&id).and_then(|v| v.upgrade());
         let Some(view) = view else {
             return;
         };
         match event {
             Event::Wakeup => view.queue_draw(),
             Event::Title(title) => view.set_title(title),
-            Event::Bell => {
-                view.error_bell();
-                view.emit_by_name::<()>("bell", &[]);
-            }
+            Event::Bell => view.ring_bell(),
             Event::Clipboard(ClipboardType::Clipboard, text) => {
                 WidgetExt::clipboard(&view).set_text(&text)
             }
             Event::Clipboard(ClipboardType::Selection, text) => {
                 WidgetExt::primary_clipboard(&view).set_text(&text)
+            }
+            Event::ClipboardLoad(kind, format) => view.clipboard_load(kind, format),
+            Event::CursorBlinking => view.restart_blink(),
+            Event::Progress(value, state) => view.set_progress(state, value),
+            Event::Notification(title, body) => view.notify(&title, &body),
+            Event::CommandFinished(status, duration) => {
+                view.command_finished(status, duration)
             }
             Event::Exited => view.emit_by_name::<()>("exited", &[]),
         }

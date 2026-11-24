@@ -1,12 +1,14 @@
 //! Rio as a GTK 4 / libadwaita app.
 //!
-//! The terminal is librio (PTY, parser, state, input encoding), drawn by
-//! Sugarloaf's CPU renderer into a frame the terminal widget hands GTK as a
-//! texture, so it renders exactly as Rio does. Around it, GNOME's own
-//! pieces: an `AdwApplicationWindow` with `AdwTabBar` tabs. Settings come
-//! from Rio's config file.
+//! The terminal is rio-vt (state machine, PTY driver, input encoding),
+//! drawn by rio-grid into Sugarloaf's CPU renderer, on a frame the
+//! terminal widget hands GTK as textures. Around it, GNOME's own pieces:
+//! an `AdwApplicationWindow` with `AdwTabBar` tabs. Settings come from
+//! Rio's config file.
 
 mod input;
+mod render;
+mod session;
 mod shared;
 mod terminal;
 mod window;
@@ -39,6 +41,7 @@ fn main() -> glib::ExitCode {
                     rio_backend::config::Config::default()
                 }
             };
+            session::setup_environment(&config);
             let _ = shared.set(shared::Shared::start(config));
             window::install(app);
         }
