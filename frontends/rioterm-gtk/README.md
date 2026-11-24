@@ -45,6 +45,8 @@ cargo run -p rioterm-gtk
 | Copy / paste | Ctrl+Shift+C / Ctrl+Shift+V |
 | Paste the primary selection | Shift+Insert, middle click |
 | Select all | Ctrl+Shift+A |
+| Find (Enter / Shift+Enter for older / newer matches) | Ctrl+Shift+F |
+| Scroll a page, to the top or bottom | Shift+PageUp / PageDown / Home / End |
 | Font size bigger / smaller / reset | Ctrl+= / Ctrl+- / Ctrl+0 |
 
 Selecting text copies it to the primary selection (and to the clipboard

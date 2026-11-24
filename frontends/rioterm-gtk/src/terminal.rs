@@ -102,6 +102,42 @@ impl TerminalView {
         );
     }
 
+    /// Search for `pattern`, moving to the next older match (`up`) or
+    /// newer one. A new pattern starts from the newest match. Returns the
+    /// focused match's position from the newest, and the match count.
+    pub fn search(&self, pattern: &str, up: Option<bool>) -> (usize, usize) {
+        let imp = self.imp();
+        let Some(session) = imp.session() else {
+            return (0, 0);
+        };
+        let mut search = imp.search.borrow_mut();
+        if search.pattern != pattern {
+            search.pattern = pattern.to_string();
+            search.matches = session.search(pattern, 10_000);
+            search.focused = search.matches.len().checked_sub(1);
+        } else if let (Some(focused), Some(up)) = (search.focused, up) {
+            let count = search.matches.len();
+            search.focused = Some(if up {
+                (focused + count - 1) % count
+            } else {
+                (focused + 1) % count
+            });
+        }
+        if let Some(&(start, _)) = search.focused.and_then(|i| search.matches.get(i)) {
+            session.reveal(start.row);
+        }
+        let count = search.matches.len();
+        let position = search.focused.map_or(0, |i| count - i);
+        drop(search);
+        self.queue_draw();
+        (position, count)
+    }
+
+    pub fn search_clear(&self) {
+        *self.imp().search.borrow_mut() = Default::default();
+        self.queue_draw();
+    }
+
     /// Text typed into the terminal, as if from the keyboard.
     pub fn type_text(&self, text: &str) {
         if let Some(session) = self.imp().session() {
@@ -263,6 +299,13 @@ mod imp {
     use sugarloaf::context::cpu::CpuFrame;
 
     #[derive(Default)]
+    pub(super) struct Search {
+        pub pattern: String,
+        pub matches: Vec<(rio_vt::crosswords::pos::Pos, rio_vt::crosswords::pos::Pos)>,
+        pub focused: Option<usize>,
+    }
+
+    #[derive(Default)]
     struct Strips {
         textures: Vec<gdk::Texture>,
         width: u32,
@@ -305,6 +348,7 @@ mod imp {
         mods: Cell<Modifiers>,
         hints: crate::hints::MouseHints,
         hover: RefCell<Option<rio_backend::hints::HintMatch>>,
+        pub(super) search: RefCell<Search>,
     }
 
     #[glib::object_subclass]
@@ -552,37 +596,57 @@ mod imp {
             strips.generation = frame.generation;
         }
 
+        /// Highlighted runs on screen: search matches and the hovered
+        /// hint.
         fn hover_spans(&self, offset: i32) -> Vec<crate::render::Span> {
-            let hover = self.hover.borrow();
-            let Some(hover) = hover.as_ref() else {
-                return Vec::new();
-            };
+            use rio_grid::HintTag;
             let (cols, lines) = self.cells.get();
-            let last = cols.saturating_sub(1) as u16;
-            (hover.start.row.0..=hover.end.row.0)
-                .filter_map(|line| {
-                    let viewport = line + offset;
-                    if viewport < 0 || viewport >= lines as i32 {
-                        return None;
-                    }
-                    let lo = if line == hover.start.row.0 {
-                        hover.start.col.0 as u16
+            let mut spans = Vec::new();
+            let mut push = |start: rio_vt::crosswords::pos::Pos,
+                            end: rio_vt::crosswords::pos::Pos,
+                            tag: HintTag| {
+                let first = start.row.0.max(-offset);
+                let last = end.row.0.min(lines as i32 - 1 - offset);
+                for line in first..=last {
+                    let lo = if line == start.row.0 {
+                        start.col.0 as u16
                     } else {
                         0
                     };
-                    let hi = if line == hover.end.row.0 {
-                        hover.end.col.0 as u16
+                    let hi = if line == end.row.0 {
+                        end.col.0 as u16
                     } else {
-                        last
+                        cols.saturating_sub(1) as u16
                     };
-                    Some(crate::render::Span {
-                        line: viewport as u16,
+                    spans.push(crate::render::Span {
+                        line: (line + offset) as u16,
                         lo,
                         hi,
-                        tag: rio_grid::HintTag::HyperlinkHover,
-                    })
-                })
-                .collect()
+                        tag,
+                    });
+                }
+            };
+            {
+                let search = self.search.borrow();
+                let top = -offset;
+                let bottom = lines as i32 - 1 - offset;
+                let first = search.matches.partition_point(|(_, end)| end.row.0 < top);
+                for (i, &(start, end)) in search.matches[first..].iter().enumerate() {
+                    if start.row.0 > bottom {
+                        break;
+                    }
+                    let tag = if search.focused == Some(first + i) {
+                        HintTag::Focused
+                    } else {
+                        HintTag::Match
+                    };
+                    push(start, end, tag);
+                }
+            }
+            if let Some(hover) = self.hover.borrow().as_ref() {
+                push(hover.start, hover.end, HintTag::HyperlinkHover);
+            }
+            spans
         }
 
         /// Find the hint under the pointer with the modifiers held now.

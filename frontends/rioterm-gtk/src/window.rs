@@ -5,7 +5,7 @@
 use crate::shared::Shared;
 use crate::terminal::TerminalView;
 use adw::prelude::*;
-use gtk::{gio, glib};
+use gtk::{gdk, gio, glib};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -19,6 +19,7 @@ const SHORTCUTS: &[(&str, &[&str])] = &[
     ("win.paste", &["<Ctrl><Shift>v"]),
     ("win.paste-selection", &["<Shift>Insert"]),
     ("win.select-all", &["<Ctrl><Shift>a"]),
+    ("win.find", &["<Ctrl><Shift>f"]),
     (
         "win.zoom-in",
         &["<Ctrl>equal", "<Ctrl>plus", "<Ctrl>KP_Add"],
@@ -87,9 +88,12 @@ impl Window {
             .end_action_widget(&new_tab)
             .build();
 
+        let search = SearchUi::new(&tabs);
+
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.append(&adw::HeaderBar::new());
         content.append(&tab_bar);
+        content.append(&search.bar);
         content.append(&tabs);
 
         let window = adw::ApplicationWindow::builder()
@@ -106,7 +110,10 @@ impl Window {
         tabs.connect_selected_page_notify(glib::clone!(
             #[weak]
             window,
+            #[strong]
+            search,
             move |tabs| {
+                search.retarget(tabs);
                 if let Some(page) = tabs.selected_page() {
                     window.set_title(Some(&page.title()));
                     page.set_needs_attention(false);
@@ -323,6 +330,13 @@ impl Window {
             on_view(&tabs, "zoom-in", |view| view.zoom(Some(1.0))),
             on_view(&tabs, "zoom-out", |view| view.zoom(Some(-1.0))),
             on_view(&tabs, "zoom-reset", |view| view.zoom(None)),
+            gio::ActionEntry::builder("find")
+                .activate(glib::clone!(
+                    #[strong]
+                    search,
+                    move |_: &adw::ApplicationWindow, _, _| search.open()
+                ))
+                .build(),
         ];
         window.add_action_entries(actions);
         // The menu's target is only good while it is open.
@@ -331,6 +345,141 @@ impl Window {
         });
 
         tabs
+    }
+}
+
+/// The window's search bar, searching the selected terminal.
+#[derive(Clone)]
+struct SearchUi {
+    bar: gtk::SearchBar,
+    entry: gtk::SearchEntry,
+    count: gtk::Label,
+    tabs: glib::WeakRef<adw::TabView>,
+}
+
+impl SearchUi {
+    fn new(tabs: &adw::TabView) -> Self {
+        let entry = gtk::SearchEntry::new();
+        entry.set_hexpand(true);
+        entry.set_placeholder_text(Some("Find"));
+        let count = gtk::Label::new(None);
+        count.add_css_class("dim-label");
+        count.add_css_class("numeric");
+        let older = gtk::Button::from_icon_name("go-up-symbolic");
+        older.set_tooltip_text(Some("Previous Match"));
+        let newer = gtk::Button::from_icon_name("go-down-symbolic");
+        newer.set_tooltip_text(Some("Next Match"));
+        let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        row.set_width_request(360);
+        row.append(&entry);
+        row.append(&count);
+        row.append(&older);
+        row.append(&newer);
+        let bar = gtk::SearchBar::builder()
+            .child(&row)
+            .show_close_button(true)
+            .build();
+        bar.connect_entry(&entry);
+        let ui = SearchUi {
+            bar,
+            entry,
+            count,
+            tabs: tabs.downgrade(),
+        };
+
+        ui.entry.connect_search_changed(glib::clone!(
+            #[strong]
+            ui,
+            move |_| ui.run(None)
+        ));
+        ui.entry.connect_activate(glib::clone!(
+            #[strong]
+            ui,
+            move |_| ui.run(Some(true))
+        ));
+        ui.entry.connect_next_match(glib::clone!(
+            #[strong]
+            ui,
+            move |_| ui.run(Some(true))
+        ));
+        ui.entry.connect_previous_match(glib::clone!(
+            #[strong]
+            ui,
+            move |_| ui.run(Some(false))
+        ));
+        let keys = gtk::EventControllerKey::new();
+        keys.connect_key_pressed(glib::clone!(
+            #[strong]
+            ui,
+            move |_, key, _, state| {
+                let enter = matches!(key, gdk::Key::Return | gdk::Key::KP_Enter);
+                if enter && state.contains(gdk::ModifierType::SHIFT_MASK) {
+                    ui.run(Some(false));
+                    return glib::Propagation::Stop;
+                }
+                glib::Propagation::Proceed
+            }
+        ));
+        ui.entry.add_controller(keys);
+        older.connect_clicked(glib::clone!(
+            #[strong]
+            ui,
+            move |_| ui.run(Some(true))
+        ));
+        newer.connect_clicked(glib::clone!(
+            #[strong]
+            ui,
+            move |_| ui.run(Some(false))
+        ));
+        ui.bar.connect_search_mode_enabled_notify(glib::clone!(
+            #[strong]
+            ui,
+            move |bar| {
+                if bar.is_search_mode() {
+                    return;
+                }
+                if let Some(view) = ui.view() {
+                    view.search_clear();
+                    view.grab_focus();
+                }
+            }
+        ));
+        ui
+    }
+
+    fn view(&self) -> Option<TerminalView> {
+        selected(&self.tabs.upgrade()?)
+    }
+
+    fn open(&self) {
+        self.bar.set_search_mode(true);
+        self.entry.grab_focus();
+        self.run(None);
+    }
+
+    fn run(&self, older: Option<bool>) {
+        let Some(view) = self.view() else {
+            return;
+        };
+        let text = self.entry.text();
+        let (position, count) = view.search(&text, older);
+        self.count.set_text(&match count {
+            0 if text.is_empty() => String::new(),
+            0 => "No matches".to_string(),
+            _ => format!("{position} of {count}"),
+        });
+    }
+
+    /// A new tab was selected: only it shows matches.
+    fn retarget(&self, tabs: &adw::TabView) {
+        for i in 0..tabs.n_pages() {
+            if let Ok(view) = tabs.nth_page(i).child().downcast::<TerminalView>() {
+                view.search_clear();
+            }
+        }
+        if self.bar.is_search_mode() {
+            self.run(None);
+        }
     }
 }
 

@@ -454,6 +454,48 @@ impl Session {
         term.request_render();
     }
 
+    /// Matches of `pattern` across scrollback and screen, top to bottom,
+    /// at most `max`. A pattern that isn't a valid regex is searched as
+    /// text.
+    pub fn search(&self, pattern: &str, max: usize) -> Vec<(Pos, Pos)> {
+        use rio_vt::crosswords::pos::Direction;
+        use rio_vt::crosswords::search::{RegexIter, RegexSearch};
+        if pattern.is_empty() {
+            return Vec::new();
+        }
+        let Some(mut regex) = RegexSearch::new(pattern)
+            .or_else(|_| RegexSearch::new(&escape(pattern)))
+            .ok()
+        else {
+            return Vec::new();
+        };
+        let term = self.terminal.lock();
+        let start = Pos::new(Line(-(term.history_size() as i32)), Column(0));
+        let end = Pos::new(
+            Line(term.screen_lines() as i32 - 1),
+            Column(term.columns().saturating_sub(1)),
+        );
+        RegexIter::new(start, end, Direction::Right, &term, &mut regex)
+            .take(max)
+            .map(|m| (*m.start(), *m.end()))
+            .collect()
+    }
+
+    /// Scroll so grid line `line` is on screen, centered when it wasn't.
+    pub fn reveal(&self, line: Line) {
+        let mut term = self.terminal.lock();
+        let lines = term.screen_lines() as i32;
+        let offset = term.display_offset() as i32;
+        let row = line.0 + offset;
+        if (0..lines).contains(&row) {
+            return;
+        }
+        let wanted = (lines / 2 - line.0).clamp(0, term.history_size() as i32);
+        term.scroll_display(Scroll::Delta(wanted - offset));
+        term.mark_fully_damaged();
+        term.request_render();
+    }
+
     /// Run `program` detached, in the shell's directory.
     pub fn exec(&self, program: &str, args: &[String]) {
         #[cfg(unix)]
@@ -530,6 +572,17 @@ impl Drop for Session {
         #[cfg(unix)]
         let _ = self.terminator.hangup();
     }
+}
+
+fn escape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if "\\.+*?()|[]{}^$#&-~".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 fn shell_name(config: &Config) -> String {
