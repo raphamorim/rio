@@ -4,7 +4,6 @@
 
 use std::cmp::{max, PartialEq};
 use std::mem;
-use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 
 use super::compress::{self, Block, HistoryMemory, BLOCK_ROWS};
@@ -278,41 +277,17 @@ impl<T> Storage<T> {
         }
     }
 
-    /// Swap implementation for Row<T>.
+    /// Swap two lines' rows.
     ///
-    /// Exploits the known size of Row<T> to produce a slightly more efficient
-    /// swap than going through slice::swap.
-    ///
-    /// `Row<T>` is currently 6 usizes wide: `inner: Vec<T>` (3 usize) +
-    /// `occ: usize` (1) + the flags and `packed_at` (1 with padding) +
-    /// `packed` (1). The qword loop copies `ROW_WORDS` of them.
+    /// A plain `slice::swap`: a hand-rolled word loop here used to assume
+    /// `Row`'s size in words, which differs between 64- and 32-bit targets
+    /// (wasm) and changes with its fields; the compiler makes the same word
+    /// copies of this.
+    #[inline]
     pub fn swap(&mut self, a: Line, b: Line) {
-        const ROW_WORDS: usize = 6;
-        debug_assert_eq!(
-            mem::size_of::<Row<T>>(),
-            mem::size_of::<usize>() * ROW_WORDS
-        );
-
         let a = self.compute_index(a);
         let b = self.compute_index(b);
-
-        unsafe {
-            // Cast to a qword array to opt out of copy restrictions and avoid
-            // drop hazards. Byte array is no good here since for whatever
-            // reason LLVM won't optimized it.
-            let a_ptr = self.inner.as_mut_ptr().add(a) as *mut MaybeUninit<usize>;
-            let b_ptr = self.inner.as_mut_ptr().add(b) as *mut MaybeUninit<usize>;
-
-            // Copy 1 qword at a time.
-            //
-            // The optimizer unrolls this loop and vectorizes it.
-            let mut tmp: MaybeUninit<usize>;
-            for i in 0..ROW_WORDS as isize {
-                tmp = *a_ptr.offset(i);
-                *a_ptr.offset(i) = *b_ptr.offset(i);
-                *b_ptr.offset(i) = tmp;
-            }
-        }
+        self.inner.swap(a, b);
     }
 
     /// Rotate the grid, moving all lines up/down in history.
