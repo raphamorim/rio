@@ -25,6 +25,12 @@ impl Grid<Square> {
             Ordering::Equal => (),
         }
 
+        // A column resize rewrites every row: compressed ones are made
+        // plain first (compressing again is up to the embedder).
+        if self.columns != columns {
+            self.raw.decompress_all();
+        }
+
         match self.columns.cmp(&columns) {
             Ordering::Less => self.grow_columns(reflow, columns),
             Ordering::Greater => self.shrink_columns(reflow, columns),

@@ -524,7 +524,9 @@ impl ColorBuilder {
 
         // An optional `#`, then 6 or 8 hex characters.
         let digits = hex.strip_prefix('#').unwrap_or(&hex);
-        if !matches!(digits.len(), 6 | 8) || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if !matches!(digits.len(), 6 | 8)
+            || !digits.bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return Err(String::from("Error: Hex String size is not valid"));
         }
 

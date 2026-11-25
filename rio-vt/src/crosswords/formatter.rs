@@ -2379,6 +2379,16 @@ mod snapshot_tests {
             {
                 continue;
             }
+            // Every fourth terminal with its history compressed: it reads
+            // the same.
+            if seed % 4 == 1 {
+                let before = a.term.snapshot_formatted();
+                a.term.compress_history(None);
+                assert!(
+                    a.term.snapshot_formatted() == before,
+                    "seed {seed}: compressed"
+                );
+            }
             let mut b = a.copy();
             first_difference(&a, &b, seed, "", &input);
             // (Not the plain text: a tab copies as `\t` from the original

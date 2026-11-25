@@ -1362,6 +1362,35 @@ impl<U: EventListener> Crosswords<U> {
             .saturating_sub(self.grid.screen_lines())
     }
 
+    /// Compress cold scrollback: history rows above the viewport, packed a
+    /// block of rows at a time (byte planes, LZ4; about 25-30x smaller on
+    /// real output). Reading a compressed row decodes its block (once,
+    /// kept until the next call); changing one makes it plain again.
+    /// Nothing else changes: text, snapshots, search and selection read
+    /// the same.
+    ///
+    /// `max_blocks` bounds the work (`None`: all of it); the result says
+    /// whether more is left, so an embedder can call it again while idle
+    /// until it returns false. Call it once output has been quiet for a
+    /// moment, and again after something read the history (a snapshot,
+    /// a search) to drop the decoded copies.
+    pub fn compress_history(&mut self, max_blocks: Option<usize>) -> bool {
+        // Both screens: the primary one is inactive under an alt-screen
+        // program (the alt screen has no history).
+        let more = self.grid.compress_history(max_blocks);
+        self.inactive_grid.compress_history(max_blocks) || more
+    }
+
+    /// How much of the primary screen's history is compressed, and its
+    /// memory.
+    pub fn history_memory(&self) -> grid::compress::HistoryMemory {
+        if self.mode.contains(Mode::ALT_SCREEN) {
+            self.inactive_grid.history_memory()
+        } else {
+            self.grid.history_memory()
+        }
+    }
+
     /// Route parser replies to the PTY's writer thread instead of the
     /// event loop: each reply is handed to `sink` the moment the parser
     /// produces it, so it keeps its place among everything else bound

@@ -7,8 +7,11 @@ use std::mem;
 use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 
+use super::compress::{self, Block, HistoryMemory, BLOCK_ROWS};
 use super::Row;
+use crate::crosswords::square::Square;
 use crate::crosswords::Line;
+use std::sync::Arc;
 
 /// Maximum number of buffered lines outside of the grid for performance optimization.
 const MAX_CACHE_SIZE: usize = 1_000;
@@ -155,8 +158,11 @@ impl<T> Storage<T> {
         // is dropped by the `drain`.
         let keep = MAX_CACHE_SIZE.saturating_sub(self.free.len());
         let mut kept = 0;
-        for row in self.inner.drain(self.len..) {
+        for mut row in self.inner.drain(self.len..) {
             if kept < keep {
+                // A pooled row comes back blank: it mustn't keep a
+                // compressed block alive meanwhile.
+                row.packed = None;
                 self.free.push(row);
                 kept += 1;
             }
@@ -253,6 +259,7 @@ impl<T> Storage<T> {
         T: Clone + Default,
     {
         for row in &mut self.inner {
+            row.unpack();
             row.grow(columns);
         }
     }
@@ -266,6 +273,7 @@ impl<T> Storage<T> {
         T: Clone + Default,
     {
         for row in &mut self.inner {
+            row.unpack();
             row.truncate_columns(columns);
         }
     }
@@ -275,12 +283,15 @@ impl<T> Storage<T> {
     /// Exploits the known size of Row<T> to produce a slightly more efficient
     /// swap than going through slice::swap.
     ///
-    /// `Row<T>` is currently 5 usizes wide: `inner: Vec<T>` (3 usize) +
-    /// `occ: usize` (1) + `kitty_virtual_placeholder: bool` (1 with padding).
-    /// The hand-rolled qword loop has to copy that many slots — bumping
-    /// the field count requires bumping the loop bound below.
+    /// `Row<T>` is currently 6 usizes wide: `inner: Vec<T>` (3 usize) +
+    /// `occ: usize` (1) + the flags and `packed_at` (1 with padding) +
+    /// `packed` (1). The qword loop copies `ROW_WORDS` of them.
     pub fn swap(&mut self, a: Line, b: Line) {
-        debug_assert_eq!(mem::size_of::<Row<T>>(), mem::size_of::<usize>() * 5);
+        const ROW_WORDS: usize = 6;
+        debug_assert_eq!(
+            mem::size_of::<Row<T>>(),
+            mem::size_of::<usize>() * ROW_WORDS
+        );
 
         let a = self.compute_index(a);
         let b = self.compute_index(b);
@@ -296,7 +307,7 @@ impl<T> Storage<T> {
             //
             // The optimizer unrolls this loop and vectorizes it.
             let mut tmp: MaybeUninit<usize>;
-            for i in 0..5 {
+            for i in 0..ROW_WORDS as isize {
                 tmp = *a_ptr.offset(i);
                 *a_ptr.offset(i) = *b_ptr.offset(i);
                 *b_ptr.offset(i) = tmp;
@@ -381,18 +392,150 @@ impl<T> Storage<T> {
 impl<T> Index<Line> for Storage<T> {
     type Output = Row<T>;
 
+    /// The row, a compressed one read from its block.
     #[inline]
     fn index(&self, index: Line) -> &Self::Output {
         let index = self.compute_index(index);
-        &self.inner[index]
+        self.inner[index].resolved()
     }
 }
 
-impl<T> IndexMut<Line> for Storage<T> {
+impl<T: Clone> IndexMut<Line> for Storage<T> {
+    /// The row to change, a compressed one made plain first.
     #[inline]
     fn index_mut(&mut self, index: Line) -> &mut Self::Output {
         let index = self.compute_index(index);
-        &mut self.inner[index]
+        let row = &mut self.inner[index];
+        row.unpack();
+        row
+    }
+}
+
+impl<T: Clone + Default> Storage<T> {
+    /// The row to overwrite whole: a compressed one comes back blank (its
+    /// width kept) instead of decoded.
+    #[inline]
+    pub fn index_mut_discard(&mut self, index: Line) -> &mut Row<T> {
+        let index = self.compute_index(index);
+        let row = &mut self.inner[index];
+        row.discard_packed();
+        row
+    }
+
+    /// Make every compressed row plain again (before a column resize,
+    /// which rewrites every row).
+    pub fn decompress_all(&mut self) {
+        for row in &mut self.inner {
+            row.unpack();
+        }
+    }
+}
+
+impl Storage<Square> {
+    /// The raw index of the row `positive` rows up from the bottom line,
+    /// past the lines in use too (the ring's spare rows, which keep rows
+    /// that left the history for a later grow to show again).
+    #[inline]
+    fn ring_index(&self, positive: usize) -> usize {
+        (self.zero + positive) % self.inner.len()
+    }
+
+    /// Compress the plain rows from `newest` rows up from the bottom line
+    /// to the top of the ring (the oldest history, then the spare rows),
+    /// `BLOCK_ROWS` at a time, at most `max_blocks` new blocks (`None`: no
+    /// limit). First drops the decoded copies reads made of blocks there.
+    /// A run of plain rows is compressed when it fills a block or a
+    /// compressed row follows it; the newest ones wait for a full block.
+    /// Returns whether rows were left plain for the limit.
+    pub(crate) fn compress_from(
+        &mut self,
+        newest: usize,
+        max_blocks: Option<usize>,
+    ) -> bool {
+        let top = self.inner.len();
+        if newest >= top {
+            return false;
+        }
+        // Oldest first: `order[k]` is the raw index of the k-th row.
+        let order: Vec<usize> = (newest..top).rev().map(|p| self.ring_index(p)).collect();
+
+        // Decoded copies go: rows point to a copy of their block without.
+        let mut fresh: Vec<(*const Block<Square>, Arc<Block<Square>>)> = Vec::new();
+        for &index in &order {
+            let row = &mut self.inner[index];
+            let Some(block) = &row.packed else { continue };
+            if !block.is_decoded() {
+                continue;
+            }
+            let key = Arc::as_ptr(block);
+            let new = match fresh.iter().find(|(k, _)| *k == key) {
+                Some((_, new)) => new.clone(),
+                None => {
+                    let new = Arc::new(block.without_cache());
+                    fresh.push((key, new.clone()));
+                    new
+                }
+            };
+            row.packed = Some(new);
+        }
+
+        let mut made = 0;
+        let mut k = 0;
+        let mut run = Vec::with_capacity(BLOCK_ROWS);
+        while k < order.len() {
+            run.clear();
+            while k < order.len() && run.len() < BLOCK_ROWS {
+                let index = order[k];
+                if self.inner[index].packed.is_some() {
+                    break;
+                }
+                run.push(index);
+                k += 1;
+            }
+            let full = run.len() == BLOCK_ROWS;
+            let before_packed = k < order.len();
+            if run.is_empty() || !(full || before_packed) {
+                // A compressed row, or the newest rows short of a block.
+                k += 1;
+                continue;
+            }
+            if max_blocks.is_some_and(|max| made >= max) {
+                return true;
+            }
+            let rows: Vec<&Row<Square>> = run.iter().map(|&j| &self.inner[j]).collect();
+            let block = Arc::new(compress::encode(&rows));
+            for (at, &j) in run.iter().enumerate() {
+                let row = &mut self.inner[j];
+                row.inner = Vec::new();
+                row.packed_at = at as u16;
+                row.packed = Some(block.clone());
+            }
+            made += 1;
+        }
+        false
+    }
+
+    /// What the rows from `newest` up to the top of the ring take,
+    /// compressed and not.
+    pub(crate) fn memory_from(&self, newest: usize) -> HistoryMemory {
+        let mut m = HistoryMemory::default();
+        let mut seen: Vec<*const Block<Square>> = Vec::new();
+        for p in newest..self.inner.len() {
+            let row = &self.inner[self.ring_index(p)];
+            match &row.packed {
+                None => m.plain_rows += 1,
+                Some(block) => {
+                    m.compressed_rows += 1;
+                    let key = Arc::as_ptr(block);
+                    if !seen.contains(&key) {
+                        seen.push(key);
+                        m.compressed_bytes += block.encoded_bytes();
+                        m.decoded_bytes += block.decoded_bytes();
+                    }
+                }
+            }
+        }
+        m
     }
 }
 
