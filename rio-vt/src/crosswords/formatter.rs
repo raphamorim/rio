@@ -741,9 +741,7 @@ impl<U: EventListener> Crosswords<U> {
                             if square.c() as u32 >= 0x80 && squeezed(grid, &square, pos) {
                                 // A cluster made wide in the last column,
                                 // where autowrap was off: written so again.
-                                if at + 1 == cols
-                                    && !row[last_col].wrapline()
-                                    && squeezed_cluster(grid, &square, pos)
+                                if at + 1 == cols && squeezed_cluster(grid, &square, pos)
                                 {
                                     out.s.push_str("\x1b[?7l");
                                     out.cell(grid, square, pos, opts.hyperlinks);
@@ -789,39 +787,54 @@ impl<U: EventListener> Crosswords<U> {
                         out.s.push(' ');
                         continue;
                     }
-                    // A neighbour the client would join to this cell (as
-                    // it was written before it): written first, then this
-                    // one, then on past both. Not one ending the row,
-                    // whose pending wrap the way back would lose.
-                    let width = if square.is_wide() { 2 } else { 1 };
-                    let next = at + width;
-                    if next < cells.len() {
+                    // Neighbours the client would join to the cell before
+                    // each (as they were written before it): the run is
+                    // written from its right end back, so no cell has its
+                    // left neighbour yet when written, then on past it. Not
+                    // one ending the row, whose pending wrap the way back
+                    // would lose.
+                    let width = |sq: &Square| if sq.is_wide() { 2 } else { 1 };
+                    let mut run = vec![(at, width(&square))];
+                    loop {
+                        let (start, w) = *run.last().unwrap();
+                        let next = start + w;
+                        if next >= cells.len() {
+                            break;
+                        }
                         let after = cells[next];
-                        let next_width = match after.wide() {
-                            Wide::Narrow => {
-                                let p = Pos::new(Line(line), Column(next));
-                                (!squeezed(grid, &after, p)).then_some(1)
-                            }
+                        let next_pos = Pos::new(Line(line), Column(next));
+                        let nw = match after.wide() {
+                            Wide::Narrow if !squeezed(grid, &after, next_pos) => 1,
                             Wide::Wide
                                 if next + 1 < cols
                                     && row[Column(next + 1)].is_spacer() =>
                             {
-                                Some(2)
+                                2
                             }
-                            _ => None,
+                            _ => break,
                         };
-                        let next_pos = Pos::new(Line(line), Column(next));
-                        if let Some(nw) = next_width.filter(|nw| next + nw < cols) {
-                            if would_join(grid, pos, next_pos) {
-                                let _ = write!(out.s, "\x1b[{width}C");
-                                out.cell(grid, after, next_pos, opts.hyperlinks);
-                                let _ = write!(out.s, "\x1b[{}D", width + nw);
-                                out.cell(grid, square, pos, opts.hyperlinks);
-                                let _ = write!(out.s, "\x1b[{nw}C");
-                                col = next + nw;
-                                continue;
-                            }
+                        let start_pos = Pos::new(Line(line), Column(start));
+                        if next + nw >= cols || !would_join(grid, start_pos, next_pos) {
+                            break;
                         }
+                        run.push((next, nw));
+                    }
+                    if run.len() > 1 {
+                        let &(last, last_w) = run.last().unwrap();
+                        let _ = write!(out.s, "\x1b[{}C", last - at);
+                        let mut cursor = last;
+                        for &(start, w) in run.iter().rev() {
+                            if cursor > start {
+                                let _ = write!(out.s, "\x1b[{}D", cursor - start);
+                            }
+                            let p = Pos::new(Line(line), Column(start));
+                            out.cell(grid, cells[start], p, opts.hyperlinks);
+                            cursor = start + w;
+                        }
+                        let end = last + last_w;
+                        let _ = write!(out.s, "\x1b[{}C", end - cursor);
+                        col = end;
+                        continue;
                     }
                     out.cell(grid, square, pos, opts.hyperlinks);
                 }
@@ -2881,9 +2894,13 @@ mod snapshot_tests {
     fn a_flag_in_the_last_column_without_autowrap() {
         // A flag (two regional indicators) or an emoji made wide by VS16,
         // kept in one narrow cell where autowrap is off.
+        // Also where autowrap comes back and the row wraps on.
         for input in [
             "\x1b[?7l\x1b[5G\u{1f1fa}\u{1f1f8}",
             "\x1b[?7l\x1b[5G\u{263a}\u{fe0f}",
+            "\x1b[?7l\x1b[5G\u{1f1fa}\u{1f1f8}\x1b[?7hx",
+            "\x1b[?7l\x1b[5G\u{263a}\u{fe0f}\x1b[?7hx",
+            "\x1b[?1049h\x1b[?7l\x1b[5G\u{1f1fa}\u{1f1f8}\x1b[?7hx",
         ] {
             let mut a = T::new(5, 3);
             a.feed(input.as_bytes());
@@ -2898,11 +2915,14 @@ mod snapshot_tests {
     fn neighbours_that_would_join_stay_apart() {
         // Each written after the one to its right: two regional
         // indicators, and an emoji ending in a joiner before another.
+        // Three in a row too, each of which would join the one before.
         for input in [
             "\x1b[2G\u{1f1fa}\x1b[1G\u{1f1f8}",
             "\x1b[3G\u{1f466}\x1b[1G\u{1f469}\u{200d}",
+            "\x1b[3G\u{1f1fa}\x1b[2G\u{1f1f8}\x1b[1G\u{1f1e6}",
+            "\x1b[5G\u{1f466}\x1b[3G\u{1f469}\u{200d}\x1b[1G\u{1f468}\u{200d}",
         ] {
-            let mut a = T::new(6, 2);
+            let mut a = T::new(8, 2);
             a.feed(input.as_bytes());
             let b = a.copy();
             assert_eq!(cells(&a), cells(&b), "{input:?}");
