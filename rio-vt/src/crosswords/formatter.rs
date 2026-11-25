@@ -31,8 +31,9 @@
 //! would move the client's cursor. Half of a wide character whose other
 //! half is gone (inserting or deleting characters can split one) is a
 //! blank in its style. A cursor waiting to wrap at the end of a row that
-//! wraps on (which only restoring a saved cursor makes) keeps the row's
-//! wrap only while the saved cursor is that same one. The blank a wide
+//! wraps on (a line feed or a restored saved cursor can leave one) keeps
+//! the row's wrap where a row next to it doesn't wrap, or the saved cursor
+//! is that same one. The blank a wide
 //! character leaves at the end of
 //! the row it didn't fit on takes the character's style and link. A soft wrap
 //! flagged on the bottom row (a scroll
@@ -179,7 +180,11 @@ const PRIVATE_MODES: &[(Mode, u16)] = &[
     (Mode::ALTERNATE_SCROLL, 1007),
     (Mode::URGENCY_HINTS, 1042),
     (Mode::BRACKETED_PASTE, 2004),
+    (Mode::SYNC_UPDATE, 2026),
     (Mode::GRAPHEME_CLUSTER, 2027),
+    (Mode::SIXEL_DISPLAY, 80),
+    (Mode::SIXEL_PRIV_PALETTE, 1070),
+    (Mode::SIXEL_CURSOR_TO_THE_RIGHT, 8452),
 ];
 
 /// ANSI modes (SM/RM numbers).
@@ -513,6 +518,9 @@ impl<U: EventListener> Crosswords<U> {
 
         let alt = opts.state && self.mode.contains(Mode::ALT_SCREEN);
         if !alt {
+            if opts.state {
+                self.write_alt_state(out);
+            }
             self.write_rows(out, &self.grid, opts);
             out.plain();
             if opts.state {
@@ -586,6 +594,46 @@ impl<U: EventListener> Crosswords<U> {
         self.write_rows(out, &self.grid, opts.with_scrollback(false));
         out.plain();
         self.write_state(out);
+    }
+
+    /// What the alt screen keeps while the primary one is in use: its kitty
+    /// keyboard flags and its saved cursor (DECSC), which the next alt
+    /// session starts with. Its contents go: entering it clears them. Set
+    /// on a visit to it before anything else is written (leaving it puts
+    /// back the cursor entering saved, the home position).
+    fn write_alt_state(&self, out: &mut Out) {
+        let alt = &self.inactive_grid;
+        let saved = &alt.saved_cursor;
+        let saved_link = cell_link(alt, &saved.template);
+        let keyboard = self.inactive_keyboard_mode_idx != 0
+            || self.inactive_keyboard_mode_stack.iter().any(|&f| f != 0);
+        let cursor = saved.pos != Pos::default()
+            || saved.pending_style != Style::default()
+            || saved_link.is_some()
+            || line_drawing(&saved.charsets).next().is_some()
+            || saved.should_wrap
+            || alt.saved_origin;
+        if !keyboard && !cursor {
+            return;
+        }
+        out.s.push_str("\x1b[?1049h");
+        write_keyboard_stack(
+            &mut out.s,
+            &self.inactive_keyboard_mode_stack,
+            self.inactive_keyboard_mode_idx,
+        );
+        if cursor {
+            if alt.saved_origin {
+                out.s.push_str("\x1b[?6h");
+            }
+            let at = (saved.pos.row.0, saved.pos.col.0);
+            self.place_cursor(out, alt, at, 0, saved.should_wrap);
+            self.save_cursor(out, saved, saved_link);
+            if alt.saved_origin {
+                out.s.push_str("\x1b[?6l");
+            }
+        }
+        out.s.push_str("\x1b[?1049l");
     }
 
     /// The rows of `grid` (its history too with `opts.scrollback`), from
@@ -947,13 +995,41 @@ impl<U: EventListener> Crosswords<U> {
         if origin {
             out.s.push_str("\x1b[?6h");
         }
-        self.place_cursor(
-            out,
-            grid,
-            (cursor.pos.row.0, cursor.pos.col.0),
-            if origin { region.start.0 } else { 0 },
-            pending,
-        );
+        // A pending wrap on a row that wraps: rewriting the cell under the
+        // cursor would clear the row's wrap. Where a row next to it doesn't
+        // wrap, the cursor waits to wrap there instead and moves over with
+        // LF or RI, which keep a pending wrap and touch no cell.
+        let offset = if origin { region.start.0 } else { 0 };
+        let row = cursor.pos.row.0;
+        let wraps = |r: i32| grid[Line(r)][Column(cols - 1)].wrapline();
+        let reaches = |r: i32| !origin || region.contains(&Line(r));
+        let via = if pending && !together && wraps(row) {
+            let above = row - 1;
+            let below = row + 1;
+            if above >= 0 && !wraps(above) && reaches(above) && row != region.end.0 {
+                Some((above, "\n"))
+            } else if below < rows as i32
+                && !wraps(below)
+                && reaches(below)
+                && row + 1 != region.start.0
+            {
+                Some((below, "\x1bM"))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        match via {
+            Some((next_to, mv)) => {
+                let at = (next_to, cursor.pos.col.0);
+                self.place_cursor(out, grid, at, offset, true);
+                out.s.push_str(mv);
+            }
+            None => {
+                self.place_cursor(out, grid, (row, cursor.pos.col.0), offset, pending)
+            }
+        }
         if together {
             self.save_cursor(out, saved, saved_link.clone());
             rewrap(out, cursor.pos.row.0);
@@ -1025,6 +1101,13 @@ impl<U: EventListener> Crosswords<U> {
             if let Some(n) = n {
                 let _ = write!(out.s, "\x1b[{} q", n - self.blinking_cursor as u8);
             }
+        } else if self.blinking_cursor != self.default_blinking_cursor {
+            // The default shape, made to blink (or not) by mode 12.
+            out.s.push_str(if self.blinking_cursor {
+                "\x1b[?12h"
+            } else {
+                "\x1b[?12l"
+            });
         }
         out.s.push_str(if self.mode.contains(Mode::SHOW_CURSOR) {
             "\x1b[?25h"
@@ -1083,12 +1166,24 @@ pub(crate) fn shrink_slack(s: &mut String) {
 
 /// The kitty keyboard flags stack, from the bottom: the bottom entry is set
 /// in place (`CSI = flags ; 1 u`), the rest pushed (`CSI > flags u`).
+/// The stack is a ring (a push past its depth, or a pop past its bottom,
+/// wraps around): one with entries above its top is written as pushes
+/// all the way round, ending on the top.
 fn write_keyboard_stack(out: &mut String, stack: &[u8], top: usize) {
-    if stack[0] != 0 {
-        let _ = write!(out, "\x1b[={};1u", stack[0]);
+    let depth = stack.len();
+    if stack[top + 1..].iter().all(|&flags| flags == 0) {
+        if stack[0] != 0 {
+            let _ = write!(out, "\x1b[={};1u", stack[0]);
+        }
+        for &flags in &stack[1..=top] {
+            let _ = write!(out, "\x1b[>{flags}u");
+        }
+        return;
     }
-    for &flags in &stack[1..=top.min(stack.len() - 1)] {
-        let _ = write!(out, "\x1b[>{flags}u");
+    // From a fresh stack (top 0), the n-th push writes entry n % depth:
+    // the last `depth` of them write every entry and end on `top`.
+    for n in 1..=top + depth {
+        let _ = write!(out, "\x1b[>{}u", stack[n % depth]);
     }
 }
 
@@ -1836,6 +1931,72 @@ mod snapshot_tests {
     }
 
     #[test]
+    fn pending_wrap_after_a_line_feed_keeps_the_row_wrapped() {
+        // LF (and IND) keep a pending wrap: here on a row that wraps,
+        // whose next-door row above doesn't.
+        for lf in [&b"\n"[..], b"\x1bD"] {
+            let mut a = T::new(6, 5);
+            a.feed(b"ab\r\n1234567890\x1b[H123456").feed(lf);
+            assert!(a.term.grid.cursor.should_wrap);
+            let mut b = a.copy();
+            assert_same(&a, &b);
+            same(&mut a, &mut b, b"\x1b[3;1HZ");
+        }
+        // The row above wraps too: the one below doesn't, and RI comes up.
+        let mut a = T::new(6, 5);
+        a.feed(b"abcdefghijklmnop\x1b[3;1Hxxxxxx\x1bM");
+        assert!(a.term.grid.cursor.should_wrap);
+        assert_eq!(a.term.grid.cursor.pos.row, Line(1));
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        same(&mut a, &mut b, b"\x1b[5;1HZ");
+    }
+
+    #[test]
+    fn the_alt_screens_state_waits_under_the_primary() {
+        // Its kitty flags and saved cursor (with its charsets), for the
+        // next program that enters it.
+        let mut a = T::new(10, 4);
+        a.feed(b"\x1b[?1049h\x1b[>1u\x1b[2;3H\x1b(0\x1b7\x1b[?1049lprimary");
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        assert_eq!(b.term.keyboard_mode(), a.term.keyboard_mode());
+        same(&mut a, &mut b, b"\x1b[?1049h");
+        assert_eq!(b.term.keyboard_mode(), a.term.keyboard_mode());
+        same(&mut a, &mut b, b"\x1b8q");
+        same(&mut a, &mut b, b"\x1b[?1049l");
+    }
+
+    #[test]
+    fn a_keyboard_stack_that_wrapped_around() {
+        // The stack is a ring: a pop past the bottom goes to its top, and
+        // more pushes than it holds go round.
+        let inputs: [&[u8]; 2] = [
+            b"\x1b[<u\x1b[>1u\x1b[<u\x1b[=5;1u\x1b[>1u",
+            b"\x1b[>1u\x1b[>2u\x1b[>3u\x1b[>4u\x1b[>5u\x1b[>6u\x1b[>7u\x1b[>8u\x1b[>9u",
+        ];
+        for input in inputs {
+            let mut a = T::new(10, 4);
+            a.feed(input);
+            let mut b = a.copy();
+            assert_same(&a, &b);
+            for _ in 0..9 {
+                assert_eq!(b.term.keyboard_mode(), a.term.keyboard_mode());
+                same(&mut a, &mut b, b"\x1b[<u");
+            }
+        }
+    }
+
+    #[test]
+    fn sixel_synchronized_output_and_blink_modes() {
+        let mut a = T::new(10, 4);
+        a.feed(b"\x1b[?80h\x1b[?1070h\x1b[?8452h\x1b[?2026h\x1b[?12h");
+        let b = a.copy();
+        assert_same(&a, &b);
+        assert!(b.term.blinking_cursor);
+    }
+
+    #[test]
     fn wide_and_combining_characters() {
         let mut a = T::new(10, 4);
         // A wide character that doesn't fit at the end of a row (it leaves
@@ -2471,6 +2632,20 @@ mod snapshot_tests {
         a.feed(b"a\r\nb\r\nc\r\nd\r\ne");
         assert_eq!(a.term.format(FormatOptions::plain()), "c\nd\ne");
         assert_eq!(a.text(), "a\nb\nc\nd\ne");
+    }
+
+    #[test]
+    fn a_wide_character_that_wrapped_off_the_bottom() {
+        // The bottom row ends in the blank a wide character left, the
+        // character scrolled away: nothing of the row above comes in.
+        let mut a = T::new(3, 2);
+        a.feed("\r\nab界".as_bytes()).feed(b"\x1b[1T\x1b[1;1Hc");
+        assert_eq!(a.term.format(FormatOptions::plain()), "c\nab");
+        // The leading row of the history wraps into the next (the
+        // character is there).
+        let mut a = T::new(3, 1);
+        a.feed("ab界\r\nx".as_bytes());
+        assert_eq!(a.text(), "ab界\nx");
     }
 }
 
