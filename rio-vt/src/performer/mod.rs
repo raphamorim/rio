@@ -26,7 +26,7 @@ use crate::event::sync::TerminalLock;
 #[cfg(feature = "pty")]
 use crate::event::RioEvent;
 #[cfg(feature = "pty")]
-use crate::event::{EventListener, Msg, WindowId};
+use crate::event::{EventListener, Msg, WindowId, WindowSize};
 #[cfg(feature = "pty")]
 use corcovado::channel;
 #[cfg(all(unix, feature = "pty"))]
@@ -44,7 +44,7 @@ use std::sync::Arc;
 #[cfg(feature = "pty")]
 use std::thread::{Builder, JoinHandle};
 #[cfg(feature = "pty")]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 #[cfg(feature = "pty")]
 use tracing::error;
 
@@ -182,6 +182,11 @@ pub struct Machine<T: teletypewriter::EventedPty, U: EventListener> {
     route_id: usize,
 }
 
+/// A drag resizes on every frame. The child redraws on each SIGWINCH, and a
+/// shell that has not caught up with the reflow redraws in the wrong place.
+#[cfg(feature = "pty")]
+const RESIZE_SETTLE: Duration = Duration::from_millis(100);
+
 #[cfg(feature = "pty")]
 #[derive(Default)]
 pub struct State {
@@ -189,6 +194,9 @@ pub struct State {
     /// Deadline of the terminal's active synchronized update, refreshed
     /// whenever the terminal lock is held.
     sync_deadline: Option<Instant>,
+    /// The last size asked for, sent to the PTY when no resize follows it
+    /// for `RESIZE_SETTLE`.
+    pending_size: Option<(WindowSize, Instant)>,
 }
 
 #[cfg(feature = "pty")]
@@ -415,20 +423,28 @@ where
     /// Drain the channel.
     ///
     /// Returns `false` when a shutdown message was received.
-    fn drain_recv_channel(&mut self) -> bool {
+    fn drain_recv_channel(&mut self, state: &mut State) -> bool {
         while let Some(msg) = self.receiver.recv() {
             match msg {
                 // Bytes for the PTY are the writer's; this channel only
                 // ever carries what the writer passed on, so none come.
                 Msg::Input(_) | Msg::Reply(_) => (),
                 Msg::Resize(window_size) => {
-                    let _ = self.pty.set_winsize(window_size.into());
+                    state.pending_size =
+                        Some((window_size, Instant::now() + RESIZE_SETTLE));
                 }
                 Msg::Shutdown => return false,
             }
         }
 
         true
+    }
+
+    /// Tell the child the new size once no resize came for `RESIZE_SETTLE`.
+    fn settle_resize(&mut self, state: &mut State, now: Instant) {
+        if let Some((size, _)) = state.pending_size.take_if(|(_, at)| *at <= now) {
+            let _ = self.pty.set_winsize(size.into());
+        }
     }
 
     /// The one channel an owner holds: the writer's inbox. Input and
@@ -519,9 +535,11 @@ where
         let mut events = Events::with_capacity(1024);
 
         loop {
-            // Wakeup the event loop when a synchronized update timeout was reached.
-            let timeout = state
-                .sync_deadline
+            // Wakeup the event loop when a synchronized update timeout or a settled resize is due.
+            let timeout = [state.sync_deadline, state.pending_size.map(|(_, at)| at)]
+                .into_iter()
+                .flatten()
+                .min()
                 .map(|deadline| deadline.saturating_duration_since(Instant::now()));
 
             events.clear();
@@ -545,12 +563,14 @@ where
                 state.sync_deadline = terminal.sync_update_deadline();
             }
 
+            self.settle_resize(state, Instant::now());
+
             if events.is_empty() && self.receiver.peek().is_none() {
                 continue;
             }
 
             // Handle control messages, if there are any.
-            if !self.drain_recv_channel() {
+            if !self.drain_recv_channel(state) {
                 if self.writer_failed.load(Ordering::Acquire) {
                     return Err(io::Error::other("the PTY writer stopped"));
                 }

@@ -643,6 +643,7 @@ fn input_queued_before_the_shutdown_is_written() {
 fn a_resize_reaches_the_pty() {
     let machine = machine(Vec::new(), None);
     let channel = machine.channel();
+    let handle = machine.spawn();
     channel
         .send(Msg::Resize(crate::event::WindowSize {
             rows: 30,
@@ -651,9 +652,36 @@ fn a_resize_reaches_the_pty() {
             height: 600,
         }))
         .unwrap();
+    std::thread::sleep(RESIZE_SETTLE * 3);
     channel.send(Msg::Shutdown).unwrap();
-    let (machine, _) = machine.spawn().join().unwrap();
+    let (machine, _) = handle.join().unwrap();
     assert_eq!(machine.pty.winsize_calls, 1);
+}
+
+#[test]
+fn a_burst_of_resizes_reaches_the_child_when_it_stops() {
+    let mut machine = machine(Vec::new(), None);
+    let mut state = State::default();
+    // What the writer passes on: the reader's control channel.
+    let channel = machine.writer.as_ref().unwrap().control.clone();
+    for cols in [79, 78, 77] {
+        channel
+            .send(Msg::Resize(crate::event::WindowSize {
+                rows: 24,
+                cols,
+                width: cols * 8,
+                height: 384,
+            }))
+            .unwrap();
+    }
+    assert!(machine.drain_recv_channel(&mut state));
+
+    machine.settle_resize(&mut state, Instant::now());
+    assert_eq!(machine.pty.winsize_calls, 0);
+
+    machine.settle_resize(&mut state, Instant::now() + RESIZE_SETTLE);
+    assert_eq!(machine.pty.winsize_calls, 1);
+    assert!(state.pending_size.is_none());
 }
 
 #[test]
