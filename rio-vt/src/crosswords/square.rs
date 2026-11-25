@@ -142,8 +142,6 @@ bitflags! {
         const HYPERLINK        = 1 << 2;
  /// Cell carries multi-codepoint grapheme cluster. Lookup via extras_id.
         const GRAPHEME         = 1 << 3;
-        const SEMANTIC_INPUT   = 1 << 4;
-        const SEMANTIC_PROMPT  = 1 << 5;
     }
 }
 
@@ -217,12 +215,16 @@ pub struct Extras {
     /// with, as its registry version (spec §6.3). The cell draws that
     /// registration whatever is registered at the codepoint later.
     pub glyph: Option<u32>,
+    pub semantic: SemanticContent,
 }
 
 impl Extras {
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.zerowidth.is_empty() && self.hyperlink.is_none() && self.glyph.is_none()
+        self.zerowidth.is_empty()
+            && self.hyperlink.is_none()
+            && self.glyph.is_none()
+            && self.semantic == SemanticContent::Output
     }
 }
 
@@ -333,30 +335,6 @@ impl Square {
         let mut cur = self.cell_flags();
         cur.remove(f);
         self.set_cell_flags(cur);
-    }
-
-    #[inline]
-    pub fn semantic_content(self) -> SemanticContent {
-        let flags = self.cell_flags();
-        if flags.contains(CellFlags::SEMANTIC_PROMPT) {
-            SemanticContent::Prompt
-        } else if flags.contains(CellFlags::SEMANTIC_INPUT) {
-            SemanticContent::Input
-        } else {
-            SemanticContent::Output
-        }
-    }
-
-    #[inline]
-    pub fn set_semantic_content(&mut self, content: SemanticContent) {
-        let mut flags = self.cell_flags();
-        flags.remove(CellFlags::SEMANTIC_INPUT | CellFlags::SEMANTIC_PROMPT);
-        match content {
-            SemanticContent::Output => {}
-            SemanticContent::Input => flags.insert(CellFlags::SEMANTIC_INPUT),
-            SemanticContent::Prompt => flags.insert(CellFlags::SEMANTIC_PROMPT),
-        }
-        self.set_cell_flags(flags);
     }
 
     #[inline]

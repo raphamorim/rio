@@ -2510,14 +2510,14 @@ impl<U: EventListener> Crosswords<U> {
     /// Build the cursor's current style/extras/flags into a zero-codepoint
     /// `Square` template for `write_cell`.
     #[inline]
-    fn cell_template(&self) -> crate::crosswords::square::Square {
+    fn cell_template(&mut self) -> crate::crosswords::square::Square {
         let mut t = crate::crosswords::square::Square::default();
         t.set_style_id(self.grid.cursor.template.style_id());
         t.set_extras_id(self.grid.cursor.template.extras_id());
         t.set_cell_flags(self.grid.cursor.template.cell_flags());
         let content = self.grid.semantic.content;
         if content != crate::crosswords::square::SemanticContent::Output {
-            t.set_semantic_content(content);
+            t.set_extras_id(self.semantic_extras(t.extras_id(), content));
         }
         t
     }
@@ -4211,8 +4211,8 @@ impl<U: EventListener> Handler for Crosswords<U> {
                 let row_ref = &self.grid[row];
                 if row_ref.semantic_prompt != SemanticPrompt::None
                     && (self.grid.cursor.pos.col == Column(0)
-                        || row_ref.inner.iter().all(|cell| {
-                            cell.semantic_content() == SemanticContent::Output
+                        || row_ref.inner.iter().all(|&cell| {
+                            self.cell_semantic(cell) == SemanticContent::Output
                         }))
                 {
                     self.grid[row].semantic_prompt = SemanticPrompt::None;

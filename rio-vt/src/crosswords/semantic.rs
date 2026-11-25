@@ -1,7 +1,7 @@
 use crate::crosswords::grid::row::SemanticPrompt;
 use crate::crosswords::grid::Dimensions;
 use crate::crosswords::pos::{Column, Line, Pos};
-use crate::crosswords::square::{ContentTag, SemanticContent, Square};
+use crate::crosswords::square::{ContentTag, ExtrasId, SemanticContent, Square};
 use crate::crosswords::Crosswords;
 use crate::event::EventListener;
 
@@ -40,6 +40,45 @@ fn has_text(cell: Square) -> bool {
 }
 
 impl<U: EventListener> Crosswords<U> {
+    #[inline]
+    pub fn cell_semantic(&self, cell: Square) -> SemanticContent {
+        cell.extras_id_checked()
+            .and_then(|id| self.grid.extras_table.get(id))
+            .map_or(SemanticContent::Output, |extras| extras.semantic)
+    }
+
+    #[inline]
+    pub(crate) fn semantic_extras(
+        &mut self,
+        base: Option<ExtrasId>,
+        content: SemanticContent,
+    ) -> Option<ExtrasId> {
+        if let Some(id) = self.grid.extras_table.semantic_with(base, content) {
+            return Some(id);
+        }
+        self.alloc_semantic_extras(base, content)
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn alloc_semantic_extras(
+        &mut self,
+        base: Option<ExtrasId>,
+        content: SemanticContent,
+    ) -> Option<ExtrasId> {
+        let mut extras = base
+            .and_then(|id| self.grid.extras_table.get(id))
+            .cloned()
+            .unwrap_or_default();
+        extras.semantic = content;
+        let id = self.grid.alloc_extras(extras);
+        if id == 0 {
+            return base;
+        }
+        self.grid.extras_table.set_semantic_with(base, content, id);
+        Some(id)
+    }
+
     pub fn semantic_prompt_seen(&self) -> bool {
         self.grid.semantic.seen
     }
@@ -137,7 +176,7 @@ impl<U: EventListener> Crosswords<U> {
         loop {
             let row = &self.grid[row_line];
             if let Some(col) = (0..columns).find(|&col| {
-                row[Column(col)].semantic_content() != SemanticContent::Output
+                self.cell_semantic(row[Column(col)]) != SemanticContent::Output
             }) {
                 return Pos::new(row_line, Column(col));
             }
@@ -163,7 +202,7 @@ impl<U: EventListener> Crosswords<U> {
                     break 'rows;
                 }
                 let cell = row[Column(col)];
-                match cell.semantic_content() {
+                match self.cell_semantic(cell) {
                     SemanticContent::Prompt | SemanticContent::Input => {
                         if start.is_some() {
                             break 'rows;
@@ -182,7 +221,7 @@ impl<U: EventListener> Crosswords<U> {
 
         let row = &self.grid[start.row];
         if (0..start.col.0)
-            .all(|col| row[Column(col)].semantic_content() == SemanticContent::Output)
+            .all(|col| self.cell_semantic(row[Column(col)]) == SemanticContent::Output)
         {
             start.col = Column(0);
         }
@@ -330,16 +369,72 @@ mod tests {
         assert!(!cw.last_command_output().unwrap().running);
     }
 
+    fn extras_of(
+        cw: &Crosswords<VoidListener>,
+        line: i32,
+        col: usize,
+    ) -> crate::crosswords::square::Extras {
+        cw.grid[Line(line)][Column(col)]
+            .extras_id()
+            .and_then(|id| cw.grid.extras_table.get(id))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn output_rows_carry_no_extras() {
+        let mut cw = term(20, 5, 100);
+        feed(&mut cw, "<A>$ <B>ls\r\n<C>out\r\n<D>");
+        assert!(cw.grid[Line(0)].has_extras);
+        assert!(!cw.grid[Line(1)].has_extras);
+    }
+
+    #[test]
+    fn tags_combine_with_hyperlinks_and_marks() {
+        let mut cw = term(30, 5, 100);
+        feed(
+            &mut cw,
+            "<A>\x1b]8;;http://a\x07$ <B>x\x1b]8;;\x07ye\u{301}",
+        );
+        let prompt = extras_of(&cw, 0, 0);
+        assert_eq!(prompt.semantic, SemanticContent::Prompt);
+        assert!(prompt.hyperlink.is_some());
+        let linked = extras_of(&cw, 0, 2);
+        assert_eq!(linked.semantic, SemanticContent::Input);
+        assert!(linked.hyperlink.is_some());
+        let plain = extras_of(&cw, 0, 3);
+        assert_eq!(plain.semantic, SemanticContent::Input);
+        assert!(plain.hyperlink.is_none());
+        let marked = extras_of(&cw, 0, 4);
+        assert_eq!(marked.semantic, SemanticContent::Input);
+        assert_eq!(marked.zerowidth, vec!['\u{301}']);
+    }
+
+    #[test]
+    fn sweep_does_not_reuse_a_stale_tag() {
+        let mut cw = term(30, 5, 100);
+        feed(&mut cw, "<A>$ <B>a\x1b[2K");
+        cw.grid.reclaim_extras();
+        let _ = cw.grid.alloc_extras(crate::crosswords::square::Extras {
+            hyperlink: Some(crate::crosswords::square::Hyperlink::new(None, "u")),
+            ..Default::default()
+        });
+        feed(&mut cw, "b");
+        let extras = extras_of(&cw, 0, 3);
+        assert_eq!(extras.semantic, SemanticContent::Input);
+        assert!(extras.hyperlink.is_none());
+    }
+
     #[test]
     fn tags_cells_by_content() {
         let mut cw = term(20, 5, 100);
         feed(&mut cw, "<A>$ <B>ls\r\n<C>out");
         let row0 = &cw.grid[Line(0)];
-        assert_eq!(row0[Column(0)].semantic_content(), SemanticContent::Prompt);
-        assert_eq!(row0[Column(2)].semantic_content(), SemanticContent::Input);
-        assert_eq!(row0[Column(5)].semantic_content(), SemanticContent::Output);
+        assert_eq!(cw.cell_semantic(row0[Column(0)]), SemanticContent::Prompt);
+        assert_eq!(cw.cell_semantic(row0[Column(2)]), SemanticContent::Input);
+        assert_eq!(cw.cell_semantic(row0[Column(5)]), SemanticContent::Output);
         assert_eq!(
-            cw.grid[Line(1)][Column(0)].semantic_content(),
+            cw.cell_semantic(cw.grid[Line(1)][Column(0)]),
             SemanticContent::Output
         );
         assert_eq!(cw.grid[Line(0)].semantic_prompt, SemanticPrompt::Prompt);

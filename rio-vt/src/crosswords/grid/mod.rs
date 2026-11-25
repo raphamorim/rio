@@ -169,6 +169,22 @@ pub struct ExtrasTable {
     /// it. Allocated on the first binding.
     #[cfg(feature = "graphics")]
     glyph_only: GlyphOnlyCache,
+    semantic: SemanticCache,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct SemanticCache(
+    Option<(
+        Option<crate::crosswords::square::ExtrasId>,
+        crate::crosswords::square::SemanticContent,
+        crate::crosswords::square::ExtrasId,
+    )>,
+);
+
+impl PartialEq for SemanticCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 /// A cache, so not part of what makes two tables equal.
@@ -200,7 +216,29 @@ impl ExtrasTable {
             allocs_since_reclaim: 0,
             #[cfg(feature = "graphics")]
             glyph_only: GlyphOnlyCache::default(),
+            semantic: SemanticCache::default(),
         }
+    }
+
+    #[inline]
+    pub fn semantic_with(
+        &self,
+        base: Option<crate::crosswords::square::ExtrasId>,
+        content: crate::crosswords::square::SemanticContent,
+    ) -> Option<crate::crosswords::square::ExtrasId> {
+        match self.semantic.0 {
+            Some((b, c, id)) if b == base && c == content => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn set_semantic_with(
+        &mut self,
+        base: Option<crate::crosswords::square::ExtrasId>,
+        content: crate::crosswords::square::SemanticContent,
+        id: crate::crosswords::square::ExtrasId,
+    ) {
+        self.semantic.0 = Some((base, content, id));
     }
 
     /// The slot of extras holding only a binding of block codepoint
@@ -298,6 +336,7 @@ impl ExtrasTable {
     /// Resets the reclaim cadence, matching `StyleSet::sweep_unmarked`.
     pub fn sweep_unmarked(&mut self, live: &[u64]) {
         self.allocs_since_reclaim = 0;
+        self.semantic.0 = None;
         // Freed ids are reused for other extras.
         #[cfg(feature = "graphics")]
         self.glyph_only.0.fill((0, 0));
