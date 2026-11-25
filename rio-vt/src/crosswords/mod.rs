@@ -2966,6 +2966,7 @@ impl<U: EventListener> Crosswords<U> {
 
             // Drop information about the primary screens saved cursor.
             self.grid.saved_cursor = self.grid.cursor.clone();
+            self.grid.saved_origin = self.mode.contains(Mode::ORIGIN);
 
             // Reset alternate screen contents.
             self.inactive_grid.sync_template_style();
@@ -3007,6 +3008,12 @@ impl<U: EventListener> Crosswords<U> {
 
         mem::swap(&mut self.grid, &mut self.inactive_grid);
         self.mode ^= Mode::ALT_SCREEN;
+        // Leaving the alt screen restores the cursor saved on entering it
+        // (the primary's own, which nothing moved), origin mode with it:
+        // an alt-screen program's DECOM doesn't outlive it.
+        if !self.mode.contains(Mode::ALT_SCREEN) {
+            self.mode.set(Mode::ORIGIN, self.grid.saved_origin);
+        }
         self.selection = None;
         // The vi cursor may be on a scrollback row the alt screen does
         // not have, or below a primary viewport scrolled into history.
@@ -5194,6 +5201,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn save_cursor_position(&mut self) {
         self.grid.saved_cursor = self.grid.cursor.clone();
+        self.grid.saved_origin = self.mode.contains(Mode::ORIGIN);
     }
 
     #[inline]
@@ -5202,6 +5210,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         self.damage_cursor();
         self.grid.cursor = self.grid.saved_cursor.clone();
+        // DECRC restores origin mode with the cursor (off when nothing
+        // was saved), so a restored position is read as it was saved.
+        self.mode.set(Mode::ORIGIN, self.grid.saved_origin);
         self.damage_cursor();
     }
 
@@ -7389,6 +7400,60 @@ mod tests {
             assert_eq!(cw.grid[Line(row)][Column(4)].c(), 'X');
             assert_eq!(cw.grid.cursor.pos.row, Line(row));
         }
+    }
+
+    // DECSC saves origin mode with the cursor and DECRC restores it, as in
+    // xterm and kitty.
+
+    #[test]
+    fn decrc_restores_origin_mode() {
+        let (cw, _) = cursor_after(b"\x1b[?6h\x1b7\x1b[?6l\x1b8");
+        assert!(cw.mode().contains(Mode::ORIGIN));
+        let (cw, _) = cursor_after(b"\x1b7\x1b[?6h\x1b8");
+        assert!(!cw.mode().contains(Mode::ORIGIN));
+    }
+
+    #[test]
+    fn decrc_without_a_save_turns_origin_mode_off() {
+        let (cw, pos) = cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[2;2H\x1b8");
+        assert!(!cw.mode().contains(Mode::ORIGIN));
+        assert_eq!(pos, (0, 0));
+    }
+
+    #[test]
+    fn decrc_reads_the_restored_position_as_saved() {
+        // Saved at the top-left in origin mode with no region; a region
+        // set afterwards doesn't move where restoring puts the cursor,
+        // and the next CUP is in the region's rows.
+        let (mut cw, pos) = cursor_after(b"\x1b[?6h\x1b7\x1b[2;4r\x1b8");
+        assert_eq!(pos, (0, 0));
+        cw.input('X');
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), 'X');
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b[1;1H");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(1), Column(0)));
+    }
+
+    #[test]
+    fn each_screen_saves_its_own_origin_mode() {
+        // Entering the alt screen saves the primary's cursor, origin mode
+        // included; leaving restores it, whatever the program did.
+        let (cw, _) = cursor_after(b"\x1b[?1049h\x1b[?6h\x1b[?1049l");
+        assert!(!cw.mode().contains(Mode::ORIGIN));
+        let (cw, pos) =
+            cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[2;2H\x1b[?1049h\x1b[?6l\x1b[?1049l");
+        assert!(cw.mode().contains(Mode::ORIGIN));
+        assert_eq!(pos, (2, 1));
+        // The alt screen's DECSC doesn't touch the primary's.
+        let (cw, _) =
+            cursor_after(b"\x1b[?6h\x1b7\x1b[?1049h\x1b[?6l\x1b7\x1b[?1049l\x1b8");
+        assert!(cw.mode().contains(Mode::ORIGIN));
+    }
+
+    #[test]
+    fn reset_forgets_the_saved_origin_mode() {
+        let (cw, _) = cursor_after(b"\x1b[?6h\x1b7\x1bc\x1b8");
+        assert!(!cw.mode().contains(Mode::ORIGIN));
     }
 
     // Each screen has its own kitty keyboard flags stack (as in kitty);

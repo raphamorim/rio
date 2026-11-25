@@ -421,6 +421,12 @@ impl<U: EventListener> Crosswords<U> {
             &self.inactive_keyboard_mode_stack,
             self.inactive_keyboard_mode_idx,
         );
+        // Entering the alt screen saves origin mode with the cursor, and
+        // leaving restores it: set it as it was saved, and reset it once
+        // in (no region is set yet, so the cursor's row is the screen's).
+        if primary.saved_origin {
+            out.s.push_str("\x1b[?6h");
+        }
         let at = primary.cursor.pos;
         self.place_cursor(
             &mut out,
@@ -456,6 +462,9 @@ impl<U: EventListener> Crosswords<U> {
             let _ = write!(out.s, "\x1b{intro}0");
         }
         out.s.push_str("\x1b[?1049h");
+        if primary.saved_origin {
+            out.s.push_str("\x1b[?6l");
+        }
         for (_, intro) in line_drawing(&primary.cursor.charsets) {
             let _ = write!(out.s, "\x1b{intro}B");
         }
@@ -739,20 +748,30 @@ impl<U: EventListener> Crosswords<U> {
         let saved_link = cell_link(grid, &saved.template);
         let cursor = &grid.cursor;
         // In origin mode a CUP reaches only the region's rows; a cursor
-        // outside them (DECRC can restore one there) is placed as near
-        // as it goes, and no cell is rewritten for it.
+        // outside them (DECRC after the region changed can restore one
+        // there) is placed as near as it goes, and no cell is rewritten
+        // for it.
         let origin = self.mode.contains(Mode::ORIGIN);
         let reachable = !origin || region.contains(&cursor.pos.row);
         let pending = cursor.should_wrap && reachable;
-        let together = pending && saved.should_wrap && saved.pos == cursor.pos;
+        let together = pending
+            && saved.should_wrap
+            && saved.pos == cursor.pos
+            && grid.saved_origin == origin;
         if !together
             && (saved.pos != Pos::default()
                 || saved.pending_style != Style::default()
                 || saved_link.is_some()
                 || line_drawing(&saved.charsets).next().is_some()
-                || saved.should_wrap)
+                || saved.should_wrap
+                || grid.saved_origin)
         {
-            // DECSC saves the whole cursor, a pending wrap too.
+            // DECSC saves the whole cursor, a pending wrap and origin mode
+            // too. No region is set yet, so with origin mode on the
+            // cursor's row is still the screen's.
+            if grid.saved_origin {
+                out.s.push_str("\x1b[?6h");
+            }
             self.place_cursor(
                 out,
                 grid,
@@ -763,6 +782,9 @@ impl<U: EventListener> Crosswords<U> {
             self.save_cursor(out, saved, saved_link.clone());
             if saved.should_wrap {
                 rewrap(out, saved.pos.row.0.clamp(0, rows as i32 - 1));
+            }
+            if grid.saved_origin {
+                out.s.push_str("\x1b[?6l");
             }
         }
 
@@ -1714,6 +1736,40 @@ mod snapshot_tests {
     }
 
     #[test]
+    fn saved_origin_mode_survives() {
+        // Saved in origin mode, which is off now: restoring turns it on,
+        // and the next CUP lands in the region.
+        let mut a = T::new(20, 6);
+        a.feed(b"\x1b[2;5r\x1b[?6h\x1b[2;3H\x1b7\x1b[?6l\x1b[6;1Hend");
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        assert!(b.term.grid.saved_origin);
+        same(&mut a, &mut b, b"\x1b8S\x1b[1;1HT");
+        assert!(b.term.mode().contains(Mode::ORIGIN));
+
+        // Saved outside it, with origin mode on now: restoring turns it off.
+        let mut a = T::new(20, 6);
+        a.feed(b"\x1b[4;4H\x1b7\x1b[2;5r\x1b[?6h\x1b[2;2Hin");
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        assert!(!b.term.grid.saved_origin);
+        same(&mut a, &mut b, b"\x1b8S\x1b[1;1HT");
+        assert!(!b.term.mode().contains(Mode::ORIGIN));
+    }
+
+    #[test]
+    fn primary_origin_mode_survives_under_the_alt_screen() {
+        // The shell set origin mode, a program entered the alt screen and
+        // reset it: leaving gives the shell its origin mode back.
+        let mut a = T::new(20, 6);
+        a.feed(b"\x1b[2;5r\x1b[?6h$ \x1b[?1049h\x1b[?6l\x1b[r\x1b[3;3Halt");
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        same(&mut a, &mut b, b"\x1b[?1049l\x1b[1;1HT");
+        assert!(b.term.mode().contains(Mode::ORIGIN));
+    }
+
+    #[test]
     fn cursor_style_title_and_directory() {
         let mut a = T::new(20, 4);
         a.feed(b"\x1b[5 q\x1b]2;my title\x07\x1b]7;file:///tmp/a%20b\x07\x1b[?25l");
@@ -1926,9 +1982,9 @@ mod snapshot_tests {
             // (Not the plain text: a tab copies as `\t` from the original
             // and as blanks from the copy, which can't hold one.)
             assert_eq!(a.term.grid.history_size(), b.term.grid.history_size());
-            // DECRC restores a position but not origin mode, so it can put
-            // the cursor outside the region with origin mode on; no CUP
-            // reaches that, so a copy can't either.
+            // DECRC of a cursor saved in origin mode, after the region
+            // changed, leaves it outside the region with origin mode on
+            // (as in xterm); no CUP reaches that, so a copy can't either.
             let region = &a.term.scroll_region;
             let row = a.term.grid.cursor.pos.row;
             let outside = a.term.mode().contains(Mode::ORIGIN)
