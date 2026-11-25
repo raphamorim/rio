@@ -23,7 +23,8 @@
 //! included), pen, style and saved position, the title and the working
 //! directory.
 //!
-//! Not carried: palette changes (OSC 4/10/11; the client keeps its theme),
+//! Not carried: palette changes (OSC 4/10/11/12; the client keeps its
+//! theme) unless [`FormatOptions::palette`] asks for them,
 //! the title stack, images, and a half-parsed escape sequence (that is the
 //! parser's, not the terminal's). A tab's `\t` (kept where it started, so
 //! copying text gives the tab back) is written as a blank: written raw it
@@ -84,6 +85,11 @@ pub struct FormatOptions {
     /// and the primary screen under an active alt screen. Without it only
     /// the cursor's position and visibility are restored.
     pub state: bool,
+    /// `Vt`: the colors programs set (OSC 4 palette entries, OSC 10/11/12
+    /// foreground, background and cursor). Off in every preset: a client
+    /// keeps its own theme. A checkpoint (a terminal rebuilt in place of
+    /// this one, such as after a server restart) wants them.
+    pub palette: bool,
 }
 
 impl FormatOptions {
@@ -96,6 +102,7 @@ impl FormatOptions {
             unwrap: true,
             hyperlinks: false,
             state: false,
+            palette: false,
         }
     }
 
@@ -108,6 +115,7 @@ impl FormatOptions {
             unwrap: false,
             hyperlinks: false,
             state: false,
+            palette: false,
         }
     }
 
@@ -121,6 +129,7 @@ impl FormatOptions {
             unwrap: true,
             hyperlinks: true,
             state: true,
+            palette: false,
         }
     }
 
@@ -146,6 +155,11 @@ impl FormatOptions {
 
     pub fn with_state(mut self, on: bool) -> Self {
         self.state = on;
+        self
+    }
+
+    pub fn with_palette(mut self, on: bool) -> Self {
+        self.palette = on;
         self
     }
 }
@@ -493,6 +507,10 @@ impl<U: EventListener> Crosswords<U> {
             out.s.push_str("\x1b[3J");
         }
 
+        if opts.palette {
+            self.write_palette(out);
+        }
+
         let alt = opts.state && self.mode.contains(Mode::ALT_SCREEN);
         if !alt {
             self.write_rows(out, &self.grid, opts);
@@ -803,6 +821,31 @@ impl<U: EventListener> Crosswords<U> {
             let _ = write!(out.s, "\x1b{intro}B");
         }
         out.plain();
+    }
+
+    /// The colors programs set: OSC 4 for palette entries, OSC 10/11/12
+    /// for the foreground, background and cursor colors.
+    fn write_palette(&self, out: &mut Out) {
+        use crate::config::colors::{ColorRgb, NamedColor};
+        let dynamic = [
+            (NamedColor::Foreground, 10),
+            (NamedColor::Background, 11),
+            (NamedColor::Cursor, 12),
+        ];
+        let entries = (0..256)
+            .map(|i| (i, None))
+            .chain(dynamic.map(|(c, n)| (c as usize, Some(n))));
+        for (index, osc) in entries {
+            let Some(arr) = self.colors[index] else {
+                continue;
+            };
+            let c = ColorRgb::from_color_arr(arr);
+            let _ = match osc {
+                None => write!(out.s, "\x1b]4;{index};"),
+                Some(n) => write!(out.s, "\x1b]{n};"),
+            };
+            let _ = write!(out.s, "rgb:{:02x}/{:02x}/{:02x}\x1b\\", c.r, c.g, c.b);
+        }
     }
 
     /// The current screen's state, after its rows.
@@ -1606,6 +1649,104 @@ mod snapshot_tests {
             String::from_utf8(a.term.snapshot_formatted()).unwrap(),
             String::from_utf8(b.term.snapshot_formatted()).unwrap()
         );
+    }
+
+    #[test]
+    fn the_palette_comes_along_when_asked() {
+        let mut a = T::new(20, 4);
+        a.feed(
+            b"\x1b]4;1;rgb:c8/0a/0a\x1b\\\x1b]4;200;#123456\x07\
+              \x1b]10;rgb:ee/dd/cc\x07\x1b]11;#010203\x07\x1b]12;rgb:ff/80/00\x07x",
+        );
+        // Not in a client's snapshot: the client keeps its theme.
+        let plain = String::from_utf8(a.term.snapshot_formatted()).unwrap();
+        assert!(
+            !plain.contains("\x1b]4;") && !plain.contains("\x1b]1"),
+            "{plain:?}"
+        );
+        let opts = FormatOptions::snapshot().with_palette(true);
+        let snapshot = a.term.format(opts);
+        for want in [
+            "\x1b]4;1;rgb:c8/0a/0a\x1b\\",
+            "\x1b]4;200;rgb:12/34/56\x1b\\",
+            "\x1b]10;rgb:ee/dd/cc\x1b\\",
+            "\x1b]11;rgb:01/02/03\x1b\\",
+            "\x1b]12;rgb:ff/80/00\x1b\\",
+        ] {
+            assert!(snapshot.contains(want), "{want:?} in {snapshot:?}");
+        }
+        let mut b = T::new(20, 4);
+        b.feed(snapshot.as_bytes());
+        assert_same(&a, &b);
+        for i in 0..crate::config::colors::term::COUNT {
+            assert_eq!(a.term.colors[i], b.term.colors[i], "color {i}");
+        }
+        assert_eq!(b.term.format(opts), snapshot);
+    }
+
+    #[test]
+    fn ground_is_between_sequences() {
+        let mut p = Processor::default();
+        let mut t = T::new(10, 3);
+        let mut at = |p: &mut Processor, bytes: &[u8]| {
+            p.advance(&mut t.term, bytes);
+            p.is_ground()
+        };
+        assert!(Processor::default().is_ground());
+        assert!(at(&mut p, b"plain text"));
+        assert!(!at(&mut p, b"\x1b"));
+        assert!(!at(&mut p, b"[3"));
+        assert!(at(&mut p, b"1mred"));
+        assert!(!at(&mut p, b"\x1b]2;a ti"));
+        assert!(at(&mut p, b"tle\x07"));
+        assert!(!at(&mut p, "\u{754c}".as_bytes().split_at(1).0));
+        assert!(at(&mut p, "\u{754c}".as_bytes().split_at(1).1));
+        assert!(!at(&mut p, b"\x1bP+q"));
+        assert!(at(&mut p, b"544e\x1b\\"));
+        assert!(!at(&mut p, b"\x1b_Ga=q;"));
+        assert!(at(&mut p, b"\x1b\\"));
+    }
+
+    #[test]
+    fn rep_repeats_the_character_from_before_a_checkpoint() {
+        let mut a = T::new(20, 3);
+        a.feed(b"abc");
+        assert_eq!(a.parser.preceding_char(), Some('c'));
+        let mut b = a.copy();
+        b.parser.set_preceding_char(a.parser.preceding_char());
+        same(&mut a, &mut b, b"\x1b[3b");
+        assert!(b.text().starts_with("abcccc"), "{:?}", b.text());
+    }
+
+    /// A terminal checkpointed wherever its input is between sequences,
+    /// then rebuilt from the checkpoint and fed the rest of the input, is
+    /// the terminal fed all of it.
+    #[test]
+    fn checkpoints_at_ground_resume_exactly() {
+        let input: &[u8] = b"hist 1\r\nhist 2\r\n\x1b[1;32mgreen\x1b[0m \
+            \x1b]8;;http://a\x1b\\link\x1b]8;;\x1b\\\r\n\x1b]4;3;#aabbcc\x07\
+            \x1b[2;4r\x1b[?6h\x1b[3;2Hin\x1b7\x1b[?1049h\x1b[>1ualt \xe7\x95\x8c\
+            \x1b[44m\x1b[2Ksome\x1b[3bx\x1b[?1049l\x1b8tail\r\nmore\r\n";
+        let opts = FormatOptions::snapshot().with_palette(true);
+        let mut whole = T::new(12, 5);
+        whole.feed(input);
+        let mut points = 0;
+        for cut in 0..=input.len() {
+            let mut a = T::new(12, 5);
+            a.feed(&input[..cut]);
+            if !a.parser.is_ground() {
+                continue;
+            }
+            points += 1;
+            let mut b = T::new(12, 5);
+            b.feed(a.term.format(opts).as_bytes());
+            b.parser.set_preceding_char(a.parser.preceding_char());
+            b.feed(&input[cut..]);
+            assert_same(&whole, &b);
+            assert_eq!(whole.term.format(opts), b.term.format(opts), "cut {cut}");
+        }
+        // (Most of these bytes are inside escape sequences.)
+        assert!(points >= 60, "{points}");
     }
 
     #[test]

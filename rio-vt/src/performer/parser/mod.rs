@@ -174,6 +174,16 @@ impl Parser {
         Self::default()
     }
 
+    /// Whether the parser is between sequences: in the ground state, with
+    /// no part of a UTF-8 character waiting for the rest. Input fed from
+    /// here on parses the same in a fresh parser, which is what makes this
+    /// a point to checkpoint a terminal at (its state as VT bytes, then
+    /// the input after this point fed to a fresh parser).
+    #[inline]
+    pub fn is_ground(&self) -> bool {
+        self.state == State::Ground && self.partial_utf8_len == 0
+    }
+
     #[inline]
     fn params(&self) -> &Params {
         &self.params

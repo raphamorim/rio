@@ -583,6 +583,27 @@ impl Processor {
         let mut performer = Performer::new(&mut self.state, handler);
         self.parser.advance(&mut performer, bytes);
     }
+
+    /// Whether the input so far ends between sequences: no escape
+    /// sequence or UTF-8 character is half read. See [`Parser::is_ground`].
+    #[inline]
+    pub fn is_ground(&self) -> bool {
+        self.parser.is_ground()
+    }
+
+    /// The last character printed, which REP (`CSI b`) repeats.
+    #[inline]
+    pub fn preceding_char(&self) -> Option<char> {
+        self.state.preceding_char
+    }
+
+    /// Set what REP repeats: for a processor that takes over from another
+    /// one (a terminal rebuilt from a snapshot, whose own printing leaves
+    /// the snapshot's last character here).
+    #[inline]
+    pub fn set_preceding_char(&mut self, c: Option<char>) {
+        self.state.preceding_char = c;
+    }
 }
 
 struct Performer<'a, H: Handler> {
