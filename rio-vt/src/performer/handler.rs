@@ -586,6 +586,10 @@ impl Processor {
 
     /// Whether the input so far ends between sequences: no escape
     /// sequence or UTF-8 character is half read. See [`Parser::is_ground`].
+    ///
+    /// A kitty graphics transfer sent in chunks (`m=1`) is between
+    /// sequences after each chunk, its image still incomplete; a snapshot
+    /// carries no images, so a terminal resumed there drops the rest.
     #[inline]
     pub fn is_ground(&self) -> bool {
         self.parser.is_ground()
