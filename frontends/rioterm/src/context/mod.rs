@@ -139,6 +139,7 @@ pub struct ContextManagerConfig {
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
     pub scrollback_history_limit: usize,
+    pub scrollback_compression: bool,
     pub grapheme_clustering: bool,
     /// The configured palette, handed to every terminal so it answers
     /// color queries itself.
@@ -331,6 +332,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             config.scrollback_history_limit,
         );
         terminal.set_grapheme_clustering(config.grapheme_clustering);
+        terminal.set_scrollback_compression(config.scrollback_compression);
         terminal.set_default_colors(config.colors);
         // The application answers `q;grapheme=` by shaping the cluster
         // with the grid rasterizer (`GlyphProtocolGraphemeQuery`).
@@ -1544,6 +1546,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title: config.title,
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
+            scrollback_compression: config.scrollback_compression,
             grapheme_clustering: config.grapheme_clustering,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
             cursor_shape: config.cursor.shape,

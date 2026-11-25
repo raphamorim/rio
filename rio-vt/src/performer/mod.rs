@@ -44,7 +44,7 @@ use std::sync::Arc;
 #[cfg(feature = "pty")]
 use std::thread::{Builder, JoinHandle};
 #[cfg(feature = "pty")]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 #[cfg(feature = "pty")]
 use tracing::error;
 
@@ -95,6 +95,27 @@ pub const READ_CHUNK: usize = 65536;
 /// every chunk, so a thread waiting for it never waits this long.
 #[cfg(feature = "pty")]
 const READ_BUDGET: usize = READ_CHUNK * 4;
+
+/// How long output stays quiet before the history is compressed: output
+/// arriving meanwhile starts the wait over, so compressing doesn't take
+/// the terminal from parsing.
+#[cfg(feature = "pty")]
+const COMPRESS_IDLE: Duration = Duration::from_millis(250);
+
+/// The longest compression waits once output started: output that never
+/// pauses still has its history compressed.
+#[cfg(feature = "pty")]
+const COMPRESS_LATEST: Duration = Duration::from_secs(5);
+
+/// Between the steps of one pass. Each holds the terminal for a few
+/// blocks (well under a millisecond), and a thread waiting for it gets
+/// it between them.
+#[cfg(feature = "pty")]
+const COMPRESS_STEP: Duration = Duration::from_millis(1);
+
+/// Blocks compressed per step.
+#[cfg(feature = "pty")]
+const COMPRESS_BLOCKS: usize = 4;
 
 #[cfg(feature = "pty")]
 #[derive(Debug, PartialEq, Eq)]
@@ -189,6 +210,55 @@ pub struct State {
     /// Deadline of the terminal's active synchronized update, refreshed
     /// whenever the terminal lock is held.
     sync_deadline: Option<Instant>,
+    /// When the history is compressed next, with the terminal's
+    /// scrollback compression on.
+    compress: CompressTimer,
+}
+
+/// When the reader compresses the history: [`COMPRESS_IDLE`] after the
+/// last output, [`COMPRESS_LATEST`] after the first at the latest, then
+/// a step every [`COMPRESS_STEP`] until none is left.
+#[cfg(feature = "pty")]
+#[derive(Default)]
+struct CompressTimer {
+    at: Option<Instant>,
+    /// The output that armed it first, for [`COMPRESS_LATEST`].
+    since: Option<Instant>,
+}
+
+#[cfg(feature = "pty")]
+impl CompressTimer {
+    /// The history changed (output, a resize): compress once it's quiet.
+    fn arm(&mut self, now: Instant) {
+        let since = *self.since.get_or_insert(now);
+        self.at = Some((now + COMPRESS_IDLE).min(since + COMPRESS_LATEST));
+    }
+
+    fn due(&self, now: Instant) -> bool {
+        self.at.is_some_and(|at| at <= now)
+    }
+
+    /// One step of a pass on `terminal`, `None` if it's taken: the next
+    /// step is scheduled, or the pass is over.
+    fn step<U: EventListener>(
+        &mut self,
+        terminal: Option<&mut Crosswords<U>>,
+        now: Instant,
+    ) {
+        let Some(terminal) = terminal else {
+            // The renderer's frame or the UI's input has it (the parsing
+            // is this thread's), for a moment: try again after one.
+            self.at = Some(now + COMPRESS_STEP);
+            return;
+        };
+        if terminal.scrollback_compression()
+            && terminal.compress_history(Some(COMPRESS_BLOCKS))
+        {
+            self.at = Some(now + COMPRESS_STEP);
+        } else {
+            *self = CompressTimer::default();
+        }
+    }
 }
 
 #[cfg(feature = "pty")]
@@ -391,6 +461,9 @@ where
         held_before: Option<bool>,
     ) {
         state.sync_deadline = terminal.sync_update_deadline();
+        if terminal.scrollback_compression() {
+            state.compress.arm(Instant::now());
+        }
         let held = terminal.synchronized_output();
         let hold_ended = held_before == Some(true) && !held;
         if hold_ended || (!held && terminal.peek_damage_event().is_some()) {
@@ -415,7 +488,7 @@ where
     /// Drain the channel.
     ///
     /// Returns `false` when a shutdown message was received.
-    fn drain_recv_channel(&mut self) -> bool {
+    fn drain_recv_channel(&mut self, state: &mut State) -> bool {
         while let Some(msg) = self.receiver.recv() {
             match msg {
                 // Bytes for the PTY are the writer's; this channel only
@@ -423,6 +496,9 @@ where
                 Msg::Input(_) | Msg::Reply(_) => (),
                 Msg::Resize(window_size) => {
                     let _ = self.pty.set_winsize(window_size.into());
+                    // A column change decompressed the history to
+                    // reflow it.
+                    state.compress.arm(Instant::now());
                 }
                 Msg::Shutdown => return false,
             }
@@ -519,10 +595,13 @@ where
         let mut events = Events::with_capacity(1024);
 
         loop {
-            // Wakeup the event loop when a synchronized update timeout was reached.
-            let timeout = state
-                .sync_deadline
-                .map(|deadline| deadline.saturating_duration_since(Instant::now()));
+            // Wake up for a synchronized update's timeout, and to compress
+            // the history.
+            let wake = match (state.sync_deadline, state.compress.at) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+            let timeout = wake.map(|at| at.saturating_duration_since(Instant::now()));
 
             events.clear();
             if let Err(err) = self.poll.poll(&mut events, timeout) {
@@ -545,12 +624,19 @@ where
                 state.sync_deadline = terminal.sync_update_deadline();
             }
 
+            // Compress a few blocks of history, if the terminal is free.
+            let now = Instant::now();
+            if state.compress.due(now) {
+                let mut terminal = self.terminal.try_lock_reader();
+                state.compress.step(terminal.as_deref_mut(), now);
+            }
+
             if events.is_empty() && self.receiver.peek().is_none() {
                 continue;
             }
 
             // Handle control messages, if there are any.
-            if !self.drain_recv_channel() {
+            if !self.drain_recv_channel(state) {
                 if self.writer_failed.load(Ordering::Acquire) {
                     return Err(io::Error::other("the PTY writer stopped"));
                 }

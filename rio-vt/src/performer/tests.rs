@@ -1,5 +1,6 @@
 use super::*;
 use crate::ansi::CursorShape;
+use crate::crosswords::grid::Dimensions;
 use crate::crosswords::pos::{Column, Line};
 use crate::crosswords::CrosswordsSize;
 use crate::event::VoidListener;
@@ -2082,4 +2083,87 @@ fn sync_hold_times_out_and_wakes_the_renderer() {
         "woken after {elapsed:?}, before the deadline"
     );
     assert!(!terminal.lock().synchronized_output());
+}
+
+// With scrollback compression on, the reader compresses the history once
+// output is quiet, a few blocks at a time, until none is left; off, the
+// history stays as it was written.
+#[test]
+fn quiet_output_has_its_history_compressed() {
+    for on in [true, false] {
+        let mut output = Vec::new();
+        for i in 0..2_000 {
+            output.extend_from_slice(format!("line {i}\r\n").as_bytes());
+        }
+        let (registration, readiness) = corcovado::Registration::new2();
+        let mut pty = test_pty(output, None);
+        pty.child = Some(registration);
+        pty.read_event = true;
+        let mut terminal = Crosswords::new(
+            CrosswordsSize::new(80, 24),
+            CursorShape::Block,
+            VoidListener,
+            WindowId::from(0),
+            0,
+            10_000,
+        );
+        terminal.set_scrollback_compression(on);
+        let terminal = Arc::new(TerminalLock::new(terminal));
+        let machine =
+            Machine::new(terminal.clone(), pty, VoidListener, WindowId::from(0), 0)
+                .unwrap();
+        let channel = machine.channel();
+        let handle = machine.spawn();
+        readiness.set_readiness(Ready::readable()).unwrap();
+
+        let read =
+            |terminal: &Crosswords<VoidListener>| terminal.grid.history_size() >= 1_970;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            {
+                let mut terminal = terminal.lock();
+                // `Some(0)` compresses nothing: whether any is left.
+                if read(&terminal) && (!on || !terminal.compress_history(Some(0))) {
+                    break;
+                }
+            }
+            assert!(Instant::now() < deadline, "on: {on}");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if !on {
+            // Well past the wait the reader would have taken.
+            std::thread::sleep(COMPRESS_IDLE * 3);
+        }
+        let memory = terminal.lock().history_memory();
+        if on {
+            assert!(memory.compressed_rows >= 1_900, "{memory:?}");
+        } else {
+            assert_eq!(memory.compressed_rows, 0, "{memory:?}");
+        }
+        assert_eq!(
+            terminal.lock().grid[Line(-1)][Column(0)].c(),
+            'l',
+            "the history reads the same"
+        );
+
+        channel.send(Msg::Shutdown).unwrap();
+        handle.join().unwrap();
+    }
+}
+
+// The deadline moves with output, and no later than a few seconds after
+// the output that started it.
+#[test]
+fn compression_waits_for_quiet_but_not_forever() {
+    let start = Instant::now();
+    let mut timer = CompressTimer::default();
+    timer.arm(start);
+    assert_eq!(timer.at, Some(start + COMPRESS_IDLE));
+    let mut now = start;
+    while now < start + COMPRESS_LATEST * 2 {
+        now += COMPRESS_IDLE / 2;
+        timer.arm(now);
+        assert!(timer.at.unwrap() <= start + COMPRESS_LATEST);
+    }
+    assert!(timer.due(start + COMPRESS_LATEST));
 }

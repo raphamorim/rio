@@ -281,6 +281,7 @@ impl Screen<'_> {
             title: config.title.clone(),
             keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
+            scrollback_compression: config.scrollback_compression,
             grapheme_clustering: config.grapheme_clustering,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
             cursor_shape: config.cursor.shape,
@@ -629,6 +630,7 @@ impl Screen<'_> {
                     config.cursor.shape,
                     config.cursor.blinking,
                 );
+                terminal.set_scrollback_compression(config.scrollback_compression);
                 drop(terminal);
             }
         }

@@ -583,6 +583,10 @@ where
 
     /// When the last BSU of the active synchronized update arrived.
     pub sync_update_started: Option<crate::time::Instant>,
+    /// Whether the thread reading the PTY compresses the history while
+    /// output is quiet. Off by default; see
+    /// [`Self::set_scrollback_compression`].
+    scrollback_compression: bool,
     /// Whether the embedder handles OSC 7501. Off by default: until an
     /// embedder opts in, the support query goes unanswered (so programs
     /// don't believe in a protocol nobody acts on) and reports are
@@ -694,6 +698,7 @@ impl<U: EventListener> Crosswords<U> {
             current_directory: None,
             damage_event_in_flight: false,
             sync_update_started: None,
+            scrollback_compression: false,
             program_status_enabled: false,
             focused: false,
             program_status_seen: false,
@@ -738,6 +743,20 @@ impl<U: EventListener> Crosswords<U> {
         formats: &'static [crate::ansi::glyph_protocol::GlyphFormat],
     ) {
         self.glyph_formats = formats;
+    }
+
+    /// Let the thread reading the PTY ([`crate::performer::Machine`])
+    /// compress the history ([`Self::compress_history`]) once output has
+    /// been quiet for a moment, a few blocks at a time. Turned off, what
+    /// is compressed stays so until it is written to; turned on, it
+    /// starts after the next output.
+    pub fn set_scrollback_compression(&mut self, enabled: bool) {
+        self.scrollback_compression = enabled;
+    }
+
+    /// Whether the history is compressed while output is quiet.
+    pub fn scrollback_compression(&self) -> bool {
+        self.scrollback_compression
     }
 
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
