@@ -244,6 +244,12 @@ action = "CreateWindow"
 *SelectAll*
 	Select all text.
 
+*CopyLastCommandOutput*
+	Copy the output of the last command, or of the one still running, to the
+	clipboard, without its prompt or command line. Needs shell integration that
+	sends OSC 133 marks; does nothing on the alternate screen or when the
+	command printed nothing.
+
 *IncreaseFontSize*
 	Increase font size.
 
