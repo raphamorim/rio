@@ -838,4 +838,29 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn test_conversion_from_hex_accepts_only_an_optional_hash_and_6_or_8_digits() {
+        let parse = |s: &str| ColorBuilder::from_hex(s.to_string(), Format::SRGB0_255);
+        for ok in ["abcdef", "#AbCdEf", "#abcdef80", "00000000"] {
+            assert!(parse(ok).is_ok(), "{ok}");
+        }
+        let size = "Error: Hex String size is not valid";
+        let character = "Error: Character is not valid";
+        for (bad, why) in [
+            ("", size),
+            ("#", size),
+            ("#12345", size),
+            ("1234567", size),
+            ("#123456789", size),
+            ("##123456", size),
+            ("123#456", size),
+            ("12345g", character),
+            ("#\u{661}23456", character),
+            (" 123456", character),
+        ] {
+            assert_eq!(parse(bad).unwrap_err(), why, "{bad:?}");
+        }
+        assert_eq!(parse("#ff000080").unwrap().alpha, 128.0 / 255.0);
+    }
 }

@@ -735,13 +735,21 @@ impl<U: EventListener> Crosswords<U> {
                     // (overwritten since), and a character it gives two
                     // columns in a narrow cell, unless the cell after it
                     // is the orphaned half it then takes.
+                    let pos = Pos::new(Line(line), Column(at));
                     let blank = match square.wide() {
                         Wide::Narrow => {
-                            if square.c() as u32 >= 0x80
-                                && crate::codepoint_width::codepoint_width(
-                                    square.c() as u32
-                                ) == Some(2)
-                            {
+                            if square.c() as u32 >= 0x80 && squeezed(grid, &square, pos) {
+                                // A cluster made wide in the last column,
+                                // where autowrap was off: written so again.
+                                if at + 1 == cols
+                                    && !row[last_col].wrapline()
+                                    && squeezed_cluster(grid, &square, pos)
+                                {
+                                    out.s.push_str("\x1b[?7l");
+                                    out.cell(grid, square, pos, opts.hyperlinks);
+                                    out.s.push_str("\x1b[?7h");
+                                    continue;
+                                }
                                 let orphan_next =
                                     at + 1 < cols && row[Column(at + 1)].is_spacer();
                                 if orphan_next && at + 1 < cells.len() {
@@ -760,8 +768,11 @@ impl<U: EventListener> Crosswords<U> {
                             true
                         }
                         Wide::LeadingSpacer => {
+                            // Unless that character is written as a blank
+                            // (it lost its other half), which fits here.
                             if line + 1 < rows
                                 && grid[Line(line + 1)][Column(0)].is_wide()
+                                && !broken_half(&grid[Line(line + 1)][..], 0)
                             {
                                 continue;
                             }
@@ -778,7 +789,40 @@ impl<U: EventListener> Crosswords<U> {
                         out.s.push(' ');
                         continue;
                     }
-                    let pos = Pos::new(Line(line), Column(at));
+                    // A neighbour the client would join to this cell (as
+                    // it was written before it): written first, then this
+                    // one, then on past both. Not one ending the row,
+                    // whose pending wrap the way back would lose.
+                    let width = if square.is_wide() { 2 } else { 1 };
+                    let next = at + width;
+                    if next < cells.len() {
+                        let after = cells[next];
+                        let next_width = match after.wide() {
+                            Wide::Narrow => {
+                                let p = Pos::new(Line(line), Column(next));
+                                (!squeezed(grid, &after, p)).then_some(1)
+                            }
+                            Wide::Wide
+                                if next + 1 < cols
+                                    && row[Column(next + 1)].is_spacer() =>
+                            {
+                                Some(2)
+                            }
+                            _ => None,
+                        };
+                        let next_pos = Pos::new(Line(line), Column(next));
+                        if let Some(nw) = next_width.filter(|nw| next + nw < cols) {
+                            if would_join(grid, pos, next_pos) {
+                                let _ = write!(out.s, "\x1b[{width}C");
+                                out.cell(grid, after, next_pos, opts.hyperlinks);
+                                let _ = write!(out.s, "\x1b[{}D", width + nw);
+                                out.cell(grid, square, pos, opts.hyperlinks);
+                                let _ = write!(out.s, "\x1b[{nw}C");
+                                col = next + nw;
+                                continue;
+                            }
+                        }
+                    }
                     out.cell(grid, square, pos, opts.hyperlinks);
                 }
                 // The client wrapped onto this row at its first character,
@@ -835,10 +879,16 @@ impl<U: EventListener> Crosswords<U> {
             out.style(grid.style_of(square));
             // Written as the rows wrote it: half of a split pair, or a
             // double-width character in a narrow cell, is a blank (here at
-            // the row's end it would wrap).
-            let squeezed = !square.is_wide()
-                && crate::codepoint_width::codepoint_width(square.c() as u32) == Some(2);
-            if broken_half(line, at) || squeezed {
+            // the row's end it would wrap); a cluster made wide there,
+            // with autowrap off.
+            let pos = Pos::new(Line(row), Column(at));
+            if squeezed_cluster(grid, square, pos) {
+                out.s.push_str("\x1b[?7l");
+                for c in grid.cell_text(pos) {
+                    out.s.push(visible(c));
+                }
+                out.s.push_str("\x1b[?7h");
+            } else if broken_half(line, at) || squeezed(grid, square, pos) {
                 out.s.push(' ');
             } else {
                 for c in grid.cell_text(Pos::new(Line(row), Column(at))) {
@@ -914,12 +964,11 @@ impl<U: EventListener> Crosswords<U> {
         // A pending wrap is restored by writing the cell under the cursor
         // again, which clears the row's soft wrap (writing a cell does);
         // writing the next row's first cell over itself wraps it again.
-        // Not on a scroll region's bottom row, where that would scroll.
+        // Done before the scroll region is set, so it scrolls nothing.
         let region = &self.scroll_region;
         let rewrap = |out: &mut Out, row: i32| {
             let wraps = row >= 0
                 && row + 1 < rows as i32
-                && row + 1 != region.end.0
                 && grid[Line(row)][Column(cols - 1)].wrapline();
             if wraps {
                 let at = Pos::new(Line(row + 1), Column(0));
@@ -979,6 +1028,19 @@ impl<U: EventListener> Crosswords<U> {
             }
         }
 
+        // The cursor and the saved one together: placed and saved, the
+        // row wrapped again (which moves the cursor), and restored once
+        // the region is set. Restoring brings back origin mode too.
+        if together {
+            if origin {
+                out.s.push_str("\x1b[?6h");
+            }
+            let at = (cursor.pos.row.0, cursor.pos.col.0);
+            self.place_cursor(out, grid, at, 0, true);
+            self.save_cursor(out, saved, saved_link.clone());
+            rewrap(out, cursor.pos.row.0);
+        }
+
         // The scroll region (setting it homes the cursor), then origin
         // mode, then the cursor, which origin mode places in the region.
         let full = region.start == Line(0) && region.end == Line(rows as i32);
@@ -992,7 +1054,7 @@ impl<U: EventListener> Crosswords<U> {
             }
             let _ = write!(out.s, "\x1b[{top};{bottom}r");
         }
-        if origin {
+        if origin && !together {
             out.s.push_str("\x1b[?6h");
         }
         // A pending wrap on a row that wraps: rewriting the cell under the
@@ -1021,6 +1083,7 @@ impl<U: EventListener> Crosswords<U> {
             None
         };
         match via {
+            _ if together => {}
             Some((next_to, mv)) => {
                 let at = (next_to, cursor.pos.col.0);
                 self.place_cursor(out, grid, at, offset, true);
@@ -1031,8 +1094,6 @@ impl<U: EventListener> Crosswords<U> {
             }
         }
         if together {
-            self.save_cursor(out, saved, saved_link.clone());
-            rewrap(out, cursor.pos.row.0);
             out.s.push_str("\x1b8");
             // Restoring brought back the saved pen and charsets: the
             // cursor's own are set below, from ASCII.
@@ -1297,7 +1358,58 @@ fn row_last_col(
         (c != ' ' && c != '\0')
             || (links && square.has_hyperlink())
             || grid.style_of(square).renders_on_blank()
+            || has_marks(grid, square)
     })
+}
+
+/// Whether combining marks ride on the cell.
+fn has_marks(grid: &Grid<Square>, square: &Square) -> bool {
+    square
+        .extras_id_checked()
+        .and_then(|id| grid.extras_table.get(id))
+        .is_some_and(|extras| !extras.zerowidth.is_empty())
+}
+
+/// The cell's codepoints, its base and its marks.
+fn cluster(grid: &Grid<Square>, pos: Pos) -> Vec<u32> {
+    grid.cell_text(pos).map(|c| c as u32).collect()
+}
+
+/// Whether a narrow cell holds what takes two columns: a wide character,
+/// or a cluster made wide (a flag, an emoji with VS16) where it had no
+/// room to widen.
+fn squeezed(grid: &Grid<Square>, square: &Square, pos: Pos) -> bool {
+    if square.is_wide() {
+        return false;
+    }
+    let c = square.c() as u32;
+    if c >= 0x80 && crate::codepoint_width::codepoint_width(c) == Some(2) {
+        return true;
+    }
+    has_marks(grid, square)
+        && crate::grapheme_lut::cluster_width(&cluster(grid, pos)).1 == 2
+}
+
+/// A [`squeezed`] cell whose own character is narrow: what made it wide
+/// came after it, so written where it can't widen (the last column with
+/// autowrap off) it is the same narrow cell.
+fn squeezed_cluster(grid: &Grid<Square>, square: &Square, pos: Pos) -> bool {
+    crate::codepoint_width::codepoint_width(square.c() as u32) != Some(2)
+        && squeezed(grid, square, pos)
+}
+
+/// Whether the client, writing `next` right after `at` (it joins a
+/// character to the cell before the cursor), would make one cluster of
+/// them.
+fn would_join(grid: &Grid<Square>, at: Pos, next: Pos) -> bool {
+    let square = &grid[next];
+    if (square.c() as u32) < 0x80 {
+        return false;
+    }
+    let mut cps = cluster(grid, at);
+    let len = cps.len();
+    cps.extend(grid.cell_text(next).map(|c| c as u32));
+    crate::grapheme_lut::cluster_width(&cps).0 > len
 }
 
 /// Write the SGR sequence for `style` directly into `out`, starting with `0`
@@ -2646,6 +2758,797 @@ mod snapshot_tests {
         let mut a = T::new(3, 1);
         a.feed("ab界\r\nx".as_bytes());
         assert_eq!(a.text(), "ab界\nx");
+    }
+
+    // Plain text.
+
+    #[test]
+    fn plain_joins_soft_wrapped_rows_and_keeps_hard_breaks() {
+        let mut a = T::new(5, 6);
+        a.feed(b"helloworld!\r\nnext\r\nabcdefghij");
+        assert_eq!(
+            a.term.format(FormatOptions::plain()),
+            "helloworld!\nnext\nabcdefghij"
+        );
+    }
+
+    #[test]
+    fn plain_drops_trailing_blanks_but_keeps_blank_rows_between() {
+        let mut a = T::new(10, 6);
+        a.feed(b"a  \x1b[44m  \x1b[0m\r\n\r\n\r\n  b   \r\n\r\n");
+        assert_eq!(a.term.format(FormatOptions::plain()), "a\n\n\n  b");
+        // Nothing at all is nothing.
+        assert_eq!(T::new(10, 6).term.format(FormatOptions::plain()), "");
+    }
+
+    #[test]
+    fn plain_wide_characters_once_each() {
+        let mut a = T::new(6, 3);
+        // The third one doesn't fit on the first row and wraps.
+        a.feed("界界 界x".as_bytes());
+        assert_eq!(a.term.format(FormatOptions::plain()), "界界 界x");
+        let mut a = T::new(4, 3);
+        a.feed("界\r\n x界".as_bytes());
+        assert_eq!(a.term.format(FormatOptions::plain()), "界\n x界");
+    }
+
+    #[test]
+    fn plain_scrollback_joins_a_line_wrapped_into_the_screen() {
+        let mut a = T::new(4, 2);
+        a.feed(b"0123456789\r\nx");
+        assert!(a.term.grid.history_size() > 0);
+        assert_eq!(a.term.format(FormatOptions::plain()), "89\nx");
+        assert_eq!(a.text(), "0123456789\nx");
+    }
+
+    // VT output.
+
+    #[test]
+    fn vt_writes_a_style_once_for_a_run_and_resets_it_before_plain_text() {
+        let mut a = T::new(20, 3);
+        a.feed(b"\x1b[1;31mbold\x1b[0m plain \x1b[1;31mbold");
+        let s = a.term.format(FormatOptions::vt());
+        assert_eq!(s.matches("\x1b[0;1;31m").count(), 2, "{s:?}");
+        assert!(
+            s.contains("\x1b[0;1;31mbold\x1b[0m plain \x1b[0;1;31mbold"),
+            "{s:?}"
+        );
+    }
+
+    #[test]
+    fn vt_without_trim_keeps_blank_rows_at_the_bottom() {
+        let mut a = T::new(4, 4);
+        a.feed(b"ab\x1b[44m\x1b[4;1H\x1b[0m");
+        let trimmed = a.term.format(FormatOptions::vt());
+        let full = a.term.format(FormatOptions::vt().with_trim(false));
+        assert_eq!(trimmed.matches("\r\n").count(), 0, "{trimmed:?}");
+        assert_eq!(full.matches("\r\n").count(), 3, "{full:?}");
+        // Either way, the cursor ends on the bottom row.
+        for s in [trimmed, full] {
+            let mut b = T::new(4, 4);
+            b.feed(s.as_bytes());
+            let screen = |t: &T| t.term.format(FormatOptions::plain());
+            assert_eq!(screen(&b), screen(&a));
+            assert_eq!(b.cursor(), a.cursor());
+        }
+    }
+
+    #[test]
+    fn background_only_cells_and_gaps_survive() {
+        let mut a = T::new(12, 4);
+        // A gap the cursor stepped over, blanks with only a background,
+        // a background erased to the row's end, and an erased gap inside.
+        a.feed(b"ab\x1b[6Gcd\r\n\x1b[41m  \x1b[0mx\r\n\x1b[42m\x1b[K\x1b[0m\r\nxyz\x1b[45m\x1b[1;2H\x1b[2X");
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        assert_eq!(cells(&a), cells(&b));
+        same(&mut a, &mut b, b"\x1b[0m\x1b[3;3HZ");
+        assert_eq!(cells(&a), cells(&b));
+    }
+
+    #[test]
+    fn styles_survive_cell_by_cell() {
+        let mut a = T::new(30, 4);
+        a.feed(
+            b"\x1b[1mB\x1b[2mD\x1b[22;3mI\x1b[23;4:3mU\x1b[58;2;1;2;3mC\x1b[24;59;5mK\
+              \x1b[25;7mR\x1b[27;8mH\x1b[28;9mS\x1b[29;38;5;123mF\x1b[48;2;9;8;7mG\
+              \x1b[39;49;91;102mN\x1b[0m.\r\n\x1b[4:2mdouble\x1b[4:4mdot\x1b[4:5mdash",
+        );
+        let b = a.copy();
+        assert_same(&a, &b);
+        assert_eq!(cells(&a), cells(&b));
+    }
+
+    #[test]
+    fn a_combining_mark_on_a_trailing_blank() {
+        let mut a = T::new(10, 3);
+        a.feed("a \u{301}\r\nb".as_bytes());
+        let b = a.copy();
+        assert_eq!(cells(&a), cells(&b));
+    }
+
+    #[test]
+    fn a_flag_in_the_last_column_without_autowrap() {
+        // A flag (two regional indicators) or an emoji made wide by VS16,
+        // kept in one narrow cell where autowrap is off.
+        for input in [
+            "\x1b[?7l\x1b[5G\u{1f1fa}\u{1f1f8}",
+            "\x1b[?7l\x1b[5G\u{263a}\u{fe0f}",
+        ] {
+            let mut a = T::new(5, 3);
+            a.feed(input.as_bytes());
+            assert!(!a.term.grid[Line(0)][Column(4)].is_wide());
+            let mut b = a.copy();
+            assert_eq!(cells(&a), cells(&b), "{input:?}");
+            same(&mut a, &mut b, b"\r\nx");
+        }
+    }
+
+    #[test]
+    fn neighbours_that_would_join_stay_apart() {
+        // Each written after the one to its right: two regional
+        // indicators, and an emoji ending in a joiner before another.
+        for input in [
+            "\x1b[2G\u{1f1fa}\x1b[1G\u{1f1f8}",
+            "\x1b[3G\u{1f466}\x1b[1G\u{1f469}\u{200d}",
+        ] {
+            let mut a = T::new(6, 2);
+            a.feed(input.as_bytes());
+            let b = a.copy();
+            assert_eq!(cells(&a), cells(&b), "{input:?}");
+        }
+    }
+
+    // Hyperlinks.
+
+    #[test]
+    fn a_link_with_a_gap_in_it() {
+        // The cells the cursor stepped over have no link: the copy's
+        // don't either, and the cells on both sides of them do.
+        let mut a = T::new(20, 3);
+        a.feed(b"\x1b]8;;https://example.com\x1b\\ab\x1b[5Gcd\x1b]8;;\x1b\\");
+        let b = a.copy();
+        assert_eq!(b.links(), a.links());
+        assert_eq!(
+            b.links().iter().map(|l| l.1).collect::<Vec<_>>(),
+            [0, 1, 4, 5]
+        );
+    }
+
+    #[test]
+    fn one_link_after_another_and_a_row_without_any() {
+        let mut a = T::new(20, 3);
+        a.feed(b"\x1b]8;;https://a.example\x1b\\ab\x1b]8;;https://b.example\x1b\\cd\r\n\x1b]8;;\x1b\\ef");
+        let b = a.copy();
+        assert_eq!(b.links(), a.links());
+        // Closed before the next row's text.
+        assert!(!b.links().iter().any(|l| l.0 == 1));
+    }
+
+    #[test]
+    fn links_with_the_same_uri_and_different_ids_stay_apart() {
+        let mut a = T::new(20, 3);
+        a.feed(b"\x1b]8;id=1;https://same\x1b\\ab\x1b]8;id=2;https://same\x1b\\cd\x1b]8;;\x1b\\");
+        let b = a.copy();
+        let ids = |t: &T| {
+            (0..4)
+                .map(|c| {
+                    t.term
+                        .cell_hyperlink(Line(0), Column(c))
+                        .map(|l| l.id().to_owned())
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&b), ids(&a));
+        assert_ne!(ids(&b)[1], ids(&b)[2]);
+    }
+
+    #[test]
+    fn a_link_on_a_wide_character_that_wrapped() {
+        // The blanks before the wide character that went on to the next
+        // row are outside the link.
+        let mut a = T::new(10, 4);
+        a.feed("\x1b]8;;https://example.com\x1b\\abc\x1b[10G界\x1b]8;;\x1b\\".as_bytes());
+        let mut b = a.copy();
+        assert_eq!(a.text(), b.text());
+        assert_eq!(b.links(), a.links());
+        same(&mut a, &mut b, b"!");
+    }
+
+    // The terminal's state.
+
+    #[test]
+    fn a_scroll_region_scrolls_the_same_after() {
+        let mut a = T::new(10, 6);
+        a.feed(b"1\r\n2\r\n3\r\n4\r\n5\r\n6\x1b[2;4r\x1b[4;1H");
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        assert_eq!(b.term.scroll_region, a.term.scroll_region);
+        same(&mut a, &mut b, b"\nx\n\ny\x1b[2;1H\x1bMz");
+        assert_eq!(a.term.grid.history_size(), b.term.grid.history_size());
+    }
+
+    #[test]
+    fn a_one_row_region_at_the_bottom() {
+        // DECSTBM wants two rows, but a region past the screen's end
+        // clamps to its last one.
+        let mut a = T::new(10, 4);
+        a.feed(b"1\r\n2\r\n3\r\n4\x1b[4;9r");
+        assert_eq!(a.term.scroll_region, Line(3)..Line(4));
+        let mut b = a.copy();
+        assert_eq!(b.term.scroll_region, a.term.scroll_region);
+        same(&mut a, &mut b, b"\x1b[4;1Hx\ny\nz");
+    }
+
+    #[test]
+    fn cursor_in_origin_mode_without_a_region() {
+        let mut a = T::new(10, 4);
+        a.feed(b"\x1b[?6h\x1b[3;5H");
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        same(&mut a, &mut b, b"x\x1b[1;1Hy\x1b[2;8r\x1b[1;1Hz");
+    }
+
+    #[test]
+    fn cursor_in_origin_mode_waiting_to_wrap() {
+        let mut a = T::new(5, 6);
+        a.feed(b"\x1b[2;4r\x1b[?6h\x1b[3;1Habcde");
+        assert!(a.term.grid.cursor.should_wrap);
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        // Wrapping at the region's bottom scrolls the region.
+        same(&mut a, &mut b, b"f");
+        assert_eq!(cells(&a), cells(&b));
+    }
+
+    #[test]
+    fn all_tab_stops_cleared() {
+        let mut a = T::new(20, 3);
+        a.feed(b"\x1b[3g");
+        let mut b = a.copy();
+        same(&mut a, &mut b, b"\tx");
+        assert_eq!(b.cursor().0.col, Column(19));
+        assert_eq!(b.term.tabs.tabs, a.term.tabs.tabs);
+    }
+
+    #[test]
+    fn tab_stops_off_the_eighth_columns() {
+        let mut a = T::new(30, 3);
+        a.feed(b"\x1b[3G\x1bH\x1b[9G\x1b[g\x1b[30G\x1bH\r");
+        let mut b = a.copy();
+        assert_eq!(b.term.tabs.tabs, a.term.tabs.tabs);
+        same(&mut a, &mut b, b"\t1\t2\t3\t4\t5");
+    }
+
+    #[test]
+    fn shifted_out_and_other_slots_of_line_drawing() {
+        // G1 shifted in with SO, and G2 and G3 designated too.
+        let mut a = T::new(20, 3);
+        a.feed(b"\x1b)0\x1b*0\x1b+0\x0eqx");
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        assert_eq!(b.term.active_charset, a.term.active_charset);
+        same(&mut a, &mut b, b"lqk\x0fqx");
+        assert!(b.text().contains("─│┌─┐qx"), "{:?}", b.text());
+    }
+
+    #[test]
+    fn keyboard_flags_set_in_place_over_pushed_ones() {
+        let mut a = T::new(20, 3);
+        a.feed(b"\x1b[>1u\x1b[>2u\x1b[=5;1u\x1b[=8;2u\x1b[=4;3u");
+        let mut b = a.copy();
+        assert_eq!(b.term.keyboard_mode_stack, a.term.keyboard_mode_stack);
+        assert_eq!(b.term.keyboard_mode_idx, a.term.keyboard_mode_idx);
+        for _ in 0..3 {
+            same(&mut a, &mut b, b"\x1b[<u");
+            assert_eq!(b.term.keyboard_mode(), a.term.keyboard_mode());
+        }
+    }
+
+    #[test]
+    fn a_directory_with_bytes_to_escape() {
+        let mut a = T::new(20, 3);
+        a.feed(b"\x1b]7;file:///tmp/%E7%95%8C%3B%25x\x07");
+        let b = a.copy();
+        assert!(a.term.current_directory.is_some());
+        assert_eq!(b.term.current_directory, a.term.current_directory);
+    }
+
+    #[test]
+    fn a_title_with_separators_and_wide_text() {
+        let mut a = T::new(20, 3);
+        a.feed("\x1b]0;vim a;b \u{754c} = 1\x07".as_bytes());
+        let b = a.copy();
+        assert_eq!(b.term.title, a.term.title);
+    }
+
+    #[test]
+    fn a_marked_cell_inside_a_link() {
+        let mut a = T::new(20, 3);
+        a.feed("\x1b]8;;http://a\x1b\\xe\u{301}yz\x1b]8;;\x1b\\".as_bytes());
+        let b = a.copy();
+        assert_eq!(cells(&a), cells(&b));
+        assert_eq!(b.links().len(), 4);
+    }
+
+    // The cursor and DECSC.
+
+    #[test]
+    fn a_pending_wrap_over_an_erased_cell() {
+        // Saving keeps the pending wrap and erasing the row clears the
+        // cell under it: restoring leaves one over a blank.
+        let mut a = T::new(4, 2);
+        a.feed(b"abcd\x1b7\x1b[2K\x1b8");
+        assert!(a.term.grid.cursor.should_wrap);
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        same(&mut a, &mut b, b"X");
+    }
+
+    #[test]
+    fn a_saved_cursor_waiting_to_wrap() {
+        let mut a = T::new(5, 5);
+        a.feed(b"\x1b[1;5HA\x1b7\x1b[1;1HB");
+        let mut b = a.copy();
+        assert_same(&a, &b);
+        same(&mut a, &mut b, b"\x1b8X");
+        assert_eq!(b.term.grid[Line(1)][Column(0)].c(), 'X');
+    }
+
+    #[test]
+    fn waiting_to_wrap_on_a_wrapped_row_at_the_regions_bottom() {
+        // Saved waiting to wrap on a row that wraps, which a region set
+        // afterwards ends on; the second time restored there too. The
+        // row wraps on in the copy, and the next character scrolls the
+        // region the same.
+        for input in [
+            &b"\x1b[2;1HABCDE\x1b7F\x1b[1;2r"[..],
+            b"\x1b[2;1HABCDE\x1b7F\x1b[1;2r\x1b8",
+        ] {
+            let mut a = T::new(5, 5);
+            a.feed(input);
+            assert!(a.term.grid[Line(1)][Column(4)].wrapline());
+            let mut b = a.copy();
+            assert_eq!(cells(&a), cells(&b), "{input:?}");
+            same(&mut a, &mut b, b"\x1b8X");
+            assert_eq!(cells(&a), cells(&b), "{input:?}");
+        }
+    }
+
+    #[test]
+    fn decsc_saves_the_pen_link_and_charsets_with_the_position() {
+        let mut a = T::new(20, 4);
+        a.feed(b"\x1b[2;3H\x1b[4;35m\x1b]8;;https://s\x1b\\\x1b(0\x1b7\x1b[0m\x1b]8;;\x1b\\\x1b(B\x1b[4;1Hplain");
+        let mut b = a.copy();
+        assert_eq!(state(&a), state(&b));
+        same(&mut a, &mut b, b"\x1b8q");
+        assert_eq!(state(&a), state(&b));
+        assert_eq!(b.links(), [(1, 2, "https://s".to_owned())]);
+    }
+
+    #[test]
+    fn decrc_after_the_region_changed() {
+        // Saved in origin mode at the region's top-left; the region moved
+        // since. Restoring puts the cursor where it was saved.
+        let mut a = T::new(10, 8);
+        a.feed(b"\x1b[2;4r\x1b[?6h\x1b7\x1b[?6l\x1b[5;7r");
+        let mut b = a.copy();
+        assert_eq!(state(&a), state(&b));
+        same(&mut a, &mut b, b"\x1b8X\x1b[1;1HY\x1b[10BZ");
+        assert_eq!(state(&a), state(&b));
+    }
+
+    #[test]
+    fn the_primary_cursor_under_the_alt_screen_with_its_pen() {
+        let mut a = T::new(10, 4);
+        a.feed(b"\x1b[1;32m\x1b]8;;https://p\x1b\\\x1b)0\x0e$ \x1b[?1049h\x1b[0m\x1b]8;;\x1b\\\x0fvim\x1b7");
+        let mut b = a.copy();
+        assert_eq!(state(&a), state(&b));
+        same(&mut a, &mut b, b"\x1b[?1049lqx");
+        assert_eq!(state(&a), state(&b));
+        assert_eq!(b.links(), a.links());
+    }
+
+    // Cursor movement and origin mode, round-tripped.
+
+    #[test]
+    fn cuu_and_cud_from_a_restored_cursor_stop_at_the_margins() {
+        let mut a = T::new(10, 8);
+        a.feed(b"\x1b[3;6r\x1b[5;2H");
+        let mut b = a.copy();
+        same(&mut a, &mut b, b"\x1b[9A");
+        assert_eq!(b.cursor().0.row, Line(2));
+        same(&mut a, &mut b, b"\x1b[9B");
+        assert_eq!(b.cursor().0.row, Line(5));
+        same(&mut a, &mut b, b"\x1b[8;1H\x1b[9A");
+        assert_eq!(b.cursor().0.row, Line(2));
+        same(&mut a, &mut b, b"\x1b[1;1H\x1b[9B");
+        assert_eq!(b.cursor().0.row, Line(5));
+    }
+
+    #[test]
+    fn cup_in_origin_mode_counts_from_the_region() {
+        let mut a = T::new(5, 5);
+        a.feed(b"\x1b[3;4r\x1b[?6h\x1b[1;1HX");
+        assert_eq!(a.term.format(FormatOptions::plain()), "\n\nX");
+        // And stops at its bottom.
+        a.feed(b"\x1b[9;1HY");
+        assert_eq!(a.term.format(FormatOptions::plain()), "\n\nX\nY");
+        let b = a.copy();
+        assert_eq!(state(&a), state(&b));
+    }
+
+    #[test]
+    fn decom_while_waiting_to_wrap_homes_the_cursor() {
+        let mut a = T::new(5, 5);
+        a.feed(b"\x1b[2;4rabcde\x1b[?6h");
+        assert!(!a.term.grid.cursor.should_wrap);
+        assert_eq!(a.cursor().0, Pos::new(Line(1), Column(0)));
+        a.feed(b"\x1b[?6l");
+        assert_eq!(a.cursor().0, Pos::new(Line(0), Column(0)));
+    }
+
+    #[test]
+    fn ris_turns_origin_mode_off_and_homes_the_cursor() {
+        let mut a = T::new(10, 6);
+        a.feed(b"\x1b[2;5r\x1b[?6h\x1b[3;5H\x1b7\x1b[?1049h\x1b[>3u\x1bc");
+        assert!(!a.term.mode().contains(Mode::ORIGIN));
+        assert_eq!(a.cursor(), (Pos::default(), false));
+        assert_eq!(a.term.keyboard_mode(), crate::ansi::KeyboardModes::NO_MODE);
+        let b = a.copy();
+        assert_eq!(state(&a), state(&b));
+    }
+
+    /// Everything a checkpoint carries, as text to compare: the cells of
+    /// both screens, the cursor and the saved one on each (position,
+    /// pending wrap, pen, link, charsets, origin mode), modes, region, tab
+    /// stops, charsets, both keyboard flag stacks, the keyboard, the cursor's
+    /// look, title, directory and colors.
+    fn state(t: &T) -> String {
+        use crate::crosswords::pos::Cursor;
+        let term = &t.term;
+        let pen = |g: &Grid<Square>, c: &Cursor<Square>| {
+            let link = cell_link(g, &c.template).map(|l| l.uri().to_owned());
+            format!(
+                "{:?} wrap {} {:?} {:?} {link:?}",
+                c.pos, c.should_wrap, c.pending_style, c.charsets
+            )
+        };
+        let (g, ig) = (&term.grid, &term.inactive_grid);
+        let mut s = format!("{:?}\n", cells(t));
+        let _ = writeln!(s, "cursor {}", pen(g, &g.cursor));
+        let _ = writeln!(
+            s,
+            "saved {} origin {}",
+            pen(g, &g.saved_cursor),
+            g.saved_origin
+        );
+        if term.mode().contains(Mode::ALT_SCREEN) {
+            let _ = writeln!(s, "primary cursor {}", pen(ig, &ig.cursor));
+        }
+        let _ = writeln!(
+            s,
+            "other saved {} origin {}",
+            pen(ig, &ig.saved_cursor),
+            ig.saved_origin
+        );
+        let _ = writeln!(
+            s,
+            "mode {:?} region {:?} tabs {:?} active {:?}",
+            term.mode(),
+            term.scroll_region,
+            term.tabs.tabs,
+            term.active_charset
+        );
+        let _ = writeln!(
+            s,
+            "keyboard {:?}@{} {:?}@{} {:?} other keys {}",
+            term.keyboard_mode_stack,
+            term.keyboard_mode_idx,
+            term.inactive_keyboard_mode_stack,
+            term.inactive_keyboard_mode_idx,
+            term.keyboard_mode(),
+            term.modify_other_keys
+        );
+        let _ = writeln!(
+            s,
+            "look {:?} {} {} title {:?} dir {:?}",
+            term.cursor_shape,
+            term.blinking_cursor,
+            term.cursor_is_default,
+            term.title,
+            term.current_directory
+        );
+        for i in 0..crate::config::colors::term::COUNT {
+            let _ = write!(s, "{:?}", term.colors[i]);
+        }
+        s
+    }
+
+    /// A terminal fed P then Q, and one rebuilt from the first one's
+    /// checkpoint after P (palette and REP's character included) then fed
+    /// Q, end up the same: state compared at the checkpoint and after Q.
+    #[test]
+    fn random_checkpoints_resume_exactly() {
+        let tokens: &[&str] = &[
+            "hello",
+            "x",
+            "1234567890123",
+            " ",
+            "\t",
+            "\r\n",
+            "\n",
+            "\r",
+            "\x08",
+            "\x1bD",
+            "\x1bM",
+            "\x1bE",
+            "界",
+            "e\u{301}",
+            "\u{301}",
+            "\u{1f1fa}",
+            "\u{1f1f8}",
+            "\u{200d}",
+            "\u{fe0f}",
+            "\x1b[31m",
+            "\x1b[1;4m",
+            "\x1b[48;5;33m",
+            "\x1b[7m",
+            "\x1b[0m",
+            "\x1b[K",
+            "\x1b[1K",
+            "\x1b[J",
+            "\x1b[2X",
+            "\x1b[H",
+            "\x1b[3;3H",
+            "\x1b[2A",
+            "\x1b[9A",
+            "\x1b[2B",
+            "\x1b[9B",
+            "\x1b[E",
+            "\x1b[2F",
+            "\x1b[3C",
+            "\x1b[2D",
+            "\x1b[4G",
+            "\x1b[2d",
+            "\x1b[3b",
+            "\x1b[L",
+            "\x1b[M",
+            "\x1b[S",
+            "\x1b[T",
+            "\x1b7",
+            "\x1b8",
+            "\x1b[2;4r",
+            "\x1b[3;9r",
+            "\x1b[r",
+            "\x1b[?6h",
+            "\x1b[?6l",
+            "\x1b[?7l",
+            "\x1b[?7h",
+            "\x1b[20h",
+            "\x1b[20l",
+            "\x1b[?1049h",
+            "\x1b[?1049l",
+            "\x1b(0",
+            "\x1b(B",
+            "\x1b)0",
+            "\x1b*0",
+            "\x0e",
+            "\x0f",
+            "lqkx",
+            "\x1bH",
+            "\x1b[g",
+            "\x1b[3g",
+            "\x1b]8;;http://a\x1b\\",
+            "\x1b]8;id=q;http://b\x1b\\",
+            "\x1b]8;;\x1b\\",
+            "\x1b[>1u",
+            "\x1b[>3u",
+            "\x1b[=5;1u",
+            "\x1b[=2;2u",
+            "\x1b[<u",
+            "\x1b[<3u",
+            "\x1b[>4;1m",
+            "\x1b[?2004h",
+            "\x1b[?1000h",
+            "\x1b[?1006h",
+            "\x1b=",
+            "\x1b>",
+            "\x1b[?25l",
+            "\x1b[?25h",
+            "\x1b[4 q",
+            "\x1b[0 q",
+            "\x1b]2;title\x07",
+            "\x1b]7;file:///tmp/x\x07",
+            "\x1b]4;5;#102030\x07",
+            "\x1b]11;rgb:01/02/03\x07",
+        ];
+        // Nothing moves cells sideways (insert mode, ICH, DCH): that carries
+        // a soft-wrap flag rio leaves on a cell that is no longer last in
+        // its row, which a copy doesn't have. Nor does it write marks that
+        // join the cell before them (REP of one included): a mark joins a
+        // blank that was written but not one never written, and the copy
+        // can't tell those apart (it writes the gaps in a row as blanks
+        // and trims the blanks at its end).
+        let marks = ["\u{301}", "e\u{301}", "\u{200d}", "\u{fe0f}"];
+        let q: Vec<&str> = tokens
+            .iter()
+            .copied()
+            .filter(|t| !marks.contains(t))
+            .collect();
+        let no_rep: Vec<&str> = q.iter().copied().filter(|t| *t != "\x1b[3b").collect();
+        let mut x: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut rnd = |n: usize| {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (x >> 33) as usize % n
+        };
+        let opts = FormatOptions::snapshot().with_palette(true);
+        let mut compared = 0;
+        for seed in 0..1_500 {
+            let cols = 4 + rnd(12);
+            let rows = 2 + rnd(6);
+            let mut a = T::new(cols, rows);
+            let mut input = String::new();
+            for _ in 0..rnd(120) {
+                let token = tokens[rnd(tokens.len())];
+                input.push_str(token);
+                a.feed(token.as_bytes());
+            }
+            assert!(a.parser.is_ground());
+            if beyond_a_snapshot(&a) {
+                continue;
+            }
+            let mut b = T::new(cols, rows);
+            b.feed(a.term.format(opts).as_bytes());
+            b.parser.set_preceding_char(a.parser.preceding_char());
+            let (sa, sb) = (state(&a), state(&b));
+            assert!(
+                sa == sb,
+                "seed {seed} ({cols}x{rows}) at the checkpoint\ninput {input:?}\n{}",
+                diff(&sa, &sb)
+            );
+            input.push_str("\u{0}Q\u{0}");
+            let mark = a.parser.preceding_char().is_some_and(|c| {
+                crate::codepoint_width::codepoint_width(c as u32) == Some(0)
+            });
+            let q = if mark { &no_rep } else { &q };
+            for _ in 0..rnd(40) {
+                let token = q[rnd(q.len())];
+                input.push_str(token);
+                a.feed(token.as_bytes());
+                b.feed(token.as_bytes());
+            }
+            let (sa, sb) = (state(&a), state(&b));
+            assert!(
+                sa == sb,
+                "seed {seed} ({cols}x{rows}) after Q\ninput {input:?}\n{}",
+                diff(&sa, &sb)
+            );
+            compared += 1;
+        }
+        assert!(compared > 500, "{compared}");
+    }
+
+    /// The first line of `a` and `b` that differs.
+    fn diff(a: &str, b: &str) -> String {
+        let la: Vec<_> = a.lines().collect();
+        let lb: Vec<_> = b.lines().collect();
+        for (i, (x, y)) in la.iter().zip(&lb).enumerate() {
+            if x != y {
+                if i == 0 {
+                    // The cells: the first one that differs.
+                    let first = cells_diff(x, y);
+                    return format!("cells: {first}");
+                }
+                return format!("a: {x}\nb: {y}");
+            }
+        }
+        format!("{} lines vs {}", la.len(), lb.len())
+    }
+
+    fn cells_diff(a: &str, b: &str) -> String {
+        let at = a
+            .bytes()
+            .zip(b.bytes())
+            .position(|(x, y)| x != y)
+            .unwrap_or(a.len().min(b.len()));
+        let from = a[..at].rfind("(\"").unwrap_or(0);
+        let end = |s: &str| (at + 160).min(s.len());
+        let (ea, eb) = (end(a), end(b));
+        format!(
+            "\na: {}\nb: {}",
+            a.get(from..ea).unwrap_or("?"),
+            b.get(from..eb).unwrap_or("?")
+        )
+    }
+
+    /// What a snapshot is known not to carry (see the module docs and
+    /// `random_terminals_round_trip`), and what the ignored tests above
+    /// show it gets wrong.
+    fn beyond_a_snapshot(a: &T) -> bool {
+        let term = &a.term;
+        let (g, ig) = (&term.grid, &term.inactive_grid);
+        let (c, saved) = (&g.cursor, &g.saved_cursor);
+        let wraps = |g: &Grid<Square>, row: i32| {
+            row + 1 < g.screen_lines() as i32
+                && g[Line(row)][Column(g.columns() - 1)].wrapline()
+        };
+        let together = saved.should_wrap && saved.pos == c.pos;
+        if c.should_wrap && wraps(g, c.pos.row.0) && !together {
+            return true;
+        }
+        // `waiting_to_wrap_on_a_wrapped_row_at_the_regions_bottom`.
+        let region = &term.scroll_region;
+        let row = saved.pos.row.0;
+        if saved.should_wrap && row + 1 == region.end.0 && wraps(g, row) {
+            return true;
+        }
+        if term.mode().contains(Mode::ORIGIN) && !region.contains(&c.pos.row) {
+            return true;
+        }
+        let on_lead = |g: &Grid<Square>, cur: &crate::crosswords::pos::Cursor<Square>| {
+            let row = cur.pos.row.0.clamp(0, g.screen_lines() as i32 - 1);
+            cur.should_wrap && g[Line(row)][Column(g.columns() - 1)].is_leading_spacer()
+        };
+        if on_lead(g, c) || on_lead(g, saved) || on_lead(ig, &ig.cursor) {
+            return true;
+        }
+        let ri = |c: char| ('\u{1f1e6}'..='\u{1f1ff}').contains(&c);
+        let any = |g: &Grid<Square>| {
+            let rows = g.screen_lines() as i32;
+            let mut last: Option<char> = None;
+            (-(g.history_size() as i32)..rows).any(|line| {
+                let row = &g[Line(line)][..];
+                // Joins carry over a soft wrap: the copy writes on.
+                if line > -(g.history_size() as i32) && !wraps(g, line - 1) {
+                    last = None;
+                }
+                let bottom_wraps = line == rows - 1 && row[row.len() - 1].wrapline();
+                bottom_wraps
+                    || (0..row.len()).any(|col| {
+                        let cell = row[col];
+                        let text: Vec<char> =
+                            g.cell_text(Pos::new(Line(line), Column(col))).collect();
+                        // A split or squeezed wide character.
+                        let split = cell.is_leading_spacer()
+                            || broken_half(row, col)
+                            || (!cell.is_wide()
+                                && crate::codepoint_width::codepoint_width(
+                                    cell.c() as u32
+                                ) == Some(2));
+                        // A character joined to a wide one re-writes its
+                        // second half with the pen (and link) of the
+                        // moment: two halves in two styles.
+                        let two_pens = cell.is_spacer()
+                            && col > 0
+                            && row[col - 1].is_wide()
+                            && (g.style_of(&cell) != g.style_of(&row[col - 1])
+                                || cell_link(g, &cell) != cell_link(g, &row[col - 1]));
+                        // `a_combining_mark_on_a_trailing_blank`.
+                        let marked_blank =
+                            matches!(cell.c(), ' ' | '\0') && text.len() > 1;
+                        // `a_flag_in_the_last_column_without_autowrap`.
+                        let squeezed_cluster = !cell.is_wide()
+                            && (text.contains(&'\u{fe0f}')
+                                || text.iter().filter(|&&c| ri(c)).count() > 1);
+                        // `neighbours_that_would_join_stay_apart`.
+                        let joins = !cell.is_spacer()
+                            && last.is_some_and(|p| {
+                                p == '\u{200d}' || (ri(p) && ri(text[0]))
+                            });
+                        if !cell.is_spacer() {
+                            last = text
+                                .last()
+                                .copied()
+                                .filter(|&l| text.len() == 1 || l == '\u{200d}');
+                        }
+                        split || two_pens || marked_blank || squeezed_cluster || joins
+                    })
+            })
+        };
+        any(g) || any(ig)
     }
 }
 
