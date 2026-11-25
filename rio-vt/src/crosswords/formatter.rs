@@ -995,9 +995,21 @@ impl<U: EventListener> Crosswords<U> {
             let _ = write!(out.s, "\x1b]2;{title}\x1b\\");
         }
         if let Some(dir) = self.current_directory.as_ref().and_then(|d| d.to_str()) {
-            out.s.push_str("\x1b]7;file://");
-            percent_encode_path(&mut out.s, dir);
-            out.s.push_str("\x1b\\");
+            // The path starts at the (empty) host's slash. Windows keeps a
+            // path without it (`C:/...`, from `file:///C:/...`), so there
+            // it's put back: `file://C:/...` would read `C:` as the host.
+            // Elsewhere a path without one (OSC 9;9 can set any) has no
+            // `file://` form that reads back as it; it's left out.
+            let slash = dir.starts_with('/');
+            if slash || cfg!(windows) {
+                out.s.push_str(if slash {
+                    "\x1b]7;file://"
+                } else {
+                    "\x1b]7;file:///"
+                });
+                percent_encode_path(&mut out.s, dir);
+                out.s.push_str("\x1b\\");
+            }
         }
     }
 
@@ -1037,11 +1049,13 @@ fn write_keyboard_stack(out: &mut String, stack: &[u8], top: usize) {
     }
 }
 
-/// A path for a `file://` URL: bytes outside the unreserved set (and `/`)
-/// as `%XX`.
+/// A path for a `file://` URL: bytes outside the unreserved set (and `/`,
+/// `:`) as `%XX`.
 fn percent_encode_path(out: &mut String, path: &str) {
     for b in path.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'.' | b'_' | b'~') {
+        if b.is_ascii_alphanumeric()
+            || matches!(b, b'/' | b':' | b'-' | b'.' | b'_' | b'~')
+        {
             out.push(b as char);
         } else {
             let _ = write!(out, "%{b:02X}");
@@ -1968,6 +1982,52 @@ mod snapshot_tests {
         assert!(b.term.mode().contains(Mode::ORIGIN));
     }
 
+    /// A snapshot's OSC 7, for a working directory of `dir`.
+    fn osc7(dir: &str) -> Option<String> {
+        let mut a = T::new(20, 4);
+        a.term.current_directory = Some(dir.into());
+        let snapshot = String::from_utf8(a.term.snapshot_formatted()).unwrap();
+        let at = snapshot.find("\x1b]7;")?;
+        Some(snapshot[at..].to_string())
+    }
+
+    #[test]
+    fn directories_as_file_urls() {
+        assert_eq!(
+            osc7("/tmp/a b:c").as_deref(),
+            Some("\x1b]7;file:///tmp/a%20b:c\x1b\\")
+        );
+        // Windows keeps `file:///C:/...` as `C:/...`: the URL gets the
+        // empty host's slash back, or `C:` would read as the host. Other
+        // platforms keep the slash, so a path without one isn't a URL's.
+        let drive = osc7("C:/Users/me too");
+        if cfg!(windows) {
+            assert_eq!(
+                drive.as_deref(),
+                Some("\x1b]7;file:///C:/Users/me%20too\x1b\\")
+            );
+        } else {
+            assert_eq!(drive, None);
+        }
+    }
+
+    #[test]
+    fn directories_survive() {
+        let mut inputs = vec![&b"\x1b]7;file:///C:/Users/me%20too\x07"[..]];
+        // OSC 9;9 with a Windows path: no `file://` form for it elsewhere.
+        if cfg!(windows) {
+            inputs.push(b"\x1b]9;9;C:\\Users\\me\x07");
+        }
+        for input in inputs {
+            let mut a = T::new(20, 4);
+            a.feed(input);
+            assert!(a.term.current_directory.is_some(), "{input:?}");
+            let b = a.copy();
+            assert_same(&a, &b);
+            assert_eq!(b.term.current_directory, a.term.current_directory);
+        }
+    }
+
     #[test]
     fn cursor_style_title_and_directory() {
         let mut a = T::new(20, 4);
@@ -1977,9 +2037,11 @@ mod snapshot_tests {
         assert_eq!(b.term.cursor_shape, CursorShape::Beam);
         assert!(b.term.blinking_cursor);
         assert_eq!(b.term.title, "my title");
+        // (Windows keeps a path without the URL's leading slash.)
+        let dir = if cfg!(windows) { "tmp/a b" } else { "/tmp/a b" };
         assert_eq!(
             b.term.current_directory.as_deref(),
-            Some(std::path::Path::new("/tmp/a b"))
+            Some(std::path::Path::new(dir))
         );
         assert!(!b.term.mode().contains(Mode::SHOW_CURSOR));
     }
