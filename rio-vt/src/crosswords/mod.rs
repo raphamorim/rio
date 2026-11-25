@@ -1430,8 +1430,10 @@ impl<U: EventListener> Crosswords<U> {
     pub fn compress_history(&mut self, max_blocks: Option<usize>) -> bool {
         // Both screens: the primary one is inactive under an alt-screen
         // program (the alt screen has no history).
-        let more = self.grid.compress_history(max_blocks);
-        self.inactive_grid.compress_history(max_blocks) || more
+        // One screen's after the other's, so a limited call does at most
+        // about its limit.
+        self.grid.compress_history(max_blocks)
+            || self.inactive_grid.compress_history(max_blocks)
     }
 
     /// How much of the primary screen's history is compressed, and its
