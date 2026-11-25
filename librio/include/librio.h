@@ -162,11 +162,15 @@ typedef struct {
      Cells keep the registration they were printed with: read it with
      rio_render_state_cell_glyph. */
   uint32_t glyph_formats;
-  /* A program asked what draws cp (Glyph Protocol q). Called with the
-     terminal locked: answer with rio_surface_glyph_query_reply, once per
-     query and in order, here or later from any thread. Replies made
-     after the query wait for its answer. Past 1024 waiting, further
-     queries are answered at once with system off and not reported. */
+  /* A program asked what draws cp (Glyph Protocol q). Called from the
+     parser with the terminal locked, so keep it short (queue and
+     return) and call nothing in librio from it but
+     rio_surface_glyph_query_pending/reply. Answer with
+     rio_surface_glyph_query_reply, once per query and in order, here
+     or later from any thread; replies made after the query wait for
+     its answer. Past 1024 waiting, librio answers the oldest itself
+     with reason=unknown, so answer the codepoint
+     rio_surface_glyph_query_pending reports, not the one given here. */
   void (*glyph_query_cb)(void *userdata, rio_surface_id_t surface, uint32_t cp);
 } rio_runtime_config_s;
 
@@ -477,8 +481,10 @@ rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
 rio_color_s rio_render_state_cell_underline_color(const rio_render_state_t *state,
                                                   uint16_t line, uint16_t column);
 /* The Glyph Protocol registration a cell was printed with, as a version
- * that always means the same glyph (so it can key a raster cache). False
- * for every other cell, or when the host draws no formats. */
+ * that always means the same glyph within this surface (so it can key a
+ * raster cache; one shared across surfaces keys on the surface too).
+ * Programs can register a new version every frame, so bound the cache.
+ * False for every other cell, or when the host draws no formats. */
 bool rio_render_state_cell_glyph(const rio_render_state_t *state, uint16_t line,
                                  uint16_t column, uint32_t *version);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);

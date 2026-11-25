@@ -1157,7 +1157,10 @@ pub unsafe extern "C" fn sl_glyph_rasterize(
         };
         // Worked out once per registration, as the grid does.
         let state = &entry.render_state;
-        if state.unrenderable.load(std::sync::atomic::Ordering::Relaxed) {
+        if state
+            .unrenderable
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
             return false;
         }
         let span = rio_grid::glyph_protocol_span(row, column, rs.columns(), entry.width);
@@ -1309,14 +1312,16 @@ pub unsafe extern "C" fn sl_render_surface(
         let font_library = sl.font_library().clone();
         // Glyph Protocol: the grid looks a pane's registry up by route id,
         // and an `Sl` draws one surface, at route 0. Installed again
-        // whenever it differs, since `sl_set_font` replaces the library.
-        if let Some(registry) = rs.glyph_registry() {
-            let installed = font_library
-                .glyph_registry_for(0)
-                .is_some_and(|current| current.ptr_eq(registry));
-            if !installed {
+        // whenever it differs, since `sl_set_font` replaces the library,
+        // and dropped for a surface without one, so it doesn't keep the
+        // last surface's glyphs alive.
+        let current = font_library.glyph_registry_for(0);
+        match rs.glyph_registry() {
+            Some(registry) if !current.as_ref().is_some_and(|c| c.ptr_eq(registry)) => {
                 font_library.install_glyph_registry(0, registry.clone());
             }
+            None if current.is_some() => font_library.remove_glyph_registry(0),
+            _ => {}
         }
         let input_colorspace = sl.input_colorspace();
         let window_size = sl.window_size();

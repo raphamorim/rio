@@ -279,12 +279,34 @@ enum Held {
 #[cfg(feature = "graphics")]
 type HeldReplies = Arc<std::sync::Mutex<std::collections::VecDeque<Held>>>;
 
-/// How many queries and replies may wait on the host. A program
-/// flooding `q` faster than the host answers gets the rest answered at
-/// once, in order, with `system` unknown and so reported off, instead
-/// of a queue (and a host backlog) that grows without bound.
+/// How many queries and replies may wait on the host. Past it the
+/// oldest query is answered `reason=unknown` (§5.4 lets a terminal
+/// limit how many it answers) and the replies behind it go out, so a
+/// program flooding `q` while the host is slow or stalled can't grow
+/// the queue, or the drain an answer does, without bound.
 #[cfg(feature = "graphics")]
 const MAX_HELD: usize = 1024;
+
+/// Makes room for one more held item: while full, answers the oldest
+/// query `reason=unknown` and delivers the replies held behind it. The
+/// front stays a query, or the queue empties.
+#[cfg(feature = "graphics")]
+fn make_room(
+    held: &mut std::collections::VecDeque<Held>,
+    deliver: impl Fn(Cow<'static, [u8]>),
+) {
+    while held.len() >= MAX_HELD {
+        if let Some(Held::Query(cp, _)) = held.pop_front() {
+            let answer = rio_vt::ansi::glyph_protocol::format_query_unknown(cp);
+            deliver(Cow::Owned(answer.into_bytes()));
+        }
+        while let Some(Held::Reply(_)) = held.front() {
+            if let Some(Held::Reply(bytes)) = held.pop_front() {
+                deliver(bytes);
+            }
+        }
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct Listener {
@@ -349,15 +371,7 @@ impl Listener {
                 // between the query and this read.
                 let registered = self.glyphs.as_ref().is_some_and(|g| g.contains(cp));
                 let mut held = self.held.lock().unwrap();
-                if held.len() >= MAX_HELD {
-                    use rio_vt::ansi::glyph_protocol::{
-                        format_query_response, QueryStatus,
-                    };
-                    let status = QueryStatus::new(registered, false);
-                    let answer = format_query_response(cp, status).into_bytes();
-                    held.push_back(Held::Reply(Cow::Owned(answer)));
-                    return;
-                }
+                make_room(&mut held, |bytes| self.deliver(bytes));
                 held.push_back(Held::Query(cp, registered));
                 drop(held);
                 self.delegate.glyph_query(self.surface_id, cp);
@@ -445,6 +459,7 @@ impl Listener {
         #[cfg(feature = "graphics")]
         {
             let mut held = self.held.lock().unwrap();
+            make_room(&mut held, |bytes| self.deliver(bytes));
             if !held.is_empty() {
                 held.push_back(Held::Reply(bytes));
                 return;
@@ -913,7 +928,10 @@ impl Surface {
 
     /// The codepoint of the oldest unanswered
     /// [`SurfaceDelegate::glyph_query`], so a host can answer every
-    /// waiting query in one pass instead of one hop per callback.
+    /// waiting query in one pass instead of one hop per callback. Past
+    /// 1024 waiting, librio answers the oldest itself (`reason=unknown`),
+    /// so the codepoint a callback reported may be gone: answer what
+    /// this returns.
     #[cfg(feature = "graphics")]
     pub fn glyph_query_pending(&self) -> Option<u32> {
         match self.replies.held.lock().unwrap().front() {
@@ -3385,9 +3403,9 @@ mod tests {
         assert!(matches!(held[1], Held::Query(0x100000, true)));
     }
 
-    // A flood of queries the host hasn't answered stops growing the
-    // queue: the overflow is answered in place, in order, and the host
-    // drains what it was told about in one pass.
+    // A flood of queries, with replies behind them, that the host
+    // hasn't answered stops growing the queue: the oldest are answered
+    // `unknown`, in order, and the host drains the rest in one pass.
     #[cfg(feature = "graphics")]
     #[test]
     fn glyph_protocol_query_flood_is_bounded() {
@@ -3399,20 +3417,20 @@ mod tests {
                 ..SurfaceDesc::default()
             })
             .expect("spawn sleeper");
-        let flood = b"\x1b_25a1;q;cp=e0a0\x1b\\".repeat(MAX_HELD + 10);
+        // Queries with replies behind them (DA1), well past the bound.
+        let flood = b"\x1b_25a1;q;cp=e0a0\x1b\\\x1b[c".repeat(4 * MAX_HELD);
         surface.inject_output(&flood);
         {
             let held = surface.replies.held.lock().unwrap();
-            assert_eq!(held.len(), MAX_HELD + 10);
-            assert!(matches!(held[MAX_HELD - 1], Held::Query(0xe0a0, false)));
-            assert!(matches!(held[MAX_HELD], Held::Reply(_)));
+            assert!(held.len() <= MAX_HELD, "{} held", held.len());
+            assert!(matches!(held.front(), Some(Held::Query(0xe0a0, false))));
         }
         let mut answered = 0;
         while surface.glyph_query_pending() == Some(0xe0a0) {
             assert!(surface.glyph_query_reply(true));
             answered += 1;
         }
-        assert_eq!(answered, MAX_HELD);
+        assert!(answered > 0 && answered <= MAX_HELD / 2 + 1);
         assert!(surface.replies.held.lock().unwrap().is_empty());
     }
 
