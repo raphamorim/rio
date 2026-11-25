@@ -1126,6 +1126,9 @@ impl Screen<'_> {
                     Act::Copy => {
                         self.copy_selection(ClipboardType::Clipboard, clipboard);
                     }
+                    Act::CopyLastCommandOutput => {
+                        self.copy_last_command_output(clipboard);
+                    }
                     Act::SelectAll => {
                         self.select_all();
                     }
@@ -1947,6 +1950,19 @@ impl Screen<'_> {
         drop(terminal);
 
         clipboard.set(ty, text);
+    }
+
+    pub fn copy_last_command_output(&mut self, clipboard: &mut Clipboard) {
+        let terminal = self.context_manager.current_mut().terminal.lock();
+        let text = terminal
+            .last_command_output()
+            .and_then(|output| terminal.command_output_text(&output))
+            .filter(|s| !s.is_empty());
+        drop(terminal);
+
+        if let Some(text) = text {
+            clipboard.set(ClipboardType::Clipboard, text);
+        }
     }
 
     #[inline]

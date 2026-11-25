@@ -45,30 +45,44 @@ pub(super) enum PaletteReset {
     Indices(Vec<u8>),
 }
 
-/// Parse an OSC 133 semantic prompt sequence into the row mark it
-/// should set, if any. `A` and `P` mark the cursor row as a prompt
-/// (`P;k=c` / `P;k=s` as a continuation). `C` and `D` set no row mark
-/// and are dispatched separately as command start and end; the
-/// remaining subcommands (`B`, `I`, `L`, `N`) and all `key=value`
-/// options are accepted and ignored, matching the spec's leniency.
-pub(super) fn parse_semantic_prompt(
+/// Parse an OSC 133 semantic prompt sequence into its effect on the
+/// semantic state. `A` and `N` start a prompt; `P` does too, as a
+/// continuation for `k=c` / `k=s`. `B` and `I` start input, `C` output,
+/// and `D` ends the command. `A`, `N` and `L` first move to a fresh line.
+/// Other options are accepted and ignored, matching the spec's leniency.
+pub(super) fn parse_semantic_mark(
     params: &[&[u8]],
-) -> Option<crate::crosswords::grid::row::SemanticPrompt> {
+) -> Option<crate::crosswords::semantic::SemanticMark> {
     use crate::crosswords::grid::row::SemanticPrompt;
+    use crate::crosswords::semantic::SemanticMark;
 
     let subcommand = *params.get(1)?.first()?;
     match subcommand {
-        b'A' => Some(SemanticPrompt::Prompt),
+        b'A' | b'N' => Some(SemanticMark::Prompt {
+            kind: SemanticPrompt::Prompt,
+            fresh_line: true,
+        }),
         b'P' => {
             for option in &params[2..] {
                 if let Some(kind) = option.strip_prefix(b"k=") {
                     if kind == b"c" || kind == b"s" {
-                        return Some(SemanticPrompt::PromptContinuation);
+                        return Some(SemanticMark::Prompt {
+                            kind: SemanticPrompt::PromptContinuation,
+                            fresh_line: false,
+                        });
                     }
                 }
             }
-            Some(SemanticPrompt::Prompt)
+            Some(SemanticMark::Prompt {
+                kind: SemanticPrompt::Prompt,
+                fresh_line: false,
+            })
         }
+        b'B' => Some(SemanticMark::Input { until_eol: false }),
+        b'I' => Some(SemanticMark::Input { until_eol: true }),
+        b'C' => Some(SemanticMark::Output),
+        b'D' => Some(SemanticMark::CommandEnd),
+        b'L' => Some(SemanticMark::FreshLine),
         _ => None,
     }
 }

@@ -79,8 +79,8 @@ pub trait Handler {
     /// payload), so any stored one is stale.
     fn set_current_directory(&mut self, _: Option<std::path::PathBuf>) {}
 
-    /// OSC 133: mark the cursor row as a semantic prompt row.
-    fn set_semantic_prompt(&mut self, _: crate::crosswords::grid::row::SemanticPrompt) {}
+    /// OSC 133: the shell declared what the following cells hold.
+    fn set_semantic_mark(&mut self, _: crate::crosswords::semantic::SemanticMark) {}
 
     /// Set the cursor style.
     fn set_cursor_style(&mut self, _style: Option<CursorShape>, _blinking: bool) {}
@@ -1082,8 +1082,8 @@ impl<U: Handler> Perform for Performer<'_, U> {
 
             // OSC 133 - semantic prompt zones (shell integration).
             b"133" => {
-                if let Some(mark) = osc::parse_semantic_prompt(params) {
-                    self.handler.set_semantic_prompt(mark);
+                if let Some(mark) = osc::parse_semantic_mark(params) {
+                    self.handler.set_semantic_mark(mark);
                 }
                 // `A` (fresh line, new prompt) and `N` (new command, which
                 // also starts a prompt) begin a prompt; options arrive as
@@ -2514,29 +2514,42 @@ mod tests {
     }
 
     #[test]
-    fn semantic_prompt_parsing() {
+    fn semantic_mark_parsing() {
         use crate::crosswords::grid::row::SemanticPrompt;
-        use crate::performer::osc::parse_semantic_prompt as parse;
+        use crate::crosswords::semantic::SemanticMark;
+        use crate::performer::osc::parse_semantic_mark as parse;
 
-        assert_eq!(parse(&[b"133", b"A"]), Some(SemanticPrompt::Prompt));
+        let fresh_prompt = Some(SemanticMark::Prompt {
+            kind: SemanticPrompt::Prompt,
+            fresh_line: true,
+        });
+        let prompt = Some(SemanticMark::Prompt {
+            kind: SemanticPrompt::Prompt,
+            fresh_line: false,
+        });
+        let continuation = Some(SemanticMark::Prompt {
+            kind: SemanticPrompt::PromptContinuation,
+            fresh_line: false,
+        });
+        assert_eq!(parse(&[b"133", b"A"]), fresh_prompt);
+        assert_eq!(parse(&[b"133", b"A", b"aid=1"]), fresh_prompt);
+        assert_eq!(parse(&[b"133", b"N"]), fresh_prompt);
+        assert_eq!(parse(&[b"133", b"P"]), prompt);
+        assert_eq!(parse(&[b"133", b"P", b"k=i"]), prompt);
+        assert_eq!(parse(&[b"133", b"P", b"k=r"]), prompt);
+        assert_eq!(parse(&[b"133", b"P", b"k=s"]), continuation);
+        assert_eq!(parse(&[b"133", b"P", b"k=c"]), continuation);
         assert_eq!(
-            parse(&[b"133", b"A", b"aid=1"]),
-            Some(SemanticPrompt::Prompt)
-        );
-        assert_eq!(parse(&[b"133", b"P"]), Some(SemanticPrompt::Prompt));
-        assert_eq!(parse(&[b"133", b"P", b"k=i"]), Some(SemanticPrompt::Prompt));
-        assert_eq!(
-            parse(&[b"133", b"P", b"k=s"]),
-            Some(SemanticPrompt::PromptContinuation)
+            parse(&[b"133", b"B"]),
+            Some(SemanticMark::Input { until_eol: false })
         );
         assert_eq!(
-            parse(&[b"133", b"P", b"k=c"]),
-            Some(SemanticPrompt::PromptContinuation)
+            parse(&[b"133", b"I"]),
+            Some(SemanticMark::Input { until_eol: true })
         );
-        // Accepted subcommands that set no row mark.
-        assert_eq!(parse(&[b"133", b"B"]), None);
-        assert_eq!(parse(&[b"133", b"C"]), None);
-        assert_eq!(parse(&[b"133", b"D", b"0"]), None);
+        assert_eq!(parse(&[b"133", b"C"]), Some(SemanticMark::Output));
+        assert_eq!(parse(&[b"133", b"D", b"0"]), Some(SemanticMark::CommandEnd));
+        assert_eq!(parse(&[b"133", b"L"]), Some(SemanticMark::FreshLine));
         assert_eq!(parse(&[b"133"]), None);
         assert_eq!(parse(&[b"133", b""]), None);
     }

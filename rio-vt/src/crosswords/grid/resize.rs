@@ -2,6 +2,7 @@
 // https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/grid/resize.rs
 // which is licensed under Apache 2.0 license.
 
+use crate::crosswords::grid::row::SemanticPrompt;
 use crate::crosswords::grid::{Dimensions, Grid, ReflowRemap};
 use crate::crosswords::pos::{Boundary, Column, Line};
 use crate::crosswords::square::{Square, Wide};
@@ -175,6 +176,16 @@ impl Grid<Square> {
             if i < self.lines && last_is_history {
                 history_rows -= 1;
             }
+
+            if row.semantic_prompt != SemanticPrompt::None {
+                if row.semantic_prompt == SemanticPrompt::Prompt
+                    || last_row.semantic_prompt == SemanticPrompt::None
+                {
+                    last_row.semantic_prompt = row.semantic_prompt;
+                }
+                row.semantic_prompt = SemanticPrompt::PromptContinuation;
+            }
+            last_row.command_start |= mem::take(&mut row.command_start);
 
             // Remove wrap flag before appending additional cells.
             if let Some(cell) = last_row.last_mut() {

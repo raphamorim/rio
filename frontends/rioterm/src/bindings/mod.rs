@@ -239,6 +239,7 @@ impl From<String> for Action {
             "togglequake" => Some(Action::ToggleQuake),
             "scrolltoprevprompt" => Some(Action::ScrollToPrevPrompt),
             "scrolltonextprompt" => Some(Action::ScrollToNextPrompt),
+            "copylastcommandoutput" => Some(Action::CopyLastCommandOutput),
             "createtab" => Some(Action::TabCreateNew),
             "movecurrenttabtoprev" => Some(Action::MoveCurrentTabToPrev),
             "movecurrenttabtonext" => Some(Action::MoveCurrentTabToNext),
@@ -472,6 +473,10 @@ pub enum Action {
 
     /// Scroll so the next OSC 133 prompt is at the top of the viewport.
     ScrollToNextPrompt,
+
+    /// Copy the output of the last command (or the running one) to the
+    /// clipboard. Requires shell integration emitting OSC 133 marks.
+    CopyLastCommandOutput,
 
     /// Toggle vi mode.
     ToggleViMode,

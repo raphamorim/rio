@@ -145,6 +145,14 @@ bitflags! {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+pub enum SemanticContent {
+    #[default]
+    Output,
+    Input,
+    Prompt,
+}
+
 /// Counter for hyperlinks without explicit ID.
 static HYPERLINK_ID_SUFFIX: AtomicU32 = AtomicU32::new(0);
 
@@ -207,12 +215,16 @@ pub struct Extras {
     /// with, as its registry version (spec §6.3). The cell draws that
     /// registration whatever is registered at the codepoint later.
     pub glyph: Option<u32>,
+    pub semantic: SemanticContent,
 }
 
 impl Extras {
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.zerowidth.is_empty() && self.hyperlink.is_none() && self.glyph.is_none()
+        self.zerowidth.is_empty()
+            && self.hyperlink.is_none()
+            && self.glyph.is_none()
+            && self.semantic == SemanticContent::Output
     }
 }
 
