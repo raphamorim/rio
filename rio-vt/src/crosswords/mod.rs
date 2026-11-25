@@ -3275,16 +3275,18 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // If wide char is not part of the selection, but leading spacer is, include it.
+        // The wide character went on to the next row.
         if line_length == self.grid.columns()
             && line_length.0 >= 2
             && matches!(grid_line[line_length - 1].wide(), Wide::LeadingSpacer)
             && include_wrapped_wide
+            && line < self.grid.bottommost_line()
         {
             for _ in 0..*blank_cells {
                 text.push(' ');
             }
             *blank_cells = 0;
-            text.push(self.grid[line - 1i32][Column(0)].c());
+            text.push(self.grid[line + 1i32][Column(0)].c());
             had_content = true;
         }
 
