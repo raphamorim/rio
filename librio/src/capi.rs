@@ -2391,7 +2391,13 @@ mod persistence_tests {
     }
 }
 
-#[cfg(all(test, feature = "graphics"))]
+// Spawns /bin/sh, as the surface tests in lib.rs do.
+#[cfg(all(
+    test,
+    feature = "graphics",
+    feature = "pty",
+    not(target_os = "windows")
+))]
 mod glyph_protocol_tests {
     use super::*;
     use std::sync::Mutex;

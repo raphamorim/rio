@@ -1562,7 +1562,8 @@ pub unsafe extern "C" fn sl_render_surface(
     }));
 }
 
-#[cfg(test)]
+// Spawns /bin/sh, as librio's surface tests do.
+#[cfg(all(test, not(target_os = "windows")))]
 mod glyph_protocol_tests {
     use super::*;
     use librio::{
