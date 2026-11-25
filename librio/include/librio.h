@@ -27,6 +27,16 @@ typedef size_t rio_surface_id_t;
    sent none; data_b is how long it ran, in milliseconds. */
 #define RIO_ACTION_COMMAND_FINISHED 4u
 #define RIO_EXIT_STATUS_NONE 0x80000000u
+/* A program asked for a desktop notification (OSC 9 or OSC 777 notify):
+   title is its title ("" when it sent none, never NULL), subtitle its
+   body (never empty). Control, bidirectional and invisible characters are
+   taken out, and both are cut at a UTF-8 character boundary to at most
+   RIO_NOTIFICATION_TITLE_MAX and RIO_NOTIFICATION_BODY_MAX bytes. A
+   surface sends at most one a second and the same one at most once in
+   five seconds; when to show one is the host's call. */
+#define RIO_ACTION_DESKTOP_NOTIFICATION 5u
+#define RIO_NOTIFICATION_TITLE_MAX 64u
+#define RIO_NOTIFICATION_BODY_MAX 256u
 
 /* OSC 7501 program status (see program_status_cb). `event` is REPORT,
    or a lifecycle event after which the host drops records: on
@@ -118,7 +128,8 @@ typedef size_t rio_surface_id_t;
 
 typedef struct {
   uint32_t tag;
-  /* Valid only for the duration of the callback. */
+  /* Valid only for the duration of the callback. Their meaning depends
+     on tag (see RIO_ACTION_*); NULL for tags that carry no text. */
   const char *title;
   const char *subtitle;
   /* Numeric payload; meaning depends on tag (see RIO_ACTION_*). */

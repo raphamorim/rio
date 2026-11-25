@@ -124,7 +124,80 @@ impl rio_vt::crosswords::grid::Dimensions for GridSize {
     }
 }
 
+/// The longest notification title, in bytes, an embedder is given.
+pub const NOTIFICATION_TITLE_MAX: usize = 64;
+/// The longest notification body, in bytes, an embedder is given.
+pub const NOTIFICATION_BODY_MAX: usize = 256;
+
+/// Whether a character may show in a notification. Control characters,
+/// bidirectional marks, overrides and isolates, and invisible spaces are
+/// dropped: with them a program could disguise what it shows (reverse
+/// the text, pass for another app). Joiners stay, as emoji need them.
+fn shown(c: char) -> bool {
+    !c.is_control()
+        && !matches!(
+            c,
+            '\u{061C}'
+                | '\u{200B}'
+                | '\u{200E}'
+                | '\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2060}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{FEFF}'
+        )
+}
+
+/// A notification's text as given to the embedder: the characters that
+/// may show, at most `max` bytes of them.
+fn notification_text(s: &str, max: usize) -> String {
+    cut(s.chars().filter(|&c| shown(c)).collect(), max)
+}
+
+/// How often a surface may notify, as ghostty does: at most once a
+/// second, and the same notification at most once in five seconds. Any
+/// program can send them (over ssh, from a file being printed), and each
+/// one would reach the system.
+#[derive(Default)]
+struct NotifyLimit {
+    /// When the last one went, and a hash of its title and body.
+    last: Option<(rio_vt::time::Instant, u64)>,
+}
+
+impl NotifyLimit {
+    fn allow(&mut self, now: rio_vt::time::Instant, title: &str, body: &str) -> bool {
+        use rio_vt::time::Duration;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        (title, body).hash(&mut hasher);
+        let digest = hasher.finish();
+        if let Some((at, last)) = self.last {
+            let since = now.saturating_duration_since(at);
+            if since < Duration::from_secs(1)
+                || (last == digest && since < Duration::from_secs(5))
+            {
+                return false;
+            }
+        }
+        self.last = Some((now, digest));
+        true
+    }
+}
+
+/// `s` cut to at most `max` bytes, at a character boundary.
+fn cut(mut s: String, max: usize) -> String {
+    if s.len() > max {
+        let mut end = max;
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        s.truncate(end);
+    }
+    s
+}
+
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Action {
     SetTitle {
         title: String,
@@ -149,6 +222,23 @@ pub enum Action {
     CommandFinished {
         exit_status: Option<i32>,
         duration: std::time::Duration,
+    },
+    /// A program asked for a desktop notification: OSC 9 (iTerm2: the text
+    /// after `9;` is the body) or OSC 777 `notify;title;body` (rxvt).
+    /// OSC 9 text that starts with a ConEmu sub-command and a `;` (`9;4;`
+    /// progress, `9;9;` working directory, `9;3;` and the others up to 12)
+    /// is not a notification.
+    ///
+    /// `title` is empty when the program sent none; `body` is never empty
+    /// (an empty one isn't sent). Control characters, bidirectional
+    /// controls and invisible spaces are taken out, then the two are cut
+    /// to [`NOTIFICATION_TITLE_MAX`] and [`NOTIFICATION_BODY_MAX`] bytes
+    /// at a character boundary. A surface sends at most one a second, and
+    /// the same one at most once in five seconds. Whether to show it, and
+    /// when, is the embedder's call.
+    DesktopNotification {
+        title: String,
+        body: String,
     },
 }
 
@@ -321,6 +411,7 @@ pub(crate) struct Listener {
     held: HeldReplies,
     #[cfg(feature = "pty")]
     pty_writer: Arc<Mutex<Option<corcovado::channel::Sender<Msg>>>>,
+    notify_limit: Arc<Mutex<NotifyLimit>>,
 }
 
 impl Listener {
@@ -351,6 +442,20 @@ impl Listener {
             }
             RioEvent::Bell(_) => {
                 self.delegate.action(self.surface_id, Action::RingBell);
+            }
+            RioEvent::DesktopNotification { title, body } => {
+                // A program can send an OSC as long as the parser's cap.
+                let title = notification_text(&title, NOTIFICATION_TITLE_MAX);
+                let body = notification_text(&body, NOTIFICATION_BODY_MAX);
+                if body.is_empty() {
+                    return;
+                }
+                let now = rio_vt::time::Instant::now();
+                if !self.notify_limit.lock().unwrap().allow(now, &title, &body) {
+                    return;
+                }
+                self.delegate
+                    .action(self.surface_id, Action::DesktopNotification { title, body });
             }
             RioEvent::CursorBlinkingChange | RioEvent::CursorBlinkingChangeOnRoute(_) => {
                 self.delegate
@@ -792,6 +897,7 @@ impl Surface {
             held: HeldReplies::default(),
             #[cfg(feature = "pty")]
             pty_writer: pty_writer.clone(),
+            notify_limit: Arc::default(),
         };
         #[cfg(feature = "graphics")]
         let replies = listener.clone();
@@ -2729,6 +2835,135 @@ mod tests {
                 &ProgramStatusEvent::PromptStart,
             ]
         );
+    }
+
+    /// What reaches the delegate when a fresh surface (one with no
+    /// notification sent yet) reads `bytes`.
+    fn actions_for(bytes: &[u8]) -> Vec<Action> {
+        let delegate = Arc::new(ActionRecorder {
+            actions: Mutex::new(Vec::new()),
+        });
+        let engine = Engine::new(delegate.clone());
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".to_string()),
+                args: vec!["-c".to_string(), "sleep 300".to_string()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        surface.inject_output(bytes);
+        let actions = delegate.actions.lock().unwrap().clone();
+        actions
+    }
+
+    fn notes_for(bytes: &[u8]) -> Vec<(String, String)> {
+        actions_for(bytes)
+            .into_iter()
+            .filter_map(|a| match a {
+                Action::DesktopNotification { title, body } => Some((title, body)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn note(title: &str, body: &str) -> Vec<(String, String)> {
+        vec![(title.to_string(), body.to_string())]
+    }
+
+    // OSC 9 and OSC 777 notify reach the embedder, ended with BEL or with
+    // ST (ESC \\: the parser ends the string at the ESC).
+    #[test]
+    fn desktop_notifications_reach_the_delegate() {
+        assert_eq!(notes_for(b"\x1b]9;build done\x07"), note("", "build done"));
+        assert_eq!(
+            notes_for(b"\x1b]9;tests; 3 failed\x1b\\"),
+            note("", "tests; 3 failed")
+        );
+        assert_eq!(
+            notes_for(b"\x1b]777;notify;Deploy;it shipped\x07"),
+            note("Deploy", "it shipped")
+        );
+        assert_eq!(
+            notes_for(b"\x1b]777;notify;Title;a;b\x1b\\"),
+            note("Title", "a;b")
+        );
+    }
+
+    // OSC 9;4 stays progress, and an empty body is no notification.
+    #[test]
+    fn desktop_notifications_not_sent() {
+        let actions = actions_for(b"\x1b]9;4;1;50\x07");
+        assert!(!actions
+            .iter()
+            .any(|a| matches!(a, Action::DesktopNotification { .. })));
+        assert!(actions.contains(&Action::Progress {
+            state: 1,
+            value: 50
+        }));
+        assert!(notes_for(b"\x1b]9;\x07").is_empty());
+        assert!(notes_for(b"\x1b]777;notify;Title;\x07").is_empty());
+        // Only characters that can't show.
+        assert!(notes_for("\x1b]9;\u{202E}\u{200B}\x07".as_bytes()).is_empty());
+    }
+
+    // Controls and bidirectional overrides are taken out; an emoji's
+    // joiner stays.
+    #[test]
+    fn desktop_notifications_show_only_plain_text() {
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+        let sent =
+            format!("\x1b]777;notify;\u{202E}Mail\u{0085};ok\u{7F}\u{200B} {family}\x07");
+        assert_eq!(
+            notes_for(sent.as_bytes()),
+            note("Mail", &format!("ok {family}"))
+        );
+    }
+
+    // A surface sends one a second: the second of a burst is dropped.
+    #[test]
+    fn desktop_notifications_are_limited() {
+        let notes = notes_for(b"\x1b]9;one\x07\x1b]9;two\x07");
+        assert_eq!(notes, note("", "one"));
+    }
+
+    #[test]
+    fn notify_limit_timing() {
+        use rio_vt::time::{Duration, Instant};
+        let t = Instant::now();
+        let mut limit = NotifyLimit::default();
+        assert!(limit.allow(t, "", "a"));
+        assert!(!limit.allow(t + Duration::from_millis(500), "", "b"));
+        assert!(limit.allow(t + Duration::from_millis(1100), "", "b"));
+        // The same again within five seconds of the last one sent.
+        assert!(!limit.allow(t + Duration::from_secs(3), "", "b"));
+        assert!(limit.allow(t + Duration::from_secs(7), "", "b"));
+        // Different text after a second.
+        assert!(limit.allow(t + Duration::from_millis(8100), "", "c"));
+    }
+
+    // A long notification arrives cut, never inside a character: a
+    // 3-byte character straddling the limit goes whole.
+    #[test]
+    fn desktop_notifications_are_cut() {
+        let title = format!("{}\u{20ac}", "t".repeat(NOTIFICATION_TITLE_MAX - 1));
+        let body = "b".repeat(NOTIFICATION_BODY_MAX + 100);
+        let sent = format!("\x1b]777;notify;{title};{body}\x07");
+        assert_eq!(
+            notes_for(sent.as_bytes()),
+            note(
+                &"t".repeat(NOTIFICATION_TITLE_MAX - 1),
+                &"b".repeat(NOTIFICATION_BODY_MAX)
+            )
+        );
+    }
+
+    #[test]
+    fn cut_keeps_characters_whole() {
+        assert_eq!(cut("abc".into(), 5), "abc");
+        assert_eq!(cut("abc".into(), 2), "ab");
+        assert_eq!(cut("a\u{20ac}".into(), 3), "a");
+        assert_eq!(cut("a\u{20ac}".into(), 4), "a\u{20ac}");
+        assert_eq!(cut(String::new(), 0), "");
     }
 
     // OSC 133 C then D reaches the embedder as one finished command with
