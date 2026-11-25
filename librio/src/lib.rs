@@ -45,9 +45,7 @@ use rio_vt::selection::{Selection, SelectionType};
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-#[cfg(feature = "pty")]
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 #[cfg(all(feature = "pty", target_os = "windows"))]
 use teletypewriter::create_pty;
 #[cfg(all(feature = "pty", not(target_os = "windows")))]
