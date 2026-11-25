@@ -88,6 +88,15 @@ impl Encoded {
     }
 }
 
+/// Where [`Storage::compress_from`](super::storage::Storage) stopped at
+/// its limit: the ring it walked, and how far. Valid while the ring is
+/// unchanged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Resume {
+    pub(crate) ring: (usize, usize, usize, usize),
+    pub(crate) k: usize,
+}
+
 /// A block, shared by the rows in it.
 pub(crate) struct Block<T> {
     pub(crate) data: Arc<Encoded>,

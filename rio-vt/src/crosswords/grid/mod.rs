@@ -102,6 +102,10 @@ pub struct Grid<T> {
     /// Output of the last tracked column reflow; `None` when tracking
     /// was off or the column count did not change.
     pub reflow_remap: Option<ReflowRemap>,
+
+    /// Where a compression limited to a few blocks stopped, for the next
+    /// call to go on from while the ring is as it was.
+    compress_resume: Option<compress::Resume>,
 }
 
 /// Exact row mapping recorded during a column reflow, in oldest-first
@@ -346,6 +350,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
             columns,
             style_set: crate::crosswords::style::StyleSet::new(),
             extras_table: ExtrasTable::new(),
+            compress_resume: None,
         }
     }
 
@@ -706,7 +711,8 @@ impl Grid<Square> {
     /// left. Returns whether there is more to do (`max_blocks` was hit).
     pub fn compress_history(&mut self, max_blocks: Option<usize>) -> bool {
         let newest = self.screen_lines() + self.display_offset;
-        self.raw.compress_from(newest, max_blocks)
+        self.raw
+            .compress_from(newest, max_blocks, &mut self.compress_resume)
     }
 
     /// How much of the history (and the rows the ring keeps past it) is

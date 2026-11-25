@@ -446,20 +446,29 @@ impl Storage<Square> {
     /// limit). First drops the decoded copies reads made of blocks there.
     /// A run of plain rows is compressed when it fills a block or a
     /// compressed row follows it; the newest ones wait for a full block.
-    /// Returns whether rows were left plain for the limit.
+    /// Returns whether rows were left plain for the limit; then `resume`
+    /// keeps where it stopped, and a call on the same ring goes on from
+    /// there (with its first pass over the ring done), so a pass in steps
+    /// costs about what one call does.
     pub(crate) fn compress_from(
         &mut self,
         newest: usize,
         max_blocks: Option<usize>,
+        resume: &mut Option<compress::Resume>,
     ) -> bool {
         let top = self.inner.len();
         if newest >= top {
+            *resume = None;
             return false;
         }
         // Oldest first: the k-th row's raw index.
         let count = top - newest;
         let zero = self.zero;
         let order = move |k: usize| (zero + top - 1 - k) % top;
+        let ring = (zero, top, self.len, newest);
+        if let Some(at) = resume.take().filter(|r| r.ring == ring) {
+            return self.encode_from(order, count, at.k, max_blocks, ring, resume);
+        }
 
         // How many rows still point at each encoding, the viewport's too:
         // one whose rows were mostly written (and so made plain) is
@@ -524,8 +533,20 @@ impl Storage<Square> {
             }
         }
 
+        self.encode_from(order, count, 0, max_blocks, ring, resume)
+    }
+
+    /// The encoding part of [`Self::compress_from`], from the `k`-th row.
+    fn encode_from(
+        &mut self,
+        order: impl Fn(usize) -> usize,
+        count: usize,
+        mut k: usize,
+        max_blocks: Option<usize>,
+        ring: (usize, usize, usize, usize),
+        resume: &mut Option<compress::Resume>,
+    ) -> bool {
         let mut made = 0;
-        let mut k = 0;
         let mut run = Vec::with_capacity(BLOCK_ROWS);
         while k < count {
             run.clear();
@@ -545,6 +566,10 @@ impl Storage<Square> {
                 continue;
             }
             if max_blocks.is_some_and(|max| made >= max) {
+                *resume = Some(compress::Resume {
+                    ring,
+                    k: k - run.len(),
+                });
                 return true;
             }
             let rows: Vec<&Row<Square>> = run.iter().map(|&j| &self.inner[j]).collect();
