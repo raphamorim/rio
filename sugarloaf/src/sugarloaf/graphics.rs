@@ -26,6 +26,8 @@ pub struct GraphicDataEntry {
     pub width: f32,
     pub height: f32,
     pub transmit_time: std::time::Instant,
+    /// No pixel of the image lets anything below it show.
+    pub is_opaque: bool,
 }
 
 impl GraphicDataEntry {
@@ -44,11 +46,13 @@ impl GraphicDataEntry {
         let display_h = data.display_height.unwrap_or(data.height) as f32;
         let (width, height) = (data.width as u32, data.height as u32);
         let transmit_time = data.transmit_time;
+        let is_opaque = !data.maybe_transparent();
         Self {
             handle: Handle::from_pixels(width, height, SharedPixels(data)),
             width: display_w,
             height: display_h,
             transmit_time,
+            is_opaque,
         }
     }
 
@@ -56,6 +60,7 @@ impl GraphicDataEntry {
     pub fn from_graphic_data(data: GraphicData) -> Self {
         let display_w = data.display_width.unwrap_or(data.width) as f32;
         let display_h = data.display_height.unwrap_or(data.height) as f32;
+        let is_opaque = !data.maybe_transparent();
         Self {
             handle: Handle::from_pixels(
                 data.width as u32,
@@ -65,6 +70,7 @@ impl GraphicDataEntry {
             width: display_w,
             height: display_h,
             transmit_time: data.transmit_time,
+            is_opaque,
         }
     }
 }
@@ -91,6 +97,7 @@ impl Graphics {
 
         let display_w = graphic_data.display_width.unwrap_or(graphic_data.width) as f32;
         let display_h = graphic_data.display_height.unwrap_or(graphic_data.height) as f32;
+        let is_opaque = !graphic_data.maybe_transparent();
         self.inner.insert(
             graphic_data.id,
             GraphicDataEntry {
@@ -102,6 +109,7 @@ impl Graphics {
                 width: display_w,
                 height: display_h,
                 transmit_time: graphic_data.transmit_time,
+                is_opaque,
             },
         );
     }
