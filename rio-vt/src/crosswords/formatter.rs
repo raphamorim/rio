@@ -510,13 +510,16 @@ impl<U: EventListener> Crosswords<U> {
             last += 1;
         }
         let mut wrapped = false;
+        // What this call writes starts here: an alt screen's rows follow
+        // the primary's in the same buffer.
+        let start = out.s.len();
 
         for line in top..=last {
             // Once a few rows are written, reserve what all of them will
             // take at that rate: one move of the buffer, not a doubling's
             // worth when the rows are heavier than estimated.
             if line == top + 64 {
-                let per_row = out.s.len() / 64 + 1;
+                let per_row = (out.s.len() - start) / 64 + 1;
                 let left = (last - line + 1) as usize;
                 out.s.reserve(per_row * left + per_row * left / 16);
             }

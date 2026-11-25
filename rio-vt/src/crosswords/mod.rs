@@ -2923,7 +2923,8 @@ impl<U: EventListener> Crosswords<U> {
         };
 
         self.damage_cursor();
-        self.grid.cursor.pos.row = (row + delta).clamp(top, bottom);
+        // (Not `clamp`, which panics if a stale row were past `bottom`.)
+        self.grid.cursor.pos.row = (row + delta).min(bottom).max(top);
         self.grid.cursor.pos.col = std::cmp::min(col, self.grid.last_column());
         self.damage_cursor();
         self.grid.cursor.should_wrap = false;
