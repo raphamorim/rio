@@ -739,8 +739,8 @@ impl<U: EventListener> Crosswords<U> {
         let saved_link = cell_link(grid, &saved.template);
         let cursor = &grid.cursor;
         // In origin mode a CUP reaches only the region's rows; a cursor
-        // outside them (a rio CUU/CUD quirk can leave one) is placed as
-        // near as it goes, and no cell is rewritten for it.
+        // outside them (DECRC can restore one there) is placed as near
+        // as it goes, and no cell is rewritten for it.
         let origin = self.mode.contains(Mode::ORIGIN);
         let reachable = !origin || region.contains(&cursor.pos.row);
         let pending = cursor.should_wrap && reachable;
@@ -1926,9 +1926,9 @@ mod snapshot_tests {
             // (Not the plain text: a tab copies as `\t` from the original
             // and as blanks from the copy, which can't hold one.)
             assert_eq!(a.term.grid.history_size(), b.term.grid.history_size());
-            // CUU and CUD add the scroll region's offset to an absolute
-            // row in origin mode, which can put the cursor outside the
-            // region; no CUP reaches that, so a copy can't either.
+            // DECRC restores a position but not origin mode, so it can put
+            // the cursor outside the region with origin mode on; no CUP
+            // reaches that, so a copy can't either.
             let region = &a.term.scroll_region;
             let row = a.term.grid.cursor.pos.row;
             let outside = a.term.mode().contains(Mode::ORIGIN)
@@ -1937,10 +1937,11 @@ mod snapshot_tests {
                 continue;
             }
             assert_eq!(a.cursor(), b.cursor(), "seed {seed}: cursor");
-            // The kitty flags by their stack: `swap_alt` swaps the stacks
-            // but leaves `Mode`'s copy of the top as it was.
-            let modes = |t: &T| (t.term.mode() - Mode::KITTY_KEYBOARD_PROTOCOL).bits();
-            assert_eq!(modes(&a), modes(&b), "seed {seed}: modes");
+            assert_eq!(
+                a.term.mode().bits(),
+                b.term.mode().bits(),
+                "seed {seed}: modes"
+            );
             assert_eq!(
                 a.term.keyboard_mode(),
                 b.term.keyboard_mode(),
