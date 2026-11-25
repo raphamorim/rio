@@ -6,6 +6,7 @@ use std::cmp::{max, PartialEq};
 use std::mem;
 use std::ops::{Index, IndexMut};
 
+use super::cells::{Cells, SlabCursor};
 use super::compress::{self, Block, HistoryMemory, BLOCK_ROWS};
 use super::Row;
 use crate::crosswords::square::Square;
@@ -63,6 +64,11 @@ pub struct Storage<T> {
     /// neither path allocates rows. Bounded by `MAX_CACHE_SIZE` so it cannot
     /// grow without bound.
     free: Vec<Row<T>>,
+
+    /// Where the rows the storage makes get their cells: slots of slabs,
+    /// which go back to the OS whole once their rows are compressed
+    /// (`grid::cells`).
+    slabs: SlabCursor<T>,
 }
 
 impl<T: PartialEq> PartialEq for Storage<T> {
@@ -82,8 +88,9 @@ impl<T> Storage<T> {
         T: Clone + Default,
     {
         // Initialize visible lines; the scrollback buffer is initialized dynamically.
+        let mut slabs = SlabCursor::default();
         let mut inner = Vec::with_capacity(visible_lines);
-        inner.resize_with(visible_lines, || Row::new(columns));
+        inner.resize_with(visible_lines, || Row::with_cells(slabs.cells(columns)));
 
         Storage {
             inner,
@@ -91,6 +98,7 @@ impl<T> Storage<T> {
             visible_lines,
             len: visible_lines,
             free: Vec::new(),
+            slabs,
         }
     }
 
@@ -161,8 +169,12 @@ impl<T> Storage<T> {
         for mut row in self.inner.drain(self.len..) {
             if kept < keep {
                 // A pooled row comes back blank: it mustn't keep a
-                // compressed block alive meanwhile.
+                // compressed block, or a slab its rows left, alive
+                // meanwhile (it gets a slot again when it's used).
                 row.packed = None;
+                if row.inner.in_slab() {
+                    row.inner = Cells::new();
+                }
                 self.free.push(row);
                 kept += 1;
             }
@@ -204,6 +216,7 @@ impl<T> Storage<T> {
         while self.inner.len() < target {
             match self.free.pop() {
                 Some(mut row) => {
+                    row.inner.move_into(&mut self.slabs, columns);
                     row.recycle(columns);
                     self.inner.push(row);
                 }
@@ -212,7 +225,9 @@ impl<T> Storage<T> {
         }
 
         if self.inner.len() < target {
-            self.inner.resize_with(target, || Row::new(columns));
+            let slabs = &mut self.slabs;
+            self.inner
+                .resize_with(target, || Row::with_cells(slabs.cells(columns)));
         }
     }
 
@@ -283,7 +298,9 @@ impl<T> Storage<T> {
         T: Clone + Default,
     {
         for row in &mut self.inner {
-            row.unpack();
+            row.unpack_into(&mut self.slabs);
+            // Into a slot that has the room, not a buffer of its own.
+            row.inner.move_into(&mut self.slabs, columns);
             row.grow(columns);
         }
     }
@@ -297,7 +314,7 @@ impl<T> Storage<T> {
         T: Clone + Default,
     {
         for row in &mut self.inner {
-            row.unpack();
+            row.unpack_into(&mut self.slabs);
             row.truncate_columns(columns);
         }
     }
@@ -418,7 +435,11 @@ impl<T: Clone + Default> Storage<T> {
     pub fn index_mut_discard(&mut self, index: Line) -> &mut Row<T> {
         let index = self.compute_index(index);
         let row = &mut self.inner[index];
-        row.discard_packed();
+        if row.is_compressed() {
+            // Output recycling compressed history: cells from the slab
+            // the rows before it took theirs from.
+            row.discard_packed_into(&mut self.slabs);
+        }
         row
     }
 
@@ -426,8 +447,20 @@ impl<T: Clone + Default> Storage<T> {
     /// which rewrites every row).
     pub fn decompress_all(&mut self) {
         for row in &mut self.inner {
-            row.unpack();
+            row.unpack_into(&mut self.slabs);
         }
+    }
+
+    /// A blank row of `columns` cells, in a slab slot.
+    pub(crate) fn new_row(&mut self, columns: usize) -> Row<T> {
+        Row::with_cells(self.slabs.cells(columns))
+    }
+
+    /// Put `row`'s cells in a slab slot with room for `columns` (see
+    /// `Cells::move_into`): a reflow's rows, before they grow or once
+    /// they're cut.
+    pub(crate) fn rehome(&mut self, row: &mut Row<T>, columns: usize) {
+        row.inner.move_into(&mut self.slabs, columns);
     }
 }
 
@@ -576,7 +609,7 @@ impl Storage<Square> {
             let block = Arc::new(compress::encode(&rows));
             for (at, &j) in run.iter().enumerate() {
                 let row = &mut self.inner[j];
-                row.inner = Vec::new();
+                row.inner = super::cells::Cells::new();
                 row.packed_at = at as u16;
                 row.packed = Some(block.clone());
             }
@@ -693,6 +726,7 @@ mod tests {
             visible_lines: 3,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         // Grow buffer.
@@ -705,6 +739,7 @@ mod tests {
             visible_lines: 4,
             len: 4,
             free: Vec::new(),
+            slabs: Default::default(),
         };
         // Resize grows by exactly one line now (no scrollback over-alloc).
         expected.inner.push(filled_row('\0'));
@@ -737,6 +772,7 @@ mod tests {
             visible_lines: 3,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         // Grow buffer.
@@ -749,6 +785,7 @@ mod tests {
             visible_lines: 4,
             len: 4,
             free: Vec::new(),
+            slabs: Default::default(),
         };
         // Resize grows by exactly one line now (no scrollback over-alloc).
         expected.inner.push(filled_row('\0'));
@@ -778,6 +815,7 @@ mod tests {
             visible_lines: 3,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         // Shrink buffer.
@@ -790,6 +828,7 @@ mod tests {
             visible_lines: 2,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -816,6 +855,7 @@ mod tests {
             visible_lines: 3,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         // Shrink buffer.
@@ -828,6 +868,7 @@ mod tests {
             visible_lines: 2,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -867,6 +908,7 @@ mod tests {
             visible_lines: 6,
             len: 6,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         // Shrink buffer.
@@ -886,6 +928,7 @@ mod tests {
             visible_lines: 2,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -921,6 +964,7 @@ mod tests {
             visible_lines: 1,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         // Truncate buffer.
@@ -933,6 +977,7 @@ mod tests {
             visible_lines: 1,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -958,6 +1003,7 @@ mod tests {
             visible_lines: 1,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         // Truncate buffer.
@@ -970,6 +1016,7 @@ mod tests {
             visible_lines: 1,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -1017,6 +1064,7 @@ mod tests {
             visible_lines: 0,
             len: 6,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         // Shrink buffer.
@@ -1036,6 +1084,7 @@ mod tests {
             visible_lines: 0,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
         };
         assert_eq!(storage.inner, shrinking_expected.inner);
         assert_eq!(storage.zero, shrinking_expected.zero);
@@ -1058,6 +1107,7 @@ mod tests {
             visible_lines: 0,
             len: 4,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         assert_eq!(storage.inner, growing_expected.inner);
@@ -1081,6 +1131,7 @@ mod tests {
             visible_lines: 0,
             len: 6,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         // Initialize additional lines.
@@ -1104,6 +1155,7 @@ mod tests {
             visible_lines: 0,
             len: 9,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         assert_eq!(storage.len, expected_storage.len);
@@ -1129,6 +1181,7 @@ mod tests {
             visible_lines: 25,
             len: 6,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         // Initialize additional lines.
@@ -1150,6 +1203,7 @@ mod tests {
             visible_lines: 25,
             len: 11,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         assert_eq!(storage.len, expected_storage.len);
@@ -1165,6 +1219,7 @@ mod tests {
             visible_lines: 0,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
         };
 
         storage.rotate(2);
@@ -1180,7 +1235,7 @@ mod tests {
 
     // Rows truncated off the ring wait in the pool, up to MAX_CACHE_SIZE
     // of them, and a later growth takes them back blank at the current
-    // width instead of allocating.
+    // width, in slab slots.
     #[test]
     fn truncated_rows_are_pooled_and_handed_back_blank() {
         let mut storage = Storage::<char>::with_capacity(3, 2);
@@ -1198,20 +1253,17 @@ mod tests {
         assert_eq!(storage.len, 303);
         assert_eq!(storage.inner.len(), 303);
         assert_eq!(storage.free.len(), MAX_CACHE_SIZE);
-        let pooled: Vec<*const char> =
-            storage.free.iter().map(|row| row.inner.as_ptr()).collect();
+        // Pooled rows let go of their slab slots (the slabs go once all
+        // their rows did).
+        assert!(storage.free.iter().all(|row| row.inner.is_empty()));
 
-        // Growing again drains the pool before allocating anything.
+        // Growing again drains the pool, the rows' cells in slab slots.
         storage.initialize(1, 2);
         assert_eq!(storage.len, 304);
         assert_eq!(storage.inner.len(), 303 + MAX_CACHE_SIZE);
         assert!(storage.free.is_empty());
-        let reused = storage.inner[303..]
-            .iter()
-            .filter(|row| pooled.contains(&row.inner.as_ptr()))
-            .count();
-        assert_eq!(reused, MAX_CACHE_SIZE, "every pooled buffer came back");
         for row in &storage.inner[303..] {
+            assert!(row.inner.in_slab());
             assert_eq!(row.inner.len(), 2);
             assert!(
                 row.inner.iter().all(|c| *c == char::default()),

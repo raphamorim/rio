@@ -8491,7 +8491,7 @@ mod tests {
                 // copies dirty rows even on a quiet frame, but the
                 // renderer is only woken when the peek says so.
                 let fresh_cells: Vec<Vec<Square>> =
-                    fresh_rows.iter().map(|row| row.inner.clone()).collect();
+                    fresh_rows.iter().map(|row| row.inner.to_vec()).collect();
                 if fresh_cells != previous {
                     assert!(
                         peeked.is_some(),
