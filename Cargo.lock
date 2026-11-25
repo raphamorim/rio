@@ -3982,7 +3982,6 @@ dependencies = [
  "memchr",
  "parking_lot",
  "raw-window-handle",
- "regex",
  "regex-automata",
  "rio-grapheme-width",
  "rio-graphics",
