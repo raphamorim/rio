@@ -3028,7 +3028,9 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn bounds_to_string(&self, start: Pos, end: Pos) -> String {
-        let mut text = String::new();
+        // About half a row of text per row.
+        let rows = (end.row.0 - start.row.0).max(0) as usize + 1;
+        let mut text = String::with_capacity(rows * (self.grid.columns() / 2 + 1));
         let mut blank_rows: usize = 0;
         let mut blank_cells: usize = 0;
         let last_col = self.grid.last_column();
@@ -3050,9 +3052,12 @@ impl<U: EventListener> Crosswords<U> {
                 blank_cells = 0;
             }
 
-            let mut row_text = String::new();
+            // The row goes straight into `text`: it writes nothing unless
+            // it has content, and the blank rows before it are put in front
+            // of it then (moving only this row's bytes).
+            let row_start = text.len();
             let had_content = self.append_cells(
-                &mut row_text,
+                &mut text,
                 line,
                 start_col..end_col,
                 line == end.row,
@@ -3061,16 +3066,15 @@ impl<U: EventListener> Crosswords<U> {
 
             if !had_content {
                 // Defer entirely-blank rows; trailing blank rows get dropped.
+                debug_assert_eq!(text.len(), row_start);
                 blank_rows += 1;
                 continue;
             }
 
-            for _ in 0..blank_rows {
-                text.push('\n');
+            if blank_rows > 0 {
+                text.insert_str(row_start, &"\n".repeat(blank_rows));
+                blank_rows = 0;
             }
-            blank_rows = 0;
-
-            text.push_str(&row_text);
 
             let cur_wraps = self.grid[line][last_col].wrapline();
             if end_col >= last_col && !cur_wraps {
@@ -3079,7 +3083,12 @@ impl<U: EventListener> Crosswords<U> {
             }
         }
 
-        text.strip_suffix('\n').map(str::to_owned).unwrap_or(text)
+        // In place: `strip_suffix` + `to_owned` would copy all of it.
+        if text.ends_with('\n') {
+            text.pop();
+        }
+        formatter::shrink_slack(&mut text);
+        text
     }
 
     /// Convert a single line in the grid to a String. Used by Block selection;

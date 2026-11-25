@@ -94,3 +94,7 @@ harness = false
 [[bench]]
 name = "vt_frame"
 harness = false
+
+[[bench]]
+name = "vt_snapshot"
+harness = false
