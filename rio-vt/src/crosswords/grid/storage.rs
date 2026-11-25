@@ -10,6 +10,7 @@ use super::compress::{self, Block, HistoryMemory, BLOCK_ROWS};
 use super::Row;
 use crate::crosswords::square::Square;
 use crate::crosswords::Line;
+use rustc_hash::FxHashMap;
 use std::sync::Arc;
 
 /// Maximum number of buffered lines outside of the grid for performance optimization.
@@ -265,9 +266,11 @@ impl<T> Storage<T> {
 
     /// Iterate every stored row. Order is the raw ring order, not logical line
     /// order, which is fine for whole-buffer predicates and per-row edits that
-    /// don't depend on position (the resize in-place fast paths).
+    /// don't depend on position (the resize in-place fast paths). Rows as
+    /// stored: a compressed one's cells are in its block (see
+    /// [`Row::resolved`]), so it is crate-internal.
     #[inline]
-    pub fn rows(&self) -> std::slice::Iter<'_, Row<T>> {
+    pub(crate) fn rows(&self) -> std::slice::Iter<'_, Row<T>> {
         self.inner.iter()
     }
 
@@ -458,71 +461,67 @@ impl Storage<Square> {
         let zero = self.zero;
         let order = move |k: usize| (zero + top - 1 - k) % top;
 
-        // How many rows still point at each encoding: one whose rows were
-        // mostly written (and so made plain) is unpacked whole and
-        // compressed again with them, so a few rows don't keep all of it.
-        // A block's rows sit together, so the last one looked up is
-        // nearly always the one.
-        let mut live: Vec<(*const compress::Encoded, usize, usize)> = Vec::new();
-        let mut last = 0;
-        for k in 0..count {
-            let Some(block) = &self.inner[order(k)].packed else {
-                continue;
-            };
+        // How many rows still point at each encoding, the viewport's too:
+        // one whose rows were mostly written (and so made plain) is
+        // unpacked whole and compressed again with them, so a few rows
+        // don't keep all of it. A block's rows sit together, so the last
+        // one looked up is nearly always the one.
+        let mut live: FxHashMap<*const compress::Encoded, (usize, usize)> =
+            FxHashMap::default();
+        let mut counts: Vec<(*const compress::Encoded, usize, usize)> = Vec::new();
+        let mut run: Option<(*const compress::Encoded, usize, usize)> = None;
+        for row in &self.inner {
+            let Some(block) = &row.packed else { continue };
             let key = Arc::as_ptr(&block.data);
-            if live.get(last).is_none_or(|(k, ..)| *k != key) {
-                last = match live.iter().position(|(k, ..)| *k == key) {
-                    Some(at) => at,
-                    None => {
-                        live.push((key, 0, block.len()));
-                        live.len() - 1
+            match &mut run {
+                Some((k, rows, _)) if *k == key => *rows += 1,
+                _ => {
+                    if let Some(done) = run.take() {
+                        counts.push(done);
                     }
-                };
+                    run = Some((key, 1, block.len()));
+                }
             }
-            live[last].1 += 1;
         }
-        let sparse = |block: &Block<Square>| {
-            let key = Arc::as_ptr(&block.data);
-            live.iter()
-                .find(|(k, ..)| *k == key)
-                .is_some_and(|&(_, rows, of)| rows * 2 < of)
+        counts.extend(run);
+        for (key, rows, of) in counts {
+            live.entry(key).or_insert((0, of)).0 += rows;
+        }
+        let sparse = |data: *const compress::Encoded| {
+            live.get(&data).is_some_and(|&(rows, of)| rows * 2 < of)
         };
-        let mut sparse_last: Option<(*const compress::Encoded, bool)> = None;
 
         // Decoded copies go: rows point to a copy of their block without.
-        let mut fresh: Vec<(*const Block<Square>, Arc<Block<Square>>)> = Vec::new();
-        let mut last = 0;
+        let mut fresh: FxHashMap<*const Block<Square>, Arc<Block<Square>>> =
+            FxHashMap::default();
+        // The last block looked up: whether its rows are unpacked, or the
+        // copy they take.
+        type Seen = (*const Block<Square>, bool, Option<Arc<Block<Square>>>);
+        let mut prev: Option<Seen> = None;
         for k in 0..count {
             let index = order(k);
             let row = &mut self.inner[index];
             let Some(block) = &row.packed else { continue };
-            let data = Arc::as_ptr(&block.data);
-            let unpack = match sparse_last {
-                Some((key, unpack)) if key == data => unpack,
+            let key = Arc::as_ptr(block);
+            let (unpack, copy) = match &prev {
+                Some((k, unpack, copy)) if *k == key => (*unpack, copy.clone()),
                 _ => {
-                    let unpack = sparse(block);
-                    sparse_last = Some((data, unpack));
-                    unpack
+                    let unpack = sparse(Arc::as_ptr(&block.data));
+                    let copy = (!unpack && block.is_decoded()).then(|| {
+                        fresh
+                            .entry(key)
+                            .or_insert_with(|| Arc::new(block.without_cache()))
+                            .clone()
+                    });
+                    prev = Some((key, unpack, copy.clone()));
+                    (unpack, copy)
                 }
             };
             if unpack {
                 row.unpack();
-                continue;
+            } else if let Some(copy) = copy {
+                row.packed = Some(copy);
             }
-            if !block.is_decoded() {
-                continue;
-            }
-            let key = Arc::as_ptr(block);
-            if fresh.get(last).is_none_or(|(k, _)| *k != key) {
-                last = match fresh.iter().position(|(k, _)| *k == key) {
-                    Some(at) => at,
-                    None => {
-                        fresh.push((key, Arc::new(block.without_cache())));
-                        fresh.len() - 1
-                    }
-                };
-            }
-            row.packed = Some(fresh[last].1.clone());
         }
 
         let mut made = 0;
