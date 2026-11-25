@@ -241,6 +241,21 @@ impl<T> Storage<T> {
         }
     }
 
+    /// The dirty bit of the row at `line` as it is stored: a compressed
+    /// row's own, read without decoding it.
+    #[inline]
+    pub fn is_dirty(&self, line: Line) -> bool {
+        self.inner[self.compute_index(line)].dirty
+    }
+
+    /// Set the dirty bit of the row at `line` as it is stored: a
+    /// compressed row stays compressed.
+    #[inline]
+    pub fn set_dirty(&mut self, line: Line, dirty: bool) {
+        let index = self.compute_index(line);
+        self.inner[index].dirty = dirty;
+    }
+
     /// Iterate every stored row. Order is the raw ring order, not logical line
     /// order, which is fine for whole-buffer predicates and per-row edits that
     /// don't depend on position (the resize in-place fast paths).
@@ -431,36 +446,43 @@ impl Storage<Square> {
         if newest >= top {
             return false;
         }
-        // Oldest first: `order[k]` is the raw index of the k-th row.
-        let order: Vec<usize> = (newest..top).rev().map(|p| self.ring_index(p)).collect();
+        // Oldest first: the k-th row's raw index.
+        let count = top - newest;
+        let zero = self.zero;
+        let order = move |k: usize| (zero + top - 1 - k) % top;
 
         // Decoded copies go: rows point to a copy of their block without.
+        // A block's rows sit together, so the last one looked up is
+        // nearly always the one.
         let mut fresh: Vec<(*const Block<Square>, Arc<Block<Square>>)> = Vec::new();
-        for &index in &order {
+        let mut last = 0;
+        for k in 0..count {
+            let index = order(k);
             let row = &mut self.inner[index];
             let Some(block) = &row.packed else { continue };
             if !block.is_decoded() {
                 continue;
             }
             let key = Arc::as_ptr(block);
-            let new = match fresh.iter().find(|(k, _)| *k == key) {
-                Some((_, new)) => new.clone(),
-                None => {
-                    let new = Arc::new(block.without_cache());
-                    fresh.push((key, new.clone()));
-                    new
-                }
-            };
-            row.packed = Some(new);
+            if fresh.get(last).is_none_or(|(k, _)| *k != key) {
+                last = match fresh.iter().position(|(k, _)| *k == key) {
+                    Some(at) => at,
+                    None => {
+                        fresh.push((key, Arc::new(block.without_cache())));
+                        fresh.len() - 1
+                    }
+                };
+            }
+            row.packed = Some(fresh[last].1.clone());
         }
 
         let mut made = 0;
         let mut k = 0;
         let mut run = Vec::with_capacity(BLOCK_ROWS);
-        while k < order.len() {
+        while k < count {
             run.clear();
-            while k < order.len() && run.len() < BLOCK_ROWS {
-                let index = order[k];
+            while k < count && run.len() < BLOCK_ROWS {
+                let index = order(k);
                 if self.inner[index].packed.is_some() {
                     break;
                 }
@@ -468,7 +490,7 @@ impl Storage<Square> {
                 k += 1;
             }
             let full = run.len() == BLOCK_ROWS;
-            let before_packed = k < order.len();
+            let before_packed = k < count;
             if run.is_empty() || !(full || before_packed) {
                 // A compressed row, or the newest rows short of a block.
                 k += 1;
@@ -494,7 +516,12 @@ impl Storage<Square> {
     /// compressed and not.
     pub(crate) fn memory_from(&self, newest: usize) -> HistoryMemory {
         let mut m = HistoryMemory::default();
-        let mut seen: Vec<*const Block<Square>> = Vec::new();
+        // Rows of one encoding can be in two blocks (a copy without the
+        // decoded rows, and the one rows below `newest` keep): each is
+        // counted once.
+        let mut blocks: Vec<*const Block<Square>> = Vec::new();
+        let mut encoded: Vec<*const compress::Encoded> = Vec::new();
+        let mut last: *const Block<Square> = std::ptr::null();
         for p in newest..self.inner.len() {
             let row = &self.inner[self.ring_index(p)];
             match &row.packed {
@@ -502,10 +529,17 @@ impl Storage<Square> {
                 Some(block) => {
                     m.compressed_rows += 1;
                     let key = Arc::as_ptr(block);
-                    if !seen.contains(&key) {
-                        seen.push(key);
+                    if key == last || blocks.contains(&key) {
+                        last = key;
+                        continue;
+                    }
+                    last = key;
+                    blocks.push(key);
+                    m.decoded_bytes += block.decoded_bytes();
+                    let data = Arc::as_ptr(&block.data);
+                    if !encoded.contains(&data) {
+                        encoded.push(data);
                         m.compressed_bytes += block.encoded_bytes();
-                        m.decoded_bytes += block.decoded_bytes();
                     }
                 }
             }

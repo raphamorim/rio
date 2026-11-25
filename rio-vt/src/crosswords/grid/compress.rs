@@ -485,6 +485,39 @@ mod tests {
     }
 
     #[test]
+    fn scrolling_back_through_the_renderer_leaves_rows_compressed() {
+        use crate::event::TerminalDamage;
+        let mut a = T::new(30, 10, 2_000);
+        a.feed(&output(1_200));
+        a.term.compress_history(None);
+        let before = a.term.history_memory();
+        assert!(before.compressed_rows > 1_000, "{before:?}");
+        let (mut rows, mut styles) = (Vec::new(), Vec::new());
+        let mut extras = rustc_hash::FxHashMap::default();
+        let mut text = Vec::new();
+        for i in 0..60 {
+            a.term.scroll_display(Scroll::Delta(10));
+            // Full frames, and frames that copy only dirty rows.
+            let damage = if i % 2 == 0 {
+                TerminalDamage::Full
+            } else {
+                TerminalDamage::Noop
+            };
+            a.term
+                .snapshot_visible(&damage, &mut rows, &mut styles, &mut extras);
+            text.push(rows.iter().map(|r| r[Column(0)].c()).collect::<String>());
+        }
+        let after = a.term.history_memory();
+        assert_eq!(after.compressed_rows, before.compressed_rows, "{after:?}");
+        // Each frame showed its rows.
+        assert!(
+            text.iter().all(|t| t.chars().all(|c| c != '\0')),
+            "{text:?}"
+        );
+        assert_ne!(text[0], text[2]);
+    }
+
+    #[test]
     fn typical_output_compresses_well() {
         let mut a = T::new(100, 40, 10_000);
         let mut data = Vec::new();

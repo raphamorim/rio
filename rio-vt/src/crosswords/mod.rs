@@ -2736,7 +2736,7 @@ impl<U: EventListener> Crosswords<U> {
                 dst[i].dirty = true;
                 self.grid.resolve_row_styles(src, &mut row_styles[i]);
                 self.refresh_row_extras(src, extras);
-                self.grid[Line(row_idx)].dirty = false;
+                self.grid.raw.set_dirty(Line(row_idx), false);
             }
             return;
         }
@@ -2749,7 +2749,9 @@ impl<U: EventListener> Crosswords<U> {
         #[allow(clippy::needless_range_loop)]
         for y in 0..count {
             let row_idx = start + y as i32;
-            if !self.grid[Line(row_idx)].dirty {
+            // The stored bit: a compressed row read through the grid is
+            // its decoded copy, and writing through it decompresses it.
+            if !self.grid.raw.is_dirty(Line(row_idx)) {
                 continue;
             }
             let src = &self.grid[Line(row_idx)];
@@ -2757,7 +2759,7 @@ impl<U: EventListener> Crosswords<U> {
             dst[y].dirty = true;
             self.grid.resolve_row_styles(src, &mut row_styles[y]);
             self.refresh_row_extras(src, extras);
-            self.grid[Line(row_idx)].dirty = false;
+            self.grid.raw.set_dirty(Line(row_idx), false);
         }
     }
 
