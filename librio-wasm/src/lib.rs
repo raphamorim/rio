@@ -117,8 +117,9 @@ impl SurfaceDelegate for JsDelegate {
             Action::CursorBlinkingChange => Event::CursorBlinkingChange,
             Action::Progress { state, value } => Event::Progress(state, value),
             // Dropped: the wasm build has no JavaScript callback for
-            // OSC 7501 or finished commands yet.
-            Action::ProgramStatus(_) | Action::CommandFinished { .. } => return,
+            // OSC 7501, finished commands, notifications or later
+            // actions yet.
+            _ => return,
         });
     }
 
