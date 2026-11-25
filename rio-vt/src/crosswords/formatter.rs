@@ -25,14 +25,27 @@
 //!
 //! Not carried: palette changes (OSC 4/10/11; the client keeps its theme),
 //! the title stack, images, and a half-parsed escape sequence (that is the
-//! parser's, not the terminal's).
+//! parser's, not the terminal's). A tab's `\t` (kept where it started, so
+//! copying text gives the tab back) is written as a blank: written raw it
+//! would move the client's cursor. Half of a wide character whose other
+//! half is gone (inserting or deleting characters can split one) is a
+//! blank in its style. A cursor waiting to wrap at the end of a row that
+//! wraps on (which only restoring a saved cursor makes) keeps the row's
+//! wrap only while the saved cursor is that same one. The blank a wide
+//! character leaves at the end of
+//! the row it didn't fit on takes the character's style and link. A soft wrap
+//! flagged on the bottom row (a scroll
+//! down can leave one, wrapping into nothing) is not carried: only writing
+//! past the bottom sets it.
 
 use super::Crosswords;
 use crate::ansi::CursorShape;
 use crate::config::colors::AnsiColor;
 use crate::crosswords::grid::{Dimensions, Grid};
-use crate::crosswords::pos::{CharsetIndex, Column, Line, Pos, StandardCharset};
-use crate::crosswords::square::{ContentTag, Hyperlink, Square};
+use crate::crosswords::pos::{
+    CharsetIndex, Charsets, Column, Line, Pos, StandardCharset,
+};
+use crate::crosswords::square::{ContentTag, Hyperlink, Square, Wide};
 use crate::crosswords::style::{Style, StyleFlags, StyleId};
 use crate::crosswords::Mode;
 use crate::event::EventListener;
@@ -152,6 +165,22 @@ const PRIVATE_MODES: &[(Mode, u16)] = &[
 /// ANSI modes (SM/RM numbers).
 const ANSI_MODES: &[(Mode, u16)] = &[(Mode::INSERT, 4), (Mode::LINE_FEED_NEW_LINE, 20)];
 
+/// The charset slots and the intermediate that designates each.
+const CHARSETS: [(CharsetIndex, char); 4] = [
+    (CharsetIndex::G0, '('),
+    (CharsetIndex::G1, ')'),
+    (CharsetIndex::G2, '*'),
+    (CharsetIndex::G3, '+'),
+];
+
+/// The slots of `charsets` that hold DEC line drawing, with their
+/// designating intermediates.
+fn line_drawing(charsets: &Charsets) -> impl Iterator<Item = (CharsetIndex, char)> + '_ {
+    CHARSETS.into_iter().filter(|&(index, _)| {
+        charsets[index] == StandardCharset::SpecialCharacterAndLineDrawing
+    })
+}
+
 /// What a fresh terminal starts with (`Crosswords::new`); a snapshot sets
 /// or resets the modes that differ.
 fn initial_mode() -> Mode {
@@ -205,17 +234,25 @@ impl Out {
         let id = matches!(square.content_tag(), ContentTag::Codepoint)
             .then(|| square.style_id());
         if id.is_none() || id != self.style_id {
-            self.style(grid.style_of(&square));
+            let style = grid.style_of(&square);
+            // Styles are interned: another id of the grid's is another
+            // style, so there's nothing to compare.
+            if self.style_id.is_some() && id.is_some() {
+                write_sgr_change(&mut self.s, &self.style, &style);
+                self.style = style;
+            } else {
+                self.style(style);
+            }
             self.style_id = id;
         }
         if square.extras_id_checked().is_some() {
             // Combining marks live in the extras.
             for c in grid.cell_text(pos) {
-                self.s.push(if c == '\0' { ' ' } else { c });
+                self.s.push(visible(c));
             }
         } else {
             let c = square.c();
-            self.s.push(if c == '\0' { ' ' } else { c });
+            self.s.push(visible(c));
         }
     }
 
@@ -259,6 +296,33 @@ impl Out {
     }
 }
 
+/// Whether `row[at]` is half of a wide character whose other half is gone:
+/// a spacer with no wide character before it, or a wide character with no
+/// spacer after it (the last column has no room for one).
+fn broken_half(row: &[Square], at: usize) -> bool {
+    let square = row[at];
+    if square.is_spacer() {
+        at == 0 || !row[at - 1].is_wide()
+    } else if square.is_wide() {
+        at + 1 >= row.len() || !row[at + 1].is_spacer()
+    } else {
+        false
+    }
+}
+
+/// What a cell's character is written as: a cell never written is a
+/// blank, and so is one holding a control character (the `\t` a tab
+/// leaves where it started), which written raw would move the client's
+/// cursor instead of filling the cell.
+#[inline]
+fn visible(c: char) -> char {
+    if (c as u32) < 0x20 || (0x7f..0xa0).contains(&(c as u32)) {
+        ' '
+    } else {
+        c
+    }
+}
+
 fn cell_link(grid: &Grid<Square>, square: &Square) -> Option<Hyperlink> {
     if !square.has_hyperlink() {
         return None;
@@ -288,8 +352,8 @@ impl<U: EventListener> Crosswords<U> {
     ///
     /// It walks the whole scrollback under `&self`, so a caller that takes
     /// the terminal's lock for it holds that lock, and the PTY reader
-    /// waits, for the whole walk: about 2.4 ms for 10k lines of styled
-    /// 120-column history, and about 21 ms when every cell has a color of
+    /// waits, for the whole walk: about 1.1 ms for 10k lines of styled
+    /// 120-column history, and about 13 ms when every cell has a color of
     /// its own (`benches/vt_snapshot.rs`). Take it where output can wait
     /// that long, not on the render path.
     pub fn snapshot_formatted(&self) -> Vec<u8> {
@@ -363,9 +427,40 @@ impl<U: EventListener> Crosswords<U> {
             primary,
             (at.row.0, at.col.0),
             0,
-            primary.cursor.should_wrap && self.mode.contains(Mode::LINE_WRAP),
+            primary.cursor.should_wrap,
         );
-        out.s.push_str("\x1b[?1049h\x1b[H");
+        // Its pending wrap's rewrite cleared the row's soft wrap: write
+        // the next row's first cell over itself to wrap again, and come
+        // back through the saved cursor (entering the alt screen saves it
+        // anew, so borrowing it costs nothing).
+        let rows = primary.screen_lines() as i32;
+        let row = at.row.0;
+        if primary.cursor.should_wrap
+            && row + 1 < rows
+            && primary[Line(row)][Column(primary.columns() - 1)].wrapline()
+        {
+            out.s.push_str("\x1b7");
+            let next = Pos::new(Line(row + 1), Column(0));
+            out.cell(primary, primary[next], next, true);
+            out.plain();
+            out.s.push_str("\x1b8");
+        }
+        // Its pen too (what leaving the alt screen goes back to writing
+        // with). Entering the alt screen clears it with that pen, so clear
+        // it again with none.
+        // So are its charsets; the alt screen's cursor starts as a copy,
+        // so its own go back to ASCII until its rows are written.
+        out.style(primary.cursor.pending_style);
+        out.link(cell_link(primary, &primary.cursor.template));
+        for (_, intro) in line_drawing(&primary.cursor.charsets) {
+            let _ = write!(out.s, "\x1b{intro}0");
+        }
+        out.s.push_str("\x1b[?1049h");
+        for (_, intro) in line_drawing(&primary.cursor.charsets) {
+            let _ = write!(out.s, "\x1b{intro}B");
+        }
+        out.plain();
+        out.s.push_str("\x1b[H\x1b[2J");
         self.write_rows(&mut out, &self.grid, opts.with_scrollback(false));
         out.plain();
         self.write_state(&mut out);
@@ -390,15 +485,32 @@ impl<U: EventListener> Crosswords<U> {
         let last = if history > 0 || !opts.trim {
             Some(rows - 1)
         } else {
-            (0..rows)
-                .rev()
-                .find(|&line| row_last_col(grid, line, cols, true).is_some())
+            (0..rows).rev().find(|&line| {
+                row_last_col(grid, line, cols, true, opts.hyperlinks).is_some()
+                    // A blank row's soft wrap is worth keeping too.
+                    || (opts.unwrap
+                        && line + 1 < rows
+                        && grid[Line(line)][Column(cols - 1)].wrapline())
+            })
         };
-        let Some(last) = last else { return };
+        let Some(mut last) = last else { return };
         let last_col = Column(cols - 1);
+        // A row kept that wraps onto a trimmed one keeps that one too, so
+        // the wrap comes along (as a blank, below).
+        while opts.unwrap && last + 1 < rows && grid[Line(last)][last_col].wrapline() {
+            last += 1;
+        }
         let mut wrapped = false;
 
         for line in top..=last {
+            // Once a few rows are written, reserve what all of them will
+            // take at that rate: one move of the buffer, not a doubling's
+            // worth when the rows are heavier than estimated.
+            if line == top + 64 {
+                let per_row = out.s.len() / 64 + 1;
+                let left = (last - line + 1) as usize;
+                out.s.reserve(per_row * left + per_row * left / 16);
+            }
             let row = &grid[Line(line)];
             // A soft wrap is left to the client: the full row's pending
             // wrap makes it wrap at the next character.
@@ -406,29 +518,112 @@ impl<U: EventListener> Crosswords<U> {
             let end = if wraps {
                 Some(cols - 1)
             } else {
-                row_last_col(grid, line, cols, opts.trim)
+                row_last_col(grid, line, cols, opts.trim, opts.hyperlinks)
             };
             if wrapped && end.is_none() {
                 // Wrapped onto a blank row: one blank makes the client wrap.
                 out.plain();
                 out.s.push(' ');
             }
+            let continues = wrapped;
             wrapped = wraps;
             if let Some(end) = end {
-                for (col, &square) in row[..].iter().enumerate().take(end + 1) {
-                    // A wide character's second column, and the column a
-                    // wide character didn't fit in: the client makes both.
-                    if square.is_spacer() || square.is_leading_spacer() {
+                let cells = &row[..][..=end];
+                let mut col = 0;
+                while col < cells.len() {
+                    // Most cells are ASCII in the style already written,
+                    // with no link to close: copy the run of them as bytes.
+                    // With a link open, ones in that link (by its id).
+                    let link = match (&out.link, out.link_id) {
+                        (None, _) => Some(None),
+                        (Some(_), Some(id)) => Some(Some(id)),
+                        (Some(_), None) => None,
+                    };
+                    if let (Some(id), Some(link)) = (out.style_id, link) {
+                        let run = ascii_run(&mut out.s, &cells[col..], id, link);
+                        col += run;
+                        if col == cells.len() {
+                            break;
+                        }
+                    }
+                    let square = cells[col];
+                    let at = col;
+                    col += 1;
+                    // Wide characters, by the cell's half. The client makes
+                    // a pair's second half itself, and the blank a wide
+                    // character leaves where it didn't fit when one starts
+                    // the next row. What it can't make is written as a
+                    // blank in the cell's style, which keeps the columns
+                    // where they are: half of a pair that lost its other
+                    // half (inserting or deleting characters can split
+                    // one), that blank where no wide character follows
+                    // (overwritten since), and a character it gives two
+                    // columns in a narrow cell, unless the cell after it
+                    // is the orphaned half it then takes.
+                    let blank = match square.wide() {
+                        Wide::Narrow => {
+                            if square.c() as u32 >= 0x80
+                                && crate::codepoint_width::codepoint_width(
+                                    square.c() as u32
+                                ) == Some(2)
+                            {
+                                let orphan_next =
+                                    at + 1 < cols && row[Column(at + 1)].is_spacer();
+                                if orphan_next && at + 1 < cells.len() {
+                                    col += 1;
+                                }
+                                !orphan_next
+                            } else {
+                                false
+                            }
+                        }
+                        Wide::Wide => !(at + 1 < cols && row[Column(at + 1)].is_spacer()),
+                        Wide::Spacer => {
+                            if at > 0 && row[Column(at - 1)].is_wide() {
+                                continue;
+                            }
+                            true
+                        }
+                        Wide::LeadingSpacer => {
+                            if line + 1 < rows
+                                && grid[Line(line + 1)][Column(0)].is_wide()
+                            {
+                                continue;
+                            }
+                            true
+                        }
+                    };
+                    if blank {
+                        out.link(if opts.hyperlinks {
+                            cell_link(grid, &square)
+                        } else {
+                            None
+                        });
+                        out.style(grid.style_of(&square));
+                        out.s.push(' ');
                         continue;
                     }
-                    let pos = Pos::new(Line(line), Column(col));
+                    let pos = Pos::new(Line(line), Column(at));
                     out.cell(grid, square, pos, opts.hyperlinks);
+                }
+                // The client wrapped onto this row at its first character,
+                // and a wrap at the bottom scrolls in a row filled with the
+                // pen of the moment, which no reset before a line break can
+                // spare: if that pen shows on a blank, blank the trimmed
+                // rest of the row again.
+                if continues && end + 1 < cols {
+                    let first = if row[Column(0)].is_spacer() { 1 } else { 0 };
+                    if grid.style_of(&row[Column(first)]).renders_on_blank() {
+                        out.plain();
+                        out.s.push_str("\x1b[K");
+                    }
                 }
             }
             if line < last && !wraps {
                 // A newline at the bottom scrolls in a row the client
-                // fills with the pen's background: go plain first.
-                if out.style.bg != Style::default().bg {
+                // fills with the pen: go plain first if it would show on a
+                // blank (a background, inverse, an underline, a strikeout).
+                if out.style.renders_on_blank() {
                     out.s.push_str("\x1b[0m");
                     out.style = Style::default();
                     out.style_id = None;
@@ -455,24 +650,50 @@ impl<U: EventListener> Crosswords<U> {
         let col = col.min(grid.columns() - 1);
         let to = (row - offset).max(0) + 1;
         if pending_wrap && col + 1 == grid.columns() {
-            let line = &grid[Line(row)];
+            let line = &grid[Line(row)][..];
             // Under a wide character the cursor is on its second column.
-            let at = if line[Column(col)].is_spacer() && col > 0 {
-                col - 1
-            } else {
-                col
-            };
-            let square = &line[Column(at)];
+            let pair = line[col].is_spacer() && col > 0 && line[col - 1].is_wide();
+            let at = if pair { col - 1 } else { col };
+            let square = &line[at];
             let _ = write!(out.s, "\x1b[{to};{}H", at + 1);
             out.link(cell_link(grid, square));
             out.style(grid.style_of(square));
-            for c in grid.cell_text(Pos::new(Line(row), Column(at))) {
-                out.s.push(if c == '\0' { ' ' } else { c });
+            // Written as the rows wrote it: half of a split pair, or a
+            // double-width character in a narrow cell, is a blank (here at
+            // the row's end it would wrap).
+            let squeezed = !square.is_wide()
+                && crate::codepoint_width::codepoint_width(square.c() as u32) == Some(2);
+            if broken_half(line, at) || squeezed {
+                out.s.push(' ');
+            } else {
+                for c in grid.cell_text(Pos::new(Line(row), Column(at))) {
+                    out.s.push(visible(c));
+                }
             }
             out.plain();
         } else {
             let _ = write!(out.s, "\x1b[{to};{}H", col + 1);
         }
+    }
+
+    /// DECSC with `saved`'s pen, link and charsets, at the client's
+    /// cursor; then back to a plain pen and ASCII.
+    fn save_cursor(
+        &self,
+        out: &mut Out,
+        saved: &crate::crosswords::pos::Cursor<Square>,
+        link: Option<Hyperlink>,
+    ) {
+        out.style(saved.pending_style);
+        out.link(link);
+        for (_, intro) in line_drawing(&saved.charsets) {
+            let _ = write!(out.s, "\x1b{intro}0");
+        }
+        out.s.push_str("\x1b7");
+        for (_, intro) in line_drawing(&saved.charsets) {
+            let _ = write!(out.s, "\x1b{intro}B");
+        }
+        out.plain();
     }
 
     /// The current screen's state, after its rows.
@@ -490,38 +711,98 @@ impl<U: EventListener> Crosswords<U> {
             }
         }
 
-        // The saved cursor (DECSC): its position and pen. Saved before the
-        // scroll region and origin mode are set, so its position is the
-        // screen's.
+        // A pending wrap is restored by writing the cell under the cursor
+        // again, which clears the row's soft wrap (writing a cell does);
+        // writing the next row's first cell over itself wraps it again.
+        // Not on a scroll region's bottom row, where that would scroll.
+        let region = &self.scroll_region;
+        let rewrap = |out: &mut Out, row: i32| {
+            let wraps = row >= 0
+                && row + 1 < rows as i32
+                && row + 1 != region.end.0
+                && grid[Line(row)][Column(cols - 1)].wrapline();
+            if wraps {
+                let at = Pos::new(Line(row + 1), Column(0));
+                out.cell(grid, grid[at], at, true);
+                out.plain();
+            }
+        };
+
+        // The saved cursor (DECSC): its position (and pending wrap), pen
+        // (open link included) and charsets. Saved before the scroll region
+        // and origin mode are set, so its position is the screen's. Where
+        // it is the cursor itself, with a pending wrap on a row that wraps
+        // (what restoring it leaves), it's saved with the cursor below:
+        // the re-wrap moves the cursor, and restoring the saved one is
+        // what brings it back.
         let saved = &grid.saved_cursor;
-        if saved.pos != Pos::default() || saved.pending_style != Style::default() {
-            let row = saved.pos.row.0.clamp(0, rows as i32 - 1);
-            let col = saved.pos.col.0.min(cols - 1);
-            let _ = write!(out.s, "\x1b[{};{}H", row + 1, col + 1);
-            out.style(saved.pending_style);
-            out.s.push_str("\x1b7");
-            out.plain();
+        let saved_link = cell_link(grid, &saved.template);
+        let cursor = &grid.cursor;
+        // In origin mode a CUP reaches only the region's rows; a cursor
+        // outside them (a rio CUU/CUD quirk can leave one) is placed as
+        // near as it goes, and no cell is rewritten for it.
+        let origin = self.mode.contains(Mode::ORIGIN);
+        let reachable = !origin || region.contains(&cursor.pos.row);
+        let pending = cursor.should_wrap && reachable;
+        let together = pending && saved.should_wrap && saved.pos == cursor.pos;
+        if !together
+            && (saved.pos != Pos::default()
+                || saved.pending_style != Style::default()
+                || saved_link.is_some()
+                || line_drawing(&saved.charsets).next().is_some()
+                || saved.should_wrap)
+        {
+            // DECSC saves the whole cursor, a pending wrap too.
+            self.place_cursor(
+                out,
+                grid,
+                (saved.pos.row.0, saved.pos.col.0),
+                0,
+                saved.should_wrap,
+            );
+            self.save_cursor(out, saved, saved_link.clone());
+            if saved.should_wrap {
+                rewrap(out, saved.pos.row.0.clamp(0, rows as i32 - 1));
+            }
         }
 
         // The scroll region (setting it homes the cursor), then origin
         // mode, then the cursor, which origin mode places in the region.
-        let region = &self.scroll_region;
         let full = region.start == Line(0) && region.end == Line(rows as i32);
         if !full {
-            let _ = write!(out.s, "\x1b[{};{}r", region.start.0 + 1, region.end.0);
+            // DECSTBM wants its top above its bottom before the bottom is
+            // clamped to the screen, so a region of one row (or none) at
+            // the bottom is set with a bottom past the screen, as it was.
+            let (top, mut bottom) = (region.start.0 + 1, region.end.0);
+            if bottom == rows as i32 && top >= bottom {
+                bottom = top + 1;
+            }
+            let _ = write!(out.s, "\x1b[{top};{bottom}r");
         }
-        let origin = self.mode.contains(Mode::ORIGIN);
         if origin {
             out.s.push_str("\x1b[?6h");
         }
-        let cursor = &grid.cursor;
         self.place_cursor(
             out,
             grid,
             (cursor.pos.row.0, cursor.pos.col.0),
             if origin { region.start.0 } else { 0 },
-            cursor.should_wrap && self.mode.contains(Mode::LINE_WRAP),
+            pending,
         );
+        if together {
+            self.save_cursor(out, saved, saved_link.clone());
+            rewrap(out, cursor.pos.row.0);
+            out.s.push_str("\x1b8");
+            // Restoring brought back the saved pen and charsets: the
+            // cursor's own are set below, from ASCII.
+            out.style = saved.pending_style;
+            out.style_id = None;
+            out.link = saved_link;
+            out.link_id = None;
+            for (_, intro) in line_drawing(&saved.charsets) {
+                let _ = write!(out.s, "\x1b{intro}B");
+            }
+        }
 
         // Modes (after the cursor: insert mode would shift the rewrite
         // above, and autowrap must still be on for it).
@@ -543,14 +824,7 @@ impl<U: EventListener> Crosswords<U> {
 
         // Charsets (after every character is written: a designated line
         // drawing set would translate them).
-        let finals = ['(', ')', '*', '+'];
-        let indices = [
-            CharsetIndex::G0,
-            CharsetIndex::G1,
-            CharsetIndex::G2,
-            CharsetIndex::G3,
-        ];
-        for (index, intro) in indices.into_iter().zip(finals) {
+        for (index, intro) in CHARSETS {
             if cursor.charsets[index] == StandardCharset::SpecialCharacterAndLineDrawing {
                 let _ = write!(out.s, "\x1b{intro}0");
             }
@@ -653,17 +927,87 @@ fn percent_encode_path(out: &mut String, path: &str) {
     }
 }
 
+/// Write the leading cells of `cells` that are ASCII in style `style`
+/// (see [`Square::ascii_in_style`]) as their bytes; how many there were.
+/// Into the buffer's spare room, with one capacity check for the run.
+#[inline]
+fn ascii_run(
+    out: &mut String,
+    cells: &[Square],
+    style: StyleId,
+    link: Option<u16>,
+) -> usize {
+    // SAFETY: only ASCII bytes are written, so `out` stays UTF-8; `set_len`
+    // covers exactly the bytes written into the reserved spare room.
+    let v = unsafe { out.as_mut_vec() };
+    v.reserve(cells.len());
+    let spare = v.spare_capacity_mut();
+    let mut n = 0;
+    for square in cells {
+        match square.ascii_in(style, link) {
+            Some(b) => {
+                spare[n].write(b);
+                n += 1;
+            }
+            None => break,
+        }
+    }
+    unsafe { v.set_len(v.len() + n) };
+    n
+}
+
+/// Plain text's [`ascii_run`]: the leading cells of `cells` that are ASCII
+/// in any style, a blank counted in `blank_cells` and written only once a
+/// character follows it (so trailing blanks are dropped); how many cells.
+#[inline]
+pub(crate) fn ascii_text_run(
+    out: &mut String,
+    cells: &[Square],
+    blank_cells: &mut usize,
+    had_content: &mut bool,
+) -> usize {
+    // SAFETY: only ASCII bytes are written, so `out` stays UTF-8; `set_len`
+    // covers exactly the bytes written into the reserved spare room.
+    let v = unsafe { out.as_mut_vec() };
+    v.reserve(*blank_cells + cells.len());
+    let spare = v.spare_capacity_mut();
+    let mut n = 0;
+    let mut blanks = *blank_cells;
+    let mut taken = 0;
+    for square in cells {
+        let Some(b) = square.ascii() else { break };
+        taken += 1;
+        if b == b' ' {
+            blanks += 1;
+            continue;
+        }
+        for slot in &mut spare[n..n + blanks] {
+            slot.write(b' ');
+        }
+        n += blanks;
+        blanks = 0;
+        spare[n].write(b);
+        n += 1;
+        *had_content = true;
+    }
+    unsafe { v.set_len(v.len() + n) };
+    *blank_cells = blanks;
+    taken
+}
+
 /// Rightmost column of `grid`'s row `line` with a non-blank glyph or a
 /// style that renders on a blank cell (`Style::renders_on_blank`), or
 /// `None` for a row with neither. Fg-only attributes must NOT count as
 /// content: `ED`/`EL` reset cells with the full cursor template style, so
 /// after `\x1b[31m` + `clear` every blank carries a red fg, and trimming on
 /// any non-default style would then emit the whole screen as styled spaces.
+/// With `links`, a linked blank is content too: it can still be clicked.
 fn row_last_col(
     grid: &Grid<Square>,
     line: i32,
     cols: usize,
     trim: bool,
+    links: bool,
 ) -> Option<usize> {
     if !trim {
         return Some(cols.saturating_sub(1));
@@ -676,7 +1020,9 @@ fn row_last_col(
             return false;
         }
         let c = square.c();
-        (c != ' ' && c != '\0') || grid.style_of(square).renders_on_blank()
+        (c != ' ' && c != '\0')
+            || (links && square.has_hyperlink())
+            || grid.style_of(square).renders_on_blank()
     })
 }
 
@@ -686,136 +1032,169 @@ fn row_last_col(
 /// changes. Colors keep their original named / indexed / rgb form. Also the
 /// style emitter for librio's `Surface::serialize`.
 pub fn write_sgr(out: &mut String, style: &Style) {
-    use crate::crosswords::style::UnderlineKind;
+    Sgr::to(out, |sgr| sgr.style(style));
+}
 
-    out.push_str("\x1b[0");
-    let flags = style.flags;
-    if flags.contains(StyleFlags::BOLD) {
-        out.push_str(";1");
-    }
-    if flags.contains(StyleFlags::DIM) {
-        out.push_str(";2");
-    }
-    if flags.contains(StyleFlags::ITALIC) {
-        out.push_str(";3");
-    }
-    match flags.underline_kind() {
-        None => {}
-        Some(UnderlineKind::Single) => out.push_str(";4"),
-        Some(UnderlineKind::Double) => out.push_str(";4:2"),
-        Some(UnderlineKind::Curly) => out.push_str(";4:3"),
-        Some(UnderlineKind::Dotted) => out.push_str(";4:4"),
-        Some(UnderlineKind::Dashed) => out.push_str(";4:5"),
-    }
-    if flags.contains(StyleFlags::SLOW_BLINK) {
-        out.push_str(";5");
-    } else if flags.contains(StyleFlags::RAPID_BLINK) {
-        out.push_str(";6");
-    }
-    if flags.contains(StyleFlags::INVERSE) {
-        out.push_str(";7");
-    }
-    if flags.contains(StyleFlags::HIDDEN) {
-        out.push_str(";8");
-    }
-    if flags.contains(StyleFlags::STRIKEOUT) {
-        out.push_str(";9");
-    }
-    push_color(out, style.fg, true);
-    push_color(out, style.bg, false);
-    out.push('m');
+/// An SGR sequence written straight into the output's bytes, room for the
+/// longest made first: a snapshot can write one for every cell, and then a
+/// capacity check per byte that never grows the buffer is all it costs.
+struct Sgr<'a> {
+    v: &'a mut Vec<u8>,
+}
 
-    // Underline color travels as its own sequence; the leading reset
-    // already cleared any previous one.
-    if let Some(underline) = style.underline_color {
-        match underline {
-            AnsiColor::Indexed(i) => {
-                out.push_str("\x1b[58;5;");
-                push_u8(out, i);
-                out.push('m');
-            }
-            AnsiColor::Spec(rgb) => {
-                out.push_str("\x1b[58;2;");
-                push_rgb(out, rgb.r, rgb.g, rgb.b);
-                out.push('m');
-            }
-            AnsiColor::Named(n) => {
-                // Specials (Foreground = 256 and up) have no palette
-                // index; SGR 58 cannot express them, so leave the reset's
-                // unset underline color rather than emit an invalid index.
-                if let Ok(idx) = u8::try_from(n as u16) {
-                    out.push_str("\x1b[58;5;");
-                    push_u8(out, idx);
-                    out.push('m');
+impl Sgr<'_> {
+    /// The longest sequence: every attribute, two rgb colors, and an rgb
+    /// underline color.
+    const MAX: usize = 96;
+
+    #[inline]
+    fn to(out: &mut String, f: impl FnOnce(&mut Sgr)) {
+        // SAFETY: an `Sgr` writes ASCII only (`str` takes ASCII literals,
+        // `num` and `byte` digits and separators), so `out` stays UTF-8.
+        let v = unsafe { out.as_mut_vec() };
+        v.reserve(Self::MAX);
+        let start = v.len();
+        f(&mut Sgr { v });
+        debug_assert!(out.as_bytes()[start..].is_ascii());
+    }
+
+    #[inline]
+    fn str(&mut self, s: &'static str) {
+        debug_assert!(s.is_ascii());
+        self.v.extend_from_slice(s.as_bytes());
+    }
+
+    #[inline]
+    fn byte(&mut self, b: u8) {
+        self.v.push(b);
+    }
+
+    /// `n` in decimal, without the formatting machinery.
+    #[inline]
+    fn num(&mut self, n: u8) {
+        if n >= 100 {
+            self.byte(b'0' + n / 100);
+        }
+        if n >= 10 {
+            self.byte(b'0' + n / 10 % 10);
+        }
+        self.byte(b'0' + n % 10);
+    }
+
+    fn rgb(&mut self, r: u8, g: u8, b: u8) {
+        self.num(r);
+        self.byte(b';');
+        self.num(g);
+        self.byte(b';');
+        self.num(b);
+    }
+
+    /// `style` in full: a reset, then each attribute and color. Colors keep
+    /// their original named / indexed / rgb form.
+    fn style(&mut self, style: &Style) {
+        use crate::crosswords::style::UnderlineKind;
+
+        self.str("\x1b[0");
+        let flags = style.flags;
+        if flags.contains(StyleFlags::BOLD) {
+            self.str(";1");
+        }
+        if flags.contains(StyleFlags::DIM) {
+            self.str(";2");
+        }
+        if flags.contains(StyleFlags::ITALIC) {
+            self.str(";3");
+        }
+        match flags.underline_kind() {
+            None => {}
+            Some(UnderlineKind::Single) => self.str(";4"),
+            Some(UnderlineKind::Double) => self.str(";4:2"),
+            Some(UnderlineKind::Curly) => self.str(";4:3"),
+            Some(UnderlineKind::Dotted) => self.str(";4:4"),
+            Some(UnderlineKind::Dashed) => self.str(";4:5"),
+        }
+        if flags.contains(StyleFlags::SLOW_BLINK) {
+            self.str(";5");
+        } else if flags.contains(StyleFlags::RAPID_BLINK) {
+            self.str(";6");
+        }
+        if flags.contains(StyleFlags::INVERSE) {
+            self.str(";7");
+        }
+        if flags.contains(StyleFlags::HIDDEN) {
+            self.str(";8");
+        }
+        if flags.contains(StyleFlags::STRIKEOUT) {
+            self.str(";9");
+        }
+        self.color(style.fg, true);
+        self.color(style.bg, false);
+        self.byte(b'm');
+
+        // Underline color travels as its own sequence; the leading reset
+        // already cleared any previous one.
+        if let Some(underline) = style.underline_color {
+            match underline {
+                AnsiColor::Indexed(i) => {
+                    self.str("\x1b[58;5;");
+                    self.num(i);
+                    self.byte(b'm');
+                }
+                AnsiColor::Spec(rgb) => {
+                    self.str("\x1b[58;2;");
+                    self.rgb(rgb.r, rgb.g, rgb.b);
+                    self.byte(b'm');
+                }
+                AnsiColor::Named(n) => {
+                    // Specials (Foreground = 256 and up) have no palette
+                    // index; SGR 58 cannot express them, so leave the
+                    // reset's unset underline color rather than emit an
+                    // invalid index.
+                    if let Ok(idx) = u8::try_from(n as u16) {
+                        self.str("\x1b[58;5;");
+                        self.num(idx);
+                        self.byte(b'm');
+                    }
                 }
             }
         }
     }
-}
 
-fn push_color(params: &mut String, color: AnsiColor, fg: bool) {
-    match color {
-        AnsiColor::Named(named) => {
-            let n = named as u16;
-            if n <= 7 {
-                let base = if fg { 30 } else { 40 };
-                params.push(';');
-                push_u8(params, (base + n) as u8);
-            } else if n <= 15 {
-                let base = if fg { 90 } else { 100 };
-                params.push(';');
-                push_u8(params, (base + (n - 8)) as u8);
+    /// `;` and a color's parameters. Named default fg/bg (256/257) and
+    /// specials write nothing: in full form the leading reset covers them.
+    fn color(&mut self, color: AnsiColor, fg: bool) {
+        match color {
+            AnsiColor::Named(named) => {
+                let n = named as u16;
+                if n <= 7 {
+                    self.byte(b';');
+                    self.num((if fg { 30 } else { 40 } + n) as u8);
+                } else if n <= 15 {
+                    self.byte(b';');
+                    self.num((if fg { 90 } else { 100 } + (n - 8)) as u8);
+                }
             }
-            // Named default fg/bg (256/257) and specials: covered by the
-            // leading `0` reset, so emit nothing.
-        }
-        AnsiColor::Indexed(i) => {
-            let intro = if fg { "38" } else { "48" };
-            params.push(';');
-            params.push_str(intro);
-            params.push_str(";5;");
-            push_u8(params, i);
-        }
-        AnsiColor::Spec(rgb) => {
-            let intro = if fg { "38" } else { "48" };
-            params.push(';');
-            params.push_str(intro);
-            params.push_str(";2;");
-            push_rgb(params, rgb.r, rgb.g, rgb.b);
+            AnsiColor::Indexed(i) => {
+                self.str(if fg { ";38;5;" } else { ";48;5;" });
+                self.num(i);
+            }
+            AnsiColor::Spec(rgb) => {
+                self.str(if fg { ";38;2;" } else { ";48;2;" });
+                self.rgb(rgb.r, rgb.g, rgb.b);
+            }
         }
     }
-}
 
-/// `n` in decimal, without the formatting machinery (a snapshot can
-/// write a color for every cell).
-#[inline]
-fn push_u8(out: &mut String, n: u8) {
-    if n >= 100 {
-        out.push((b'0' + n / 100) as char);
-    }
-    if n >= 10 {
-        out.push((b'0' + n / 10 % 10) as char);
-    }
-    out.push((b'0' + n % 10) as char);
-}
-
-fn push_rgb(out: &mut String, r: u8, g: u8, b: u8) {
-    push_u8(out, r);
-    out.push(';');
-    push_u8(out, g);
-    out.push(';');
-    push_u8(out, b);
-}
-
-/// Like `push_color`, but a color that `push_color` leaves to the reset
-/// (the default, and specials with no SGR form) is written as the default
-/// (39 / 49): for a change of colors only, which has no reset.
-fn push_color_change(params: &mut String, color: AnsiColor, fg: bool) {
-    match color {
-        AnsiColor::Named(named) if named as u16 > 15 => {
-            params.push_str(if fg { ";39" } else { ";49" });
+    /// Like `color`, but one the full form leaves to the reset (the
+    /// default, and specials with no SGR form) is written as the default
+    /// (39 / 49): for a change of colors only, which has no reset.
+    fn color_change(&mut self, color: AnsiColor, fg: bool) {
+        match color {
+            AnsiColor::Named(named) if named as u16 > 15 => {
+                self.str(if fg { ";39" } else { ";49" });
+            }
+            _ => self.color(color, fg),
         }
-        _ => push_color(params, color, fg),
     }
 }
 
@@ -825,21 +1204,30 @@ fn push_color_change(params: &mut String, color: AnsiColor, fg: bool) {
 fn write_sgr_change(out: &mut String, from: &Style, to: &Style) {
     let colors_only =
         to.flags == from.flags && to.underline_color == from.underline_color;
-    if !colors_only || *to == Style::default() {
-        write_sgr(out, to);
-        return;
-    }
-    out.push_str("\x1b[");
-    let start = out.len();
-    if to.fg != from.fg {
-        push_color_change(out, to.fg, true);
-    }
-    if to.bg != from.bg {
-        push_color_change(out, to.bg, false);
-    }
-    // Drop the first parameter's separator.
-    out.remove(start);
-    out.push('m');
+    // Back to no attributes and default colors: `ESC[0m` is the shortest.
+    let default = |c: AnsiColor| matches!(c, AnsiColor::Named(n) if n as u16 > 15);
+    let plain = to.flags.is_empty()
+        && to.underline_color.is_none()
+        && default(to.fg)
+        && default(to.bg);
+    Sgr::to(out, |sgr| {
+        if !colors_only || plain {
+            sgr.style(to);
+            return;
+        }
+        // ESC, then each color's `;` and parameters; the first `;` becomes
+        // the `[`.
+        let start = sgr.v.len();
+        sgr.byte(0x1b);
+        if to.fg != from.fg {
+            sgr.color_change(to.fg, true);
+        }
+        if to.bg != from.bg {
+            sgr.color_change(to.bg, false);
+        }
+        sgr.v[start + 1] = b'[';
+        sgr.byte(b'm');
+    });
 }
 
 #[cfg(test)]
@@ -1341,6 +1729,276 @@ mod snapshot_tests {
         assert!(!b.term.mode().contains(Mode::SHOW_CURSOR));
     }
 
+    /// Every cell of the history and both screens: text, style, link,
+    /// soft wrap.
+    #[allow(clippy::type_complexity)]
+    fn cells(t: &T) -> Vec<(String, String, Style, Option<String>, bool)> {
+        let mut out = Vec::new();
+        let mut grids = vec![&t.term.grid];
+        if t.term.mode().contains(Mode::ALT_SCREEN) {
+            grids.push(&t.term.inactive_grid);
+        }
+        for grid in grids {
+            let top = -(grid.history_size() as i32);
+            for line in top..grid.screen_lines() as i32 {
+                for col in 0..grid.columns() {
+                    let pos = Pos::new(Line(line), Column(col));
+                    let square = grid[pos];
+                    // As it shows: a cell never written is a blank, and a
+                    // blank's attributes that draw nothing don't matter.
+                    let mut text: String = grid
+                        .cell_text(pos)
+                        .map(|c| if c == '\0' || c == '\t' { ' ' } else { c })
+                        .collect();
+                    let mut style = grid.style_of(&square);
+                    if text == " " && !style.renders_on_blank() {
+                        style = Style::default();
+                    }
+                    // A wide character's second half shows as a blank, kept
+                    // or not; so does a broken half.
+                    // And a double-width character in a narrow cell with
+                    // no orphaned half after it to take.
+                    let row = &grid[Line(line)][..];
+                    let squeezed = !square.is_wide()
+                        && crate::codepoint_width::codepoint_width(square.c() as u32)
+                            == Some(2)
+                        && !(col + 1 < row.len() && row[col + 1].is_spacer());
+                    // The blank a wide character leaves where it didn't
+                    // fit takes the character's style in the copy.
+                    // (Where one does start the next row; an orphaned one
+                    // is a blank in its own style.)
+                    let rows = grid.screen_lines() as i32;
+                    let kept_lead = square.is_leading_spacer()
+                        && line + 1 < rows
+                        && grid[Line(line + 1)][Column(0)].is_wide();
+                    if kept_lead {
+                        style = Style::default();
+                    }
+                    if square.is_spacer() || broken_half(row, col) || squeezed {
+                        text = " ".into();
+                        if !style.renders_on_blank() {
+                            style = Style::default();
+                        }
+                    }
+                    let link = cell_link(grid, &square)
+                        .map(|l| l.uri().to_owned())
+                        .filter(|_| !kept_lead);
+                    // (The bottom row's wrap into nothing, which a scroll
+                    // down can leave, is not carried.)
+                    let wrap = col + 1 == grid.columns()
+                        && line + 1 < grid.screen_lines() as i32
+                        && square.wrapline();
+                    out.push((format!("{line},{col}"), text, style, link, wrap));
+                }
+            }
+        }
+        out
+    }
+
+    fn first_difference(a: &T, b: &T, seed: usize, when: &str, input: &str) {
+        let (ca, cb) = (cells(a), cells(b));
+        let diff = ca.iter().zip(&cb).find(|(x, y)| x != y);
+        if diff.is_some() || ca.len() != cb.len() {
+            panic!(
+                "seed {seed}{when} ({}x{}): {diff:?}\ninput: {input:?}\nsnapshot: {:?}\nhistory {} vs {}\na: {:?}\nb: {:?}",
+                a.term.columns(),
+                a.term.screen_lines(),
+                String::from_utf8_lossy(&a.term.snapshot_formatted()),
+                a.term.grid.history_size(),
+                b.term.grid.history_size(),
+                a.text(),
+                b.text()
+            );
+        }
+    }
+
+    #[test]
+    fn random_terminals_round_trip() {
+        let tokens: &[&str] = &[
+            "hello",
+            " ",
+            "  ",
+            "\t",
+            "\r\n",
+            "\n",
+            "\r",
+            "界",
+            "e\u{301}",
+            "x",
+            "1234567890123",
+            "\x1b[31m",
+            "\x1b[1;4m",
+            "\x1b[38;5;200m",
+            "\x1b[48;2;1;2;3m",
+            "\x1b[44m",
+            "\x1b[39m",
+            "\x1b[22;24m",
+            "\x1b[7m",
+            "\x1b[4:3;58;5;9m",
+            "\x1b[0m",
+            "\x1b[K",
+            "\x1b[1K",
+            "\x1b[J",
+            "\x1b[2J",
+            "\x1b[H",
+            "\x1b[5;3H",
+            "\x1b[3G",
+            "\x1b[2A",
+            "\x1b[1P",
+            "\x1b[2@",
+            "\x1b[S",
+            "\x1b[T",
+            "\x1b]8;;http://a\x1b\\",
+            "\x1b]8;id=q;http://b\x1b\\",
+            "\x1b]8;;\x1b\\",
+            "\x1b[3g\x1b[5G\x1bH",
+            "\x1b7",
+            "\x1b8",
+            "\x1b[2;4r",
+            "\x1b[r",
+            "\x1b[?6h",
+            "\x1b[?6l",
+            "\x1b[?7l",
+            "\x1b[?7h",
+            "\x1b[4h",
+            "\x1b[4l",
+            "\x1b[?1049h",
+            "\x1b[?1049l",
+            "\x1b(0",
+            "\x1b(B",
+            "lqk",
+            "\x1b[?2004h",
+            "\x1b[>1u",
+            "\x1b[<u",
+            "\x1b[?25l",
+            "\x1b[6 q",
+        ];
+        // Same input after the copy too: a short tail of plain tokens.
+        let tail: &[&str] = &["Z", "\r\n", "ab", "\x1b[?1049l", "\x1b8", "q", "\t"];
+        let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut rnd = |n: usize| {
+            x = x
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (x >> 33) as usize % n
+        };
+        for seed in 0..2_000 {
+            let cols = 6 + rnd(20);
+            let rows = 2 + rnd(8);
+            let mut a = T::new(cols, rows);
+            let mut input = String::new();
+            for _ in 0..20 + rnd(300) {
+                let token = tokens[rnd(tokens.len())];
+                input.push_str(token);
+                a.feed(token.as_bytes());
+            }
+            // A cursor with a pending wrap on a row that wraps on, which
+            // only restoring a saved cursor makes, comes along only while
+            // the saved cursor is that one too (see `write_state`).
+            let g = &a.term.grid;
+            let c = &g.cursor;
+            let row = c.pos.row.0;
+            let on_wrapped = c.should_wrap
+                && row + 1 < g.screen_lines() as i32
+                && g[Line(row)][Column(g.columns() - 1)].wrapline();
+            let saved = &g.saved_cursor;
+            if on_wrapped && !(saved.should_wrap && saved.pos == c.pos) {
+                continue;
+            }
+            // A cursor waiting to wrap on the blank a wide character left
+            // turns it into a plain blank when its wrap is restored.
+            let on_lead =
+                |g: &Grid<Square>, cur: &crate::crosswords::pos::Cursor<Square>| {
+                    cur.should_wrap
+                        && g[Line(cur.pos.row.0.clamp(0, g.screen_lines() as i32 - 1))]
+                            [Column(g.columns() - 1)]
+                        .is_leading_spacer()
+                };
+            let ig = &a.term.inactive_grid;
+            if on_lead(g, &g.cursor)
+                || on_lead(g, &g.saved_cursor)
+                || on_lead(ig, &ig.cursor)
+            {
+                continue;
+            }
+            let mut b = a.copy();
+            first_difference(&a, &b, seed, "", &input);
+            // (Not the plain text: a tab copies as `\t` from the original
+            // and as blanks from the copy, which can't hold one.)
+            assert_eq!(a.term.grid.history_size(), b.term.grid.history_size());
+            // CUU and CUD add the scroll region's offset to an absolute
+            // row in origin mode, which can put the cursor outside the
+            // region; no CUP reaches that, so a copy can't either.
+            let region = &a.term.scroll_region;
+            let row = a.term.grid.cursor.pos.row;
+            let outside = a.term.mode().contains(Mode::ORIGIN)
+                && (row < region.start || row >= region.end);
+            if outside {
+                continue;
+            }
+            assert_eq!(a.cursor(), b.cursor(), "seed {seed}: cursor");
+            // The kitty flags by their stack: `swap_alt` swaps the stacks
+            // but leaves `Mode`'s copy of the top as it was.
+            let modes = |t: &T| (t.term.mode() - Mode::KITTY_KEYBOARD_PROTOCOL).bits();
+            assert_eq!(modes(&a), modes(&b), "seed {seed}: modes");
+            assert_eq!(
+                a.term.keyboard_mode(),
+                b.term.keyboard_mode(),
+                "seed {seed}: keyboard"
+            );
+            // A bottom row's wrap into nothing isn't carried (see the
+            // module docs); scrolled up by the tail, it would show.
+            let bottom_wraps = |g: &Grid<Square>| {
+                g[Line(g.screen_lines() as i32 - 1)][Column(g.columns() - 1)].wrapline()
+            };
+            // Nor are split wide characters (blanks in the copy); input
+            // that moves cells (insert mode) would carry the difference to
+            // where it no longer reads as one.
+            let split = |g: &Grid<Square>| {
+                (-(g.history_size() as i32)..g.screen_lines() as i32).any(|line| {
+                    let row = &g[Line(line)][..];
+                    (0..row.len()).any(|col| {
+                        let c = row[col];
+                        // (A wide character's leftover blank at a row's end
+                        // too: the copy's takes the character's pen.)
+                        c.is_leading_spacer()
+                            || broken_half(row, col)
+                            || (!c.is_wide()
+                                && crate::codepoint_width::codepoint_width(c.c() as u32)
+                                    == Some(2))
+                    })
+                })
+            };
+            if bottom_wraps(&a.term.grid)
+                || bottom_wraps(&a.term.inactive_grid)
+                || split(&a.term.grid)
+                || split(&a.term.inactive_grid)
+            {
+                continue;
+            }
+            // Insert mode (compared above) off for the tail: shifting cells
+            // moves soft-wrap flags rio leaves on cells that are no longer
+            // last in their row, invisible state a copy doesn't get.
+            a.feed(b"\x1b[4l");
+            b.feed(b"\x1b[4l");
+            input.push_str("\u{0}TAIL\u{0}");
+            for _ in 0..8 {
+                let token = tail[rnd(tail.len())];
+                input.push_str(token);
+                a.feed(token.as_bytes());
+                b.feed(token.as_bytes());
+            }
+            first_difference(
+                &a,
+                &b,
+                seed,
+                " after the tail (after NUL TAIL NUL)",
+                &input,
+            );
+            assert_eq!(a.cursor(), b.cursor(), "seed {seed}: cursor after the tail");
+        }
+    }
+
     #[test]
     fn a_fresh_terminal_is_almost_nothing() {
         let a = T::new(20, 4);
@@ -1403,7 +2061,7 @@ mod sgr_change_tests {
     fn digits_without_formatting() {
         for n in [0u8, 7, 9, 10, 42, 99, 100, 199, 255] {
             let mut s = String::new();
-            push_u8(&mut s, n);
+            Sgr::to(&mut s, |sgr| sgr.num(n));
             assert_eq!(s, n.to_string());
         }
     }

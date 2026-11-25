@@ -3139,7 +3139,25 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         let mut tab_mode = false;
-        for column in (cols.start.0..line_length.0).map(Column::from) {
+        let cells = &grid_line[..];
+        let mut next = cols.start.0;
+        while next < line_length.0 {
+            // Most cells are narrow ASCII with nothing attached: their
+            // bytes in one go (blanks buffered, as below).
+            if !tab_mode {
+                let run = formatter::ascii_text_run(
+                    text,
+                    &cells[next..line_length.0],
+                    blank_cells,
+                    &mut had_content,
+                );
+                next += run;
+                if next == line_length.0 {
+                    break;
+                }
+            }
+            let column = Column(next);
+            next += 1;
             let cell = &grid_line[column];
 
             // Skip over cells until next tab-stop once a tab was found.

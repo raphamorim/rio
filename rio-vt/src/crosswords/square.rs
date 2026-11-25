@@ -254,6 +254,44 @@ impl Square {
         Square(template.0 | cp)
     }
 
+    /// The cell's byte when it is plain ASCII text in style `style`: a
+    /// narrow codepoint cell with no extras, no link, no grapheme (the
+    /// soft-wrap marker aside), holding a printable ASCII character or
+    /// nothing (a space). One mask and compare, for serializers whose
+    /// cells mostly look like that.
+    #[inline(always)]
+    pub fn ascii_in_style(self, style: StyleId) -> Option<u8> {
+        self.ascii_in(style, None)
+    }
+
+    /// [`Self::ascii_in_style`], for a cell in the link whose extras id is
+    /// `link` (its extras holding that link and nothing else), or in none.
+    #[inline(always)]
+    pub fn ascii_in(self, style: StyleId, link: Option<ExtrasId>) -> Option<u8> {
+        const WRAPLINE_BIT: u64 = (CellFlags::WRAPLINE.bits() as u64) << CELL_FLAGS_SHIFT;
+        const LINK_BIT: u64 = (CellFlags::HYPERLINK.bits() as u64) << CELL_FLAGS_SHIFT;
+        let rest = self.0 & !(CODEPOINT_MASK | WRAPLINE_BIT);
+        let mut want = (style as u64) << STYLE_ID_SHIFT;
+        if let Some(id) = link {
+            want |= ((id as u64) << EXTRAS_ID_SHIFT) | LINK_BIT;
+        }
+        if rest != want {
+            return None;
+        }
+        match self.0 & CODEPOINT_MASK {
+            0 => Some(b' '),
+            cp @ 0x20..=0x7e => Some(cp as u8),
+            _ => None,
+        }
+    }
+
+    /// The cell's byte when it is plain ASCII text in any style: like
+    /// [`Self::ascii_in_style`], for text without attributes.
+    #[inline(always)]
+    pub fn ascii(self) -> Option<u8> {
+        self.ascii_in_style(self.style_id())
+    }
+
     /// Read the underlying packed bits. Used by render hot loops that want
     /// to extract multiple fields from a single cell load — calling the
     /// individual accessors would otherwise reload the cell from memory
