@@ -50,6 +50,12 @@ use crate::crosswords::style::{Style, StyleFlags, StyleId};
 use crate::crosswords::Mode;
 use crate::event::EventListener;
 use std::fmt::Write as _;
+use std::io;
+
+/// How much a streaming [`Crosswords::format_to`] buffers before writing
+/// to its sink: a few dozen rows of styled text, small enough to stay in
+/// cache, large enough that the sink sees few writes.
+const CHUNK: usize = 64 * 1024;
 
 /// Serialization target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -193,8 +199,16 @@ fn initial_mode() -> Mode {
 
 /// The output and what the client has in effect while it's written, so an
 /// SGR or OSC 8 goes out only when it changes.
-struct Out {
+struct Out<'w> {
     s: String,
+    /// Where `s` goes when streaming ([`Crosswords::format_to`]): written
+    /// out and cleared between rows once it holds [`CHUNK`] bytes. `None`
+    /// builds the whole output in `s`.
+    sink: Option<&'w mut dyn io::Write>,
+    /// How full `s` gets before it goes to the sink.
+    chunk: usize,
+    /// The sink's first error; nothing more is written after it.
+    error: Option<io::Error>,
     style: Style,
     link: Option<Hyperlink>,
     /// The style id (in the grid being written) that `style` came from,
@@ -205,14 +219,48 @@ struct Out {
     link_id: Option<u16>,
 }
 
-impl Out {
-    fn new(capacity: usize) -> Out {
+impl<'w> Out<'w> {
+    fn new(capacity: usize, sink: Option<&'w mut dyn io::Write>) -> Out<'w> {
         Out {
             s: String::with_capacity(capacity),
+            sink,
+            chunk: CHUNK,
+            error: None,
             style: Style::default(),
             link: None,
             style_id: None,
             link_id: None,
+        }
+    }
+
+    /// Streaming: write `s` to the sink and clear it once it holds a
+    /// chunk. False once the sink failed (stop writing).
+    #[inline]
+    fn drain(&mut self) -> bool {
+        if self.s.len() >= self.chunk {
+            self.write_out();
+        }
+        self.error.is_none()
+    }
+
+    #[cold]
+    fn write_out(&mut self) {
+        if let Some(sink) = self.sink.as_mut() {
+            if self.error.is_none() {
+                if let Err(e) = sink.write_all(self.s.as_bytes()) {
+                    self.error = Some(e);
+                }
+            }
+            self.s.clear();
+        }
+    }
+
+    /// Streaming: the rest of `s` to the sink, and its first error.
+    fn finish(mut self) -> io::Result<()> {
+        self.write_out();
+        match self.error {
+            Some(e) => Err(e),
+            None => Ok(()),
         }
     }
 
@@ -341,6 +389,51 @@ impl<U: EventListener> Crosswords<U> {
         }
     }
 
+    /// Serialize the terminal using `opts` into `w`, a chunk at a time
+    /// (about 64 KiB): the same bytes [`format`](Self::format) returns,
+    /// without building them all in one `String` first (which grows to
+    /// the whole output, 15 MB for a big history, and is copied each time
+    /// it does). Stops at `w`'s first error and returns it. [`Emit::Plain`]
+    /// is built whole, then written.
+    ///
+    /// The caller holds whatever guards `self` (the terminal's lock) until
+    /// this returns, `w`'s writes included, so give it a sink that never
+    /// waits on anyone: a `Vec<u8>` kept between snapshots (cleared, not
+    /// dropped, so its capacity is reused), a file, a pipe with room. Not
+    /// a client's socket: a slow client would stall the PTY reader, and
+    /// the program behind it. Format under the lock, then send after
+    /// releasing it, from another thread if need be.
+    pub fn format_to<W: io::Write>(
+        &self,
+        opts: FormatOptions,
+        w: &mut W,
+    ) -> io::Result<()> {
+        self.stream(opts, w, CHUNK)
+    }
+
+    fn stream(
+        &self,
+        opts: FormatOptions,
+        w: &mut dyn io::Write,
+        chunk: usize,
+    ) -> io::Result<()> {
+        match opts.emit {
+            Emit::Plain => w.write_all(self.format_plain(opts).as_bytes()),
+            Emit::Vt => {
+                let mut out = Out::new(chunk + chunk / 4, Some(w));
+                out.chunk = chunk;
+                self.write_vt(&mut out, opts);
+                out.finish()
+            }
+        }
+    }
+
+    /// [`snapshot_formatted`](Self::snapshot_formatted) into `w`, a chunk
+    /// at a time: see [`format_to`](Self::format_to).
+    pub fn snapshot_to<W: io::Write>(&self, w: &mut W) -> io::Result<()> {
+        self.format_to(FormatOptions::snapshot(), w)
+    }
+
     /// The visible screen as a VT/ANSI byte blob (vt100 `contents_formatted`
     /// equivalent): clear + home, cells with SGR, then the cursor restored.
     pub fn contents_formatted(&self) -> Vec<u8> {
@@ -377,20 +470,23 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     fn format_vt(&self, opts: FormatOptions) -> String {
-        let rows = self.screen_lines();
-        let cols = self.columns();
-        if rows == 0 || cols == 0 {
-            return String::new();
-        }
-
         // Lines of text run about half the width in escapes and glyphs.
-        let lines = rows
+        let lines = self.screen_lines()
             + if opts.scrollback {
                 self.grid.history_size()
             } else {
                 0
             };
-        let mut out = Out::new(lines * (cols / 2 + 8));
+        let mut out = Out::new(lines * (self.columns() / 2 + 8), None);
+        self.write_vt(&mut out, opts);
+        shrink_slack(&mut out.s);
+        out.s
+    }
+
+    fn write_vt(&self, out: &mut Out, opts: FormatOptions) {
+        if self.screen_lines() == 0 || self.columns() == 0 {
+            return;
+        }
         // Reset, clear, home so the snapshot renders on a fresh client.
         out.s.push_str("\x1b[0m\x1b[2J\x1b[H");
         if opts.scrollback {
@@ -399,22 +495,21 @@ impl<U: EventListener> Crosswords<U> {
 
         let alt = opts.state && self.mode.contains(Mode::ALT_SCREEN);
         if !alt {
-            self.write_rows(&mut out, &self.grid, opts);
+            self.write_rows(out, &self.grid, opts);
             out.plain();
             if opts.state {
-                self.write_state(&mut out);
+                self.write_state(out);
             } else {
                 self.push_cursor(&mut out.s);
             }
-            shrink_slack(&mut out.s);
-            return out.s;
+            return;
         }
 
         // An alt-screen program runs: the primary screen first, with its
         // cursor where the program found it (where leaving the alt screen
         // puts it back), then the alt screen over it.
         let primary = &self.inactive_grid;
-        self.write_rows(&mut out, primary, opts);
+        self.write_rows(out, primary, opts);
         out.plain();
         write_keyboard_stack(
             &mut out.s,
@@ -429,7 +524,7 @@ impl<U: EventListener> Crosswords<U> {
         }
         let at = primary.cursor.pos;
         self.place_cursor(
-            &mut out,
+            out,
             primary,
             (at.row.0, at.col.0),
             0,
@@ -470,11 +565,9 @@ impl<U: EventListener> Crosswords<U> {
         }
         out.plain();
         out.s.push_str("\x1b[H\x1b[2J");
-        self.write_rows(&mut out, &self.grid, opts.with_scrollback(false));
+        self.write_rows(out, &self.grid, opts.with_scrollback(false));
         out.plain();
-        self.write_state(&mut out);
-        shrink_slack(&mut out.s);
-        out.s
+        self.write_state(out);
     }
 
     /// The rows of `grid` (its history too with `opts.scrollback`), from
@@ -518,7 +611,11 @@ impl<U: EventListener> Crosswords<U> {
             // Once a few rows are written, reserve what all of them will
             // take at that rate: one move of the buffer, not a doubling's
             // worth when the rows are heavier than estimated.
-            if line == top + 64 {
+            if out.sink.is_some() {
+                if !out.drain() {
+                    return;
+                }
+            } else if line == top + 64 {
                 let per_row = (out.s.len() - start) / 64 + 1;
                 let left = (last - line + 1) as usize;
                 out.s.reserve(per_row * left + per_row * left / 16);
@@ -1437,9 +1534,17 @@ mod snapshot_tests {
         }
 
         /// A fresh terminal of the same size, fed this one's snapshot.
+        /// A fresh terminal fed this one's snapshot. Streamed a row at a
+        /// time too, which must give the same bytes.
         fn copy(&self) -> T {
+            let whole = self.term.snapshot_formatted();
+            let mut rows = Vec::new();
+            self.term
+                .stream(FormatOptions::snapshot(), &mut rows, 1)
+                .unwrap();
+            assert!(whole == rows, "streamed snapshot differs");
             let mut t = T::new(self.term.columns(), self.term.screen_lines());
-            t.feed(&self.term.snapshot_formatted());
+            t.feed(&whole);
             t
         }
 
@@ -1736,6 +1841,97 @@ mod snapshot_tests {
         same(&mut a, &mut b, b"\x1b8S");
         let style = |t: &T| t.term.grid.style_of(&t.term.grid[Line(2)][Column(3)]);
         assert_eq!(style(&a), style(&b));
+    }
+
+    /// A sink that records each write, and fails once it has taken
+    /// `fail_after` bytes.
+    struct Sink {
+        writes: Vec<usize>,
+        bytes: Vec<u8>,
+        fail_after: usize,
+    }
+
+    impl std::io::Write for Sink {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.bytes.len() >= self.fail_after {
+                return Err(std::io::Error::other("full"));
+            }
+            self.writes.push(buf.len());
+            self.bytes.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// 1,000 lines of styled history: about 130 KB of snapshot, a few
+    /// chunks.
+    fn big() -> T {
+        let mut a = T::new(80, 24);
+        for i in 0..1_000 {
+            let mut line = format!("{i:04}");
+            for k in 0..7 {
+                line.push_str(&format!("\x1b[3{}m {}", (i + k) % 8, "x".repeat(9)));
+            }
+            line.push_str("\x1b[0m\r\n");
+            a.feed(line.as_bytes());
+        }
+        a
+    }
+
+    #[test]
+    fn format_to_writes_what_format_returns_in_chunks() {
+        let mut a = big();
+        for alt in [false, true] {
+            if alt {
+                a.feed(b"\x1b[?1049h\x1b[Halt screen\x1b[44m");
+            }
+            for opts in [
+                FormatOptions::snapshot(),
+                FormatOptions::vt(),
+                FormatOptions::plain().with_scrollback(true),
+            ] {
+                let whole = a.term.format(opts);
+                let mut sink = Sink {
+                    writes: Vec::new(),
+                    bytes: Vec::new(),
+                    fail_after: usize::MAX,
+                };
+                a.term.format_to(opts, &mut sink).unwrap();
+                assert!(sink.bytes == whole.as_bytes(), "alt {alt}: {opts:?}");
+                if opts.scrollback && opts.emit == Emit::Vt {
+                    // Several writes, none much past a chunk (a row over).
+                    assert!(sink.writes.len() > 1, "{:?}", sink.writes);
+                    assert!(sink.writes.iter().all(|&n| n < CHUNK + 4096));
+                }
+            }
+        }
+        let mut v = Vec::new();
+        a.term.snapshot_to(&mut v).unwrap();
+        assert_eq!(v, a.term.snapshot_formatted());
+    }
+
+    #[test]
+    fn format_to_stops_at_the_first_error() {
+        let a = big();
+        let mut sink = Sink {
+            writes: Vec::new(),
+            bytes: Vec::new(),
+            fail_after: 1,
+        };
+        let err = a.term.snapshot_to(&mut sink).unwrap_err();
+        assert_eq!(err.to_string(), "full");
+        // One chunk went out; the walk stopped at the next.
+        assert_eq!(sink.writes.len(), 1);
+    }
+
+    #[test]
+    fn format_to_an_empty_terminal() {
+        let a = T::new(10, 3);
+        let mut v = Vec::new();
+        a.term.snapshot_to(&mut v).unwrap();
+        assert_eq!(v, a.term.snapshot_formatted());
     }
 
     #[test]

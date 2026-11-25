@@ -2,7 +2,8 @@
 // snapshot (`FormatOptions::snapshot`) of a 120 by 40 terminal with 10k
 // lines of styled history. Variants: OSC 8 links on every line, a color
 // per cell (the most SGR a snapshot writes), an alt-screen program over
-// the history, the visible screen alone, and the plain text of it all.
+// the history, the visible screen alone, and the plain text of it all;
+// and streamed (`snapshot_to`) into a sink, or a buffer kept between runs.
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
@@ -71,6 +72,18 @@ fn bench(c: &mut Criterion) {
     let t = term(styled);
     eprintln!("styled: {} bytes", t.snapshot_formatted().len());
     g.bench_function("styled_10k", |b| b.iter(|| t.snapshot_formatted()));
+    // Streamed: the formatting alone (a sink that drops it), and into a
+    // buffer the caller keeps between snapshots.
+    g.bench_function("styled_10k_to_sink", |b| {
+        b.iter(|| t.snapshot_to(&mut std::io::sink()).unwrap())
+    });
+    let mut kept = Vec::new();
+    g.bench_function("styled_10k_to_kept_vec", |b| {
+        b.iter(|| {
+            kept.clear();
+            t.snapshot_to(&mut kept).unwrap()
+        })
+    });
     g.bench_function("plain_10k", |b| {
         b.iter(|| t.format(FormatOptions::plain().with_scrollback(true)))
     });
@@ -82,6 +95,9 @@ fn bench(c: &mut Criterion) {
     let t = term(rainbow);
     eprintln!("rainbow: {} bytes", t.snapshot_formatted().len());
     g.bench_function("rainbow_10k", |b| b.iter(|| t.snapshot_formatted()));
+    g.bench_function("rainbow_10k_to_sink", |b| {
+        b.iter(|| t.snapshot_to(&mut std::io::sink()).unwrap())
+    });
 
     let mut t = term(styled);
     let mut p = Processor::default();
