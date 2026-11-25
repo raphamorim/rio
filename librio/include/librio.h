@@ -27,6 +27,9 @@ typedef size_t rio_surface_id_t;
    sent none; data_b is how long it ran, in milliseconds. */
 #define RIO_ACTION_COMMAND_FINISHED 4u
 #define RIO_EXIT_STATUS_NONE 0x80000000u
+/* A program asked for a desktop notification (OSC 9 or OSC 777 notify):
+   title is its title (empty when it sent none), subtitle its body. */
+#define RIO_ACTION_DESKTOP_NOTIFICATION 5u
 
 /* OSC 7501 program status (see program_status_cb). `event` is REPORT,
    or a lifecycle event after which the host drops records: on

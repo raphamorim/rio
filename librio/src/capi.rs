@@ -23,6 +23,10 @@ pub const RIO_ACTION_PROGRESS: u32 = 3;
 pub const RIO_ACTION_COMMAND_FINISHED: u32 = 4;
 /// `INT32_MIN`, which no real exit status takes.
 pub const RIO_EXIT_STATUS_NONE: u32 = i32::MIN as u32;
+/// A program asked for a desktop notification (OSC 9 or OSC 777
+/// `notify`): `title` is its title (empty when it sent none) and
+/// `subtitle` its body.
+pub const RIO_ACTION_DESKTOP_NOTIFICATION: u32 = 5;
 
 /// `rio_program_status_s::event`: a report, or a lifecycle event after
 /// which the host drops records (see `program_status_cb`).
@@ -313,6 +317,21 @@ impl SurfaceDelegate for CDelegate {
                             status.max(i32::MIN + 1) as u32
                         }),
                         data_b: u32::try_from(duration.as_millis()).unwrap_or(u32::MAX),
+                    },
+                );
+            }
+            Action::DesktopNotification { title, body } => {
+                let title = CString::new(title).unwrap_or_default();
+                let body = CString::new(body).unwrap_or_default();
+                cb(
+                    self.config.userdata,
+                    surface,
+                    rio_action_s {
+                        tag: RIO_ACTION_DESKTOP_NOTIFICATION,
+                        title: title.as_ptr(),
+                        subtitle: body.as_ptr(),
+                        data_a: 0,
+                        data_b: 0,
                     },
                 );
             }

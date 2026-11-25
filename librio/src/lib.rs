@@ -150,6 +150,14 @@ pub enum Action {
         exit_status: Option<i32>,
         duration: std::time::Duration,
     },
+    /// A program asked for a desktop notification: OSC 9 (iTerm2, the
+    /// whole text is the body) or OSC 777 `notify` (rxvt, with a title).
+    /// `title` is empty when the program sent none. Showing it, and
+    /// when, is the embedder's call.
+    DesktopNotification {
+        title: String,
+        body: String,
+    },
 }
 
 /// `Send + Sync` everywhere threads exist. On wasm there is one thread and
@@ -318,6 +326,10 @@ impl Listener {
             }
             RioEvent::Bell(_) => {
                 self.delegate.action(self.surface_id, Action::RingBell);
+            }
+            RioEvent::DesktopNotification { title, body } => {
+                self.delegate
+                    .action(self.surface_id, Action::DesktopNotification { title, body });
             }
             RioEvent::CursorBlinkingChange | RioEvent::CursorBlinkingChangeOnRoute(_) => {
                 self.delegate
@@ -2673,6 +2685,45 @@ mod tests {
                     id: None,
                 }),
                 &ProgramStatusEvent::PromptStart,
+            ]
+        );
+    }
+
+    // OSC 9 and OSC 777 notify reach the embedder, with BEL or ST at the
+    // end; OSC 9;4 stays progress, not a notification.
+    #[test]
+    fn desktop_notifications_reach_the_delegate() {
+        let delegate = Arc::new(ActionRecorder {
+            actions: Mutex::new(Vec::new()),
+        });
+        let engine = Engine::new(delegate.clone());
+        let surface = engine
+            .create_surface(&SurfaceDesc::default())
+            .expect("spawn shell");
+
+        surface.inject_output(b"\x1b]9;build done\x07");
+        surface.inject_output(b"\x1b]9;tests; 3 failed\x1b\\");
+        surface.inject_output(b"\x1b]777;notify;Deploy;it shipped\x07");
+        surface.inject_output(b"\x1b]777;notify;Title;body\x1b\\");
+        surface.inject_output(b"\x1b]9;4;1;50\x07");
+
+        let actions = delegate.actions.lock().unwrap();
+        let notes: Vec<(&str, &str)> = actions
+            .iter()
+            .filter_map(|a| match a {
+                Action::DesktopNotification { title, body } => {
+                    Some((title.as_str(), body.as_str()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            notes,
+            vec![
+                ("", "build done"),
+                ("", "tests; 3 failed"),
+                ("Deploy", "it shipped"),
+                ("Title", "body"),
             ]
         );
     }
