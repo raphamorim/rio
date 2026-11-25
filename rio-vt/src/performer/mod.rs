@@ -96,23 +96,26 @@ pub const READ_CHUNK: usize = 65536;
 #[cfg(feature = "pty")]
 const READ_BUDGET: usize = READ_CHUNK * 4;
 
-/// How long output stays quiet before the history is compressed: output
-/// arriving meanwhile starts the wait over, so compressing never takes
-/// the terminal from parsing. Output that never pauses leaves the history
-/// as written until it does (rows that would be compressed then are the
-/// ones it is about to drop).
+/// How long the history stays as it is before it's compressed: rows
+/// arriving in it meanwhile start the wait over. Output that leaves the
+/// history alone (a redraw, a spinner, a program on the alt screen)
+/// doesn't.
 #[cfg(feature = "pty")]
 const COMPRESS_IDLE: Duration = Duration::from_millis(250);
 
-/// Between the steps of one pass. Each holds the terminal for about
-/// [`COMPRESS_CELLS`] cells' worth (around a millisecond), and a thread
-/// waiting for it gets it between them.
+/// While rows keep arriving in the history (a long build log), a step is
+/// taken this often all the same, so it doesn't stay as written until the
+/// output pauses: a block per this interval, a fraction of a percent of
+/// the thread that parses.
+#[cfg(feature = "pty")]
+const COMPRESS_FLOWING: Duration = Duration::from_millis(100);
+
+/// Between the steps of one pass. Each compresses one block (a tenth of
+/// a millisecond at 120 columns) and goes on where the last stopped; the
+/// PTY is read, and a thread waiting for the terminal gets it, between
+/// them.
 #[cfg(feature = "pty")]
 const COMPRESS_STEP: Duration = Duration::from_millis(1);
-
-/// Cells compressed per step, a block at least.
-#[cfg(feature = "pty")]
-const COMPRESS_CELLS: usize = 256 * 1024;
 
 #[cfg(feature = "pty")]
 #[derive(Debug, PartialEq, Eq)]
@@ -212,20 +215,36 @@ pub struct State {
     compress: CompressTimer,
 }
 
-/// When the reader compresses the history: [`COMPRESS_IDLE`] after the
-/// last output (or resize, or scroll over the history), then a step every
-/// [`COMPRESS_STEP`] until none is left.
+/// When the reader compresses the history: [`COMPRESS_IDLE`] after rows
+/// last arrived in it (or a resize, or a scroll over it), then a step
+/// every [`COMPRESS_STEP`] until none is left; while rows keep arriving,
+/// a step every [`COMPRESS_FLOWING`].
 #[cfg(feature = "pty")]
 #[derive(Default)]
 struct CompressTimer {
     at: Option<Instant>,
+    /// The first change since the last step.
+    since: Option<Instant>,
+    /// The history as last seen: rows in it and rows dropped from it,
+    /// both screens'.
+    history: (usize, u64, usize, u64),
 }
 
 #[cfg(feature = "pty")]
 impl CompressTimer {
     /// The history changed (output, a resize): compress once it's quiet.
     fn arm(&mut self, now: Instant) {
-        self.at = Some(now + COMPRESS_IDLE);
+        let since = *self.since.get_or_insert(now);
+        self.at = Some((now + COMPRESS_IDLE).min(since + COMPRESS_FLOWING));
+    }
+
+    /// After output: arm if rows arrived in the history.
+    fn output<U: EventListener>(&mut self, terminal: &Crosswords<U>, now: Instant) {
+        let history = terminal.history_serial();
+        if history != self.history {
+            self.history = history;
+            self.arm(now);
+        }
     }
 
     fn due(&self, now: Instant) -> bool {
@@ -245,13 +264,11 @@ impl CompressTimer {
             self.at = Some(now + COMPRESS_STEP);
             return;
         };
-        let block =
-            terminal.columns().max(1) * crate::crosswords::grid::compress::BLOCK_ROWS;
-        let blocks = (COMPRESS_CELLS / block).max(1);
-        if terminal.scrollback_compression() && terminal.compress_history(Some(blocks)) {
+        self.since = None;
+        if terminal.scrollback_compression() && terminal.compress_history(Some(1)) {
             self.at = Some(now + COMPRESS_STEP);
         } else {
-            *self = CompressTimer::default();
+            self.at = None;
             terminal.history_read_pending = false;
         }
     }
@@ -465,7 +482,7 @@ where
     ) {
         state.sync_deadline = terminal.sync_update_deadline();
         if terminal.scrollback_compression() {
-            state.compress.arm(Instant::now());
+            state.compress.output(terminal, Instant::now());
         }
         let held = terminal.synchronized_output();
         let hold_ended = held_before == Some(true) && !held;

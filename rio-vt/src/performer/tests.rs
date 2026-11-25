@@ -2168,17 +2168,39 @@ fn quiet_output_has_its_history_compressed() {
     }
 }
 
-// Output that keeps coming keeps the history as it is: the deadline
-// moves with it.
+// Rows that keep arriving in the history push the wait back, but a step
+// is still taken every so often; output that leaves the history as it is
+// (a spinner redrawing a line) doesn't push it back at all.
 #[test]
-fn compression_waits_for_quiet() {
+fn compression_waits_for_the_history_to_settle() {
     let start = Instant::now();
     let mut timer = CompressTimer::default();
     let mut now = start;
-    for _ in 0..100 {
+    for _ in 0..10 {
         timer.arm(now);
-        now += COMPRESS_IDLE / 2;
-        assert!(!timer.due(now));
+        now += COMPRESS_FLOWING / 10;
     }
-    assert!(timer.due(now + COMPRESS_IDLE));
+    assert!(timer.due(start + COMPRESS_FLOWING));
+    assert!(!timer.due(start + COMPRESS_FLOWING / 2));
+
+    let mut t = Crosswords::new(
+        CrosswordsSize::new(20, 4),
+        CursorShape::Block,
+        VoidListener,
+        WindowId::from(0),
+        0,
+        100,
+    );
+    let mut parser = handler::Processor::default();
+    let mut timer = CompressTimer::default();
+    parser.advance(&mut t, b"a\r\nb\r\nc\r\nd\r\ne\r\nf");
+    timer.output(&t, start);
+    let armed = timer.at;
+    assert!(armed.is_some());
+    // A spinner on the last line: nothing new in the history.
+    for (i, frame) in ["|", "/", "-", "\\"].iter().cycle().take(20).enumerate() {
+        parser.advance(&mut t, format!("\r{frame}").as_bytes());
+        timer.output(&t, start + Duration::from_millis(50 * i as u64));
+    }
+    assert_eq!(timer.at, armed);
 }

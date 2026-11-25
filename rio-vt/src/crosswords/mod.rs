@@ -771,6 +771,18 @@ impl<U: EventListener> Crosswords<U> {
         self.scrollback_compression = enabled;
     }
 
+    /// Rows in each screen's history and rows dropped from it: what
+    /// changes only when rows arrive in the history (or leave it).
+    #[cfg(feature = "pty")]
+    pub(crate) fn history_serial(&self) -> (usize, u64, usize, u64) {
+        (
+            self.grid.history_size(),
+            self.grid.lines_evicted(),
+            self.inactive_grid.history_size(),
+            self.inactive_grid.lines_evicted(),
+        )
+    }
+
     /// Whether the history is compressed while output is quiet.
     pub fn scrollback_compression(&self) -> bool {
         self.scrollback_compression
