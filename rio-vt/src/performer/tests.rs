@@ -2145,25 +2145,40 @@ fn quiet_output_has_its_history_compressed() {
             'l',
             "the history reads the same"
         );
+        if on {
+            // Scrolled back over it, it's decoded to be shown, and once
+            // that's quiet compressed again, the copies dropped.
+            {
+                let mut terminal = terminal.lock();
+                terminal.scroll_display(crate::crosswords::grid::Scroll::Top);
+                let top = -(terminal.grid.history_size() as i32);
+                assert_eq!(terminal.grid[Line(top)][Column(0)].c(), 'l');
+                assert!(terminal.history_memory().decoded_bytes > 0);
+                terminal.scroll_display(crate::crosswords::grid::Scroll::Bottom);
+            }
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while terminal.lock().history_memory().decoded_bytes > 0 {
+                assert!(Instant::now() < deadline, "decoded copies stay");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
 
         channel.send(Msg::Shutdown).unwrap();
         handle.join().unwrap();
     }
 }
 
-// The deadline moves with output, and no later than a few seconds after
-// the output that started it.
+// Output that keeps coming keeps the history as it is: the deadline
+// moves with it.
 #[test]
-fn compression_waits_for_quiet_but_not_forever() {
+fn compression_waits_for_quiet() {
     let start = Instant::now();
     let mut timer = CompressTimer::default();
-    timer.arm(start);
-    assert_eq!(timer.at, Some(start + COMPRESS_IDLE));
     let mut now = start;
-    while now < start + COMPRESS_LATEST * 2 {
-        now += COMPRESS_IDLE / 2;
+    for _ in 0..100 {
         timer.arm(now);
-        assert!(timer.at.unwrap() <= start + COMPRESS_LATEST);
+        now += COMPRESS_IDLE / 2;
+        assert!(!timer.due(now));
     }
-    assert!(timer.due(start + COMPRESS_LATEST));
+    assert!(timer.due(now + COMPRESS_IDLE));
 }

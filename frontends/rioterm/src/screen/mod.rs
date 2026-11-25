@@ -640,6 +640,9 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard.clone();
+        // Tabs and splits opened from now on take it too.
+        self.context_manager.config.scrollback_compression =
+            config.scrollback_compression;
         // New terminals take the reloaded cursor defaults.
         self.context_manager.config.cursor_shape = config.cursor.shape;
         self.context_manager.config.cursor_blinking = config.cursor.blinking;

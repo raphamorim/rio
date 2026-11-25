@@ -498,6 +498,16 @@ const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 8;
 /// [`Crosswords::set_reply_sink`].
 pub struct ReplySink(pub Box<dyn Fn(String) + Send>);
 
+/// What the terminal calls when the viewport moves over the history; see
+/// [`Crosswords::scroll_display`].
+pub(crate) struct HistoryReadSink(Box<dyn Fn() + Send>);
+
+impl std::fmt::Debug for HistoryReadSink {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HistoryReadSink")
+    }
+}
+
 impl std::ops::Deref for ReplySink {
     type Target = dyn Fn(String) + Send;
     fn deref(&self) -> &Self::Target {
@@ -587,6 +597,11 @@ where
     /// output is quiet. Off by default; see
     /// [`Self::set_scrollback_compression`].
     scrollback_compression: bool,
+    /// Tells the PTY reader the viewport moved over the history (which
+    /// decodes rows), once per compression pass.
+    history_read_sink: Option<HistoryReadSink>,
+    /// The reader was told, and hasn't compressed since.
+    pub(crate) history_read_pending: bool,
     /// Whether the embedder handles OSC 7501. Off by default: until an
     /// embedder opts in, the support query goes unanswered (so programs
     /// don't believe in a protocol nobody acts on) and reports are
@@ -699,6 +714,8 @@ impl<U: EventListener> Crosswords<U> {
             damage_event_in_flight: false,
             sync_update_started: None,
             scrollback_compression: false,
+            history_read_sink: None,
+            history_read_pending: false,
             program_status_enabled: false,
             focused: false,
             program_status_seen: false,
@@ -757,6 +774,13 @@ impl<U: EventListener> Crosswords<U> {
     /// Whether the history is compressed while output is quiet.
     pub fn scrollback_compression(&self) -> bool {
         self.scrollback_compression
+    }
+
+    /// For the PTY reader: what to call when the viewport moves over the
+    /// history.
+    #[cfg(feature = "pty")]
+    pub(crate) fn set_history_read_sink(&mut self, sink: Box<dyn Fn() + Send>) {
+        self.history_read_sink = Some(HistoryReadSink(sink));
     }
 
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
@@ -951,6 +975,14 @@ impl<U: EventListener> Crosswords<U> {
         // viewport operation from the UI thread, so no PTY drain will
         // announce the damage; ask for the render here.
         if old_display_offset != self.grid.display_offset() {
+            // Showing history decodes it: have it compressed again (the
+            // decoded copies dropped) once things are quiet.
+            if self.scrollback_compression && !self.history_read_pending {
+                if let Some(HistoryReadSink(sink)) = &self.history_read_sink {
+                    self.history_read_pending = true;
+                    sink();
+                }
+            }
             self.mark_fully_damaged();
             self.request_render();
             // Scrolling changes image positions on screen

@@ -97,25 +97,22 @@ pub const READ_CHUNK: usize = 65536;
 const READ_BUDGET: usize = READ_CHUNK * 4;
 
 /// How long output stays quiet before the history is compressed: output
-/// arriving meanwhile starts the wait over, so compressing doesn't take
-/// the terminal from parsing.
+/// arriving meanwhile starts the wait over, so compressing never takes
+/// the terminal from parsing. Output that never pauses leaves the history
+/// as written until it does (rows that would be compressed then are the
+/// ones it is about to drop).
 #[cfg(feature = "pty")]
 const COMPRESS_IDLE: Duration = Duration::from_millis(250);
 
-/// The longest compression waits once output started: output that never
-/// pauses still has its history compressed.
-#[cfg(feature = "pty")]
-const COMPRESS_LATEST: Duration = Duration::from_secs(5);
-
-/// Between the steps of one pass. Each holds the terminal for a few
-/// blocks (well under a millisecond), and a thread waiting for it gets
-/// it between them.
+/// Between the steps of one pass. Each holds the terminal for about
+/// [`COMPRESS_CELLS`] cells' worth (around a millisecond), and a thread
+/// waiting for it gets it between them.
 #[cfg(feature = "pty")]
 const COMPRESS_STEP: Duration = Duration::from_millis(1);
 
-/// Blocks compressed per step.
+/// Cells compressed per step, a block at least.
 #[cfg(feature = "pty")]
-const COMPRESS_BLOCKS: usize = 4;
+const COMPRESS_CELLS: usize = 256 * 1024;
 
 #[cfg(feature = "pty")]
 #[derive(Debug, PartialEq, Eq)]
@@ -216,22 +213,19 @@ pub struct State {
 }
 
 /// When the reader compresses the history: [`COMPRESS_IDLE`] after the
-/// last output, [`COMPRESS_LATEST`] after the first at the latest, then
-/// a step every [`COMPRESS_STEP`] until none is left.
+/// last output (or resize, or scroll over the history), then a step every
+/// [`COMPRESS_STEP`] until none is left.
 #[cfg(feature = "pty")]
 #[derive(Default)]
 struct CompressTimer {
     at: Option<Instant>,
-    /// The output that armed it first, for [`COMPRESS_LATEST`].
-    since: Option<Instant>,
 }
 
 #[cfg(feature = "pty")]
 impl CompressTimer {
     /// The history changed (output, a resize): compress once it's quiet.
     fn arm(&mut self, now: Instant) {
-        let since = *self.since.get_or_insert(now);
-        self.at = Some((now + COMPRESS_IDLE).min(since + COMPRESS_LATEST));
+        self.at = Some(now + COMPRESS_IDLE);
     }
 
     fn due(&self, now: Instant) -> bool {
@@ -251,12 +245,14 @@ impl CompressTimer {
             self.at = Some(now + COMPRESS_STEP);
             return;
         };
-        if terminal.scrollback_compression()
-            && terminal.compress_history(Some(COMPRESS_BLOCKS))
-        {
+        let block =
+            terminal.columns().max(1) * crate::crosswords::grid::compress::BLOCK_ROWS;
+        let blocks = (COMPRESS_CELLS / block).max(1);
+        if terminal.scrollback_compression() && terminal.compress_history(Some(blocks)) {
             self.at = Some(now + COMPRESS_STEP);
         } else {
             *self = CompressTimer::default();
+            terminal.history_read_pending = false;
         }
     }
 }
@@ -278,6 +274,7 @@ where
         route_id: usize,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
         let (control, receiver) = channel::channel();
+        let compress = control.clone();
         let (writes, inbox) = channel::channel();
         let poll = corcovado::Poll::new()?;
         let writer_poll = corcovado::Poll::new()?;
@@ -316,6 +313,12 @@ where
         // Installed last: a terminal whose machine could not be made
         // keeps sending its replies to the owner as events.
         let reply_writes = writes.clone();
+        let mut locked = terminal.lock();
+        // The viewport moving over the history comes straight here.
+        locked.set_history_read_sink(Box::new(move || {
+            let _ = compress.send(Msg::Compress);
+        }));
+        drop(locked);
         terminal
             .lock()
             .set_reply_sink(Some(crate::crosswords::ReplySink(Box::new(
@@ -500,6 +503,7 @@ where
                     // reflow it.
                     state.compress.arm(Instant::now());
                 }
+                Msg::Compress => state.compress.arm(Instant::now()),
                 Msg::Shutdown => return false,
             }
         }
@@ -874,6 +878,9 @@ where
                     }
                     Msg::Resize(size) => {
                         let _ = self.control.send(Msg::Resize(size));
+                    }
+                    Msg::Compress => {
+                        let _ = self.control.send(Msg::Compress);
                     }
                     Msg::Shutdown => {
                         stopping = true;

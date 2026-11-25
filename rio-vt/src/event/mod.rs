@@ -101,6 +101,12 @@ pub enum Msg {
     Shutdown,
 
     Resize(WindowSize),
+
+    /// The viewport moved over the history, which decodes compressed
+    /// rows to show them: the PTY reader compresses again (dropping what
+    /// was decoded) once things are quiet. Sent by the terminal itself;
+    /// see `Crosswords::set_scrollback_compression`.
+    Compress,
 }
 
 #[derive(Debug, Eq, PartialEq)]
