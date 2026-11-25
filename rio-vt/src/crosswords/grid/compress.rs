@@ -132,6 +132,11 @@ impl<T> Block<T> {
         }
     }
 
+    /// How many rows were encoded in it.
+    pub(crate) fn len(&self) -> usize {
+        self.data.rows.len()
+    }
+
     /// Heap bytes the encoded block keeps, its decoded rows aside.
     pub(crate) fn encoded_bytes(&self) -> usize {
         self.data.heap_bytes()
@@ -593,5 +598,442 @@ mod tests {
                 assert_eq!(a.term.grid.display_offset(), b.term.grid.display_offset());
             }
         }
+    }
+
+    fn decodes() -> usize {
+        super::DECODES.with(|d| d.get())
+    }
+
+    impl T {
+        /// History rows held compressed.
+        fn packed(&self) -> usize {
+            self.term.history_memory().compressed_rows
+        }
+        fn resize(&mut self, cols: usize, rows: usize) {
+            self.term.resize(CrosswordsSize::new(cols, rows));
+        }
+    }
+
+    /// Two terminals fed the same `output(lines)`, the first compressed.
+    fn twins(cols: usize, rows: usize, history: usize, lines: usize) -> (T, T) {
+        let (mut a, mut b) = (T::new(cols, rows, history), T::new(cols, rows, history));
+        a.feed(&output(lines));
+        b.feed(&output(lines));
+        assert!(!a.term.compress_history(None));
+        assert!(a.packed() > 0);
+        (a, b)
+    }
+
+    /// Feed `bytes` to both and check they read the same.
+    fn both(a: &mut T, b: &mut T, bytes: &[u8]) {
+        a.feed(bytes);
+        b.feed(bytes);
+        assert_eq!(
+            a.read(),
+            b.read(),
+            "after {:?}",
+            String::from_utf8_lossy(bytes)
+        );
+    }
+
+    #[test]
+    fn measuring_and_scrolling_decode_nothing() {
+        let (mut a, _) = twins(30, 5, 2_000, 800);
+        let before = decodes();
+        let m = a.term.history_memory();
+        a.term.scroll_display(Scroll::Top);
+        a.term.scroll_display(Scroll::Bottom);
+        assert_eq!(a.term.history_memory(), m);
+        assert_eq!(decodes(), before);
+    }
+
+    #[test]
+    fn compressing_again_is_idempotent_and_steps_add_up() {
+        let (mut a, _) = twins(30, 5, 3_000, 2_000);
+        let mut b = T::new(30, 5, 3_000);
+        b.feed(&output(2_000));
+        while b.term.compress_history(Some(2)) {}
+        // The same blocks, however the work was split.
+        assert_eq!(a.term.history_memory(), b.term.history_memory());
+        let before = decodes();
+        assert!(!a.term.compress_history(None));
+        assert!(!a.term.compress_history(Some(1)));
+        assert_eq!(decodes(), before);
+        assert_eq!(a.term.history_memory(), b.term.history_memory());
+        assert_eq!(a.read(), b.read());
+    }
+
+    #[test]
+    fn compressing_new_history_leaves_older_blocks_undecoded() {
+        let (mut a, mut b) = twins(30, 5, 3_000, 400);
+        let first = a.packed();
+        let before = decodes();
+        a.feed(&output(300));
+        b.feed(&output(300));
+        a.term.compress_history(None);
+        // The history's blocks stay as they are. New rows took over most
+        // of a block of the spare rows past it: that one is decoded to
+        // be compressed again, without the rows it lost.
+        assert!(decodes() - before <= 1, "{}", decodes() - before);
+        assert!(a.packed() > first);
+        assert!(a.term.history_memory().plain_rows < super::BLOCK_ROWS);
+        assert_eq!(a.read(), b.read());
+    }
+
+    #[test]
+    fn editing_the_screen_leaves_history_compressed() {
+        let (mut a, mut b) = twins(30, 8, 2_000, 600);
+        let packed = a.packed();
+        let edits: [&[u8]; 10] = [
+            b"\x1b[H\x1b[2K",
+            b"\x1b[3;5H\x1b[3X",
+            b"\x1b[2;1H\x1b[2L",
+            b"\x1b[4;1H\x1b[M",
+            b"\x1b[1;3H\x1b[2@",
+            b"\x1b[1;4H\x1b[2P",
+            b"\x1b[6;1H\x1b[J",
+            b"\x1b[2;3H\x1b[1J",
+            b"\x1b[3;6r\x1b[3;1H\x1b[2M\x1b[4S\x1b[2T\x1b[r",
+            b"\x1b#8",
+        ];
+        for edit in edits {
+            both(&mut a, &mut b, edit);
+            assert_eq!(a.packed(), packed, "{:?}", String::from_utf8_lossy(edit));
+        }
+    }
+
+    #[test]
+    fn clearing_history_and_resetting_after_compression() {
+        for clear in [&b"\x1b[3J"[..], b"\x1bc"] {
+            let (mut a, mut b) = twins(30, 5, 2_000, 700);
+            both(&mut a, &mut b, clear);
+            assert_eq!(a.term.grid.history_size(), 0);
+            // The cleared rows come back as new lines, blank.
+            both(&mut a, &mut b, &output(1_500));
+            a.term.compress_history(None);
+            assert_eq!(a.read(), b.read());
+        }
+    }
+
+    #[test]
+    fn growing_rows_shows_compressed_history_without_decoding() {
+        let (mut a, mut b) = twins(30, 5, 2_000, 800);
+        let before = decodes();
+        for rows in [12, 25] {
+            a.resize(30, rows);
+            b.resize(30, rows);
+        }
+        assert_eq!(decodes(), before);
+        assert_eq!(a.read(), b.read());
+        // Writing over, scrolling and erasing the rows pulled on screen.
+        both(
+            &mut a,
+            &mut b,
+            b"\x1b[1;1Hover\x1b[3;2H\x1b[K\x1b[2T\x1b[3S\x1b[5;1H\x1b[2M",
+        );
+        // The renderer's snapshot of them, then shrinking them back.
+        let snap = |t: &mut T| {
+            let (mut rows, mut styles) = (Vec::new(), Vec::new());
+            let mut extras = rustc_hash::FxHashMap::default();
+            t.term.snapshot_visible(
+                &crate::event::TerminalDamage::Full,
+                &mut rows,
+                &mut styles,
+                &mut extras,
+            );
+            rows
+        };
+        assert!(snap(&mut a) == snap(&mut b));
+        for rows in [9, 5] {
+            a.resize(30, rows);
+            b.resize(30, rows);
+            assert_eq!(a.read(), b.read(), "{rows} rows");
+            a.term.compress_history(None);
+        }
+        both(&mut a, &mut b, &output(50));
+    }
+
+    #[test]
+    fn resizing_while_scrolled_back_keeps_the_same_viewport() {
+        let (mut a, mut b) = twins(30, 6, 2_000, 800);
+        a.term.scroll_display(Scroll::Delta(100));
+        b.term.scroll_display(Scroll::Delta(100));
+        for (cols, rows) in [(30, 10), (24, 10), (40, 4), (17, 7), (30, 6)] {
+            a.resize(cols, rows);
+            b.resize(cols, rows);
+            assert_eq!(a.term.grid.display_offset(), b.term.grid.display_offset());
+            assert_eq!(a.read(), b.read(), "{cols}x{rows}");
+            a.term.compress_history(None);
+        }
+    }
+
+    #[test]
+    fn a_scrolled_back_viewport_stays_pinned_over_compressed_history() {
+        // A full history: new output evicts compressed rows while the
+        // viewport stays on the same lines.
+        let (mut a, mut b) = twins(30, 5, 700, 900);
+        a.term.scroll_display(Scroll::Delta(50));
+        b.term.scroll_display(Scroll::Delta(50));
+        a.term.compress_history(None);
+        let before = decodes();
+        a.feed(&output(200));
+        b.feed(&output(200));
+        assert_eq!(decodes(), before);
+        assert_eq!(a.term.grid.display_offset(), b.term.grid.display_offset());
+        assert_eq!(a.read(), b.read());
+    }
+
+    #[test]
+    fn the_primary_history_compresses_under_the_alt_screen() {
+        let mut a = T::new(30, 5, 2_000);
+        let mut b = T::new(30, 5, 2_000);
+        both(&mut a, &mut b, &output(600));
+        both(&mut a, &mut b, b"\x1b[?1049h\x1b[Hfull screen app");
+        assert!(!a.term.compress_history(None));
+        let packed = a.packed();
+        assert!(packed > 500, "{packed}");
+        both(&mut a, &mut b, b"\x1b[2J\x1b[Hredraw");
+        assert_eq!(a.packed(), packed);
+        // A column resize under it reflows the primary screen too.
+        a.resize(26, 5);
+        b.resize(26, 5);
+        assert_eq!(a.read(), b.read());
+        a.term.compress_history(None);
+        both(&mut a, &mut b, b"\x1b[?1049l");
+        both(&mut a, &mut b, &output(40));
+    }
+
+    #[test]
+    fn styles_links_and_marks_survive_id_reuse_after_compression() {
+        // Many novel styles and links after compression, with sweeps in
+        // between: the ids freed and reused must not be the ones the
+        // compressed rows hold.
+        let (mut a, mut b) = twins(30, 5, 3_000, 600);
+        for round in 0..4 {
+            let mut s = String::new();
+            for i in 0..600 {
+                s += &format!("\x1b[38;2;{round};{};{}m#", i % 256, i / 256);
+            }
+            s += &format!(
+                "\x1b[0m\x1b]8;;https://y.dev/{round}\x1b\\L\x1b]8;;\x1b\\ a\u{302}\x1b[2J\x1b[H"
+            );
+            for t in [&mut a, &mut b] {
+                t.feed(s.as_bytes());
+                t.term.grid.reclaim_styles();
+                t.term.grid.reclaim_extras();
+            }
+        }
+        assert!(a.packed() > 500);
+        assert_eq!(a.read(), b.read());
+    }
+
+    /// Every match of `re`, left to right from the top of the history.
+    fn matches(t: &T, re: &str) -> Vec<crate::crosswords::search::Match> {
+        use crate::crosswords::{Boundary, Direction, Pos, Side};
+        let mut regex = crate::crosswords::search::RegexSearch::new(re).unwrap();
+        let g = &t.term.grid;
+        let mut origin = Pos::new(g.topmost_line(), Column(0));
+        let mut out: Vec<crate::crosswords::search::Match> = Vec::new();
+        while let Some(m) =
+            t.term
+                .search_next(&mut regex, origin, Direction::Right, Side::Left, None)
+        {
+            if out.last().is_some_and(|last| m.start() <= last.start()) {
+                break;
+            }
+            origin = m.end().add(g, Boundary::None, 1);
+            out.push(m);
+        }
+        out
+    }
+
+    #[test]
+    fn searching_compressed_history_finds_the_same_matches() {
+        let (a, b) = twins(30, 5, 2_000, 700);
+        let packed = a.packed();
+        // Soft-wrapped runs span rows, and so block boundaries.
+        for re in [
+            "wrapped-wrapped",
+            "link \\d+",
+            "\u{754c}\u{9762}",
+            "rgb 6\\d9",
+        ] {
+            let found = matches(&a, re);
+            assert!(!found.is_empty(), "{re}");
+            assert_eq!(found, matches(&b, re), "{re}");
+        }
+        assert_eq!(a.packed(), packed);
+    }
+
+    #[test]
+    fn selecting_compressed_history_copies_the_same_text() {
+        use crate::crosswords::{Pos, Side};
+        use crate::selection::{Selection, SelectionType};
+        let (mut a, mut b) = twins(30, 5, 2_000, 700);
+        let packed = a.packed();
+        let top = a.term.grid.topmost_line();
+        for ty in [
+            SelectionType::Simple,
+            SelectionType::Block,
+            SelectionType::Semantic,
+            SelectionType::Lines,
+        ] {
+            // Across several blocks, from inside one to inside another.
+            let (start, end) = (
+                Pos::new(top + 7, Column(3)),
+                Pos::new(top + 7 + 3 * super::BLOCK_ROWS as i32, Column(12)),
+            );
+            for t in [&mut a, &mut b] {
+                let mut sel = Selection::new(ty, start, Side::Left);
+                sel.update(end, Side::Right);
+                t.term.selection = Some(sel);
+            }
+            let text = a.term.selection_to_string();
+            assert!(text.as_ref().is_some_and(|t| t.len() > 20), "{ty:?}");
+            assert_eq!(text, b.term.selection_to_string(), "{ty:?}");
+        }
+        let bottom = Pos::new(a.term.grid.bottommost_line(), Column(29));
+        let all = a.term.bounds_to_string(Pos::new(top, Column(0)), bottom);
+        assert_eq!(
+            all,
+            b.term.bounds_to_string(Pos::new(top, Column(0)), bottom)
+        );
+        assert_eq!(a.packed(), packed);
+    }
+
+    #[test]
+    fn vi_motions_through_compressed_history_land_the_same() {
+        use crate::crosswords::vi_mode::ViMotion::*;
+        let (mut a, mut b) = twins(30, 5, 2_000, 700);
+        let packed = a.packed();
+        a.term.toggle_vi_mode();
+        b.term.toggle_vi_mode();
+        let mut motions = vec![First, Last, FirstOccupied];
+        motions.extend(std::iter::repeat_n(Up, 120));
+        motions.extend([
+            WordLeft,
+            WordLeft,
+            SemanticLeft,
+            SemanticRightEnd,
+            WordRightEnd,
+            Bracket,
+            High,
+            Middle,
+            Low,
+            SemanticLeftEnd,
+            WordRight,
+            Left,
+            Down,
+            Right,
+        ]);
+        for (i, m) in motions.into_iter().enumerate() {
+            a.term.vi_motion(m);
+            b.term.vi_motion(m);
+            assert_eq!(
+                a.term.vi_mode_cursor.pos, b.term.vi_mode_cursor.pos,
+                "{i}: {m:?}"
+            );
+            assert_eq!(a.term.grid.display_offset(), b.term.grid.display_offset());
+        }
+        assert_eq!(a.packed(), packed);
+    }
+
+    /// History of plain lines with one prompt at the top.
+    fn one_old_prompt() -> (T, T) {
+        let mut a = T::new(30, 5, 2_000);
+        let mut b = T::new(30, 5, 2_000);
+        let mut out = b"\x1b]133;A\x07$ make\r\n".to_vec();
+        for i in 0..600 {
+            out.extend_from_slice(format!("build step {i}\r\n").as_bytes());
+        }
+        a.feed(&out);
+        b.feed(&out);
+        a.term.compress_history(None);
+        (a, b)
+    }
+
+    #[test]
+    fn jumping_to_a_prompt_lands_where_it_does_uncompressed() {
+        let (mut a, mut b) = one_old_prompt();
+        for forward in [false, true, false] {
+            a.term.scroll_to_prompt(forward);
+            b.term.scroll_to_prompt(forward);
+            assert_eq!(a.term.grid.display_offset(), b.term.grid.display_offset());
+        }
+        assert!(a.term.grid.display_offset() > 500);
+    }
+
+    #[test]
+    fn jumping_to_a_prompt_decodes_only_its_block() {
+        let (mut a, _) = one_old_prompt();
+        let before = decodes();
+        a.term.scroll_to_prompt(false);
+        assert!(a.term.grid.display_offset() > 500);
+        assert!(
+            decodes() - before <= 2,
+            "{} blocks decoded",
+            decodes() - before
+        );
+    }
+
+    #[test]
+    fn highlighting_compressed_rows_leaves_them_compressed() {
+        use crate::crosswords::Pos;
+        use crate::selection::SelectionRange;
+        let (mut a, _) = twins(30, 5, 2_000, 800);
+        a.term.scroll_display(Scroll::Delta(300));
+        let packed = a.packed();
+        let range = SelectionRange::new(
+            Pos::new(Line(-300), Column(0)),
+            Pos::new(Line(-296), Column(29)),
+            false,
+        );
+        a.term.damage_range_rows(&range);
+        assert_eq!(a.packed(), packed);
+    }
+
+    #[test]
+    fn overwriting_the_top_left_leaves_the_history_compressed() {
+        let mut a = T::new(30, 5, 2_000);
+        let mut b = T::new(30, 5, 2_000);
+        both(&mut a, &mut b, &output(300));
+        // Feed lines until the newest history row is in a block too.
+        for _ in 0..=super::BLOCK_ROWS {
+            a.term.compress_history(None);
+            if a.term.history_memory().plain_rows == 0 {
+                break;
+            }
+            a.feed(b"filler\r\n");
+            b.feed(b"filler\r\n");
+        }
+        assert_eq!(a.term.history_memory().plain_rows, 0);
+        both(&mut a, &mut b, "\x1b[H\u{754c}".as_bytes());
+        let packed = a.packed();
+        both(&mut a, &mut b, b"\x1b[Hx");
+        assert_eq!(a.packed(), packed);
+    }
+
+    #[test]
+    fn compressing_again_frees_blocks_whose_rows_were_unpacked() {
+        let (mut a, mut b) = twins(30, 5, 2_000, 600);
+        let before = a.term.history_memory();
+        // Write to every history row but the first of each block (blocks
+        // start at the top of the ring, its spare rows included).
+        let g = &mut a.term.grid;
+        let oldest = g.screen_lines() as i32 - g.raw.rows().len() as i32;
+        for line in -(g.history_size() as i32)..0 {
+            if (line - oldest) % super::BLOCK_ROWS as i32 != 0 {
+                g[Line(line)][Column(0)].set_c('Z');
+                b.term.grid[Line(line)][Column(0)].set_c('Z');
+            }
+        }
+        a.term.compress_history(None);
+        let after = a.term.history_memory();
+        assert!(after.compressed_rows >= before.compressed_rows);
+        assert_eq!(a.read(), b.read());
+        assert!(
+            after.compressed_bytes < before.compressed_bytes * 5 / 4,
+            "{before:?} then {after:?}"
+        );
     }
 }

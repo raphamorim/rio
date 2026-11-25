@@ -451,9 +451,8 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         // See `scroll_up` for the rationale — `raw.swap` / `raw.rotate`
         // don't propagate `Row::dirty` across line indices, so we mark
         // the whole region dirty at the end.
-        for i in (region.start.0..region.end.0).map(Line::from) {
-            self.raw[i].dirty = true;
-        }
+        self.raw
+            .mark_lines_dirty(region.start, (region.end.0 - region.start.0) as usize);
     }
 
     pub fn cursor_square(&mut self) -> &mut T {

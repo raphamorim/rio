@@ -248,6 +248,13 @@ impl<T> Storage<T> {
         self.inner[self.compute_index(line)].dirty
     }
 
+    /// The OSC 133 mark of the row at `line`, read without decoding a
+    /// compressed row (it keeps its mark).
+    #[inline]
+    pub fn semantic_prompt(&self, line: Line) -> super::row::SemanticPrompt {
+        self.inner[self.compute_index(line)].semantic_prompt
+    }
+
     /// Set the dirty bit of the row at `line` as it is stored: a
     /// compressed row stays compressed.
     #[inline]
@@ -451,15 +458,57 @@ impl Storage<Square> {
         let zero = self.zero;
         let order = move |k: usize| (zero + top - 1 - k) % top;
 
-        // Decoded copies go: rows point to a copy of their block without.
+        // How many rows still point at each encoding: one whose rows were
+        // mostly written (and so made plain) is unpacked whole and
+        // compressed again with them, so a few rows don't keep all of it.
         // A block's rows sit together, so the last one looked up is
         // nearly always the one.
+        let mut live: Vec<(*const compress::Encoded, usize, usize)> = Vec::new();
+        let mut last = 0;
+        for k in 0..count {
+            let Some(block) = &self.inner[order(k)].packed else {
+                continue;
+            };
+            let key = Arc::as_ptr(&block.data);
+            if live.get(last).is_none_or(|(k, ..)| *k != key) {
+                last = match live.iter().position(|(k, ..)| *k == key) {
+                    Some(at) => at,
+                    None => {
+                        live.push((key, 0, block.len()));
+                        live.len() - 1
+                    }
+                };
+            }
+            live[last].1 += 1;
+        }
+        let sparse = |block: &Block<Square>| {
+            let key = Arc::as_ptr(&block.data);
+            live.iter()
+                .find(|(k, ..)| *k == key)
+                .is_some_and(|&(_, rows, of)| rows * 2 < of)
+        };
+        let mut sparse_last: Option<(*const compress::Encoded, bool)> = None;
+
+        // Decoded copies go: rows point to a copy of their block without.
         let mut fresh: Vec<(*const Block<Square>, Arc<Block<Square>>)> = Vec::new();
         let mut last = 0;
         for k in 0..count {
             let index = order(k);
             let row = &mut self.inner[index];
             let Some(block) = &row.packed else { continue };
+            let data = Arc::as_ptr(&block.data);
+            let unpack = match sparse_last {
+                Some((key, unpack)) if key == data => unpack,
+                _ => {
+                    let unpack = sparse(block);
+                    sparse_last = Some((data, unpack));
+                    unpack
+                }
+            };
+            if unpack {
+                row.unpack();
+                continue;
+            }
             if !block.is_decoded() {
                 continue;
             }

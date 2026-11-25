@@ -897,8 +897,10 @@ impl<U: EventListener> Crosswords<U> {
         let screen_lines = self.grid.screen_lines() as i32;
         let top = -display_offset;
 
+        // The stored row's mark: a compressed row keeps it, read
+        // without decoding.
         let is_marked =
-            |line: i32| self.grid[Line(line)].semantic_prompt != SemanticPrompt::None;
+            |line: i32| self.grid.raw.semantic_prompt(Line(line)) != SemanticPrompt::None;
         // First row of a prompt run: marked, with an unmarked row (or
         // the top of history) above it.
         let is_prompt_start =
@@ -1518,7 +1520,10 @@ impl<U: EventListener> Crosswords<U> {
         let start = (range.start.row.0 + display_offset).max(0);
         let end = (range.end.row.0 + display_offset).min(last_visible);
         for viewport_line in start..=end {
-            self.grid[Line(viewport_line - display_offset)].dirty = true;
+            // The stored bit: a compressed row stays compressed.
+            self.grid
+                .raw
+                .set_dirty(Line(viewport_line - display_offset), true);
             self.damage.damage_line(viewport_line as usize);
         }
     }
@@ -2021,9 +2026,9 @@ impl<U: EventListener> Crosswords<U> {
             && line != self.grid.topmost_line()
         {
             let last = self.grid.last_column();
-            let prev = &mut self.grid[line - 1i32][last];
-            if matches!(prev.wide(), Wide::LeadingSpacer) {
-                prev.set_wide(Wide::Narrow);
+            // Read first: taking the row to change decompresses it.
+            if matches!(self.grid[line - 1i32][last].wide(), Wide::LeadingSpacer) {
+                self.grid[line - 1i32][last].set_wide(Wide::Narrow);
                 if line.0 > 0 {
                     self.damage.damage_line((line.0 - 1) as usize);
                 }
@@ -2267,9 +2272,10 @@ impl<U: EventListener> Crosswords<U> {
         // Remove leading spacers.
         if point.col <= 1 && point.row != self.grid.topmost_line() {
             let column = self.grid.last_column();
-            let prev = &mut self.grid[point.row - 1i32][column];
-            if matches!(prev.wide(), Wide::LeadingSpacer) {
-                prev.set_wide(Wide::Narrow);
+            // Read first: taking the row to change decompresses it.
+            let prev = point.row - 1i32;
+            if matches!(self.grid[prev][column].wide(), Wide::LeadingSpacer) {
+                self.grid[prev][column].set_wide(Wide::Narrow);
             }
         }
 
