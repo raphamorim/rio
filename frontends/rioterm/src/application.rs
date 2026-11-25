@@ -656,7 +656,7 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                                 route_id,
                                 crate::renderer::kitty_image_key(image_id),
                             ),
-                            rio_backend::sugarloaf::GraphicDataEntry::from_graphic_data(
+                            rio_backend::sugarloaf::GraphicDataEntry::from_shared(
                                 graphic_data,
                             ),
                         );

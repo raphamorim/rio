@@ -2896,7 +2896,7 @@ fn test_eviction_prefers_inactive_screen_images() {
     graphics.kitty_inactive_screen.kitty_images.insert(
         2,
         StoredImage {
-            data: inactive_data,
+            data: inactive_data.into(),
             transmission_time: std::time::Instant::now()
                 - std::time::Duration::from_secs(60),
         },
@@ -2962,7 +2962,7 @@ fn test_eviction_keeps_active_used_image_when_inactive_available() {
     graphics.kitty_inactive_screen.kitty_images.insert(
         2,
         StoredImage {
-            data: inactive,
+            data: inactive.into(),
             transmission_time: std::time::Instant::now(),
         },
     );

@@ -17,8 +17,9 @@ pub struct UpdateQueues {
     /// Atlas graphics (sixel/iTerm2) read from the PTY.
     pub pending: Vec<GraphicData>,
 
-    /// Image textures (kitty) keyed by image_id.
-    pub pending_images: Vec<(u32, GraphicData)>,
+    /// Image textures (kitty) keyed by image_id. The pixels are shared
+    /// with the stored image.
+    pub pending_images: Vec<(u32, Arc<GraphicData>)>,
 
     /// Image keys removed from the grid or evicted
     /// (`rio_graphics::graphics::kitty_image_key` / `atlas_image_key`).
@@ -31,7 +32,11 @@ pub const KITTY_PLACEHOLDER: char = '\u{10EEEE}';
 /// Stored image data for Kitty graphics protocol
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredImage {
-    pub data: GraphicData,
+    /// Shared, never copied: a frontend clones the whole map under the
+    /// terminal lock for each frame, and a client that streams frames
+    /// without an image id (mpv) keeps every one of them stored, up to
+    /// `total_limit`.
+    pub data: Arc<GraphicData>,
     pub transmission_time: crate::time::Instant,
 }
 
@@ -577,7 +582,7 @@ pub struct Graphics {
     pub pending: Vec<GraphicData>,
 
     /// New image textures (kitty), keyed by image_id.
-    pub pending_images: Vec<(u32, GraphicData)>,
+    pub pending_images: Vec<(u32, Arc<GraphicData>)>,
 
     /// Graphics removed from the grid.
     pub texture_operations: Arc<Mutex<Vec<u64>>>,
@@ -908,7 +913,8 @@ impl Graphics {
         };
         self.kitty_texture_contents
             .insert(image_id, stored.transmission_time);
-        self.pending_images.push((image_id, stored.data.clone()));
+        self.pending_images
+            .push((image_id, Arc::clone(&stored.data)));
         true
     }
 
@@ -1049,7 +1055,7 @@ impl Graphics {
         self.kitty_images.insert(
             image_id,
             StoredImage {
-                data,
+                data: Arc::new(data),
                 transmission_time: now,
             },
         );
@@ -1863,7 +1869,7 @@ fn test_kitty_texture_contents_tracks_uploads_across_screens() {
     graphics.kitty_inactive_screen.kitty_images.insert(
         1,
         StoredImage {
-            data: image(1, 30),
+            data: image(1, 30).into(),
             transmission_time: crate::time::Instant::now(),
         },
     );
@@ -2006,4 +2012,47 @@ fn test_kitty_delete_frees_texture_only_when_it_holds_the_pixels() {
         .contains(&rio_graphics::kitty_image_key(3)));
     assert!(graphics.pending_images.is_empty());
     assert!(graphics.kitty_texture_contents.is_empty());
+}
+
+/// A frame's snapshot clones the stored images under the terminal lock,
+/// and an upload is queued while the reader thread holds it. Both share
+/// the pixels, whatever number of images a client has left stored.
+#[test]
+fn snapshots_and_uploads_share_the_stored_pixels() {
+    use rio_graphics::ColorType;
+
+    let mut graphics = Graphics::default();
+    for id in 1..=3u32 {
+        graphics.store_kitty_image(
+            id,
+            None,
+            GraphicData {
+                id: GraphicId::new(id as u64),
+                width: 2,
+                height: 2,
+                color_type: ColorType::Rgba,
+                pixels: vec![id as u8; 16],
+                is_opaque: true,
+                resize: None,
+                display_width: None,
+                display_height: None,
+                transmit_time: crate::time::Instant::now(),
+            },
+        );
+        assert!(graphics.queue_kitty_upload(id));
+    }
+
+    let snapshot = graphics.kitty_images.clone();
+    for (id, upload) in &graphics.pending_images {
+        let stored = &graphics.kitty_images[id].data;
+        assert!(Arc::ptr_eq(stored, upload));
+        assert!(Arc::ptr_eq(stored, &snapshot[id].data));
+    }
+
+    // A frame already taken keeps its pixels when the id is sent again.
+    let mut again = (*graphics.kitty_images[&1].data).clone();
+    again.pixels = vec![9; 16];
+    graphics.store_kitty_image(1, None, again);
+    assert_eq!(snapshot[&1].data.pixels, vec![1; 16]);
+    assert_eq!(graphics.kitty_images[&1].data.pixels, vec![9; 16]);
 }
