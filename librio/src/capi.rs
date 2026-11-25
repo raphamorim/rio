@@ -24,9 +24,11 @@ pub const RIO_ACTION_COMMAND_FINISHED: u32 = 4;
 /// `INT32_MIN`, which no real exit status takes.
 pub const RIO_EXIT_STATUS_NONE: u32 = i32::MIN as u32;
 /// A program asked for a desktop notification (OSC 9 or OSC 777
-/// `notify`): `title` is its title (empty when it sent none) and
-/// `subtitle` its body.
+/// `notify`): `title` is its title (empty, not NULL, when it sent none)
+/// and `subtitle` its body. See [`crate::Action::DesktopNotification`].
 pub const RIO_ACTION_DESKTOP_NOTIFICATION: u32 = 5;
+pub const RIO_NOTIFICATION_TITLE_MAX: u32 = crate::NOTIFICATION_TITLE_MAX as u32;
+pub const RIO_NOTIFICATION_BODY_MAX: u32 = crate::NOTIFICATION_BODY_MAX as u32;
 
 /// `rio_program_status_s::event`: a report, or a lifecycle event after
 /// which the host drops records (see `program_status_cb`).
@@ -2262,5 +2264,69 @@ mod persistence_tests {
         std::thread::sleep(std::time::Duration::from_millis(50));
         let dump = surface.dump();
         assert!(dump.contains("hello persistence"), "dump was: {dump:?}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Action, SurfaceDelegate};
+    use std::sync::Mutex;
+
+    /// Each action seen: its tag, title and subtitle (None for NULL).
+    type Seen = (u32, Option<String>, Option<String>);
+    static SEEN: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
+
+    extern "C" fn record(_: *mut c_void, _: usize, action: rio_action_s) {
+        let text = |p: *const c_char| {
+            (!p.is_null())
+                .then(|| unsafe { CStr::from_ptr(p) }.to_str().unwrap().to_string())
+        };
+        SEEN.lock().unwrap().push((
+            action.tag,
+            text(action.title),
+            text(action.subtitle),
+        ));
+    }
+
+    // Over the C API a notification is tag 5, with an empty (not NULL)
+    // title when the program sent none and the body in `subtitle`.
+    #[test]
+    fn capi_desktop_notification() {
+        let delegate = CDelegate {
+            config: rio_runtime_config_s {
+                userdata: std::ptr::null_mut(),
+                wakeup_cb: None,
+                action_cb: Some(record),
+                clipboard_write_cb: None,
+                close_surface_cb: None,
+                program_status_cb: None,
+            },
+        };
+        for (title, body) in [("", "done"), ("Deploy", "it shipped")] {
+            delegate.action(
+                1,
+                Action::DesktopNotification {
+                    title: title.into(),
+                    body: body.into(),
+                },
+            );
+        }
+        let seen = SEEN.lock().unwrap();
+        assert_eq!(
+            *seen,
+            [
+                (
+                    RIO_ACTION_DESKTOP_NOTIFICATION,
+                    Some("".into()),
+                    Some("done".into())
+                ),
+                (
+                    RIO_ACTION_DESKTOP_NOTIFICATION,
+                    Some("Deploy".into()),
+                    Some("it shipped".into())
+                ),
+            ]
+        );
     }
 }
