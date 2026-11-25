@@ -28,6 +28,7 @@
 //! The style and extras ids a block's cells carry are kept beside it, so
 //! the tables' mark-and-sweep keeps them without decoding anything.
 
+use super::cells::SlabCursor;
 use super::row::{Row, SemanticPrompt};
 use crate::crosswords::square::Square;
 use std::sync::{Arc, OnceLock};
@@ -165,11 +166,31 @@ impl<T> Block<T> {
     }
 }
 
+/// Buffers the encoder and decoder work in, kept per thread: freed after
+/// each block, a block's worth (a quarter of a megabyte at 120 columns)
+/// would stay with the allocator.
+#[derive(Default)]
+struct Scratch {
+    bits: Vec<u64>,
+    plane: Vec<u8>,
+    lz4: Vec<u8>,
+}
+
+thread_local! {
+    static SCRATCH: std::cell::RefCell<Scratch> = std::cell::RefCell::new(Scratch::default());
+}
+
 /// Compress `rows` (up to [`BLOCK_ROWS`], all resident) into one block.
 pub(crate) fn encode(rows: &[&Row<Square>]) -> Block<Square> {
+    SCRATCH.with(|scratch| encode_with(rows, &mut scratch.borrow_mut()))
+}
+
+fn encode_with(rows: &[&Row<Square>], scratch: &mut Scratch) -> Block<Square> {
     debug_assert!(rows.len() <= BLOCK_ROWS);
     let cells: usize = rows.iter().map(|r| r.inner.len()).sum();
-    let mut bits = Vec::with_capacity(cells);
+    let Scratch { bits, plane, lz4 } = scratch;
+    bits.clear();
+    bits.reserve(cells);
     let mut styles = Vec::new();
     let mut extras = Vec::new();
     for row in rows {
@@ -187,15 +208,22 @@ pub(crate) fn encode(rows: &[&Row<Square>]) -> Block<Square> {
         }
     }
     // A plane at a time: one sequential pass each.
-    let mut plane = vec![0u8; cells];
+    plane.clear();
+    plane.resize(cells, 0);
+    lz4.clear();
+    lz4.resize(lz4_flex::block::get_maximum_output_size(cells), 0);
     let planes = std::array::from_fn(|b| {
-        for (byte, cell) in plane.iter_mut().zip(&bits) {
+        for (byte, cell) in plane.iter_mut().zip(bits.iter()) {
             *byte = (cell >> (8 * b)) as u8;
         }
         match plane.first() {
             Some(&first) if plane.iter().all(|&x| x == first) => Plane::Same(first),
             None => Plane::Same(0),
-            _ => Plane::Lz4(lz4_flex::block::compress(&plane).into_boxed_slice()),
+            _ => {
+                let n = lz4_flex::block::compress_into(plane, lz4)
+                    .expect("room for any block's worst case");
+                Plane::Lz4(Box::from(&lz4[..n]))
+            }
         }
     });
     for ids in [&mut styles, &mut extras] {
@@ -235,6 +263,17 @@ thread_local! {
 fn decode_squares(data: &Encoded) -> Box<[Row<Square>]> {
     #[cfg(test)]
     DECODES.with(|d| d.set(d.get() + 1));
+    SCRATCH.with(|scratch| {
+        let Scratch { bits, plane, .. } = &mut *scratch.borrow_mut();
+        decode_with(data, bits, plane)
+    })
+}
+
+fn decode_with(
+    data: &Encoded,
+    bits: &mut Vec<u64>,
+    plane: &mut Vec<u8>,
+) -> Box<[Row<Square>]> {
     let cells = data.cells;
     // The constant planes at once, then the others a plane at a time.
     let same = data
@@ -245,26 +284,31 @@ fn decode_squares(data: &Encoded) -> Box<[Row<Square>]> {
             Plane::Same(byte) => acc | (*byte as u64) << (8 * b),
             Plane::Lz4(_) => acc,
         });
-    let mut bits = vec![same; cells];
-    let mut plane = vec![0u8; cells];
+    bits.clear();
+    bits.resize(cells, same);
+    plane.clear();
+    plane.resize(cells, 0);
     for (b, p) in data.planes.iter().enumerate() {
         let Plane::Lz4(lz4) = p else { continue };
         // Encoded here from this size; anything else is memory corruption.
-        let n = lz4_flex::block::decompress_into(lz4, &mut plane)
+        let n = lz4_flex::block::decompress_into(lz4, plane)
             .expect("a compressed history block decodes");
         assert_eq!(n, cells, "a compressed history block's size");
-        for (cell, &byte) in bits.iter_mut().zip(&plane) {
+        for (cell, &byte) in bits.iter_mut().zip(plane.iter()) {
             *cell |= (byte as u64) << (8 * b);
         }
     }
+    // In a slab of the block's own, unmapped with the decoded copy:
+    // reading history leaves nothing with the allocator.
+    let mut slabs = SlabCursor::default();
     let mut at = 0;
     data.rows
         .iter()
         .map(|m| {
-            let inner = bits[at..at + m.len as usize]
-                .iter()
-                .map(|&b| Square::from_raw(b))
-                .collect();
+            let mut inner = slabs.cells(m.len as usize);
+            for (cell, &b) in inner.iter_mut().zip(&bits[at..at + m.len as usize]) {
+                *cell = Square::from_raw(b);
+            }
             at += m.len as usize;
             Row {
                 inner,
@@ -362,6 +406,65 @@ mod tests {
             out.extend_from_slice(line.as_bytes());
         }
         out
+    }
+
+    /// Every row slot of the grids in slabs: no row has a buffer of its own.
+    fn all_in_slabs(t: &T) -> bool {
+        [&t.term.grid, &t.term.inactive_grid]
+            .iter()
+            .all(|g| g.raw.rows().all(|r| r.is_compressed() || r.inner.in_slab()))
+    }
+
+    #[test]
+    fn compressed_history_gives_its_slabs_back() {
+        use crate::crosswords::grid::cells::{live_slabs, SLAB_ROWS};
+        let base = live_slabs();
+        let mut a = T::new(30, 5, 2_000);
+        a.feed(&output(1_200));
+        assert!(all_in_slabs(&a));
+        let filled = live_slabs() - base;
+        assert!(filled >= 1_200 / SLAB_ROWS, "{filled}");
+        // What isn't compressed keeps its slabs: the screen's, the newest
+        // rows short of a block, and the alt screen's.
+        a.term.compress_history(None);
+        let kept = live_slabs() - base;
+        assert!(kept <= 5, "{kept} of {filled} slabs kept");
+        // Output recycling compressed rows takes their cells from slabs in
+        // order, which compressing them again gives back.
+        a.feed(&output(1_200));
+        assert!(all_in_slabs(&a));
+        a.term.compress_history(None);
+        assert!(live_slabs() - base <= kept + 1, "{}", live_slabs() - base);
+        // A read decodes blocks into slabs of their own, unmapped by the
+        // next compression.
+        let read = a.read();
+        assert!(live_slabs() - base > kept + 1);
+        a.term.compress_history(None);
+        assert!(live_slabs() - base <= kept + 1);
+        assert_eq!(a.read(), read);
+    }
+
+    #[test]
+    fn a_column_resize_keeps_the_rows_in_slabs() {
+        use crate::crosswords::grid::cells::live_slabs;
+        // (That it reads the same: `a_column_resize_decompresses_then_
+        // reflows_the_same`.)
+        let base = live_slabs();
+        let mut a = T::new(30, 5, 2_000);
+        a.feed(&output(600));
+        a.term.compress_history(None);
+        let compressed = live_slabs() - base;
+        for cols in [45, 20, 33, 33, 70] {
+            a.term.resize(CrosswordsSize::new(cols, 5));
+            assert!(all_in_slabs(&a), "{cols} columns");
+            // The old width's slabs went with their rows.
+            a.term.compress_history(None);
+            let kept = live_slabs() - base;
+            assert!(
+                kept <= compressed + 2,
+                "{cols} columns: {kept} slabs, {compressed} before"
+            );
+        }
     }
 
     #[test]

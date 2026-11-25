@@ -2,6 +2,7 @@
 // https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/grid/row.rs
 // which is licensed under Apache 2.0 license.
 
+use crate::crosswords::grid::cells::{Cells, SlabCursor};
 use crate::crosswords::grid::compress::Block;
 use crate::crosswords::grid::GridSquare;
 use crate::crosswords::Column;
@@ -26,7 +27,9 @@ pub enum SemanticPrompt {
 /// A row in the grid.
 #[derive(Clone, Debug)]
 pub struct Row<T> {
-    pub inner: Vec<T>,
+    /// The cells: a `Vec` of their own, or a slot of a slab the storage's
+    /// rows share ([`Cells`]).
+    pub inner: Cells<T>,
 
     /// Maximum number of occupied entries.
     ///
@@ -75,7 +78,7 @@ pub struct Row<T> {
 impl<T> Default for Row<T> {
     fn default() -> Self {
         Self {
-            inner: Vec::new(),
+            inner: Cells::new(),
             occ: 0,
             kitty_virtual_placeholder: false,
             has_extras: false,
@@ -116,6 +119,12 @@ impl<T: Clone + Default> Row<T> {
             inner.set_len(columns);
         }
 
+        Row::with_cells(Cells::from(inner))
+    }
+
+    /// A blank row on `cells` (all default).
+    #[inline]
+    pub(crate) fn with_cells(inner: Cells<T>) -> Row<T> {
         Row {
             inner,
             occ: 0,
@@ -306,28 +315,30 @@ impl<T> Row<T> {
         }
     }
 
-    /// Make a compressed row a plain one without decoding it, for a caller
-    /// about to overwrite all of it: its cells are left default.
-    #[inline(always)]
-    pub(crate) fn discard_packed(&mut self)
-    where
-        T: Clone + Default,
-    {
-        if self.packed.is_some() {
-            self.discard_slow();
-        }
-    }
-
-    #[cold]
-    #[inline(never)]
-    fn discard_slow(&mut self)
+    /// `unpack`, the cells put in a slot of `slabs`.
+    pub(crate) fn unpack_into(&mut self, slabs: &mut SlabCursor<T>)
     where
         T: Clone + Default,
     {
         if let Some(block) = self.packed.take() {
-            let len = block.data_len(self.packed_at as usize);
-            self.inner.clear();
-            self.inner.resize_with(len, T::default);
+            let row = &block.rows()[self.packed_at as usize];
+            self.inner = slabs.cells(row.inner.len());
+            self.inner.clone_from_slice(&row.inner);
+            self.dirty = true;
+        }
+    }
+
+    /// Make a compressed row a plain one without decoding it, for a caller
+    /// about to overwrite all of it: its cells (default) come from
+    /// `slabs`.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn discard_packed_into(&mut self, slabs: &mut SlabCursor<T>)
+    where
+        T: Default,
+    {
+        if let Some(block) = self.packed.take() {
+            self.inner = slabs.cells(block.data_len(self.packed_at as usize));
             self.dirty = true;
         }
     }
@@ -339,7 +350,7 @@ impl<T> Row<T> {
     {
         let has_styles = vec.iter().any(GridSquare::carries_style);
         Row {
-            inner: vec,
+            inner: Cells::from(vec),
             occ,
             kitty_virtual_placeholder: false,
             has_extras: true,
@@ -397,7 +408,7 @@ impl<T> Row<T> {
         self.has_extras = true;
         self.has_styles |= src.inner[..count].iter().any(GridSquare::carries_style);
 
-        src.inner.drain(..count);
+        src.inner.remove_front(count);
         src.occ = src.occ.saturating_sub(count);
         src.dirty = true;
     }
@@ -412,8 +423,9 @@ impl<T> Row<T> {
         self.has_extras = true;
         self.has_styles |= vec.iter().any(GridSquare::carries_style);
 
-        vec.append(&mut self.inner);
-        self.inner = vec;
+        let mut inner = std::mem::take(&mut self.inner).into_vec();
+        vec.append(&mut inner);
+        self.inner = Cells::from(vec);
     }
 
     #[inline]
@@ -421,9 +433,7 @@ impl<T> Row<T> {
         self.occ = self.occ.saturating_sub(at);
         self.dirty = true;
 
-        let mut split = self.inner.split_off(at);
-        std::mem::swap(&mut split, &mut self.inner);
-        split
+        self.inner.split_front(at)
     }
 
     #[inline]
