@@ -238,12 +238,13 @@ impl CompressTimer {
         self.at = Some((now + COMPRESS_IDLE).min(since + COMPRESS_FLOWING));
     }
 
-    /// After output: arm if rows arrived in the history.
-    fn output<U: EventListener>(&mut self, terminal: &Crosswords<U>, now: Instant) {
+    /// After output: arm if rows arrived in the history (the clock read
+    /// only then).
+    fn output<U: EventListener>(&mut self, terminal: &Crosswords<U>) {
         let history = terminal.history_serial();
         if history != self.history {
             self.history = history;
-            self.arm(now);
+            self.arm(Instant::now());
         }
     }
 
@@ -482,7 +483,7 @@ where
     ) {
         state.sync_deadline = terminal.sync_update_deadline();
         if terminal.scrollback_compression() {
-            state.compress.output(terminal, Instant::now());
+            state.compress.output(terminal);
         }
         let held = terminal.synchronized_output();
         let hold_ended = held_before == Some(true) && !held;
@@ -646,10 +647,13 @@ where
             }
 
             // Compress a few blocks of history, if the terminal is free.
-            let now = Instant::now();
-            if state.compress.due(now) {
-                let mut terminal = self.terminal.try_lock_reader();
-                state.compress.step(terminal.as_deref_mut(), now);
+            // Nothing (not even the clock) while no pass is scheduled.
+            if state.compress.at.is_some() {
+                let now = Instant::now();
+                if state.compress.due(now) {
+                    let mut terminal = self.terminal.try_lock_reader();
+                    state.compress.step(terminal.as_deref_mut(), now);
+                }
             }
 
             if events.is_empty() && self.receiver.peek().is_none() {

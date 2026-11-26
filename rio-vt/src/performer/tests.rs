@@ -2194,13 +2194,13 @@ fn compression_waits_for_the_history_to_settle() {
     let mut parser = handler::Processor::default();
     let mut timer = CompressTimer::default();
     parser.advance(&mut t, b"a\r\nb\r\nc\r\nd\r\ne\r\nf");
-    timer.output(&t, start);
+    timer.output(&t);
     let armed = timer.at;
     assert!(armed.is_some());
     // A spinner on the last line: nothing new in the history.
-    for (i, frame) in ["|", "/", "-", "\\"].iter().cycle().take(20).enumerate() {
+    for frame in ["|", "/", "-", "\\"].iter().cycle().take(20) {
         parser.advance(&mut t, format!("\r{frame}").as_bytes());
-        timer.output(&t, start + Duration::from_millis(50 * i as u64));
+        timer.output(&t);
     }
     assert_eq!(timer.at, armed);
 }
