@@ -3886,6 +3886,15 @@ impl Screen<'_> {
     }
 
     pub(crate) fn render(&mut self) -> Option<crate::context::renderable::WindowUpdate> {
+        #[cfg(wgpu_backend)]
+        if self.sugarloaf.is_device_lost() && self.sugarloaf.recover_lost_device() {
+            // Grid renderers own buffers and atlases on the dead device;
+            // `ensure_grid` recreates them below and new grids repaint
+            // in full.
+            self.grids.clear();
+            self.renderer.force_full_damage();
+        }
+
         self.update_close_button_hover(self.mouse.x, self.mouse.y);
         if self.renderer.is_window_focused {
             self.context_manager.clear_current_bell();
