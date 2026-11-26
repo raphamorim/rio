@@ -1094,6 +1094,158 @@ pub struct SlSurfaceInputs {
     pub preedit: *const c_char,
 }
 
+/// What [`sl_glyph_rasterize`] drew.
+#[repr(C)]
+#[derive(Default)]
+pub struct SlGlyphRaster {
+    /// Bitmap size in pixels: `span` cells wide, one cell tall.
+    pub width: u16,
+    pub height: u16,
+    /// Cells the bitmap covers from the cell rightward (1 or 2).
+    pub span: u16,
+    /// The registration's own `width` (1 or 2). The span is this, cut
+    /// to [`sl_glyph_room`], so a cache keys on `min(width, room)`.
+    pub declared_width: u16,
+    /// `true`: premultiplied RGBA8, foreground already applied, as the
+    /// grid's colour atlas takes it. `false`: one coverage byte per
+    /// pixel, to tint with the cell's foreground.
+    pub is_color: bool,
+    /// Whether the pixels depend on `fg`, so a cache keys on it.
+    pub uses_foreground: bool,
+}
+
+/// Rasterize the Glyph Protocol glyph the cell at (`line`, `column`) of
+/// a librio RenderState was printed with, for a host that paints cells
+/// itself instead of through `sl_render_surface`. Placement and pixels
+/// are the grid's: `cell_w`/`cell_h` are the cell size and `baseline`
+/// the text baseline from the cell top, in pixels. `out` must hold
+/// `2 * cell_w * cell_h * 4` bytes. False when the cell has no
+/// registered glyph or it can't be drawn. Safe on any thread.
+#[no_mangle]
+pub unsafe extern "C" fn sl_glyph_rasterize(
+    render_state: *const c_void,
+    line: u16,
+    column: u16,
+    cell_w: u16,
+    cell_h: u16,
+    baseline: f32,
+    fg: *const u8,
+    out: *mut u8,
+    out_len: usize,
+    info: *mut SlGlyphRaster,
+) -> bool {
+    if render_state.is_null() || fg.is_null() || out.is_null() || info.is_null() {
+        return false;
+    }
+    catch_unwind(AssertUnwindSafe(|| {
+        let rs = &*(render_state as *const librio::RenderState);
+        let (line, column) = (line as usize, column as usize);
+        let Some(square) = rs.square(line, column) else {
+            return false;
+        };
+        let Some(version) = rs.glyph_version(square) else {
+            return false;
+        };
+        let Some(entry) = rs
+            .glyph_registry()
+            .and_then(|registry| registry.get_version(version))
+        else {
+            return false;
+        };
+        let Some(row) = rs.rows().get(line) else {
+            return false;
+        };
+        // Worked out once per registration, as the grid does.
+        let state = &entry.render_state;
+        if state
+            .unrenderable
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return false;
+        }
+        let span = rio_grid::glyph_protocol_span(row, column, rs.columns(), entry.width);
+        let span_w = cell_w as u32 * span as u32;
+        if span_w == 0 || cell_h == 0 || span_w > u16::MAX as u32 {
+            return false;
+        }
+        let fg = [*fg, *fg.add(1), *fg.add(2), *fg.add(3)];
+        let Some(raster) = sugarloaf::glyph_protocol::rasterize_payload(
+            &entry.payload,
+            entry.upm,
+            span_w as u16,
+            cell_h,
+            fg,
+            &entry.layout,
+            baseline,
+        ) else {
+            state
+                .unrenderable
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            return false;
+        };
+        if raster.data.len() > out_len {
+            return false;
+        }
+        std::ptr::copy_nonoverlapping(raster.data.as_ptr(), out, raster.data.len());
+        *info = SlGlyphRaster {
+            width: raster.width,
+            height: raster.height,
+            span,
+            declared_width: (entry.width as u16).clamp(1, 2),
+            is_color: raster.is_color,
+            uses_foreground: *state.uses_foreground.get_or_init(|| {
+                sugarloaf::glyph_protocol::payload_uses_foreground(&entry.payload)
+            }),
+        };
+        true
+    }))
+    .unwrap_or(false)
+}
+
+/// How many cells a registered glyph at (`line`, `column`) may span:
+/// 2 when the next cell is blank for a `width=2` glyph to overflow
+/// into, else 1, by the grid's own rule (§8.5.2). With the cell's
+/// registration's `width` it decides the span [`sl_glyph_rasterize`]
+/// draws, so a host keys its raster cache on both. 0 for a cell out of
+/// range.
+#[no_mangle]
+pub unsafe extern "C" fn sl_glyph_room(
+    render_state: *const c_void,
+    line: u16,
+    column: u16,
+) -> u16 {
+    if render_state.is_null() {
+        return 0;
+    }
+    catch_unwind(AssertUnwindSafe(|| {
+        let rs = &*(render_state as *const librio::RenderState);
+        let (line, column, cols) = (line as usize, column as usize, rs.columns());
+        match rs.rows().get(line) {
+            Some(row) if column < cols => {
+                rio_grid::glyph_protocol_span(row, column, cols, 2)
+            }
+            _ => 0,
+        }
+    }))
+    .unwrap_or(0)
+}
+
+/// Whether this renderer draws `cp` without a registration, as a Glyph
+/// Protocol `q` reports it (`status=system`): a font it has loaded
+/// covers it, or the grid draws it itself (box drawing, blocks). Never
+/// loads a font.
+#[no_mangle]
+pub unsafe extern "C" fn sl_covers_codepoint(sl: *const Sl, cp: u32) -> bool {
+    let Some(sl) = sl.as_ref() else {
+        return false;
+    };
+    catch_unwind(AssertUnwindSafe(|| {
+        (sl.palette.use_drawable_chars && sugarloaf::sprite::is_drawable(cp))
+            || sl.font_library().covers_codepoint(cp)
+    }))
+    .unwrap_or(false)
+}
+
 /// Render one terminal surface into `grid` and present it. `render_state`
 /// is an opaque `librio::RenderState*` (the same object the host drives
 /// via `rio_render_state_*`); the caller MUST have already refreshed it
@@ -1158,6 +1310,19 @@ pub unsafe extern "C" fn sl_render_surface(
         let cell_w = metrics.cell_width as f32;
         let cell_h = metrics.cell_height as f32;
         let font_library = sl.font_library().clone();
+        // Glyph Protocol: the grid looks a pane's registry up by route id,
+        // and an `Sl` draws one surface, at route 0. Installed again
+        // whenever it differs, since `sl_set_font` replaces the library,
+        // and dropped for a surface without one, so it doesn't keep the
+        // last surface's glyphs alive.
+        let current = font_library.glyph_registry_for(0);
+        match rs.glyph_registry() {
+            Some(registry) if !current.as_ref().is_some_and(|c| c.ptr_eq(registry)) => {
+                font_library.install_glyph_registry(0, registry.clone());
+            }
+            None if current.is_some() => font_library.remove_glyph_registry(0),
+            _ => {}
+        }
         let input_colorspace = sl.input_colorspace();
         let window_size = sl.window_size();
 
@@ -1395,4 +1560,87 @@ pub unsafe extern "C" fn sl_render_surface(
         sl.inner.render_with_grids(&mut pairs);
         rs.reset_dirty();
     }));
+}
+
+// Spawns /bin/sh, as librio's surface tests do.
+#[cfg(all(test, not(target_os = "windows")))]
+mod glyph_protocol_tests {
+    use super::*;
+    use librio::{
+        Engine, GlyphFormat, RenderState, SurfaceDelegate, SurfaceDesc, SurfaceId,
+    };
+    use std::sync::Arc;
+
+    struct VgHost;
+    impl SurfaceDelegate for VgHost {
+        fn wakeup(&self, _surface: SurfaceId) {}
+        fn glyph_formats(&self) -> &'static [GlyphFormat] {
+            &[GlyphFormat::Vg]
+        }
+    }
+
+    // The CPU path draws a cell's registration with the grid's own
+    // rasterizer: an all-foreground glyph comes back as coverage, one
+    // with a fixed colour as RGBA, and a `width=2` glyph spans two cells
+    // only when the next one is blank.
+    #[test]
+    fn rasterizes_the_registration_a_cell_was_printed_with() {
+        let engine = Engine::new(Arc::new(VgHost));
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec!["-c".into(), "sleep 300".into()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        surface.inject_output(
+            b"\x1b_25a1;r;cp=100000;fmt=vg;vb=0,0,24,24;reply=0;fill=nonzero,fg:M0 0h24v24H0Z\x1b\\\
+              \x1b_25a1;r;cp=100001;fmt=vg;vb=0,0,24,24;width=2;reply=0;fill=nonzero,#ff0000:M0 0h24v24H0Z\x1b\\",
+        );
+        surface.inject_output("\u{100000}\u{100001} \u{100001}x".as_bytes());
+        let mut state = RenderState::new(&surface);
+        state.update();
+        let rs = &state as *const RenderState as *const c_void;
+        let fg = [10u8, 20, 30, 255];
+        let (cell_w, cell_h) = (8u16, 16u16);
+        let mut out = vec![0u8; 2 * cell_w as usize * cell_h as usize * 4];
+        let (out_ptr, out_len) = (out.as_mut_ptr(), out.len());
+        let draw = |column: u16| {
+            let mut info = SlGlyphRaster::default();
+            let drawn = unsafe {
+                sl_glyph_rasterize(
+                    rs,
+                    0,
+                    column,
+                    cell_w,
+                    cell_h,
+                    12.0,
+                    fg.as_ptr(),
+                    out_ptr,
+                    out_len,
+                    &mut info,
+                )
+            };
+            drawn.then_some(info)
+        };
+
+        let mono = draw(0).expect("a registered cell");
+        assert!(!mono.is_color && !mono.uses_foreground);
+        assert_eq!((mono.width, mono.height, mono.span), (cell_w, cell_h, 1));
+        assert_eq!(mono.declared_width, 1);
+
+        let wide = draw(1).expect("a registered cell");
+        assert!(wide.is_color);
+        assert_eq!((wide.width, wide.span), (2 * cell_w, 2));
+        // The next cell isn't blank, so it keeps to its own.
+        let cut = draw(3).expect("a registered cell");
+        assert_eq!((cut.span, cut.declared_width), (1, 2));
+
+        // A blank cell has no registration.
+        assert!(draw(2).is_none());
+
+        // The room the span comes from, by the same rule.
+        let room = |column| unsafe { sl_glyph_room(rs, 0, column) };
+        assert_eq!((room(1), room(3), room(500)), (2, 1, 0));
+    }
 }

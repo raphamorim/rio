@@ -979,6 +979,13 @@ pub fn format_query_response(cp: u32, status: QueryStatus) -> String {
     format!("\x1b_25a1;q;cp={:x};status={}\x1b\\", cp, status.as_str())
 }
 
+/// The reply to `q;cp=<hex>` from a terminal that won't look it up
+/// now (§5.4 `reason=unknown`), for one limiting how many queries it
+/// answers. The client can ask again later.
+pub fn format_query_unknown(cp: u32) -> String {
+    format!("\x1b_25a1;q;cp={:x};reason=unknown\x1b\\", cp)
+}
+
 /// The `grapheme=` value as echoed in replies: lowercase hex joined
 /// with `,`.
 fn grapheme_hex(cps: &[char]) -> String {

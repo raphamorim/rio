@@ -240,6 +240,9 @@ pub struct RenderState {
     /// The surface's sixel/iTerm2 pixels by image key, kept while a
     /// placement shows the image.
     inline_images: InlineImages,
+    /// The surface's glyph registry, when its delegate draws glyphs.
+    #[cfg(feature = "graphics")]
+    glyphs: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
     /// Bumped by an update that changes the placement list or moves it
     /// (a scroll), so a host can keep its draw list between frames.
     placements_generation: u64,
@@ -281,6 +284,8 @@ impl RenderState {
             kitty_indices: Vec::new(),
             epoch: inline_images.epoch(),
             inline_images,
+            #[cfg(feature = "graphics")]
+            glyphs: surface.glyphs.clone(),
             placements_generation: 0,
             images_view: (0, 0, 0),
         }
@@ -904,6 +909,18 @@ impl RenderState {
             return 0;
         };
         copy_rgba(&image.data, buf)
+    }
+
+    /// The surface's Glyph Protocol registry, which
+    /// [`Self::glyph_version`]'s versions index (see
+    /// [`crate::Surface::glyph`]). `None` when the delegate draws no
+    /// formats. A renderer that takes only the render state reads
+    /// registrations through it.
+    #[cfg(feature = "graphics")]
+    pub fn glyph_registry(
+        &self,
+    ) -> Option<&rio_graphics::glyph::glyph_registry::GlyphRegistry> {
+        self.glyphs.as_ref()
     }
 
     /// The Glyph Protocol registration `square` was printed with, as a
