@@ -65,7 +65,9 @@ use crate::platform_impl::platform::dpi::{
     dpi_to_scale_factor, enable_non_client_dpi_scaling, hwnd_dpi,
 };
 use crate::platform_impl::platform::drop_handler::FileDropHandler;
-use crate::platform_impl::platform::event_loop::{self, ActiveEventLoop, DESTROY_MSG_ID};
+use crate::platform_impl::platform::event_loop::{
+    self, ActiveEventLoop, DESTROY_MSG_ID, REDRAW_REQUESTED_MSG_ID,
+};
 use crate::platform_impl::platform::icon::{self, IconType, WinCursor};
 use crate::platform_impl::platform::ime::ImeContext;
 use crate::platform_impl::platform::keyboard::KeyEventBuilder;
@@ -199,12 +201,17 @@ impl Window {
 
     #[inline]
     pub fn request_redraw(&self) {
-        // Defer the actual `RedrawWindow` to the DwmFlush worker;
-        // we just flag the window as dirty here. Mirrors macOS's
-        // `needs_redraw` flag consumed by the CVDisplayLink
-        // callback.
         self.window_state.lock().unwrap().redraw_requested = true;
-        self.redraw_pending.store(true, Ordering::Release);
+        // Post `REDRAW_REQUESTED_MSG` as a fallback to `WM_PAINT`'s
+        // low-priority slot, which gets starved under sustained input
+        // (IME key repeat). Coalesce duplicates in the same paint
+        // cycle; the VSync worker clears the flag at the next vblank.
+        let already_pending = self.redraw_pending.swap(true, Ordering::AcqRel);
+        if !already_pending {
+            unsafe {
+                PostMessageW(self.hwnd(), REDRAW_REQUESTED_MSG_ID.get(), 0, 0);
+            }
+        }
     }
 
     #[inline]
