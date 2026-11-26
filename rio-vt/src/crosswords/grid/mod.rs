@@ -44,6 +44,11 @@ pub struct Grid<T> {
     /// Last saved cursor.
     pub saved_cursor: Cursor<T>,
 
+    /// Whether origin mode (DECOM) was set when `saved_cursor` was saved:
+    /// DECSC saves it with the cursor and DECRC restores it. Per screen,
+    /// like the saved cursor; off when nothing was saved.
+    pub saved_origin: bool,
+
     /// Lines in the grid. Each row holds a list of cells corresponding to the
     /// columns in that row.
     pub raw: Storage<T>,
@@ -334,6 +339,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
             reflow_remap: None,
             display_offset: 0,
             saved_cursor: Cursor::default(),
+            saved_origin: false,
             cursor: Cursor::default(),
             lines,
             columns,
@@ -560,6 +566,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         self.clear_history();
 
         self.saved_cursor = Cursor::default();
+        self.saved_origin = false;
         self.cursor = Cursor::default();
         self.display_offset = 0;
 

@@ -2901,6 +2901,35 @@ impl<U: EventListener> Crosswords<U> {
         CursorState { pos, content }
     }
 
+    /// CUU, CUD, CNL and CPL: move the cursor by `delta` rows, relative
+    /// to where it is (never through `goto`, which adds the origin-mode
+    /// offset to an absolute row). Like xterm, the move stops at the
+    /// scroll region's top margin when the cursor starts at or below it,
+    /// and at the bottom margin when it starts at or above it, whether
+    /// or not origin mode is set; otherwise at the screen's edge.
+    fn move_vertically(&mut self, delta: i32, col: Column) {
+        let row = self.grid.cursor.pos.row;
+        let (top, bottom) = if delta < 0 {
+            let top = self.scroll_region.start;
+            (if row >= top { top } else { Line(0) }, row)
+        } else {
+            let bottom = self.scroll_region.end - 1;
+            let bottom = if row <= bottom {
+                bottom
+            } else {
+                self.grid.bottommost_line()
+            };
+            (row, bottom)
+        };
+
+        self.damage_cursor();
+        // (Not `clamp`, which panics if a stale row were past `bottom`.)
+        self.grid.cursor.pos.row = (row + delta).min(bottom).max(top);
+        self.grid.cursor.pos.col = std::cmp::min(col, self.grid.last_column());
+        self.damage_cursor();
+        self.grid.cursor.should_wrap = false;
+    }
+
     pub fn swap_alt(&mut self) {
         if !self.mode.contains(Mode::ALT_SCREEN) {
             // Set alt screen cursor to the current primary screen cursor.
@@ -2938,6 +2967,7 @@ impl<U: EventListener> Crosswords<U> {
 
             // Drop information about the primary screens saved cursor.
             self.grid.saved_cursor = self.grid.cursor.clone();
+            self.grid.saved_origin = self.mode.contains(Mode::ORIGIN);
 
             // Reset alternate screen contents.
             self.inactive_grid.sync_template_style();
@@ -2971,8 +3001,20 @@ impl<U: EventListener> Crosswords<U> {
             &mut self.inactive_keyboard_mode_idx,
         );
 
+        // Each screen has its own kitty keyboard stack; `mode` mirrors
+        // the active screen's top entry, so follow the swap.
+        let flags = self.keyboard_mode_stack[self.keyboard_mode_idx];
+        self.mode &= !Mode::KITTY_KEYBOARD_PROTOCOL;
+        self.mode |= Mode::from(KeyboardModes::from_bits_truncate(flags));
+
         mem::swap(&mut self.grid, &mut self.inactive_grid);
         self.mode ^= Mode::ALT_SCREEN;
+        // Leaving the alt screen restores the cursor saved on entering it
+        // (the primary's own, which nothing moved), origin mode with it:
+        // an alt-screen program's DECOM doesn't outlive it.
+        if !self.mode.contains(Mode::ALT_SCREEN) {
+            self.mode.set(Mode::ORIGIN, self.grid.saved_origin);
+        }
         self.selection = None;
         // The vi cursor may be on a scrollback row the alt screen does
         // not have, or below a primary viewport scrolled into history.
@@ -3028,7 +3070,9 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn bounds_to_string(&self, start: Pos, end: Pos) -> String {
-        let mut text = String::new();
+        // About half a row of text per row.
+        let rows = (end.row.0 - start.row.0).max(0) as usize + 1;
+        let mut text = String::with_capacity(rows * (self.grid.columns() / 2 + 1));
         let mut blank_rows: usize = 0;
         let mut blank_cells: usize = 0;
         let last_col = self.grid.last_column();
@@ -3050,9 +3094,12 @@ impl<U: EventListener> Crosswords<U> {
                 blank_cells = 0;
             }
 
-            let mut row_text = String::new();
+            // The row goes straight into `text`: it writes nothing unless
+            // it has content, and the blank rows before it are put in front
+            // of it then (moving only this row's bytes).
+            let row_start = text.len();
             let had_content = self.append_cells(
-                &mut row_text,
+                &mut text,
                 line,
                 start_col..end_col,
                 line == end.row,
@@ -3061,16 +3108,15 @@ impl<U: EventListener> Crosswords<U> {
 
             if !had_content {
                 // Defer entirely-blank rows; trailing blank rows get dropped.
+                debug_assert_eq!(text.len(), row_start);
                 blank_rows += 1;
                 continue;
             }
 
-            for _ in 0..blank_rows {
-                text.push('\n');
+            if blank_rows > 0 {
+                text.insert_str(row_start, &"\n".repeat(blank_rows));
+                blank_rows = 0;
             }
-            blank_rows = 0;
-
-            text.push_str(&row_text);
 
             let cur_wraps = self.grid[line][last_col].wrapline();
             if end_col >= last_col && !cur_wraps {
@@ -3079,7 +3125,12 @@ impl<U: EventListener> Crosswords<U> {
             }
         }
 
-        text.strip_suffix('\n').map(str::to_owned).unwrap_or(text)
+        // In place: `strip_suffix` + `to_owned` would copy all of it.
+        if text.ends_with('\n') {
+            text.pop();
+        }
+        formatter::shrink_slack(&mut text);
+        text
     }
 
     /// Convert a single line in the grid to a String. Used by Block selection;
@@ -3130,7 +3181,25 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         let mut tab_mode = false;
-        for column in (cols.start.0..line_length.0).map(Column::from) {
+        let cells = &grid_line[..];
+        let mut next = cols.start.0;
+        while next < line_length.0 {
+            // Most cells are narrow ASCII with nothing attached: their
+            // bytes in one go (blanks buffered, as below).
+            if !tab_mode {
+                let run = formatter::ascii_text_run(
+                    text,
+                    &cells[next..line_length.0],
+                    blank_cells,
+                    &mut had_content,
+                );
+                next += run;
+                if next == line_length.0 {
+                    break;
+                }
+            }
+            let column = Column(next);
+            next += 1;
             let cell = &grid_line[column];
 
             // Skip over cells until next tab-stop once a tab was found.
@@ -3177,16 +3246,18 @@ impl<U: EventListener> Crosswords<U> {
         }
 
         // If wide char is not part of the selection, but leading spacer is, include it.
+        // The wide character went on to the next row.
         if line_length == self.grid.columns()
             && line_length.0 >= 2
             && matches!(grid_line[line_length - 1].wide(), Wide::LeadingSpacer)
             && include_wrapped_wide
+            && line < self.grid.bottommost_line()
         {
             for _ in 0..*blank_cells {
                 text.push(' ');
             }
             *blank_cells = 0;
-            text.push(self.grid[line - 1i32][Column(0)].c());
+            text.push(self.grid[line + 1i32][Column(0)].c());
             had_content = true;
         }
 
@@ -3416,7 +3487,13 @@ impl<U: EventListener> Handler for Crosswords<U> {
             }
             NamedPrivateMode::AlternateScroll => self.mode.insert(Mode::ALTERNATE_SCROLL),
             NamedPrivateMode::LineWrap => self.mode.insert(Mode::LINE_WRAP),
-            NamedPrivateMode::Origin => self.mode.insert(Mode::ORIGIN),
+            NamedPrivateMode::Origin => {
+                // Setting or resetting DECOM homes the cursor (vttest;
+                // xterm and kitty do the same): to the region's
+                // top-left while it's set, the screen's once it's reset.
+                self.mode.insert(Mode::ORIGIN);
+                self.goto(Line(0), Column(0));
+            }
             NamedPrivateMode::ColumnMode => self.deccolm(),
             NamedPrivateMode::BlinkingCursor if !self.ignore_blink_mode => {
                 if !self.blinking_cursor {
@@ -3497,7 +3574,10 @@ impl<U: EventListener> Handler for Crosswords<U> {
             NamedPrivateMode::Utf8Mouse => self.mode.remove(Mode::UTF8_MOUSE),
             NamedPrivateMode::AlternateScroll => self.mode.remove(Mode::ALTERNATE_SCROLL),
             NamedPrivateMode::LineWrap => self.mode.remove(Mode::LINE_WRAP),
-            NamedPrivateMode::Origin => self.mode.remove(Mode::ORIGIN),
+            NamedPrivateMode::Origin => {
+                self.mode.remove(Mode::ORIGIN);
+                self.goto(Line(0), Column(0));
+            }
             NamedPrivateMode::ColumnMode => self.deccolm(),
             NamedPrivateMode::BlinkingCursor if !self.ignore_blink_mode => {
                 if self.blinking_cursor {
@@ -3704,22 +3784,22 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
     #[inline]
     fn move_up(&mut self, rows: usize) {
-        self.goto(self.grid.cursor.pos.row - rows, self.grid.cursor.pos.col)
+        self.move_vertically(-(rows as i32), self.grid.cursor.pos.col);
     }
 
     #[inline]
     fn move_down(&mut self, rows: usize) {
-        self.goto(self.grid.cursor.pos.row + rows, self.grid.cursor.pos.col)
+        self.move_vertically(rows as i32, self.grid.cursor.pos.col);
     }
 
     #[inline]
     fn move_down_and_cr(&mut self, rows: usize) {
-        self.goto(self.grid.cursor.pos.row + rows, Column(0))
+        self.move_vertically(rows as i32, Column(0));
     }
 
     #[inline]
     fn move_up_and_cr(&mut self, lines: usize) {
-        self.goto(self.grid.cursor.pos.row - lines, Column(0))
+        self.move_vertically(-(lines as i32), Column(0));
     }
 
     #[inline]
@@ -5124,6 +5204,7 @@ impl<U: EventListener> Handler for Crosswords<U> {
     #[inline]
     fn save_cursor_position(&mut self) {
         self.grid.saved_cursor = self.grid.cursor.clone();
+        self.grid.saved_origin = self.mode.contains(Mode::ORIGIN);
     }
 
     #[inline]
@@ -5132,6 +5213,9 @@ impl<U: EventListener> Handler for Crosswords<U> {
 
         self.damage_cursor();
         self.grid.cursor = self.grid.saved_cursor.clone();
+        // DECRC restores origin mode with the cursor (off when nothing
+        // was saved), so a restored position is read as it was saved.
+        self.mode.set(Mode::ORIGIN, self.grid.saved_origin);
         self.damage_cursor();
     }
 
@@ -7205,6 +7289,217 @@ mod tests {
         cw.reset_state();
         assert!(!cw.synchronized_output(), "RIS ends the update");
         assert!(cw.sync_update_started.is_none());
+    }
+
+    /// A 5x5 terminal fed `input`; returns it with the cursor's row and
+    /// column (screen rows, 0-based).
+    fn cursor_after(input: &[u8]) -> (Crosswords<VoidListener>, (i32, usize)) {
+        let size = CrosswordsSize::new(5, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10);
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, input);
+        let pos = cw.grid.cursor.pos;
+        (cw, (pos.row.0, pos.col.0))
+    }
+
+    // CUU/CUD/CNL/CPL against the scroll region, as xterm does it: the
+    // move stops at a margin the cursor starts inside of, origin mode or
+    // not.
+
+    #[test]
+    fn cuu_stops_at_the_top_margin_from_inside_the_region() {
+        // Region rows 2-4 (1-based), cursor on row 3.
+        let (_, pos) = cursor_after(b"\x1b[2;4r\x1b[3;1HA\x1b[5A");
+        assert_eq!(pos, (1, 1));
+    }
+
+    #[test]
+    fn cuu_above_the_region_reaches_the_screen_top() {
+        let (_, pos) = cursor_after(b"\x1b[3;5r\x1b[2;1H\x1b[10A");
+        assert_eq!(pos, (0, 0));
+    }
+
+    #[test]
+    fn cuu_below_the_region_stops_at_its_top_margin() {
+        // xterm: at or below the top margin is enough.
+        let (_, pos) = cursor_after(b"\x1b[2;3r\x1b[5;1H\x1b[10A");
+        assert_eq!(pos, (1, 0));
+    }
+
+    #[test]
+    fn cud_stops_at_the_bottom_margin_from_inside_the_region() {
+        let (_, pos) = cursor_after(b"\x1b[1;3rA\x1b[10B");
+        assert_eq!(pos, (2, 1));
+    }
+
+    #[test]
+    fn cud_below_the_region_reaches_the_screen_bottom() {
+        let (_, pos) = cursor_after(b"\x1b[1;3r\x1b[4;1H\x1b[10B");
+        assert_eq!(pos, (4, 0));
+    }
+
+    #[test]
+    fn cud_above_the_region_stops_at_its_bottom_margin() {
+        let (_, pos) = cursor_after(b"\x1b[3;4r\x1b[1;1H\x1b[10B");
+        assert_eq!(pos, (3, 0));
+    }
+
+    #[test]
+    fn cuu_cud_without_a_region_clamp_to_the_screen() {
+        assert_eq!(cursor_after(b"\x1b[3;3H\x1b[9A").1, (0, 2));
+        assert_eq!(cursor_after(b"\x1b[3;3H\x1b[9B").1, (4, 2));
+        assert_eq!(cursor_after(b"\x1b[3;3H\x1b[1A").1, (1, 2));
+        assert_eq!(cursor_after(b"\x1b[3;3H\x1b[1B").1, (3, 2));
+    }
+
+    #[test]
+    fn decom_homes_the_cursor() {
+        // Set: to the region's top-left.
+        let (_, pos) = cursor_after(b"\x1b[2;4r\x1b[3;3H\x1b[?6h");
+        assert_eq!(pos, (1, 0));
+        // Reset: to the screen's.
+        let (_, pos) = cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[2;3H\x1b[?6l");
+        assert_eq!(pos, (0, 0));
+    }
+
+    #[test]
+    fn cuu_cud_in_origin_mode_move_relative_to_the_cursor() {
+        // Region rows 2-4; origin mode homes the cursor to row 2 (index
+        // 1). One row down is index 2: the move is relative, so the
+        // region's offset isn't added to it a second time.
+        let (_, pos) = cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[B");
+        assert_eq!(pos, (2, 0));
+        let (_, pos) = cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[3;1H\x1b[A");
+        assert_eq!(pos, (2, 0));
+        // And neither leaves the region.
+        let (_, pos) = cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[10B");
+        assert_eq!(pos, (3, 0));
+        let (_, pos) = cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[3;1H\x1b[10A");
+        assert_eq!(pos, (1, 0));
+    }
+
+    #[test]
+    fn cnl_cpl_clamp_like_cuu_cud_and_return_to_column_one() {
+        let (_, pos) = cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[1;3H\x1b[E");
+        assert_eq!(pos, (2, 0));
+        let (_, pos) = cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[3;3H\x1b[10F");
+        assert_eq!(pos, (1, 0));
+        let (_, pos) = cursor_after(b"\x1b[2;4r\x1b[2;3H\x1b[10E");
+        assert_eq!(pos, (3, 0));
+    }
+
+    #[test]
+    fn cuu_cud_reset_the_pending_wrap() {
+        for (input, row) in [
+            (&b"\x1b[3;1HABCDE\x1b[A"[..], 1),
+            (b"\x1b[3;1HABCDE\x1b[B", 3),
+        ] {
+            let (mut cw, pos) = cursor_after(input);
+            assert_eq!(pos, (row, 4));
+            assert!(!cw.grid.cursor.should_wrap);
+            cw.input('X');
+            assert_eq!(cw.grid[Line(row)][Column(4)].c(), 'X');
+            assert_eq!(cw.grid.cursor.pos.row, Line(row));
+        }
+    }
+
+    // DECSC saves origin mode with the cursor and DECRC restores it, as in
+    // xterm and kitty.
+
+    #[test]
+    fn decrc_restores_origin_mode() {
+        let (cw, _) = cursor_after(b"\x1b[?6h\x1b7\x1b[?6l\x1b8");
+        assert!(cw.mode().contains(Mode::ORIGIN));
+        let (cw, _) = cursor_after(b"\x1b7\x1b[?6h\x1b8");
+        assert!(!cw.mode().contains(Mode::ORIGIN));
+    }
+
+    #[test]
+    fn decrc_without_a_save_turns_origin_mode_off() {
+        let (cw, pos) = cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[2;2H\x1b8");
+        assert!(!cw.mode().contains(Mode::ORIGIN));
+        assert_eq!(pos, (0, 0));
+    }
+
+    #[test]
+    fn decrc_reads_the_restored_position_as_saved() {
+        // Saved at the top-left in origin mode with no region; a region
+        // set afterwards doesn't move where restoring puts the cursor,
+        // and the next CUP is in the region's rows.
+        let (mut cw, pos) = cursor_after(b"\x1b[?6h\x1b7\x1b[2;4r\x1b8");
+        assert_eq!(pos, (0, 0));
+        cw.input('X');
+        assert_eq!(cw.grid[Line(0)][Column(0)].c(), 'X');
+        let mut parser = crate::performer::handler::Processor::default();
+        parser.advance(&mut cw, b"\x1b[1;1H");
+        assert_eq!(cw.grid.cursor.pos, Pos::new(Line(1), Column(0)));
+    }
+
+    #[test]
+    fn each_screen_saves_its_own_origin_mode() {
+        // Entering the alt screen saves the primary's cursor, origin mode
+        // included; leaving restores it, whatever the program did.
+        let (cw, _) = cursor_after(b"\x1b[?1049h\x1b[?6h\x1b[?1049l");
+        assert!(!cw.mode().contains(Mode::ORIGIN));
+        let (cw, pos) =
+            cursor_after(b"\x1b[2;4r\x1b[?6h\x1b[2;2H\x1b[?1049h\x1b[?6l\x1b[?1049l");
+        assert!(cw.mode().contains(Mode::ORIGIN));
+        assert_eq!(pos, (2, 1));
+        // The alt screen's DECSC doesn't touch the primary's.
+        let (cw, _) =
+            cursor_after(b"\x1b[?6h\x1b7\x1b[?1049h\x1b[?6l\x1b7\x1b[?1049l\x1b8");
+        assert!(cw.mode().contains(Mode::ORIGIN));
+    }
+
+    #[test]
+    fn reset_forgets_the_saved_origin_mode() {
+        let (cw, _) = cursor_after(b"\x1b[?6h\x1b7\x1bc\x1b8");
+        assert!(!cw.mode().contains(Mode::ORIGIN));
+    }
+
+    // Each screen has its own kitty keyboard flags stack (as in kitty);
+    // what `mode()` reports must follow the active one.
+
+    #[test]
+    fn alt_screen_switch_follows_its_own_kitty_flags() {
+        let size = CrosswordsSize::new(5, 5);
+        let window_id = crate::event::WindowId::from(0);
+        let mut cw =
+            Crosswords::new(size, CursorShape::Block, VoidListener {}, window_id, 0, 10);
+        let mut parser = crate::performer::handler::Processor::default();
+        let kitty = |cw: &Crosswords<VoidListener>| {
+            (cw.mode() & Mode::KITTY_KEYBOARD_PROTOCOL).bits()
+        };
+
+        // Primary: disambiguate.
+        parser.advance(&mut cw, b"\x1b[>1u");
+        assert_eq!(kitty(&cw), Mode::DISAMBIGUATE_ESC_CODES.bits());
+
+        // The alt screen starts with no flags.
+        parser.advance(&mut cw, b"\x1b[?1049h");
+        assert_eq!(kitty(&cw), 0);
+        assert_eq!(cw.keyboard_mode(), KeyboardModes::NO_MODE);
+
+        // Alt: disambiguate + event types.
+        parser.advance(&mut cw, b"\x1b[>3u");
+        assert_eq!(
+            kitty(&cw),
+            (Mode::DISAMBIGUATE_ESC_CODES | Mode::REPORT_EVENT_TYPES).bits()
+        );
+
+        // Back on the primary: its flags, not the alt screen's.
+        parser.advance(&mut cw, b"\x1b[?1049l");
+        assert_eq!(kitty(&cw), Mode::DISAMBIGUATE_ESC_CODES.bits());
+        assert_eq!(cw.keyboard_mode(), KeyboardModes::DISAMBIGUATE_ESC_CODES);
+
+        // And the alt screen kept its own.
+        parser.advance(&mut cw, b"\x1b[?1049h");
+        assert_eq!(
+            kitty(&cw),
+            (Mode::DISAMBIGUATE_ESC_CODES | Mode::REPORT_EVENT_TYPES).bits()
+        );
     }
 
     #[test]
