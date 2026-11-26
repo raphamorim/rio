@@ -2174,14 +2174,21 @@ fn quiet_output_has_its_history_compressed() {
 #[test]
 fn compression_waits_for_the_history_to_settle() {
     let start = Instant::now();
+    // One change: the whole quiet interval.
+    let mut timer = CompressTimer::default();
+    timer.arm(start);
+    assert!(!timer.due(start + COMPRESS_IDLE - Duration::from_millis(1)));
+    assert!(timer.due(start + COMPRESS_IDLE));
+    // Rows every half interval: each starts the wait over, up to the
+    // backstop.
     let mut timer = CompressTimer::default();
     let mut now = start;
-    for _ in 0..10 {
+    while now < start + COMPRESS_FLOWING {
         timer.arm(now);
-        now += COMPRESS_FLOWING / 10;
+        assert!(!timer.due(now + COMPRESS_IDLE / 2 - Duration::from_millis(1)));
+        now += COMPRESS_IDLE / 2;
     }
     assert!(timer.due(start + COMPRESS_FLOWING));
-    assert!(!timer.due(start + COMPRESS_FLOWING / 2));
 
     let mut t = Crosswords::new(
         CrosswordsSize::new(20, 4),

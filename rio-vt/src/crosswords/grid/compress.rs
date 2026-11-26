@@ -31,6 +31,7 @@
 use super::cells::SlabCursor;
 use super::row::{Row, SemanticPrompt};
 use crate::crosswords::square::Square;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 /// Rows per block. Bigger blocks compress better (cells repeat from row to
@@ -98,12 +99,55 @@ pub(crate) struct Resume {
     pub(crate) k: usize,
 }
 
+/// Tells whoever compresses the history (the PTY reader) that something
+/// decoded compressed rows, a search or a snapshot as much as the
+/// viewport, so a pass drops the decoded copies once things are quiet.
+/// Once until [`Self::taken`], from any thread holding the terminal.
+pub(crate) struct HistoryReads {
+    pending: AtomicBool,
+    sink: Box<dyn Fn() + Send + Sync>,
+}
+
+impl HistoryReads {
+    #[cfg_attr(not(feature = "pty"), allow(dead_code))]
+    pub(crate) fn new(sink: Box<dyn Fn() + Send + Sync>) -> Self {
+        Self {
+            pending: AtomicBool::new(false),
+            sink,
+        }
+    }
+
+    /// History was read (decoded): ask for a pass, unless one is asked
+    /// for already.
+    pub(crate) fn read(&self) {
+        if !self.pending.swap(true, Ordering::AcqRel) {
+            (self.sink)();
+        }
+    }
+
+    /// A pass started: reads from here on ask for another.
+    #[cfg_attr(not(feature = "pty"), allow(dead_code))]
+    pub(crate) fn taken(&self) {
+        self.pending.store(false, Ordering::Release);
+    }
+}
+
+impl std::fmt::Debug for HistoryReads {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HistoryReads")
+            .field("pending", &self.pending.load(Ordering::Relaxed))
+            .finish()
+    }
+}
+
 /// A block, shared by the rows in it.
 pub(crate) struct Block<T> {
     pub(crate) data: Arc<Encoded>,
     /// The rows, decoded by the first read of any of them.
     cache: OnceLock<Box<[Row<T>]>>,
     decode: fn(&Encoded) -> Box<[Row<T>]>,
+    /// Told when a read decodes the block.
+    pub(crate) reads: Option<Arc<HistoryReads>>,
 }
 
 impl<T> std::fmt::Debug for Block<T> {
@@ -120,7 +164,12 @@ impl<T> Block<T> {
     /// The block's rows, decoding them on the first call.
     #[inline]
     pub(crate) fn rows(&self) -> &[Row<T>] {
-        self.cache.get_or_init(|| (self.decode)(&self.data))
+        self.cache.get_or_init(|| {
+            if let Some(reads) = &self.reads {
+                reads.read();
+            }
+            (self.decode)(&self.data)
+        })
     }
 
     /// Cells of the block's `at`th row, without decoding anything.
@@ -139,6 +188,7 @@ impl<T> Block<T> {
             data: self.data.clone(),
             cache: OnceLock::new(),
             decode: self.decode,
+            reads: self.reads.clone(),
         }
     }
 
@@ -251,6 +301,7 @@ fn encode_with(rows: &[&Row<Square>], scratch: &mut Scratch) -> Block<Square> {
         }),
         cache: OnceLock::new(),
         decode: decode_squares,
+        reads: None,
     }
 }
 
@@ -539,6 +590,98 @@ mod tests {
         assert_eq!(read.compressed_bytes, m.compressed_bytes);
         assert!(!a.term.compress_history(None));
         assert_eq!(a.term.history_memory(), m);
+    }
+
+    #[cfg(feature = "pty")]
+    fn counting_reads(a: &mut T) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let asked = std::sync::Arc::new(AtomicUsize::new(0));
+        let count = asked.clone();
+        a.term.set_history_read_sink(Box::new(move || {
+            count.fetch_add(1, Ordering::Relaxed);
+        }));
+        asked
+    }
+
+    #[test]
+    #[cfg(feature = "pty")]
+    fn a_read_that_decodes_asks_for_a_pass_once_until_one_starts() {
+        use std::sync::atomic::Ordering;
+        let mut a = T::new(30, 5, 2_000);
+        let asked = counting_reads(&mut a);
+        a.feed(&output(1_000));
+        a.term.compress_history(None);
+        assert_eq!(asked.load(Ordering::Relaxed), 0);
+        // A search, a snapshot: no viewport move, rows decoded all the same.
+        let _ = a.read();
+        assert_eq!(asked.load(Ordering::Relaxed), 1);
+        let _ = a.read();
+        assert_eq!(asked.load(Ordering::Relaxed), 1);
+        a.term.history_reads_taken();
+        assert!(!a.term.compress_history(None));
+        assert_eq!(a.term.history_memory().decoded_bytes, 0);
+        let _ = a.read();
+        assert_eq!(asked.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    #[cfg(feature = "pty")]
+    fn turning_compression_on_asks_for_a_pass() {
+        use std::sync::atomic::Ordering;
+        let mut a = T::new(30, 5, 2_000);
+        let asked = counting_reads(&mut a);
+        a.feed(&output(1_000));
+        a.term.set_scrollback_compression(true);
+        assert_eq!(asked.load(Ordering::Relaxed), 1);
+        a.term.history_reads_taken();
+        a.term.set_scrollback_compression(true);
+        assert_eq!(asked.load(Ordering::Relaxed), 1);
+    }
+
+    /// The steps left nothing for a pass over the whole ring to do.
+    fn assert_nothing_left(a: &mut T, what: &str) {
+        let m = a.term.history_memory();
+        a.term.grid.forget_compress_resume();
+        assert!(!a.term.compress_history(None));
+        assert_eq!(a.term.history_memory(), m, "{what}");
+    }
+
+    #[test]
+    fn a_resize_in_the_middle_of_a_pass_leaves_no_rows_behind() {
+        for cols in [45, 20] {
+            let mut a = T::new(30, 5, 4_000);
+            // Past the limit: no spare rows, the oldest lines go first.
+            a.feed(&output(5_000));
+            // A grow with nothing soft-wrapped keeps the ring's shape.
+            let short: String = (0..5_000).map(|i| format!("line {i}\r\n")).collect();
+            a.feed(short.as_bytes());
+            for _ in 0..4 {
+                assert!(a.term.compress_history(Some(1)));
+            }
+            a.term.resize(CrosswordsSize::new(cols, 5));
+            let mut calls = 0;
+            while a.term.compress_history(Some(1)) {
+                calls += 1;
+                assert!(calls < 10_000);
+            }
+            assert_nothing_left(&mut a, &format!("{cols} columns"));
+        }
+    }
+
+    #[test]
+    fn writing_a_history_row_in_the_middle_of_a_pass_leaves_no_rows_behind() {
+        let mut a = T::new(30, 5, 4_000);
+        a.feed(&output(5_000));
+        for _ in 0..4 {
+            assert!(a.term.compress_history(Some(1)));
+        }
+        // The oldest rows, compressed by the steps so far, made plain.
+        let top = -(a.term.grid.history_size() as i32);
+        for line in top..top + 20 {
+            let _ = &mut a.term.grid[Line(line)];
+        }
+        while a.term.compress_history(Some(1)) {}
+        assert_nothing_left(&mut a, "written");
     }
 
     #[test]

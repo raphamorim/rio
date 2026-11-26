@@ -104,11 +104,12 @@ const READ_BUDGET: usize = READ_CHUNK * 4;
 const COMPRESS_IDLE: Duration = Duration::from_millis(250);
 
 /// While rows keep arriving in the history (a long build log), a step is
-/// taken this often all the same, so it doesn't stay as written until the
-/// output pauses: a block per this interval, a fraction of a percent of
-/// the thread that parses.
+/// taken this long after the first of them all the same, so it doesn't
+/// stay as written until the output pauses: a block per this interval, a
+/// fraction of a percent of the thread that parses. Longer than
+/// [`COMPRESS_IDLE`], or output that pauses would never get that wait.
 #[cfg(feature = "pty")]
-const COMPRESS_FLOWING: Duration = Duration::from_millis(100);
+const COMPRESS_FLOWING: Duration = Duration::from_secs(1);
 
 /// Between the steps of one pass. Each compresses one block (a tenth of
 /// a millisecond at 120 columns) and goes on where the last stopped; the
@@ -225,6 +226,9 @@ struct CompressTimer {
     at: Option<Instant>,
     /// The first change since the last step.
     since: Option<Instant>,
+    /// The history was read (or the viewport left it) since the last
+    /// pass started: the next one looks over all of it.
+    read: bool,
     /// The history as last seen: rows in it and rows dropped from it,
     /// both screens'.
     history: (usize, u64, usize, u64),
@@ -266,11 +270,13 @@ impl CompressTimer {
             return;
         };
         self.since = None;
+        if std::mem::take(&mut self.read) {
+            terminal.history_reads_taken();
+        }
         if terminal.scrollback_compression() && terminal.compress_history(Some(1)) {
             self.at = Some(now + COMPRESS_STEP);
         } else {
             self.at = None;
-            terminal.history_read_pending = false;
         }
     }
 }
@@ -521,7 +527,10 @@ where
                     // reflow it.
                     state.compress.arm(Instant::now());
                 }
-                Msg::Compress => state.compress.arm(Instant::now()),
+                Msg::Compress => {
+                    state.compress.read = true;
+                    state.compress.arm(Instant::now());
+                }
                 Msg::Shutdown => return false,
             }
         }

@@ -498,16 +498,6 @@ const KEYBOARD_MODE_STACK_MAX_DEPTH: usize = 8;
 /// [`Crosswords::set_reply_sink`].
 pub struct ReplySink(pub Box<dyn Fn(String) + Send>);
 
-/// What the terminal calls when the viewport moves over the history; see
-/// [`Crosswords::scroll_display`].
-pub(crate) struct HistoryReadSink(Box<dyn Fn() + Send>);
-
-impl std::fmt::Debug for HistoryReadSink {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("HistoryReadSink")
-    }
-}
-
 impl std::ops::Deref for ReplySink {
     type Target = dyn Fn(String) + Send;
     fn deref(&self) -> &Self::Target {
@@ -597,11 +587,9 @@ where
     /// output is quiet. Off by default; see
     /// [`Self::set_scrollback_compression`].
     scrollback_compression: bool,
-    /// Tells the PTY reader the viewport moved over the history (which
-    /// decodes rows), once per compression pass.
-    history_read_sink: Option<HistoryReadSink>,
-    /// The reader was told, and hasn't compressed since.
-    pub(crate) history_read_pending: bool,
+    /// Tells the PTY reader the history was read (the viewport moved over
+    /// it, or a read decoded rows), once per compression pass.
+    history_reads: Option<std::sync::Arc<grid::compress::HistoryReads>>,
     /// Whether the embedder handles OSC 7501. Off by default: until an
     /// embedder opts in, the support query goes unanswered (so programs
     /// don't believe in a protocol nobody acts on) and reports are
@@ -714,8 +702,7 @@ impl<U: EventListener> Crosswords<U> {
             damage_event_in_flight: false,
             sync_update_started: None,
             scrollback_compression: false,
-            history_read_sink: None,
-            history_read_pending: false,
+            history_reads: None,
             program_status_enabled: false,
             focused: false,
             program_status_seen: false,
@@ -768,7 +755,18 @@ impl<U: EventListener> Crosswords<U> {
     /// is compressed stays so until it is written to; turned on, it
     /// starts after the next output.
     pub fn set_scrollback_compression(&mut self, enabled: bool) {
-        self.scrollback_compression = enabled;
+        let was = std::mem::replace(&mut self.scrollback_compression, enabled);
+        if enabled && !was {
+            // What came in while it was off waits for no more output.
+            self.history_was_read();
+        }
+    }
+
+    /// Have the PTY reader compress (drop decoded copies) once quiet.
+    fn history_was_read(&self) {
+        if let Some(reads) = &self.history_reads {
+            reads.read();
+        }
     }
 
     /// Rows in each screen's history and rows dropped from it: what
@@ -791,8 +789,23 @@ impl<U: EventListener> Crosswords<U> {
     /// For the PTY reader: what to call when the viewport moves over the
     /// history.
     #[cfg(feature = "pty")]
-    pub(crate) fn set_history_read_sink(&mut self, sink: Box<dyn Fn() + Send>) {
-        self.history_read_sink = Some(HistoryReadSink(sink));
+    pub(crate) fn set_history_read_sink(&mut self, sink: Box<dyn Fn() + Send + Sync>) {
+        let reads = std::sync::Arc::new(grid::compress::HistoryReads::new(sink));
+        self.grid.set_history_reads(Some(reads.clone()));
+        self.inactive_grid.set_history_reads(Some(reads.clone()));
+        self.history_reads = Some(reads);
+    }
+
+    /// For the PTY reader, as a pass starts: the next read asks for
+    /// another, and the pass looks over the whole ring (rows a read
+    /// decoded, or the viewport left, can be anywhere in it).
+    #[cfg(feature = "pty")]
+    pub(crate) fn history_reads_taken(&mut self) {
+        if let Some(reads) = &self.history_reads {
+            reads.taken();
+        }
+        self.grid.forget_compress_resume();
+        self.inactive_grid.forget_compress_resume();
     }
 
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
@@ -989,11 +1002,8 @@ impl<U: EventListener> Crosswords<U> {
         if old_display_offset != self.grid.display_offset() {
             // Showing history decodes it: have it compressed again (the
             // decoded copies dropped) once things are quiet.
-            if self.scrollback_compression && !self.history_read_pending {
-                if let Some(HistoryReadSink(sink)) = &self.history_read_sink {
-                    self.history_read_pending = true;
-                    sink();
-                }
+            if self.scrollback_compression {
+                self.history_was_read();
             }
             self.mark_fully_damaged();
             self.request_render();
