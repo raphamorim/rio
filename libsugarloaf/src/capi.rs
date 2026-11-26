@@ -53,7 +53,9 @@ pub struct Sl {
     /// NOTE: this (and `had_search`) assume one grid per `Sl` — the model the
     /// `sl_render_surface` host uses (one NSView → one `Sl` → one grid). If a
     /// single `Sl` ever drives several grids via `sl_render_grids`, these
-    /// one-frame-latch flags would need to move onto the grid.
+    /// one-frame-latch flags would need to move onto the grid, and the
+    /// rasterizer's `end_frame` would have to run once per frame rather
+    /// than once per surface.
     had_selection: bool,
     /// Same, for search highlights: the frame after the matches clear must
     /// repaint to drop the highlight from rows the dirty bits won't flag.
@@ -1436,6 +1438,7 @@ pub unsafe extern "C" fn sl_render_surface(
                 );
                 grid.write_row(y as u32, &bg_scratch, &fg_scratch);
             }
+            rasterizer.end_frame();
         }
 
         // Cursor: pick the render style, emit its sprite into the block
