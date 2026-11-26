@@ -7,6 +7,7 @@ use rio_window::keyboard::Key;
 use rio_window::keyboard::KeyLocation;
 use rio_window::keyboard::ModifiersState;
 use rio_window::keyboard::NamedKey;
+use rio_window::keyboard::{KeyCode, PhysicalKey};
 use rio_window::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use std::borrow::Cow;
 
@@ -146,12 +147,16 @@ impl SequenceBuilder {
                 }
             }
 
-            // NOTE: Base layouts are ignored, since winit doesn't expose this information
-            // yet.
-            let payload = if self.mode.contains(Mode::REPORT_ALTERNATE_KEYS)
-                && alternate_key_code != unicode_key_code
-            {
-                format!("{unicode_key_code}:{alternate_key_code}")
+            let payload = if self.mode.contains(Mode::REPORT_ALTERNATE_KEYS) {
+                let shifted_key_code = (alternate_key_code != unicode_key_code)
+                    .then_some(alternate_key_code);
+                let base_layout_key_code = base_layout_key(key.physical_key)
+                    .filter(|&code| code != unicode_key_code);
+                alternate_keys_payload(
+                    unicode_key_code,
+                    shifted_key_code,
+                    base_layout_key_code,
+                )
             } else {
                 unicode_key_code.to_string()
             };
@@ -463,4 +468,122 @@ fn is_control_character(text: &str) -> bool {
     // does not match the reported text (`^H`), despite not technically being part of C0 or C1.
     let codepoint = text.bytes().next().unwrap();
     text.len() == 1 && (codepoint < 0x20 || (0x7f..=0x9f).contains(&codepoint))
+}
+
+/// Format the key code field with its alternate keys:
+/// `unicode-key-code[:shifted-key[:base-layout-key]]`. A base layout key
+/// without a shifted key keeps an empty sub-field (`1089::99`).
+fn alternate_keys_payload(
+    unicode_key_code: u32,
+    shifted_key_code: Option<u32>,
+    base_layout_key_code: Option<u32>,
+) -> String {
+    match (shifted_key_code, base_layout_key_code) {
+        (None, None) => unicode_key_code.to_string(),
+        (Some(shifted), None) => format!("{unicode_key_code}:{shifted}"),
+        (shifted, Some(base)) => {
+            let shifted = shifted.map(|code| code.to_string()).unwrap_or_default();
+            format!("{unicode_key_code}:{shifted}:{base}")
+        }
+    }
+}
+
+/// The PC-101 character of a textual key pressed with a command modifier
+/// (Ctrl, Alt or Super), for matching key bindings such as `ctrl+shift+v`
+/// while a non-Latin layout is active. Plain and shifted keys are text
+/// input, so they never fall back.
+pub fn base_layout_binding_key(key: &KeyEvent, mods: ModifiersState) -> Option<Key> {
+    if !(mods.control_key() || mods.alt_key() || mods.super_key()) {
+        return None;
+    }
+    if !matches!(key.logical_key, Key::Character(_)) {
+        return None;
+    }
+    let base = char::from_u32(base_layout_key(key.physical_key)?)?;
+    Some(Key::Character(base.to_string().into()))
+}
+
+/// The key at `physical_key`'s position in the standard PC-101 layout,
+/// which the kitty keyboard protocol reports as the base layout key. It
+/// lets applications match `ctrl+c` while a non-Latin layout is active.
+fn base_layout_key(physical_key: PhysicalKey) -> Option<u32> {
+    let PhysicalKey::Code(code) = physical_key else {
+        return None;
+    };
+    let ch = match code {
+        KeyCode::KeyA => 'a',
+        KeyCode::KeyB => 'b',
+        KeyCode::KeyC => 'c',
+        KeyCode::KeyD => 'd',
+        KeyCode::KeyE => 'e',
+        KeyCode::KeyF => 'f',
+        KeyCode::KeyG => 'g',
+        KeyCode::KeyH => 'h',
+        KeyCode::KeyI => 'i',
+        KeyCode::KeyJ => 'j',
+        KeyCode::KeyK => 'k',
+        KeyCode::KeyL => 'l',
+        KeyCode::KeyM => 'm',
+        KeyCode::KeyN => 'n',
+        KeyCode::KeyO => 'o',
+        KeyCode::KeyP => 'p',
+        KeyCode::KeyQ => 'q',
+        KeyCode::KeyR => 'r',
+        KeyCode::KeyS => 's',
+        KeyCode::KeyT => 't',
+        KeyCode::KeyU => 'u',
+        KeyCode::KeyV => 'v',
+        KeyCode::KeyW => 'w',
+        KeyCode::KeyX => 'x',
+        KeyCode::KeyY => 'y',
+        KeyCode::KeyZ => 'z',
+        KeyCode::Digit0 => '0',
+        KeyCode::Digit1 => '1',
+        KeyCode::Digit2 => '2',
+        KeyCode::Digit3 => '3',
+        KeyCode::Digit4 => '4',
+        KeyCode::Digit5 => '5',
+        KeyCode::Digit6 => '6',
+        KeyCode::Digit7 => '7',
+        KeyCode::Digit8 => '8',
+        KeyCode::Digit9 => '9',
+        KeyCode::Backquote => '`',
+        KeyCode::Minus => '-',
+        KeyCode::Equal => '=',
+        KeyCode::BracketLeft => '[',
+        KeyCode::BracketRight => ']',
+        KeyCode::Backslash => '\\',
+        KeyCode::Semicolon => ';',
+        KeyCode::Quote => '\'',
+        KeyCode::Comma => ',',
+        KeyCode::Period => '.',
+        KeyCode::Slash => '/',
+        _ => return None,
+    };
+    Some(u32::from(ch))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base_layout_key_follows_pc101_position() {
+        assert_eq!(base_layout_key(PhysicalKey::Code(KeyCode::KeyC)), Some(99));
+        assert_eq!(base_layout_key(PhysicalKey::Code(KeyCode::Comma)), Some(44));
+        assert_eq!(base_layout_key(PhysicalKey::Code(KeyCode::Enter)), None);
+    }
+
+    #[test]
+    fn alternate_keys_payload_fields() {
+        assert_eq!(alternate_keys_payload(99, None, None), "99");
+        assert_eq!(alternate_keys_payload(97, Some(65), None), "97:65");
+        // ctrl+С on a Cyrillic layout: `с` (U+0441) on the `c` key.
+        assert_eq!(alternate_keys_payload(1089, None, Some(99)), "1089::99");
+        // shift+С on a Cyrillic layout.
+        assert_eq!(
+            alternate_keys_payload(1089, Some(1057), Some(99)),
+            "1089:1057:99"
+        );
+    }
 }
