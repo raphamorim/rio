@@ -69,6 +69,12 @@ pub struct Storage<T> {
     /// which go back to the OS whole once their rows are compressed
     /// (`grid::cells`).
     slabs: SlabCursor<T>,
+
+    /// Where a compression limited to a few blocks stopped, for the next
+    /// call to go on from while the ring is as it was. Anything that
+    /// makes compressed rows plain again forgets it, so the next call
+    /// looks over the whole ring.
+    resume: Option<compress::Resume>,
 }
 
 impl<T: PartialEq> PartialEq for Storage<T> {
@@ -99,7 +105,26 @@ impl<T> Storage<T> {
             len: visible_lines,
             free: Vec::new(),
             slabs,
+            resume: None,
         }
+    }
+
+    /// Make the compressed row at raw `index` plain.
+    #[cold]
+    #[inline(never)]
+    fn unpack_at(&mut self, index: usize)
+    where
+        T: Clone,
+    {
+        self.resume = None;
+        self.inner[index].unpack();
+    }
+
+    /// Forget where the last limited compression stopped: the next one
+    /// looks over the whole ring (and drops the decoded copies reads
+    /// left).
+    pub(crate) fn forget_compress_resume(&mut self) {
+        self.resume = None;
     }
 
     /// Increase the number of lines in the buffer.
@@ -422,9 +447,10 @@ impl<T: Clone> IndexMut<Line> for Storage<T> {
     #[inline]
     fn index_mut(&mut self, index: Line) -> &mut Self::Output {
         let index = self.compute_index(index);
-        let row = &mut self.inner[index];
-        row.unpack();
-        row
+        if self.inner[index].is_compressed() {
+            self.unpack_at(index);
+        }
+        &mut self.inner[index]
     }
 }
 
@@ -438,6 +464,7 @@ impl<T: Clone + Default> Storage<T> {
         if row.is_compressed() {
             // Output recycling compressed history: cells from the slab
             // the rows before it took theirs from.
+            self.resume = None;
             row.discard_packed_into(&mut self.slabs);
         }
         row
@@ -446,6 +473,7 @@ impl<T: Clone + Default> Storage<T> {
     /// Make every compressed row plain again (before a column resize,
     /// which rewrites every row).
     pub fn decompress_all(&mut self) {
+        self.resume = None;
         for row in &mut self.inner {
             row.unpack_into(&mut self.slabs);
         }
@@ -484,6 +512,17 @@ impl Storage<Square> {
     /// there (with its first pass over the ring done), so a pass in steps
     /// costs about what one call does.
     pub(crate) fn compress_from(
+        &mut self,
+        newest: usize,
+        max_blocks: Option<usize>,
+    ) -> bool {
+        let mut resume = self.resume.take();
+        let more = self.compress_rows(newest, max_blocks, &mut resume);
+        self.resume = resume;
+        more
+    }
+
+    fn compress_rows(
         &mut self,
         newest: usize,
         max_blocks: Option<usize>,
@@ -560,7 +599,7 @@ impl Storage<Square> {
                 }
             };
             if unpack {
-                row.unpack();
+                row.unpack_into(&mut self.slabs);
             } else if let Some(copy) = copy {
                 row.packed = Some(copy);
             }
@@ -727,6 +766,7 @@ mod tests {
             len: 3,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         // Grow buffer.
@@ -740,6 +780,7 @@ mod tests {
             len: 4,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
         // Resize grows by exactly one line now (no scrollback over-alloc).
         expected.inner.push(filled_row('\0'));
@@ -773,6 +814,7 @@ mod tests {
             len: 3,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         // Grow buffer.
@@ -786,6 +828,7 @@ mod tests {
             len: 4,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
         // Resize grows by exactly one line now (no scrollback over-alloc).
         expected.inner.push(filled_row('\0'));
@@ -816,6 +859,7 @@ mod tests {
             len: 3,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         // Shrink buffer.
@@ -829,6 +873,7 @@ mod tests {
             len: 2,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -856,6 +901,7 @@ mod tests {
             len: 3,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         // Shrink buffer.
@@ -869,6 +915,7 @@ mod tests {
             len: 2,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -909,6 +956,7 @@ mod tests {
             len: 6,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         // Shrink buffer.
@@ -929,6 +977,7 @@ mod tests {
             len: 2,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -965,6 +1014,7 @@ mod tests {
             len: 2,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         // Truncate buffer.
@@ -978,6 +1028,7 @@ mod tests {
             len: 2,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -1004,6 +1055,7 @@ mod tests {
             len: 2,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         // Truncate buffer.
@@ -1017,6 +1069,7 @@ mod tests {
             len: 2,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -1065,6 +1118,7 @@ mod tests {
             len: 6,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         // Shrink buffer.
@@ -1085,6 +1139,7 @@ mod tests {
             len: 3,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.inner, shrinking_expected.inner);
         assert_eq!(storage.zero, shrinking_expected.zero);
@@ -1108,6 +1163,7 @@ mod tests {
             len: 4,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         assert_eq!(storage.inner, growing_expected.inner);
@@ -1132,6 +1188,7 @@ mod tests {
             len: 6,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         // Initialize additional lines.
@@ -1156,6 +1213,7 @@ mod tests {
             len: 9,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         assert_eq!(storage.len, expected_storage.len);
@@ -1182,6 +1240,7 @@ mod tests {
             len: 6,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         // Initialize additional lines.
@@ -1204,6 +1263,7 @@ mod tests {
             len: 11,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         assert_eq!(storage.len, expected_storage.len);
@@ -1220,6 +1280,7 @@ mod tests {
             len: 3,
             free: Vec::new(),
             slabs: Default::default(),
+            resume: None,
         };
 
         storage.rotate(2);

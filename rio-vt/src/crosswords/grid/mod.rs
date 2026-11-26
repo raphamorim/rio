@@ -103,10 +103,6 @@ pub struct Grid<T> {
     /// Output of the last tracked column reflow; `None` when tracking
     /// was off or the column count did not change.
     pub reflow_remap: Option<ReflowRemap>,
-
-    /// Where a compression limited to a few blocks stopped, for the next
-    /// call to go on from while the ring is as it was.
-    compress_resume: Option<compress::Resume>,
 }
 
 /// Exact row mapping recorded during a column reflow, in oldest-first
@@ -351,7 +347,6 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
             columns,
             style_set: crate::crosswords::style::StyleSet::new(),
             extras_table: ExtrasTable::new(),
-            compress_resume: None,
         }
     }
 
@@ -626,6 +621,7 @@ impl<T> Grid<T> {
     }
 
     pub fn clear_history(&mut self) {
+        self.raw.forget_compress_resume();
         // Explicitly purge all lines from history.
         self.total_lines_scrolled += self.history_size() as u64;
         self.raw.shrink_lines(self.history_size());
@@ -711,9 +707,16 @@ impl Grid<Square> {
     /// new blocks (`None`: all of it). Also drops the decoded copies reads
     /// left. Returns whether there is more to do (`max_blocks` was hit).
     pub fn compress_history(&mut self, max_blocks: Option<usize>) -> bool {
+        // (The ring's shape is the resume cursor's key; the viewport
+        // moving changes `newest`.)
         let newest = self.screen_lines() + self.display_offset;
-        self.raw
-            .compress_from(newest, max_blocks, &mut self.compress_resume)
+        self.raw.compress_from(newest, max_blocks)
+    }
+
+    /// Have the next limited compression look over the whole ring.
+    #[cfg(test)]
+    pub(crate) fn forget_compress_resume(&mut self) {
+        self.raw.forget_compress_resume();
     }
 
     /// How much of the history (and the rows the ring keeps past it) is

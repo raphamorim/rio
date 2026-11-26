@@ -541,6 +541,52 @@ mod tests {
         assert_eq!(a.term.history_memory(), m);
     }
 
+    /// The steps left nothing for a pass over the whole ring to do.
+    fn assert_nothing_left(a: &mut T, what: &str) {
+        let m = a.term.history_memory();
+        a.term.grid.forget_compress_resume();
+        assert!(!a.term.compress_history(None));
+        assert_eq!(a.term.history_memory(), m, "{what}");
+    }
+
+    #[test]
+    fn a_resize_in_the_middle_of_a_pass_leaves_no_rows_behind() {
+        for cols in [45, 20] {
+            let mut a = T::new(30, 5, 4_000);
+            // Past the limit: no spare rows, the oldest lines go first.
+            a.feed(&output(5_000));
+            // A grow with nothing soft-wrapped keeps the ring's shape.
+            let short: String = (0..5_000).map(|i| format!("line {i}\r\n")).collect();
+            a.feed(short.as_bytes());
+            for _ in 0..4 {
+                assert!(a.term.compress_history(Some(1)));
+            }
+            a.term.resize(CrosswordsSize::new(cols, 5));
+            let mut calls = 0;
+            while a.term.compress_history(Some(1)) {
+                calls += 1;
+                assert!(calls < 10_000);
+            }
+            assert_nothing_left(&mut a, &format!("{cols} columns"));
+        }
+    }
+
+    #[test]
+    fn writing_a_history_row_in_the_middle_of_a_pass_leaves_no_rows_behind() {
+        let mut a = T::new(30, 5, 4_000);
+        a.feed(&output(5_000));
+        for _ in 0..4 {
+            assert!(a.term.compress_history(Some(1)));
+        }
+        // The oldest rows, compressed by the steps so far, made plain.
+        let top = -(a.term.grid.history_size() as i32);
+        for line in top..top + 20 {
+            let _ = &mut a.term.grid[Line(line)];
+        }
+        while a.term.compress_history(Some(1)) {}
+        assert_nothing_left(&mut a, "written");
+    }
+
     #[test]
     fn writing_a_compressed_row_makes_it_plain() {
         let mut a = T::new(30, 5, 2_000);
