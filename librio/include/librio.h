@@ -167,7 +167,28 @@ typedef struct {
      leaves the support query (OSC 7501 ; ?) unanswered. */
   void (*program_status_cb)(void *userdata, rio_surface_id_t surface,
                             const rio_program_status_s *status);
+  /* Glyph Protocol payload formats the host draws, as RIO_GLYPH_FORMAT_*
+     bits; programs are offered exactly these. Zero, or a NULL
+     glyph_query_cb, leaves the protocol off: its probe goes unanswered.
+     Cells keep the registration they were printed with: read it with
+     rio_render_state_cell_glyph. */
+  uint32_t glyph_formats;
+  /* A program asked what draws cp (Glyph Protocol q). Called from the
+     parser with the terminal locked, so keep it short (queue and
+     return) and call nothing in librio from it but
+     rio_surface_glyph_query_pending/reply. Answer with
+     rio_surface_glyph_query_reply, once per query and in order, here
+     or later from any thread; replies made after the query wait for
+     its answer. Past 1024 waiting, librio answers the oldest itself
+     with reason=unknown, so answer the codepoint
+     rio_surface_glyph_query_pending reports, not the one given here. */
+  void (*glyph_query_cb)(void *userdata, rio_surface_id_t surface, uint32_t cp);
 } rio_runtime_config_s;
+
+#define RIO_GLYPH_FORMAT_GLYF (1u << 0)
+#define RIO_GLYPH_FORMAT_COLRV0 (1u << 1)
+#define RIO_GLYPH_FORMAT_COLRV1 (1u << 2)
+#define RIO_GLYPH_FORMAT_VG (1u << 3)
 
 typedef struct {
   /* NULL means $SHELL, falling back to /bin/sh. */
@@ -304,6 +325,14 @@ void rio_set_colors(const rio_colors_s *colors);
 
 rio_surface_t *rio_surface_new(rio_engine_t *engine,
                                const rio_surface_config_s *config);
+/* The codepoint of the oldest glyph_query_cb query still unanswered, in
+ * *cp, so a host can answer every waiting one in a single pass. False
+ * when none is waiting. */
+bool rio_surface_glyph_query_pending(const rio_surface_t *surface, uint32_t *cp);
+/* Answer the oldest glyph_query_cb query for this surface: system says
+ * whether the host's fonts draw its codepoint. Any thread, but not from
+ * inside another librio callback. False when no query is waiting. */
+bool rio_surface_glyph_query_reply(const rio_surface_t *surface, bool system);
 void rio_surface_free(rio_surface_t *surface);
 rio_surface_id_t rio_surface_id(const rio_surface_t *surface);
 /* Pid of the spawned program, for identity and diagnostics only. Do not
@@ -462,6 +491,13 @@ rio_cell_s rio_render_state_cell(const rio_render_state_t *state, uint16_t line,
  * or an internal error); see RIO_CELL_HAS_UNDERLINE_COLOR. */
 rio_color_s rio_render_state_cell_underline_color(const rio_render_state_t *state,
                                                   uint16_t line, uint16_t column);
+/* The Glyph Protocol registration a cell was printed with, as a version
+ * that always means the same glyph within this surface (so it can key a
+ * raster cache; one shared across surfaces keys on the surface too).
+ * Programs can register a new version every frame, so bound the cache.
+ * False for every other cell, or when the host draws no formats. */
+bool rio_render_state_cell_glyph(const rio_render_state_t *state, uint16_t line,
+                                 uint16_t column, uint32_t *version);
 rio_cursor_s rio_render_state_cursor(const rio_render_state_t *state);
 /* RIO_CURSOR_*; see the defines. */
 uint8_t rio_render_state_cursor_shape(const rio_render_state_t *state);
