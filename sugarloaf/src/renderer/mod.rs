@@ -756,6 +756,39 @@ struct ImageTextureEntry {
 /// on demand.
 const IMAGE_TEXTURE_BUDGET_BYTES: usize = 256 << 20;
 
+/// How many covering images [`hidden_overlays`] compares against, so a
+/// screen of many small images stays linear.
+const MAX_COVERING_OVERLAYS: usize = 16;
+
+/// Which overlays, given in the order they are drawn, lie wholly under
+/// a later one of the same layer that `covers` what is below it.
+///
+/// A client that streams frames without an image id (mpv) leaves every
+/// frame placed, one exactly over the other, until the storage limit
+/// evicts it. All but the last are invisible, and drawing them costs a
+/// full blit each.
+fn hidden_overlays(
+    overlays: &[&crate::sugarloaf::graphics::GraphicOverlay],
+    covers: impl Fn(&crate::sugarloaf::graphics::GraphicOverlay) -> bool,
+) -> Vec<bool> {
+    let mut hidden = vec![false; overlays.len()];
+    let mut above: Vec<&crate::sugarloaf::graphics::GraphicOverlay> = Vec::new();
+    for (i, overlay) in overlays.iter().enumerate().rev() {
+        let layer = ImageLayer::of(overlay.z_index);
+        hidden[i] = above.iter().any(|top| {
+            ImageLayer::of(top.z_index) == layer
+                && top.x <= overlay.x
+                && top.y <= overlay.y
+                && top.x + top.width >= overlay.x + overlay.width
+                && top.y + top.height >= overlay.y + overlay.height
+        });
+        if !hidden[i] && above.len() < MAX_COVERING_OVERLAYS && covers(overlay) {
+            above.push(overlay);
+        }
+    }
+    hidden
+}
+
 /// Pick which textures to evict to get `total_bytes` back under
 /// `budget`. Never evicts entries referenced by the current frame.
 /// Returns the chosen keys; pure so the policy is unit-testable.
@@ -816,6 +849,18 @@ enum ImageLayer {
     BelowBg,
     BelowText,
     AboveText,
+}
+
+impl ImageLayer {
+    fn of(z_index: i32) -> Self {
+        if z_index < IMAGE_BG_LIMIT {
+            ImageLayer::BelowBg
+        } else if z_index < 0 {
+            ImageLayer::BelowText
+        } else {
+            ImageLayer::AboveText
+        }
+    }
 }
 
 /// Threshold separating `BelowBg` from `BelowText`: `i32::MIN / 2`.
@@ -1207,8 +1252,29 @@ impl Renderer {
         self.image_frame_counter += 1;
         let current_frame = self.image_frame_counter;
 
+        // Images wholly under an opaque one are neither uploaded nor
+        // drawn. Their pixels stay in `image_data`, so they upload on
+        // demand if what hides them goes away.
+        let hidden = hidden_overlays(overlays, |overlay| {
+            image_data.get(&overlay.image_id).is_some_and(|entry| {
+                entry.is_opaque
+                    && matches!(
+                        &entry.handle.data,
+                        crate::components::core::image::Data::Rgba { width, height, .. }
+                            if *width > 0 && *height > 0
+                    )
+            })
+        });
+        let visible = || {
+            overlays
+                .iter()
+                .zip(&hidden)
+                .filter(|(_, hidden)| !**hidden)
+                .map(|(overlay, _)| *overlay)
+        };
+
         // Upload/update per-image textures
-        for overlay in overlays {
+        for overlay in visible() {
             let entry = match image_data.get(&overlay.image_id) {
                 Some(e) => e,
                 None => continue,
@@ -1401,7 +1467,7 @@ impl Renderer {
 
         // Build image draw commands (one instance per image placement)
         self.image_draws.clear();
-        for overlay in overlays {
+        for overlay in visible() {
             if !self.image_textures.contains_key(&overlay.image_id) {
                 continue;
             }
@@ -1412,13 +1478,7 @@ impl Renderer {
                     dest_size: [overlay.width, overlay.height],
                     source_rect: overlay.source_rect,
                 },
-                layer: if overlay.z_index < IMAGE_BG_LIMIT {
-                    ImageLayer::BelowBg
-                } else if overlay.z_index < 0 {
-                    ImageLayer::BelowText
-                } else {
-                    ImageLayer::AboveText
-                },
+                layer: ImageLayer::of(overlay.z_index),
             });
         }
     }
@@ -3359,6 +3419,103 @@ mod rect_positioning_tests {
         assert!(
             !last_rendered_graphic.contains(&graphic_id),
             "After clear, graphic should be renderable again"
+        );
+    }
+}
+
+#[cfg(test)]
+mod hidden_overlay_tests {
+    use super::{hidden_overlays, IMAGE_BG_LIMIT, MAX_COVERING_OVERLAYS};
+    use crate::sugarloaf::graphics::GraphicOverlay;
+
+    fn at(image_id: u64, x: f32, y: f32, side: f32, z_index: i32) -> GraphicOverlay {
+        GraphicOverlay {
+            image_id,
+            x,
+            y,
+            width: side,
+            height: side,
+            z_index,
+            source_rect: [0.0, 0.0, 1.0, 1.0],
+        }
+    }
+
+    fn hidden(overlays: &[GraphicOverlay], opaque: impl Fn(u64) -> bool) -> Vec<bool> {
+        let refs: Vec<_> = overlays.iter().collect();
+        hidden_overlays(&refs, |o| opaque(o.image_id))
+    }
+
+    // Frames streamed one over the other: only the last is drawn.
+    #[test]
+    fn a_stack_of_opaque_frames_draws_the_last() {
+        let stack: Vec<_> = (0..90).map(|id| at(id, 0.0, 0.0, 10.0, 0)).collect();
+        let mut expected = vec![true; 90];
+        expected[89] = false;
+        assert_eq!(hidden(&stack, |_| true), expected);
+    }
+
+    #[test]
+    fn a_transparent_image_hides_nothing() {
+        let pair = [at(1, 0.0, 0.0, 10.0, 0), at(2, 0.0, 0.0, 10.0, 0)];
+        assert_eq!(hidden(&pair, |id| id != 2), [false, false]);
+    }
+
+    // A transparent frame between does not stop the opaque one above
+    // it from hiding both.
+    #[test]
+    fn an_opaque_image_hides_whatever_is_below_it() {
+        let three = [
+            at(1, 0.0, 0.0, 10.0, 0),
+            at(2, 0.0, 0.0, 10.0, 0),
+            at(3, 0.0, 0.0, 10.0, 0),
+        ];
+        assert_eq!(hidden(&three, |id| id == 3), [true, true, false]);
+    }
+
+    #[test]
+    fn a_partly_covered_image_is_drawn() {
+        let smaller = [at(1, 0.0, 0.0, 10.0, 0), at(2, 0.0, 0.0, 9.0, 0)];
+        assert_eq!(hidden(&smaller, |_| true), [false, false]);
+        let shifted = [at(1, 0.0, 0.0, 10.0, 0), at(2, 1.0, 0.0, 10.0, 0)];
+        assert_eq!(hidden(&shifted, |_| true), [false, false]);
+        let larger = [at(1, 1.0, 1.0, 5.0, 0), at(2, 0.0, 0.0, 10.0, 0)];
+        assert_eq!(hidden(&larger, |_| true), [true, false]);
+    }
+
+    // Text is drawn between the layers, so an image over the text does
+    // not hide one under it.
+    #[test]
+    fn layers_do_not_hide_each_other() {
+        let layers = [
+            at(1, 0.0, 0.0, 10.0, IMAGE_BG_LIMIT - 1),
+            at(2, 0.0, 0.0, 10.0, -1),
+            at(3, 0.0, 0.0, 10.0, 0),
+        ];
+        assert_eq!(hidden(&layers, |_| true), [false, false, false]);
+    }
+
+    // The image on top is never hidden by one drawn before it.
+    #[test]
+    fn order_decides() {
+        let pair = [at(1, 0.0, 0.0, 10.0, 0), at(2, 2.0, 2.0, 5.0, 0)];
+        assert_eq!(hidden(&pair, |_| true), [false, false]);
+    }
+
+    // Past the cap covering images are no longer remembered, which
+    // draws more than needed and never less.
+    #[test]
+    fn the_cap_only_draws_more() {
+        let n = MAX_COVERING_OVERLAYS + 4;
+        let mut tiles: Vec<_> = (0..n)
+            .map(|i| at(i as u64, 20.0 * i as f32, 0.0, 10.0, 0))
+            .collect();
+        let mut pairs = tiles.clone();
+        pairs.append(&mut tiles);
+        let hidden = hidden(&pairs, |_| true);
+        assert!(hidden[n..].iter().all(|hidden| !hidden));
+        assert_eq!(
+            hidden[..n].iter().filter(|hidden| **hidden).count(),
+            MAX_COVERING_OVERLAYS
         );
     }
 }
