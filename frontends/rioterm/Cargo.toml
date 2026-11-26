@@ -111,6 +111,11 @@ wayland = [
     "rio-backend/wayland",
     "rio-window/wayland",
     "rio-window/wayland-dlopen",
+    # Compositors that implement no zxdg_decoration_manager_v1 (GNOME/Mutter,
+    # among others) leave decorations entirely to the client. Without this,
+    # rio falls back to rio-window's plain frame, which draws the buttons but
+    # no title text at all.
+    "rio-window/wayland-csd-adwaita",
 ]
 wgpu = ["sugarloaf/wgpu", "rio-backend/wgpu"]
 
