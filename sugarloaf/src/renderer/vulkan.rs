@@ -73,9 +73,9 @@ pub struct VulkanRenderer {
     /// `&mut self` without needing a live `&VulkanContext` borrow.
     /// See `VkShared`.
     shared: Arc<VkShared>,
-    /// Set once at construction from the configured `Colorspace`.
-    /// Mirrors `MetalRenderer::input_colorspace`. Value is `0 = sRGB`,
-    /// `1 = DisplayP3`, `2 = Rec.2020`.
+    /// Set once at construction from the configured `Colorspace` via
+    /// `Colorspace::shader_code(false)`: the swapchain is sRGB, so sRGB
+    /// input is `1` (as-is), never `0` (sRGB -> P3 matrix).
     input_colorspace: u32,
 
     // ---------- quad pipeline (rich-text rect/rounded-rect path) ----------
@@ -138,11 +138,9 @@ impl VulkanRenderer {
         let shared = ctx.shared().clone();
         let device = &shared.raw;
         let color_format = ctx.swapchain_format();
-        let input_colorspace = match colorspace {
-            crate::sugarloaf::Colorspace::Srgb => 0u32,
-            crate::sugarloaf::Colorspace::DisplayP3 => 1u32,
-            crate::sugarloaf::Colorspace::Rec2020 => 2u32,
-        };
+        // The swapchain displays sRGB (`SRGB_NONLINEAR`,
+        // `context/vulkan.rs`), so sRGB input takes no P3 step.
+        let input_colorspace = colorspace.shader_code(false);
 
         let vert_module = create_shader_module(device, CLEAR_VERT_SPV);
         let frag_module = create_shader_module(device, CLEAR_FRAG_SPV);
