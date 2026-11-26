@@ -45,9 +45,7 @@ use rio_vt::selection::{Selection, SelectionType};
 use std::borrow::Cow;
 use std::error::Error;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-#[cfg(feature = "pty")]
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 #[cfg(all(feature = "pty", target_os = "windows"))]
 use teletypewriter::create_pty;
 #[cfg(all(feature = "pty", not(target_os = "windows")))]
@@ -359,21 +357,54 @@ pub(crate) type InlineImages = Arc<InlineImageStore>;
 /// answer, in request order. The front is always a query.
 #[cfg(feature = "graphics")]
 enum Held {
-    Query(u32),
+    /// A query for `cp`, and whether `cp` was registered when it
+    /// arrived: the answer says what the program saw at that point, not
+    /// what a later `r` or `c` made of it before the host answered.
+    Query(u32, bool),
     Reply(Cow<'static, [u8]>),
 }
 
 #[cfg(feature = "graphics")]
 type HeldReplies = Arc<std::sync::Mutex<std::collections::VecDeque<Held>>>;
 
+/// How many queries and replies may wait on the host. Past it the
+/// oldest query is answered `reason=unknown` (§5.4 lets a terminal
+/// limit how many it answers) and the replies behind it go out, so a
+/// program flooding `q` while the host is slow or stalled can't grow
+/// the queue, or the drain an answer does, without bound.
+#[cfg(feature = "graphics")]
+const MAX_HELD: usize = 1024;
+
+/// Makes room for one more held item: while full, answers the oldest
+/// query `reason=unknown` and delivers the replies held behind it. The
+/// front stays a query, or the queue empties.
+#[cfg(feature = "graphics")]
+fn make_room(
+    held: &mut std::collections::VecDeque<Held>,
+    deliver: impl Fn(Cow<'static, [u8]>),
+) {
+    while held.len() >= MAX_HELD {
+        if let Some(Held::Query(cp, _)) = held.pop_front() {
+            let answer = rio_vt::ansi::glyph_protocol::format_query_unknown(cp);
+            deliver(Cow::Owned(answer.into_bytes()));
+        }
+        while let Some(Held::Reply(_)) = held.front() {
+            if let Some(Held::Reply(bytes)) = held.pop_front() {
+                deliver(bytes);
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct Listener {
     surface_id: SurfaceId,
     delegate: Arc<dyn SurfaceDelegate>,
     inline_images: InlineImages,
-    /// The delegate answers glyph queries: it draws some format.
+    /// The terminal's glyph registry when the delegate draws some
+    /// format, so it answers glyph queries.
     #[cfg(feature = "graphics")]
-    glyph_queries: bool,
+    glyphs: Option<rio_graphics::glyph::glyph_registry::GlyphRegistry>,
     #[cfg(feature = "graphics")]
     held: HeldReplies,
     #[cfg(feature = "pty")]
@@ -438,8 +469,14 @@ impl Listener {
                 self.pass_back(Cow::Owned(text.into_bytes()));
             }
             #[cfg(feature = "graphics")]
-            RioEvent::GlyphProtocolQuery { cp, .. } if self.glyph_queries => {
-                self.held.lock().unwrap().push_back(Held::Query(cp));
+            RioEvent::GlyphProtocolQuery { cp, .. } if self.glyphs.is_some() => {
+                // Under the terminal lock, so no registration can land
+                // between the query and this read.
+                let registered = self.glyphs.as_ref().is_some_and(|g| g.contains(cp));
+                let mut held = self.held.lock().unwrap();
+                make_room(&mut held, |bytes| self.deliver(bytes));
+                held.push_back(Held::Query(cp, registered));
+                drop(held);
                 self.delegate.glyph_query(self.surface_id, cp);
             }
             // Not answered here. The terminal is told the query is
@@ -525,6 +562,7 @@ impl Listener {
         #[cfg(feature = "graphics")]
         {
             let mut held = self.held.lock().unwrap();
+            make_room(&mut held, |bytes| self.deliver(bytes));
             if !held.is_empty() {
                 held.push_back(Held::Reply(bytes));
                 return;
@@ -842,12 +880,17 @@ impl Surface {
         } else {
             &[]
         };
+        // Made now so the listener and the surface hold it; a full reset
+        // empties it in place.
+        #[cfg(feature = "graphics")]
+        let glyphs = (!glyph_formats.is_empty())
+            .then(rio_graphics::glyph::glyph_registry::GlyphRegistry::default);
         let listener = Listener {
             surface_id: id,
             delegate: engine.delegate.clone(),
             inline_images: inline_images.clone(),
             #[cfg(feature = "graphics")]
-            glyph_queries: !glyph_formats.is_empty(),
+            glyphs: glyphs.clone(),
             #[cfg(feature = "graphics")]
             held: HeldReplies::default(),
             #[cfg(feature = "pty")]
@@ -872,15 +915,10 @@ impl Surface {
         );
         terminal.set_program_status_enabled(engine.delegate.handles_program_status());
         terminal.set_glyph_formats(glyph_formats);
-        // Made now so the surface holds it; a full reset empties it in
-        // place.
         #[cfg(feature = "graphics")]
-        let glyphs = (!glyph_formats.is_empty()).then(|| {
-            terminal
-                .glyph_registry
-                .get_or_insert_with(Default::default)
-                .clone()
-        });
+        {
+            terminal.glyph_registry = glyphs.clone();
+        }
         // On wasm the delegate (and so the whole graph) is single-threaded
         // by design; Arc stays because the pty build shares it with the IO
         // thread and the API is one type on every target.
@@ -992,6 +1030,20 @@ impl Surface {
         self.glyphs.as_ref()?.get_version(version)
     }
 
+    /// The codepoint of the oldest unanswered
+    /// [`SurfaceDelegate::glyph_query`], so a host can answer every
+    /// waiting query in one pass instead of one hop per callback. Past
+    /// 1024 waiting, librio answers the oldest itself (`reason=unknown`),
+    /// so the codepoint a callback reported may be gone: answer what
+    /// this returns.
+    #[cfg(feature = "graphics")]
+    pub fn glyph_query_pending(&self) -> Option<u32> {
+        match self.replies.held.lock().unwrap().front() {
+            Some(&Held::Query(cp, _)) => Some(cp),
+            _ => None,
+        }
+    }
+
     /// Answer the oldest unanswered [`SurfaceDelegate::glyph_query`]:
     /// `system` says whether the host's fonts cover its codepoint, and
     /// whether a program registered it is filled in here. The replies
@@ -1000,15 +1052,15 @@ impl Surface {
     #[cfg(feature = "graphics")]
     pub fn glyph_query_reply(&self, system: bool) -> bool {
         use rio_vt::ansi::glyph_protocol::{format_query_response, QueryStatus};
-        let Some(glyphs) = &self.glyphs else {
+        if self.glyphs.is_none() {
             return false;
-        };
+        }
         let mut held = self.replies.held.lock().unwrap();
-        let Some(&Held::Query(cp)) = held.front() else {
+        let Some(&Held::Query(cp, registered)) = held.front() else {
             return false;
         };
         held.pop_front();
-        let status = QueryStatus::new(glyphs.contains(cp), system);
+        let status = QueryStatus::new(registered, system);
         let answer = format_query_response(cp, status).into_bytes();
         self.replies.deliver(Cow::Owned(answer));
         while let Some(Held::Reply(_)) = held.front() {
@@ -3554,12 +3606,65 @@ mod tests {
         {
             let held = surface.replies.held.lock().unwrap();
             assert_eq!(held.len(), 2);
-            assert!(matches!(held[0], Held::Query(0x100000)));
+            assert!(matches!(held[0], Held::Query(0x100000, true)));
             assert!(matches!(held[1], Held::Reply(_)));
         }
         assert!(surface.glyph_query_reply(false));
         assert!(!surface.glyph_query_reply(false), "one answer per query");
         shown("q;cp=100000;status=glossary^[\\^[_25a1;s;fmt=glyf^[\\");
+    }
+
+    // A query answers for the registry as it was when the query arrived:
+    // a registration the program sends right after it, before the host
+    // answers, doesn't show up in the answer.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_query_answers_for_the_moment_it_was_asked() {
+        let engine = Engine::new(Arc::new(GlyphHost(Mutex::new(Vec::new()))));
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec!["-c".into(), "sleep 300".into()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        surface.inject_output(b"\x1b_25a1;q;cp=100000\x1b\\");
+        register_glyf(&surface, 1000);
+        surface.inject_output(b"\x1b_25a1;q;cp=100000\x1b\\");
+        let held = surface.replies.held.lock().unwrap();
+        assert!(matches!(held[0], Held::Query(0x100000, false)));
+        assert!(matches!(held[1], Held::Query(0x100000, true)));
+    }
+
+    // A flood of queries, with replies behind them, that the host
+    // hasn't answered stops growing the queue: the oldest are answered
+    // `unknown`, in order, and the host drains the rest in one pass.
+    #[cfg(feature = "graphics")]
+    #[test]
+    fn glyph_protocol_query_flood_is_bounded() {
+        let engine = Engine::new(Arc::new(GlyphHost(Mutex::new(Vec::new()))));
+        let surface = engine
+            .create_surface(&SurfaceDesc {
+                shell: Some("/bin/sh".into()),
+                args: vec!["-c".into(), "sleep 300".into()],
+                ..SurfaceDesc::default()
+            })
+            .expect("spawn sleeper");
+        // Queries with replies behind them (DA1), well past the bound.
+        let flood = b"\x1b_25a1;q;cp=e0a0\x1b\\\x1b[c".repeat(4 * MAX_HELD);
+        surface.inject_output(&flood);
+        {
+            let held = surface.replies.held.lock().unwrap();
+            assert!(held.len() <= MAX_HELD, "{} held", held.len());
+            assert!(matches!(held.front(), Some(Held::Query(0xe0a0, false))));
+        }
+        let mut answered = 0;
+        while surface.glyph_query_pending() == Some(0xe0a0) {
+            assert!(surface.glyph_query_reply(true));
+            answered += 1;
+        }
+        assert!(answered > 0 && answered <= MAX_HELD / 2 + 1);
+        assert!(surface.replies.held.lock().unwrap().is_empty());
     }
 
     // A host whose font lookup is cheap answers inside the callback.
