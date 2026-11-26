@@ -429,7 +429,7 @@ impl SequenceTerminator {
 bitflags::bitflags! {
     /// The modifiers encoding for escape sequence.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct SequenceModifiers : u8 {
+    pub(crate) struct SequenceModifiers : u8 {
         const SHIFT   = 0b0000_0001;
         const ALT     = 0b0000_0010;
         const CONTROL = 0b0000_0100;
