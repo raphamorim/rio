@@ -2,7 +2,6 @@ pub mod defaults;
 pub mod term;
 
 use defaults::*;
-use regex::Regex;
 use serde::Serialize;
 use serde::{de, Deserialize};
 use std::num::ParseIntError;
@@ -516,16 +515,18 @@ impl ColorBuilder {
 
     pub fn from_hex(mut hex: String, conversion_type: Format) -> Result<Self, String> {
         let mut alpha: f64 = 1.0;
-        let non_hex_chars = Regex::new(r"(?i)[^#a-f\d]").unwrap();
 
-        // match valid 6 or 8 hex characters
-        let valid_hex_size = Regex::new(r"(?i)^#?[a-f\d]{6}([a-f\d]{2})?$").unwrap();
-
-        if non_hex_chars.is_match(&hex) {
+        // Checked by hand: two regexes compiled per call made building a
+        // palette (dozens of colors) take milliseconds.
+        if !hex.bytes().all(|b| b == b'#' || b.is_ascii_hexdigit()) {
             return Err(String::from("Error: Character is not valid"));
         }
 
-        if !valid_hex_size.is_match(&hex) {
+        // An optional `#`, then 6 or 8 hex characters.
+        let digits = hex.strip_prefix('#').unwrap_or(&hex);
+        if !matches!(digits.len(), 6 | 8)
+            || !digits.bytes().all(|b| b.is_ascii_hexdigit())
+        {
             return Err(String::from("Error: Hex String size is not valid"));
         }
 
@@ -836,5 +837,30 @@ mod tests {
                 alpha: 153.0 / 255.0
             }
         );
+    }
+
+    #[test]
+    fn test_conversion_from_hex_accepts_only_an_optional_hash_and_6_or_8_digits() {
+        let parse = |s: &str| ColorBuilder::from_hex(s.to_string(), Format::SRGB0_255);
+        for ok in ["abcdef", "#AbCdEf", "#abcdef80", "00000000"] {
+            assert!(parse(ok).is_ok(), "{ok}");
+        }
+        let size = "Error: Hex String size is not valid";
+        let character = "Error: Character is not valid";
+        for (bad, why) in [
+            ("", size),
+            ("#", size),
+            ("#12345", size),
+            ("1234567", size),
+            ("#123456789", size),
+            ("##123456", size),
+            ("123#456", size),
+            ("12345g", character),
+            ("#\u{661}23456", character),
+            (" 123456", character),
+        ] {
+            assert_eq!(parse(bad).unwrap_err(), why, "{bad:?}");
+        }
+        assert_eq!(parse("#ff000080").unwrap().alpha, 128.0 / 255.0);
     }
 }
