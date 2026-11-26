@@ -904,7 +904,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
@@ -960,7 +960,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
@@ -980,7 +980,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
@@ -1000,7 +1000,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(
             result.colors.selection_background,
             colors::defaults::selection_background()
@@ -1028,7 +1028,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
@@ -1047,7 +1047,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
@@ -1066,7 +1066,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
@@ -1136,7 +1136,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
@@ -1154,7 +1154,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
@@ -1181,7 +1181,7 @@ mod tests {
         );
 
         // Colors
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
         assert_eq!(result.colors.foreground, hex_to_color_arr("#F8F8F2"));
         assert_eq!(result.colors.background.0, hex_to_color_arr("#2B3E50"));
@@ -1199,8 +1199,40 @@ mod tests {
 
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, [0.0, 0.0, 0.0, 1.0]);
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
+    }
+
+    #[test]
+    fn test_tabs_active_falls_back_to_foreground() {
+        let result = create_temporary_config(
+            "tabs-active-fallback",
+            r#"
+            [colors]
+            background = '#EFF1F5'
+            foreground = '#4C4F69'
+        "#,
+        );
+
+        assert_eq!(result.colors.tabs_active, None);
+        assert_eq!(
+            result.colors.tabs_active_or_foreground(),
+            hex_to_color_arr("#4C4F69")
+        );
+
+        let result = create_temporary_config(
+            "tabs-active-explicit",
+            r#"
+            [colors]
+            foreground  = '#4C4F69'
+            tabs-active = '#E6DB74'
+        "#,
+        );
+
+        assert_eq!(
+            result.colors.tabs_active_or_foreground(),
+            hex_to_color_arr("#E6DB74")
+        );
     }
 
     #[test]
@@ -1256,7 +1288,7 @@ mod tests {
         assert_eq!(result.colors.background.1, hex_to_color_wgpu("#2B3E50"));
         assert_eq!(result.colors.cursor, hex_to_color_arr("#E6DB74"));
         assert_eq!(result.colors.foreground, hex_to_color_arr("#F8F8F2"));
-        assert_eq!(result.colors.tabs_active, hex_to_color_arr("#E6DB74"));
+        assert_eq!(result.colors.tabs_active, Some(hex_to_color_arr("#E6DB74")));
         assert_eq!(result.colors.black, hex_to_color_arr("#FFFFFF"));
         assert_eq!(result.colors.blue, hex_to_color_arr("#030303"));
         assert_eq!(result.colors.cyan, hex_to_color_arr("#030303"));
@@ -1321,7 +1353,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
@@ -1387,7 +1419,7 @@ mod tests {
         // Colors
         assert_eq!(result.colors.background, colors::defaults::background());
         assert_eq!(result.colors.foreground, colors::defaults::foreground());
-        assert_eq!(result.colors.tabs_active, colors::defaults::tabs_active());
+        assert_eq!(result.colors.tabs_active, None);
         assert_eq!(result.colors.cursor, colors::defaults::cursor());
     }
 
