@@ -3752,6 +3752,13 @@ impl Screen<'_> {
             messenger.send_write(encoded.text);
             messenger.send_write(encoded.end);
         } else {
+            // Input reaching the shell scrolls back to the prompt and
+            // drops the selection, exactly like typed text does; this
+            // path carries Esc bindings (arrow keys, backspace) and
+            // pastes into applications without bracketed mode.
+            self.scroll_bottom_when_cursor_not_visible();
+            self.clear_selection();
+
             let payload = if bracketed {
                 // The program can't tell a paste from typing: control
                 // bytes become spaces and LF is what Enter sends.
