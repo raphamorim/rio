@@ -120,6 +120,12 @@ impl<T> Block<T> {
     /// The block's rows, decoding them on the first call.
     #[inline]
     pub(crate) fn rows(&self) -> &[Row<T>] {
+        if let Some(rows) = self.cache.get() {
+            return rows;
+        }
+        if let Some(rows) = transient_rows(self) {
+            return rows;
+        }
         self.cache.get_or_init(|| (self.decode)(&self.data))
     }
 
@@ -254,6 +260,101 @@ fn encode_with(rows: &[&Row<Square>], scratch: &mut Scratch) -> Block<Square> {
     }
 }
 
+/// Blocks a bulk read on this thread decoded for itself (see
+/// [`transient_reads`]), each a `Box<Box<[Row<T>]>>` as a thin pointer with
+/// what drops it, keyed by the block.
+/// One block's rows in the scratch: the block, the rows, what drops them.
+type Decoded = (*const (), *mut (), unsafe fn(*mut ()));
+
+#[derive(Default)]
+struct Transient {
+    depth: usize,
+    decoded: Vec<Decoded>,
+    /// The last one looked up: a read stays in a block for its rows.
+    last: usize,
+}
+
+thread_local! {
+    static TRANSIENT: std::cell::RefCell<Transient> = std::cell::RefCell::default();
+}
+
+unsafe fn drop_transient<T>(rows: *mut ()) {
+    // SAFETY: made by `transient_rows::<T>` from a `Box<Box<[Row<T>]>>`,
+    // dropped once (the list is taken as the outermost scope ends).
+    drop(unsafe { Box::from_raw(rows as *mut Box<[Row<T>]>) });
+}
+
+/// Run `f` with this thread's reads of compressed history (`Block::rows`)
+/// decoding blocks no one decoded yet into a scratch of its own, freed
+/// when the outermost such call returns, instead of into the blocks'
+/// caches: a search over the history or a snapshot of it leaves nothing
+/// decoded behind (and asks for no compression pass to drop it). Blocks
+/// decoded already (the viewport's) are read as they are, and a block is
+/// decoded once per call however often it's read.
+///
+/// # Safety
+///
+/// No reference into a grid obtained in `f` may be used after it returns:
+/// rows it reads may live in the scratch. Its callers return owned values
+/// (text, bytes, positions) and keep no reference past it.
+pub(crate) unsafe fn transient_reads<R>(f: impl FnOnce() -> R) -> R {
+    struct Scope;
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            let decoded = TRANSIENT.with(|t| {
+                let mut t = t.borrow_mut();
+                t.depth -= 1;
+                if t.depth > 0 {
+                    return Vec::new();
+                }
+                t.last = 0;
+                std::mem::take(&mut t.decoded)
+            });
+            for (_, rows, drop) in decoded {
+                // SAFETY: each made once by `transient_rows`, and no
+                // reference to it outlives the scope (the caller's word).
+                unsafe { drop(rows) };
+            }
+        }
+    }
+    TRANSIENT.with(|t| t.borrow_mut().depth += 1);
+    let _scope = Scope;
+    f()
+}
+
+/// `block`'s rows from this thread's bulk-read scratch, decoding them into
+/// it if need be; `None` outside [`transient_reads`].
+#[cold]
+fn transient_rows<T>(block: &Block<T>) -> Option<&[Row<T>]> {
+    TRANSIENT.with(|t| {
+        let mut t = t.borrow_mut();
+        if t.depth == 0 {
+            return None;
+        }
+        let key = block as *const Block<T> as *const ();
+        let last = t.last;
+        let found = if t.decoded.get(last).is_some_and(|e| e.0 == key) {
+            Some(last)
+        } else {
+            t.decoded.iter().rposition(|e| e.0 == key)
+        };
+        let at = found.unwrap_or_else(|| {
+            let rows: Box<Box<[Row<T>]>> = Box::new((block.decode)(&block.data));
+            t.decoded
+                .push((key, Box::into_raw(rows) as *mut (), drop_transient::<T>));
+            t.decoded.len() - 1
+        });
+        t.last = at;
+        let rows = t.decoded[at].1 as *const Box<[Row<T>]>;
+        // SAFETY: the rows stay where they are (behind their own box)
+        // until the outermost scope ends, which outlives every use of what
+        // `f` read (`transient_reads`'s contract). The key is a live block:
+        // the grid it's in is borrowed for the whole read, so no other
+        // block takes its address meanwhile.
+        Some(unsafe { &**rows })
+    })
+}
+
 #[cfg(test)]
 thread_local! {
     /// Blocks decoded on this thread, for tests.
@@ -372,6 +473,14 @@ mod tests {
         fn feed(&mut self, bytes: &[u8]) {
             self.parser.advance(&mut self.term, bytes);
         }
+        /// Every history row read through the grid, as the viewport's are
+        /// (into the blocks' caches).
+        fn read_rows(&self) {
+            let g = &self.term.grid;
+            for line in -(g.history_size() as i32)..0 {
+                let _ = g[Line(line)][Column(0)].c();
+            }
+        }
         /// Everything readable: the snapshot (history, both screens, styles,
         /// links, state) with the palette, and the text.
         fn read(&self) -> (String, String) {
@@ -435,9 +544,12 @@ mod tests {
         assert!(all_in_slabs(&a));
         a.term.compress_history(None);
         assert!(live_slabs() - base <= kept + 1, "{}", live_slabs() - base);
-        // A read decodes blocks into slabs of their own, unmapped by the
-        // next compression.
+        // A read through the caches (the viewport's) decodes blocks into
+        // slabs of their own, unmapped by the next compression; a bulk
+        // read's go when it's done.
         let read = a.read();
+        assert!(live_slabs() - base <= kept + 1);
+        a.read_rows();
         assert!(live_slabs() - base > kept + 1);
         a.term.compress_history(None);
         assert!(live_slabs() - base <= kept + 1);
@@ -533,7 +645,7 @@ mod tests {
         a.term.compress_history(None);
         let m = a.term.history_memory();
         assert_eq!(m.decoded_bytes, 0);
-        let _ = a.read();
+        a.read_rows();
         let read = a.term.history_memory();
         assert!(read.decoded_bytes > 0, "{read:?}");
         assert_eq!(read.compressed_bytes, m.compressed_bytes);
@@ -1039,6 +1151,65 @@ mod tests {
             assert_eq!(found, matches(&b, re), "{re}");
         }
         assert_eq!(a.packed(), packed);
+    }
+
+    #[test]
+    fn bulk_reads_leave_the_history_undecoded() {
+        use crate::crosswords::{Pos, Side};
+        use crate::selection::{Selection, SelectionType};
+        let (mut a, mut b) = twins(30, 5, 2_000, 1_200);
+        let m = a.term.history_memory();
+        assert_eq!(m.decoded_bytes, 0);
+        let blocks = m.compressed_rows.div_ceil(super::BLOCK_ROWS);
+        // A snapshot and the text, each decoding a block once however
+        // often it's read (a row's neighbours, wraps).
+        let before = decodes();
+        assert_eq!(a.read(), b.read());
+        assert!(
+            decodes() - before <= 2 * (blocks + 2),
+            "{} decodes, {blocks} blocks",
+            decodes() - before
+        );
+        assert_eq!(a.term.history_memory(), m);
+        // A search over the history, both ways round.
+        assert_eq!(
+            matches(&a, "wrapped-wrapped"),
+            matches(&b, "wrapped-wrapped")
+        );
+        assert_eq!(matches(&a, "link \\d+"), matches(&b, "link \\d+"));
+        assert_eq!(a.term.history_memory(), m);
+        // A copy of all of it.
+        let top = a.term.grid.topmost_line();
+        let end = Pos::new(Line(4), Column(29));
+        let mut copied = Vec::new();
+        for t in [&mut a, &mut b] {
+            let mut sel = Selection::new(
+                SelectionType::Simple,
+                Pos::new(top, Column(0)),
+                Side::Left,
+            );
+            sel.update(end, Side::Right);
+            t.term.selection = Some(sel);
+            copied.push(t.term.selection_to_string());
+        }
+        assert_eq!(copied[0], copied[1]);
+        assert_eq!(a.term.history_memory(), m);
+    }
+
+    #[test]
+    fn a_bulk_read_takes_what_the_viewport_decoded_as_it_is() {
+        let (mut a, b) = twins(30, 5, 2_000, 1_200);
+        a.term.scroll_display(Scroll::Delta(300));
+        // What a frame reads: into the caches.
+        let offset = a.term.grid.display_offset() as i32;
+        for line in -offset..-offset + 5 {
+            let _ = a.term.grid[Line(line)][Column(0)].c();
+        }
+        let shown = a.term.history_memory();
+        assert!(shown.decoded_bytes > 0);
+        a.term.scroll_display(Scroll::Bottom);
+        assert_eq!(a.read(), b.read());
+        assert_eq!(a.term.history_memory(), shown);
     }
 
     #[test]

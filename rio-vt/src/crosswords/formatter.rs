@@ -43,6 +43,7 @@
 use super::Crosswords;
 use crate::ansi::CursorShape;
 use crate::config::colors::AnsiColor;
+use crate::crosswords::grid::compress::transient_reads;
 use crate::crosswords::grid::{Dimensions, Grid};
 use crate::crosswords::pos::{
     CharsetIndex, Charsets, Column, Line, Pos, StandardCharset,
@@ -402,9 +403,13 @@ fn cell_link(grid: &Grid<Square>, square: &Square) -> Option<Hyperlink> {
 impl<U: EventListener> Crosswords<U> {
     /// Serialize the terminal using `opts`.
     pub fn format(&self, opts: FormatOptions) -> String {
-        match opts.emit {
-            Emit::Plain => self.format_plain(opts),
-            Emit::Vt => self.format_vt(opts),
+        // SAFETY: what it reads ends up in the owned `String`; no
+        // reference into the grid outlives the closure.
+        unsafe {
+            transient_reads(|| match opts.emit {
+                Emit::Plain => self.format_plain(opts),
+                Emit::Vt => self.format_vt(opts),
+            })
         }
     }
 
@@ -436,14 +441,20 @@ impl<U: EventListener> Crosswords<U> {
         w: &mut dyn io::Write,
         chunk: usize,
     ) -> io::Result<()> {
-        match opts.emit {
-            Emit::Plain => w.write_all(self.format_plain(opts).as_bytes()),
-            Emit::Vt => {
-                let mut out = Out::new(chunk + chunk / 4, Some(w));
-                out.chunk = chunk;
-                self.write_vt(&mut out, opts);
-                out.finish()
-            }
+        // A snapshot reads the whole history: what it decodes goes when
+        // it's done (`transient_reads`).
+        // SAFETY: what it reads is written out as bytes; no reference into
+        // the grid outlives the closure.
+        unsafe {
+            transient_reads(|| match opts.emit {
+                Emit::Plain => w.write_all(self.format_plain(opts).as_bytes()),
+                Emit::Vt => {
+                    let mut out = Out::new(chunk + chunk / 4, Some(w));
+                    out.chunk = chunk;
+                    self.write_vt(&mut out, opts);
+                    out.finish()
+                }
+            })
         }
     }
 

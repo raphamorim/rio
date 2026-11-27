@@ -3109,6 +3109,13 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn bounds_to_string(&self, start: Pos, end: Pos) -> String {
+        // A copy of the whole history leaves nothing decoded behind.
+        // SAFETY: the text is owned; no reference into the grid outlives
+        // the closure.
+        unsafe { grid::compress::transient_reads(|| self.bounds_text(start, end)) }
+    }
+
+    fn bounds_text(&self, start: Pos, end: Pos) -> String {
         // About half a row of text per row.
         let rows = (end.row.0 - start.row.0).max(0) as usize + 1;
         let mut text = String::with_capacity(rows * (self.grid.columns() / 2 + 1));
