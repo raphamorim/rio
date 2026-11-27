@@ -579,10 +579,22 @@ impl Storage<Square> {
         // copy they take.
         type Seen = (*const Block<Square>, bool, Option<Arc<Block<Square>>>);
         let mut prev: Option<Seen> = None;
+        // A pass in steps (while someone may be looking) keeps the decoded
+        // block just above the viewport: what's drawn reads a little past
+        // its top (a search's matches running into it), and dropped it
+        // would be decoded again by the next frame, and dropped again.
+        let near = if max_blocks.is_some() {
+            count.saturating_sub(BLOCK_ROWS)
+        } else {
+            count
+        };
         for k in 0..count {
             let index = order(k);
             let row = &mut self.inner[index];
             let Some(block) = &row.packed else { continue };
+            if k >= near && block.is_decoded() {
+                continue;
+            }
             let key = Arc::as_ptr(block);
             let (unpack, copy) = match &prev {
                 Some((k, unpack, copy)) if *k == key => (*unpack, copy.clone()),

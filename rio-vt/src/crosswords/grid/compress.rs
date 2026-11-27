@@ -648,6 +648,24 @@ mod tests {
     }
 
     #[test]
+    fn a_pass_in_steps_keeps_the_block_above_the_viewport_decoded() {
+        let mut a = T::new(30, 5, 2_000);
+        a.feed(&output(1_200));
+        a.term.compress_history(None);
+        // What a frame reads past the viewport's top (a search running
+        // into it): decoded.
+        let _ = a.term.grid[Line(-1)][Column(0)].c();
+        let read = a.term.history_memory().decoded_bytes;
+        assert!(read > 0);
+        while a.term.compress_history(Some(1)) {}
+        // Not dropped for the next frame to decode again.
+        assert_eq!(a.term.history_memory().decoded_bytes, read);
+        // A whole pass (an embedder's) drops it.
+        a.term.compress_history(None);
+        assert_eq!(a.term.history_memory().decoded_bytes, 0);
+    }
+
+    #[test]
     fn scrolling_back_through_the_renderer_leaves_rows_compressed() {
         use crate::event::TerminalDamage;
         let mut a = T::new(30, 10, 2_000);
