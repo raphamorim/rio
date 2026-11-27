@@ -292,6 +292,12 @@ fn parse_directory_url(param: &[u8]) -> Option<String> {
         return None;
     }
 
+    // `file:////server/share` is a share whatever the target: look before
+    // Windows loses the leading slash below and leaves a rooted `/server/share`.
+    if names_a_share(path) {
+        return None;
+    }
+
     // Windows paths arrive as `/C:/...` in both flavors; drop the
     // leading slash.
     #[cfg(windows)]
