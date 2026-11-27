@@ -238,8 +238,10 @@ fn strip_scheme<'a>(s: &'a str, scheme: &str) -> Option<&'a str> {
         .map(|_| &s[scheme.len()..])
 }
 
-/// OSC 7: working directory as a `file://` URL (percent-encoded path)
-/// or a `kitty-shell-cwd://` payload (raw path, no encoding). Parsed
+/// OSC 7: working directory as a `file://` URL (percent-encoded path),
+/// a `kitty-shell-cwd://` payload (raw path, no encoding), or a bare
+/// absolute path (as is, as OSC 9;9 takes it), which some shell
+/// integrations and scripts send. Parsed
 /// by hand rather than with a URL crate: these are the only URLs the
 /// terminal core looks at, and a general parser costs an IDNA/Unicode
 /// stack just to reach `.path()`.
@@ -266,6 +268,11 @@ pub(super) fn parse_current_directory(param: &[u8]) -> Option<Option<String>> {
 
 fn parse_directory_url(param: &[u8]) -> Option<String> {
     let s = simd_utf8::from_utf8_fast(param).ok()?;
+
+    // A bare path: no scheme, and no host to check either.
+    if std::path::Path::new(s).is_absolute() {
+        return Some(s.to_string());
+    }
 
     let (after_scheme, percent_encoded) = match strip_scheme(s, FILE_SCHEME) {
         Some(rest) => (rest, true),
@@ -975,12 +982,28 @@ mod tests {
         assert_eq!(cwd("file://not-this-machine.invalid/tmp"), None);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn current_directory_from_a_bare_path() {
+        // As is: no percent-decoding, `?` and `#` are path bytes.
+        assert_eq!(cwd("/home/user"), Some("/home/user".into()));
+        assert_eq!(cwd("/tmp/a%20b?c#d"), Some("/tmp/a%20b?c#d".into()));
+        assert_eq!(cwd("/"), Some("/".into()));
+        // A relative one says nothing.
+        assert_eq!(cwd("home/user"), None);
+        assert_eq!(cwd("./src"), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn current_directory_from_a_bare_windows_path() {
+        assert_eq!(cwd("C:\\Users\\user"), Some("C:\\Users\\user".into()));
+    }
+
     #[test]
     fn current_directory_rejects_non_file_payloads() {
-        // Another scheme is not a working directory, and a bare path has no
-        // scheme to speak of.
+        // Another scheme is not a working directory.
         assert_eq!(cwd("http://example.com/home/user"), None);
-        assert_eq!(cwd("/home/user"), None);
         assert_eq!(cwd(""), None);
 
         // No path component at all.
