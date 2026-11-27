@@ -43,6 +43,7 @@
 use super::Crosswords;
 use crate::ansi::CursorShape;
 use crate::config::colors::AnsiColor;
+use crate::crosswords::grid::compress::{outside_transient_reads, transient_reads};
 use crate::crosswords::grid::{Dimensions, Grid};
 use crate::crosswords::pos::{
     CharsetIndex, Charsets, Column, Line, Pos, StandardCharset,
@@ -266,7 +267,10 @@ impl<'w> Out<'w> {
     fn write_out(&mut self) {
         if let Some(sink) = self.sink.as_mut() {
             if self.error.is_none() {
-                if let Err(e) = sink.write_all(self.s.as_bytes()) {
+                // The caller's code: outside the read's scope, so what it
+                // might read of the terminal is its to keep.
+                let s = &self.s;
+                if let Err(e) = outside_transient_reads(|| sink.write_all(s.as_bytes())) {
                     self.error = Some(e);
                 }
             }
@@ -402,9 +406,13 @@ fn cell_link(grid: &Grid<Square>, square: &Square) -> Option<Hyperlink> {
 impl<U: EventListener> Crosswords<U> {
     /// Serialize the terminal using `opts`.
     pub fn format(&self, opts: FormatOptions) -> String {
-        match opts.emit {
-            Emit::Plain => self.format_plain(opts),
-            Emit::Vt => self.format_vt(opts),
+        // SAFETY: what it reads ends up in the owned `String`; no
+        // reference into the grid outlives the closure.
+        unsafe {
+            transient_reads(|| match opts.emit {
+                Emit::Plain => self.format_plain(opts),
+                Emit::Vt => self.format_vt(opts),
+            })
         }
     }
 
@@ -437,13 +445,21 @@ impl<U: EventListener> Crosswords<U> {
         chunk: usize,
     ) -> io::Result<()> {
         match opts.emit {
-            Emit::Plain => w.write_all(self.format_plain(opts).as_bytes()),
-            Emit::Vt => {
-                let mut out = Out::new(chunk + chunk / 4, Some(w));
-                out.chunk = chunk;
-                self.write_vt(&mut out, opts);
-                out.finish()
-            }
+            // Built in its scope (`format`), written after it.
+            Emit::Plain => w.write_all(self.format(opts).as_bytes()),
+            // A snapshot reads the whole history: what it decodes goes
+            // when it's done (`transient_reads`).
+            // SAFETY: what it reads is written out as bytes, and `Out`
+            // writes to the caller's `w` outside the scope; no reference
+            // into the grid outlives the closure.
+            Emit::Vt => unsafe {
+                transient_reads(|| {
+                    let mut out = Out::new(chunk + chunk / 4, Some(w));
+                    out.chunk = chunk;
+                    self.write_vt(&mut out, opts);
+                    out.finish()
+                })
+            },
         }
     }
 
@@ -2664,6 +2680,16 @@ mod snapshot_tests {
                 || on_lead(ig, &ig.cursor)
             {
                 continue;
+            }
+            // Every fourth terminal with its history compressed: it reads
+            // the same.
+            if seed % 4 == 1 {
+                let before = a.term.snapshot_formatted();
+                a.term.compress_history(None);
+                assert!(
+                    a.term.snapshot_formatted() == before,
+                    "seed {seed}: compressed"
+                );
             }
             let mut b = a.copy();
             first_difference(&a, &b, seed, "", &input);

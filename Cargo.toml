@@ -101,3 +101,6 @@ split-debuginfo = "unpacked"
 lto = false
 opt-level = 0
 incremental = true
+# Compressed scrollback in debug builds and tests: the codec at full speed.
+[profile.dev.package.lz4_flex]
+opt-level = 3

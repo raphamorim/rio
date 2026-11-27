@@ -2,11 +2,14 @@
 // https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/grid/row.rs
 // which is licensed under Apache 2.0 license.
 
+use crate::crosswords::grid::cells::{Cells, SlabCursor};
+use crate::crosswords::grid::compress::Block;
 use crate::crosswords::grid::GridSquare;
 use crate::crosswords::Column;
 use core::cmp::min;
 use std::cmp::max;
 use std::ops::{Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo, RangeToInclusive};
+use std::sync::Arc;
 use std::{ptr, slice};
 
 /// Row-level semantic prompt mark from OSC 133 shell integration.
@@ -24,7 +27,9 @@ pub enum SemanticPrompt {
 /// A row in the grid.
 #[derive(Clone, Debug)]
 pub struct Row<T> {
-    pub inner: Vec<T>,
+    /// The cells: a `Vec` of their own, or a slot of a slab the storage's
+    /// rows share ([`Cells`]).
+    pub inner: Cells<T>,
 
     /// Maximum number of occupied entries.
     ///
@@ -60,25 +65,35 @@ pub struct Row<T> {
     /// to `true` on `new()` and `default()` so a freshly-constructed
     /// row triggers its first snapshot.
     pub dirty: bool,
+
+    /// Which of `packed`'s rows this one is.
+    pub(crate) packed_at: u16,
+
+    /// A compressed history row (`grid::compress`): its cells are in this
+    /// block, `inner` is empty, and the flags above stay as they were.
+    /// Read through [`Row::resolved`] (the storage's `Index` does).
+    pub(crate) packed: Option<Arc<Block<T>>>,
 }
 
 impl<T> Default for Row<T> {
     fn default() -> Self {
         Self {
-            inner: Vec::new(),
+            inner: Cells::new(),
             occ: 0,
             kitty_virtual_placeholder: false,
             has_extras: false,
             has_styles: false,
             semantic_prompt: SemanticPrompt::None,
             dirty: true,
+            packed_at: 0,
+            packed: None,
         }
     }
 }
 
 impl<T: PartialEq> PartialEq for Row<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner
+        self.resolved().inner == other.resolved().inner
     }
 }
 
@@ -104,6 +119,12 @@ impl<T: Clone + Default> Row<T> {
             inner.set_len(columns);
         }
 
+        Row::with_cells(Cells::from(inner))
+    }
+
+    /// A blank row on `cells` (all default).
+    #[inline]
+    pub(crate) fn with_cells(inner: Cells<T>) -> Row<T> {
         Row {
             inner,
             occ: 0,
@@ -112,6 +133,8 @@ impl<T: Clone + Default> Row<T> {
             has_styles: false,
             semantic_prompt: SemanticPrompt::None,
             dirty: true,
+            packed_at: 0,
+            packed: None,
         }
     }
 
@@ -123,6 +146,7 @@ impl<T: Clone + Default> Row<T> {
     /// flag on the source row, not on the destination buffer.
     #[inline]
     pub fn copy_from(&mut self, src: &Self) {
+        let src = src.resolved();
         self.inner.clone_from(&src.inner);
         self.occ = src.occ;
         self.kitty_virtual_placeholder = src.kitty_virtual_placeholder;
@@ -139,6 +163,7 @@ impl<T: Clone + Default> Row<T> {
     #[inline]
     pub fn recycle(&mut self, columns: usize) {
         debug_assert!(columns >= 1);
+        self.packed = None;
         self.inner.clear();
         self.inner.resize_with(columns, T::default);
         self.occ = 0;
@@ -238,6 +263,86 @@ impl<T: Clone + Default> Row<T> {
 
 #[allow(clippy::len_without_is_empty)]
 impl<T> Row<T> {
+    /// The row as it reads: a compressed one's cells come from its block
+    /// (decoding it the first time). Every `&Row` the storage's `Index`
+    /// hands out is already resolved; this is for rows reached otherwise.
+    #[inline(always)]
+    pub fn resolved(&self) -> &Row<T> {
+        if self.packed.is_none() {
+            self
+        } else {
+            self.resolved_packed()
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn resolved_packed(&self) -> &Row<T> {
+        match &self.packed {
+            None => self,
+            Some(block) => &block.rows()[self.packed_at as usize],
+        }
+    }
+
+    /// Whether the row is compressed (see [`Row::resolved`]).
+    #[inline]
+    pub fn is_compressed(&self) -> bool {
+        self.packed.is_some()
+    }
+
+    /// Make a compressed row a plain one again, with its cells. A test on
+    /// every write: the work is out of line.
+    #[inline(always)]
+    pub(crate) fn unpack(&mut self)
+    where
+        T: Clone,
+    {
+        if self.packed.is_some() {
+            self.unpack_slow();
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn unpack_slow(&mut self)
+    where
+        T: Clone,
+    {
+        if let Some(block) = self.packed.take() {
+            let row = &block.rows()[self.packed_at as usize];
+            self.inner.clone_from(&row.inner);
+            self.dirty = true;
+        }
+    }
+
+    /// `unpack`, the cells put in a slot of `slabs`.
+    pub(crate) fn unpack_into(&mut self, slabs: &mut SlabCursor<T>)
+    where
+        T: Clone + Default,
+    {
+        if let Some(block) = self.packed.take() {
+            let row = &block.rows()[self.packed_at as usize];
+            self.inner = slabs.cells(row.inner.len());
+            self.inner.clone_from_slice(&row.inner);
+            self.dirty = true;
+        }
+    }
+
+    /// Make a compressed row a plain one without decoding it, for a caller
+    /// about to overwrite all of it: its cells (default) come from
+    /// `slabs`.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn discard_packed_into(&mut self, slabs: &mut SlabCursor<T>)
+    where
+        T: Default,
+    {
+        if let Some(block) = self.packed.take() {
+            self.inner = slabs.cells(block.data_len(self.packed_at as usize));
+            self.dirty = true;
+        }
+    }
+
     #[inline]
     pub fn from_vec(vec: Vec<T>, occ: usize) -> Row<T>
     where
@@ -245,13 +350,15 @@ impl<T> Row<T> {
     {
         let has_styles = vec.iter().any(GridSquare::carries_style);
         Row {
-            inner: vec,
+            inner: Cells::from(vec),
             occ,
             kitty_virtual_placeholder: false,
             has_extras: true,
             has_styles,
             semantic_prompt: SemanticPrompt::None,
             dirty: true,
+            packed_at: 0,
+            packed: None,
         }
     }
 
@@ -301,7 +408,7 @@ impl<T> Row<T> {
         self.has_extras = true;
         self.has_styles |= src.inner[..count].iter().any(GridSquare::carries_style);
 
-        src.inner.drain(..count);
+        src.inner.remove_front(count);
         src.occ = src.occ.saturating_sub(count);
         src.dirty = true;
     }
@@ -316,8 +423,9 @@ impl<T> Row<T> {
         self.has_extras = true;
         self.has_styles |= vec.iter().any(GridSquare::carries_style);
 
-        vec.append(&mut self.inner);
-        self.inner = vec;
+        let mut inner = std::mem::take(&mut self.inner).into_vec();
+        vec.append(&mut inner);
+        self.inner = Cells::from(vec);
     }
 
     #[inline]
@@ -325,9 +433,7 @@ impl<T> Row<T> {
         self.occ = self.occ.saturating_sub(at);
         self.dirty = true;
 
-        let mut split = self.inner.split_off(at);
-        std::mem::swap(&mut split, &mut self.inner);
-        split
+        self.inner.split_front(at)
     }
 
     #[inline]

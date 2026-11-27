@@ -25,6 +25,12 @@ impl Grid<Square> {
             Ordering::Equal => (),
         }
 
+        // A column resize rewrites every row: compressed ones are made
+        // plain first (compressing again is up to the embedder).
+        if self.columns != columns {
+            self.raw.decompress_all();
+        }
+
         match self.columns.cmp(&columns) {
             Ordering::Less => self.grow_columns(reflow, columns),
             Ordering::Greater => self.shrink_columns(reflow, columns),
@@ -137,6 +143,12 @@ impl Grid<Square> {
         }
 
         let mut rows = self.raw.take_all();
+        // Each row in a slot with room for the cells it's joined with
+        // (a buffer of its own, grown, is a small allocation the
+        // allocator keeps once it's compressed).
+        for row in &mut rows {
+            self.raw.rehome(row, columns);
+        }
         let old_len = rows.len();
         // Exact row tracking for image placements: rows are walked
         // oldest-first, and a row's absolute index is `base_abs +
@@ -305,7 +317,8 @@ impl Grid<Square> {
         if reversed.len() < self.lines {
             let delta = (self.lines - reversed.len()) as i32;
             self.cursor.pos.row = max(self.cursor.pos.row - delta, Line(0));
-            reversed.resize_with(self.lines, || Row::new(columns));
+            let raw = &mut self.raw;
+            reversed.resize_with(self.lines, || raw.new_row(columns));
         }
 
         // The cursor moved up onto the joined row. When that row is now
@@ -347,7 +360,7 @@ impl Grid<Square> {
             && reversed.last().is_some_and(|row| row.is_clear());
         let given_back = if has_room { min(pulled, cursor_row) } else { 0 };
         if given_back > 0 {
-            reversed.extend((0..given_back).map(|_| Row::new(columns)));
+            reversed.extend((0..given_back).map(|_| self.raw.new_row(columns)));
             self.cursor.pos.row -= given_back as i32;
             if self.display_offset > 0 {
                 self.display_offset += given_back;
@@ -687,6 +700,11 @@ impl Grid<Square> {
             self.total_lines_scrolled += (reversed.len() - cap) as u64;
         }
         reversed.truncate(cap);
+        // Cut rows into slots of their width (the old slabs go once all
+        // their rows left), the cut-off parts out of their own buffers.
+        for row in &mut reversed {
+            self.raw.rehome(row, columns);
+        }
         self.raw.replace_inner(reversed);
 
         // Clamp display offset in case some lines went off.

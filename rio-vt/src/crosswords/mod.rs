@@ -897,8 +897,10 @@ impl<U: EventListener> Crosswords<U> {
         let screen_lines = self.grid.screen_lines() as i32;
         let top = -display_offset;
 
+        // The stored row's mark: a compressed row keeps it, read
+        // without decoding.
         let is_marked =
-            |line: i32| self.grid[Line(line)].semantic_prompt != SemanticPrompt::None;
+            |line: i32| self.grid.raw.semantic_prompt(Line(line)) != SemanticPrompt::None;
         // First row of a prompt run: marked, with an unmarked row (or
         // the top of history) above it.
         let is_prompt_start =
@@ -1362,6 +1364,37 @@ impl<U: EventListener> Crosswords<U> {
             .saturating_sub(self.grid.screen_lines())
     }
 
+    /// Compress cold scrollback: history rows above the viewport, packed a
+    /// block of rows at a time (byte planes, LZ4; about 25-30x smaller on
+    /// real output). Reading a compressed row decodes its block (once,
+    /// kept until the next call); changing one makes it plain again.
+    /// Nothing else changes: text, snapshots, search and selection read
+    /// the same.
+    ///
+    /// `max_blocks` bounds the work (`None`: all of it); the result says
+    /// whether more is left, so an embedder can call it again while idle
+    /// until it returns false. Call it once output has been quiet for a
+    /// moment, and again after something read the history (a snapshot,
+    /// a search) to drop the decoded copies.
+    pub fn compress_history(&mut self, max_blocks: Option<usize>) -> bool {
+        // Both screens: the primary one is inactive under an alt-screen
+        // program (the alt screen has no history).
+        // One screen's after the other's, so a limited call does at most
+        // about its limit.
+        self.grid.compress_history(max_blocks)
+            || self.inactive_grid.compress_history(max_blocks)
+    }
+
+    /// How much of the primary screen's history is compressed, and its
+    /// memory.
+    pub fn history_memory(&self) -> grid::compress::HistoryMemory {
+        if self.mode.contains(Mode::ALT_SCREEN) {
+            self.inactive_grid.history_memory()
+        } else {
+            self.grid.history_memory()
+        }
+    }
+
     /// Route parser replies to the PTY's writer thread instead of the
     /// event loop: each reply is handed to `sink` the moment the parser
     /// produces it, so it keeps its place among everything else bound
@@ -1489,7 +1522,10 @@ impl<U: EventListener> Crosswords<U> {
         let start = (range.start.row.0 + display_offset).max(0);
         let end = (range.end.row.0 + display_offset).min(last_visible);
         for viewport_line in start..=end {
-            self.grid[Line(viewport_line - display_offset)].dirty = true;
+            // The stored bit: a compressed row stays compressed.
+            self.grid
+                .raw
+                .set_dirty(Line(viewport_line - display_offset), true);
             self.damage.damage_line(viewport_line as usize);
         }
     }
@@ -1992,9 +2028,9 @@ impl<U: EventListener> Crosswords<U> {
             && line != self.grid.topmost_line()
         {
             let last = self.grid.last_column();
-            let prev = &mut self.grid[line - 1i32][last];
-            if matches!(prev.wide(), Wide::LeadingSpacer) {
-                prev.set_wide(Wide::Narrow);
+            // Read first: taking the row to change decompresses it.
+            if matches!(self.grid[line - 1i32][last].wide(), Wide::LeadingSpacer) {
+                self.grid[line - 1i32][last].set_wide(Wide::Narrow);
                 if line.0 > 0 {
                     self.damage.damage_line((line.0 - 1) as usize);
                 }
@@ -2238,9 +2274,10 @@ impl<U: EventListener> Crosswords<U> {
         // Remove leading spacers.
         if point.col <= 1 && point.row != self.grid.topmost_line() {
             let column = self.grid.last_column();
-            let prev = &mut self.grid[point.row - 1i32][column];
-            if matches!(prev.wide(), Wide::LeadingSpacer) {
-                prev.set_wide(Wide::Narrow);
+            // Read first: taking the row to change decompresses it.
+            let prev = point.row - 1i32;
+            if matches!(self.grid[prev][column].wide(), Wide::LeadingSpacer) {
+                self.grid[prev][column].set_wide(Wide::Narrow);
             }
         }
 
@@ -2707,7 +2744,7 @@ impl<U: EventListener> Crosswords<U> {
                 dst[i].dirty = true;
                 self.grid.resolve_row_styles(src, &mut row_styles[i]);
                 self.refresh_row_extras(src, extras);
-                self.grid[Line(row_idx)].dirty = false;
+                self.grid.raw.set_dirty(Line(row_idx), false);
             }
             return;
         }
@@ -2720,7 +2757,9 @@ impl<U: EventListener> Crosswords<U> {
         #[allow(clippy::needless_range_loop)]
         for y in 0..count {
             let row_idx = start + y as i32;
-            if !self.grid[Line(row_idx)].dirty {
+            // The stored bit: a compressed row read through the grid is
+            // its decoded copy, and writing through it decompresses it.
+            if !self.grid.raw.is_dirty(Line(row_idx)) {
                 continue;
             }
             let src = &self.grid[Line(row_idx)];
@@ -2728,7 +2767,7 @@ impl<U: EventListener> Crosswords<U> {
             dst[y].dirty = true;
             self.grid.resolve_row_styles(src, &mut row_styles[y]);
             self.refresh_row_extras(src, extras);
-            self.grid[Line(row_idx)].dirty = false;
+            self.grid.raw.set_dirty(Line(row_idx), false);
         }
     }
 
@@ -3037,6 +3076,14 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn selection_to_string(&self) -> Option<String> {
+        // A copy of the whole history (a block selection a line at a
+        // time) leaves nothing decoded behind.
+        // SAFETY: the text is owned; no reference into the grid outlives
+        // the closure.
+        unsafe { grid::compress::transient_reads(|| self.selection_text()) }
+    }
+
+    fn selection_text(&self) -> Option<String> {
         let selection_range = self.selection.as_ref().and_then(|s| s.to_range(self))?;
         let SelectionRange { start, end, .. } = selection_range;
 
@@ -3070,6 +3117,13 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn bounds_to_string(&self, start: Pos, end: Pos) -> String {
+        // A copy of the whole history leaves nothing decoded behind.
+        // SAFETY: the text is owned; no reference into the grid outlives
+        // the closure.
+        unsafe { grid::compress::transient_reads(|| self.bounds_text(start, end)) }
+    }
+
+    fn bounds_text(&self, start: Pos, end: Pos) -> String {
         // About half a row of text per row.
         let rows = (end.row.0 - start.row.0).max(0) as usize + 1;
         let mut text = String::with_capacity(rows * (self.grid.columns() / 2 + 1));
@@ -8389,7 +8443,7 @@ mod tests {
                 // copies dirty rows even on a quiet frame, but the
                 // renderer is only woken when the peek says so.
                 let fresh_cells: Vec<Vec<Square>> =
-                    fresh_rows.iter().map(|row| row.inner.clone()).collect();
+                    fresh_rows.iter().map(|row| row.inner.to_vec()).collect();
                 if fresh_cells != previous {
                     assert!(
                         peeked.is_some(),

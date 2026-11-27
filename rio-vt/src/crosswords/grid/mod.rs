@@ -2,6 +2,8 @@
 // https://github.com/alacritty/alacritty/blob/e35e5ad14fce8456afdd89f2b392b9924bb27471/alacritty_terminal/src/grid/mod.rs
 // which is licensed under Apache 2.0 license.
 
+pub mod cells;
+pub mod compress;
 pub mod resize;
 pub mod row;
 pub mod storage;
@@ -396,7 +398,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         // When rotating the entire region, just reset everything.
         if region.end - region.start <= positions {
             for i in (region.start.0..region.end.0).map(Line::from) {
-                self.raw[i].reset(&self.cursor.template);
+                self.raw.index_mut_discard(i).reset(&self.cursor.template);
             }
 
             return;
@@ -425,7 +427,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
             // Ensure all new lines are fully cleared.
             for i in (0..positions).map(Line::from) {
-                self.raw[i].reset(&self.cursor.template);
+                self.raw.index_mut_discard(i).reset(&self.cursor.template);
             }
 
             // Swap the fixed lines at the top back into position.
@@ -441,16 +443,17 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
             let range = region.start.0..(region.start + positions).0;
             for line in range.rev().map(Line::from) {
-                self.raw[line].reset(&self.cursor.template);
+                self.raw
+                    .index_mut_discard(line)
+                    .reset(&self.cursor.template);
             }
         }
 
         // See `scroll_up` for the rationale — `raw.swap` / `raw.rotate`
         // don't propagate `Row::dirty` across line indices, so we mark
         // the whole region dirty at the end.
-        for i in (region.start.0..region.end.0).map(Line::from) {
-            self.raw[i].dirty = true;
-        }
+        self.raw
+            .mark_lines_dirty(region.start, (region.end.0 - region.start.0) as usize);
     }
 
     pub fn cursor_square(&mut self) -> &mut T {
@@ -471,7 +474,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         // When rotating the entire region with fixed lines at the top, just reset everything.
         if region.end - region.start <= positions && region.start != 0 {
             for i in (region.start.0..region.end.0).map(Line::from) {
-                self.raw[i].reset(&self.cursor.template);
+                self.raw.index_mut_discard(i).reset(&self.cursor.template);
             }
 
             return;
@@ -525,7 +528,7 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
         // Ensure all new lines are fully cleared.
         for i in (region.end.0 - positions as i32..region.end.0).map(Line::from) {
-            self.raw[i].reset(&self.cursor.template);
+            self.raw.index_mut_discard(i).reset(&self.cursor.template);
         }
 
         // Mark every row in the region dirty. Reset rows above already
@@ -557,7 +560,9 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
 
         // Reset rotated lines.
         for line in (0..(self.lines - positions)).map(Line::from) {
-            self.raw[line].reset(&self.cursor.template);
+            self.raw
+                .index_mut_discard(line)
+                .reset(&self.cursor.template);
         }
     }
 
@@ -573,7 +578,9 @@ impl<T: GridSquare + Default + PartialEq + Clone> Grid<T> {
         // Reset all visible lines.
         let range = self.topmost_line().0..(self.screen_lines() as i32);
         for line in range.map(Line::from) {
-            self.raw[line].reset(&self.cursor.template);
+            self.raw
+                .index_mut_discard(line)
+                .reset(&self.cursor.template);
         }
     }
 }
@@ -600,7 +607,9 @@ impl<T> Grid<T> {
         debug_assert!(end <= self.screen_lines() as i32);
 
         for line in (start.0..end.0).map(Line::from) {
-            self.raw[line].reset(&self.cursor.template);
+            self.raw
+                .index_mut_discard(line)
+                .reset(&self.cursor.template);
         }
     }
 
@@ -612,6 +621,7 @@ impl<T> Grid<T> {
     }
 
     pub fn clear_history(&mut self) {
+        self.raw.forget_compress_resume();
         // Explicitly purge all lines from history.
         self.total_lines_scrolled += self.history_size() as u64;
         self.raw.shrink_lines(self.history_size());
@@ -678,7 +688,10 @@ impl<T> Grid<T> {
     }
 
     #[inline]
-    pub fn cursor_cell(&mut self) -> &mut T {
+    pub fn cursor_cell(&mut self) -> &mut T
+    where
+        T: Clone,
+    {
         let point = self.cursor.pos;
         &mut self[point.row][point.col]
     }
@@ -688,6 +701,30 @@ use crate::crosswords::square::Square;
 use crate::crosswords::style::{Style, StyleId};
 
 impl Grid<Square> {
+    /// Compress cold history (see `grid::compress`): the history rows
+    /// above the viewport, and the rows the ring keeps past the history
+    /// for a later grow, a block of rows at a time, at most `max_blocks`
+    /// new blocks (`None`: all of it). Also drops the decoded copies reads
+    /// left. Returns whether there is more to do (`max_blocks` was hit).
+    pub fn compress_history(&mut self, max_blocks: Option<usize>) -> bool {
+        // (The ring's shape is the resume cursor's key; the viewport
+        // moving changes `newest`.)
+        let newest = self.screen_lines() + self.display_offset;
+        self.raw.compress_from(newest, max_blocks)
+    }
+
+    /// Have the next limited compression look over the whole ring.
+    #[cfg(test)]
+    pub(crate) fn forget_compress_resume(&mut self) {
+        self.raw.forget_compress_resume();
+    }
+
+    /// How much of the history (and the rows the ring keeps past it) is
+    /// compressed, and its memory.
+    pub fn history_memory(&self) -> compress::HistoryMemory {
+        self.raw.memory_from(self.screen_lines())
+    }
+
     /// The full text of the cell at `pos`: its base character followed by any
     /// zero-width marks (combining accents, ZWJ joiners, variation selectors).
     ///
@@ -729,8 +766,11 @@ impl Grid<Square> {
     }
 
     pub fn reclaim_extras(&mut self) {
-        let live =
-            self.collect_live_ids(|sq| sq.extras_id_checked(), |row| !row.has_extras);
+        let live = self.collect_live_ids(
+            |sq| sq.extras_id_checked(),
+            |row| !row.has_extras,
+            |b| &b.extras,
+        );
         self.extras_table.sweep_unmarked(&live);
     }
 
@@ -749,6 +789,7 @@ impl Grid<Square> {
         &self,
         id_of: impl Fn(&Square) -> Option<u16>,
         skip_row: impl Fn(&Row<Square>) -> bool,
+        packed_ids: impl Fn(&compress::Encoded) -> &[u16],
     ) -> Vec<u64> {
         let mut live = vec![0u64; ID_BITSET_WORDS];
         let mut mark = |sq: &Square| {
@@ -756,7 +797,18 @@ impl Grid<Square> {
                 live[id as usize / 64] |= 1u64 << (id % 64);
             }
         };
+        // A compressed row's ids are its block's, kept beside it: marked
+        // once per block, nothing decoded.
+        let mut last_block: *const compress::Block<Square> = std::ptr::null();
+        let mut packed = Vec::new();
         for row in self.raw.rows() {
+            if let Some(block) = &row.packed {
+                if std::sync::Arc::as_ptr(block) != last_block {
+                    last_block = std::sync::Arc::as_ptr(block);
+                    packed.extend_from_slice(packed_ids(&block.data));
+                }
+                continue;
+            }
             if skip_row(row) {
                 debug_assert!(
                     row.inner.iter().all(|sq| id_of(sq).is_none()),
@@ -770,6 +822,9 @@ impl Grid<Square> {
         }
         mark(&self.cursor.template);
         mark(&self.saved_cursor.template);
+        for id in packed {
+            live[id as usize / 64] |= 1u64 << (id % 64);
+        }
         live
     }
 
@@ -904,6 +959,7 @@ impl Grid<Square> {
                     .filter(|&id| id != crate::crosswords::style::DEFAULT_STYLE_ID)
             },
             |row| !row.has_styles,
+            |b| &b.styles,
         );
         // Scale the post-sweep re-arm floor with the walk cost, so a big
         // ring cannot be re-walked more than once per ~256 cells of it.
@@ -995,7 +1051,7 @@ impl<T> Index<Line> for Grid<T> {
     }
 }
 
-impl<T> IndexMut<Line> for Grid<T> {
+impl<T: Clone> IndexMut<Line> for Grid<T> {
     #[inline]
     fn index_mut(&mut self, index: Line) -> &mut Row<T> {
         &mut self.raw[index]
@@ -1011,7 +1067,7 @@ impl<T> Index<Pos> for Grid<T> {
     }
 }
 
-impl<T> IndexMut<Pos> for Grid<T> {
+impl<T: Clone> IndexMut<Pos> for Grid<T> {
     #[inline]
     fn index_mut(&mut self, pos: Pos) -> &mut T {
         &mut self[pos.row][pos.col]

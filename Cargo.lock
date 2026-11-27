@@ -2612,6 +2612,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lz4_flex"
+version = "0.11.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13591d77a9b6d941f7e6fcade7f9dfd9e801308752bde50c0a9bb5852778c22c"
+
+[[package]]
 name = "mach2"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3979,6 +3985,7 @@ dependencies = [
  "flate2",
  "image",
  "libc",
+ "lz4_flex",
  "memchr",
  "parking_lot",
  "raw-window-handle",

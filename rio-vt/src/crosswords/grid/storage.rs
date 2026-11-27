@@ -4,11 +4,15 @@
 
 use std::cmp::{max, PartialEq};
 use std::mem;
-use std::mem::MaybeUninit;
 use std::ops::{Index, IndexMut};
 
+use super::cells::{Cells, SlabCursor};
+use super::compress::{self, Block, HistoryMemory, BLOCK_ROWS};
 use super::Row;
+use crate::crosswords::square::Square;
 use crate::crosswords::Line;
+use rustc_hash::FxHashMap;
+use std::sync::Arc;
 
 /// Maximum number of buffered lines outside of the grid for performance optimization.
 const MAX_CACHE_SIZE: usize = 1_000;
@@ -60,6 +64,17 @@ pub struct Storage<T> {
     /// neither path allocates rows. Bounded by `MAX_CACHE_SIZE` so it cannot
     /// grow without bound.
     free: Vec<Row<T>>,
+
+    /// Where the rows the storage makes get their cells: slots of slabs,
+    /// which go back to the OS whole once their rows are compressed
+    /// (`grid::cells`).
+    slabs: SlabCursor<T>,
+
+    /// Where a compression limited to a few blocks stopped, for the next
+    /// call to go on from while the ring is as it was. Anything that
+    /// makes compressed rows plain again forgets it, so the next call
+    /// looks over the whole ring.
+    resume: Option<compress::Resume>,
 }
 
 impl<T: PartialEq> PartialEq for Storage<T> {
@@ -79,8 +94,9 @@ impl<T> Storage<T> {
         T: Clone + Default,
     {
         // Initialize visible lines; the scrollback buffer is initialized dynamically.
+        let mut slabs = SlabCursor::default();
         let mut inner = Vec::with_capacity(visible_lines);
-        inner.resize_with(visible_lines, || Row::new(columns));
+        inner.resize_with(visible_lines, || Row::with_cells(slabs.cells(columns)));
 
         Storage {
             inner,
@@ -88,7 +104,27 @@ impl<T> Storage<T> {
             visible_lines,
             len: visible_lines,
             free: Vec::new(),
+            slabs,
+            resume: None,
         }
+    }
+
+    /// Make the compressed row at raw `index` plain.
+    #[cold]
+    #[inline(never)]
+    fn unpack_at(&mut self, index: usize)
+    where
+        T: Clone,
+    {
+        self.resume = None;
+        self.inner[index].unpack();
+    }
+
+    /// Forget where the last limited compression stopped: the next one
+    /// looks over the whole ring (and drops the decoded copies reads
+    /// left).
+    pub(crate) fn forget_compress_resume(&mut self) {
+        self.resume = None;
     }
 
     /// Increase the number of lines in the buffer.
@@ -155,8 +191,15 @@ impl<T> Storage<T> {
         // is dropped by the `drain`.
         let keep = MAX_CACHE_SIZE.saturating_sub(self.free.len());
         let mut kept = 0;
-        for row in self.inner.drain(self.len..) {
+        for mut row in self.inner.drain(self.len..) {
             if kept < keep {
+                // A pooled row comes back blank: it mustn't keep a
+                // compressed block, or a slab its rows left, alive
+                // meanwhile (it gets a slot again when it's used).
+                row.packed = None;
+                if row.inner.in_slab() {
+                    row.inner = Cells::new();
+                }
                 self.free.push(row);
                 kept += 1;
             }
@@ -198,6 +241,7 @@ impl<T> Storage<T> {
         while self.inner.len() < target {
             match self.free.pop() {
                 Some(mut row) => {
+                    row.inner.move_into(&mut self.slabs, columns);
                     row.recycle(columns);
                     self.inner.push(row);
                 }
@@ -206,7 +250,9 @@ impl<T> Storage<T> {
         }
 
         if self.inner.len() < target {
-            self.inner.resize_with(target, || Row::new(columns));
+            let slabs = &mut self.slabs;
+            self.inner
+                .resize_with(target, || Row::with_cells(slabs.cells(columns)));
         }
     }
 
@@ -236,11 +282,35 @@ impl<T> Storage<T> {
         }
     }
 
+    /// The dirty bit of the row at `line` as it is stored: a compressed
+    /// row's own, read without decoding it.
+    #[inline]
+    pub fn is_dirty(&self, line: Line) -> bool {
+        self.inner[self.compute_index(line)].dirty
+    }
+
+    /// The OSC 133 mark of the row at `line`, read without decoding a
+    /// compressed row (it keeps its mark).
+    #[inline]
+    pub fn semantic_prompt(&self, line: Line) -> super::row::SemanticPrompt {
+        self.inner[self.compute_index(line)].semantic_prompt
+    }
+
+    /// Set the dirty bit of the row at `line` as it is stored: a
+    /// compressed row stays compressed.
+    #[inline]
+    pub fn set_dirty(&mut self, line: Line, dirty: bool) {
+        let index = self.compute_index(line);
+        self.inner[index].dirty = dirty;
+    }
+
     /// Iterate every stored row. Order is the raw ring order, not logical line
     /// order, which is fine for whole-buffer predicates and per-row edits that
-    /// don't depend on position (the resize in-place fast paths).
+    /// don't depend on position (the resize in-place fast paths). Rows as
+    /// stored: a compressed one's cells are in its block (see
+    /// [`Row::resolved`]), so it is crate-internal.
     #[inline]
-    pub fn rows(&self) -> std::slice::Iter<'_, Row<T>> {
+    pub(crate) fn rows(&self) -> std::slice::Iter<'_, Row<T>> {
         self.inner.iter()
     }
 
@@ -253,6 +323,9 @@ impl<T> Storage<T> {
         T: Clone + Default,
     {
         for row in &mut self.inner {
+            row.unpack_into(&mut self.slabs);
+            // Into a slot that has the room, not a buffer of its own.
+            row.inner.move_into(&mut self.slabs, columns);
             row.grow(columns);
         }
     }
@@ -266,42 +339,22 @@ impl<T> Storage<T> {
         T: Clone + Default,
     {
         for row in &mut self.inner {
+            row.unpack_into(&mut self.slabs);
             row.truncate_columns(columns);
         }
     }
 
-    /// Swap implementation for Row<T>.
+    /// Swap two lines' rows.
     ///
-    /// Exploits the known size of Row<T> to produce a slightly more efficient
-    /// swap than going through slice::swap.
-    ///
-    /// `Row<T>` is currently 5 usizes wide: `inner: Vec<T>` (3 usize) +
-    /// `occ: usize` (1) + `kitty_virtual_placeholder: bool` (1 with padding).
-    /// The hand-rolled qword loop has to copy that many slots — bumping
-    /// the field count requires bumping the loop bound below.
+    /// A plain `slice::swap`: a hand-rolled word loop here used to assume
+    /// `Row`'s size in words, which differs between 64- and 32-bit targets
+    /// (wasm) and changes with its fields; the compiler makes the same word
+    /// copies of this.
+    #[inline]
     pub fn swap(&mut self, a: Line, b: Line) {
-        debug_assert_eq!(mem::size_of::<Row<T>>(), mem::size_of::<usize>() * 5);
-
         let a = self.compute_index(a);
         let b = self.compute_index(b);
-
-        unsafe {
-            // Cast to a qword array to opt out of copy restrictions and avoid
-            // drop hazards. Byte array is no good here since for whatever
-            // reason LLVM won't optimized it.
-            let a_ptr = self.inner.as_mut_ptr().add(a) as *mut MaybeUninit<usize>;
-            let b_ptr = self.inner.as_mut_ptr().add(b) as *mut MaybeUninit<usize>;
-
-            // Copy 1 qword at a time.
-            //
-            // The optimizer unrolls this loop and vectorizes it.
-            let mut tmp: MaybeUninit<usize>;
-            for i in 0..5 {
-                tmp = *a_ptr.offset(i);
-                *a_ptr.offset(i) = *b_ptr.offset(i);
-                *b_ptr.offset(i) = tmp;
-            }
-        }
+        self.inner.swap(a, b);
     }
 
     /// Rotate the grid, moving all lines up/down in history.
@@ -381,18 +434,274 @@ impl<T> Storage<T> {
 impl<T> Index<Line> for Storage<T> {
     type Output = Row<T>;
 
+    /// The row, a compressed one read from its block.
     #[inline]
     fn index(&self, index: Line) -> &Self::Output {
         let index = self.compute_index(index);
-        &self.inner[index]
+        self.inner[index].resolved()
     }
 }
 
-impl<T> IndexMut<Line> for Storage<T> {
+impl<T: Clone> IndexMut<Line> for Storage<T> {
+    /// The row to change, a compressed one made plain first.
     #[inline]
     fn index_mut(&mut self, index: Line) -> &mut Self::Output {
         let index = self.compute_index(index);
+        if self.inner[index].is_compressed() {
+            self.unpack_at(index);
+        }
         &mut self.inner[index]
+    }
+}
+
+impl<T: Clone + Default> Storage<T> {
+    /// The row to overwrite whole: a compressed one comes back blank (its
+    /// width kept) instead of decoded.
+    #[inline]
+    pub fn index_mut_discard(&mut self, index: Line) -> &mut Row<T> {
+        let index = self.compute_index(index);
+        let row = &mut self.inner[index];
+        if row.is_compressed() {
+            // Output recycling compressed history: cells from the slab
+            // the rows before it took theirs from.
+            self.resume = None;
+            row.discard_packed_into(&mut self.slabs);
+        }
+        row
+    }
+
+    /// Make every compressed row plain again (before a column resize,
+    /// which rewrites every row).
+    pub fn decompress_all(&mut self) {
+        self.resume = None;
+        for row in &mut self.inner {
+            row.unpack_into(&mut self.slabs);
+        }
+    }
+
+    /// A blank row of `columns` cells, in a slab slot.
+    pub(crate) fn new_row(&mut self, columns: usize) -> Row<T> {
+        Row::with_cells(self.slabs.cells(columns))
+    }
+
+    /// Put `row`'s cells in a slab slot with room for `columns` (see
+    /// `Cells::move_into`): a reflow's rows, before they grow or once
+    /// they're cut.
+    pub(crate) fn rehome(&mut self, row: &mut Row<T>, columns: usize) {
+        row.inner.move_into(&mut self.slabs, columns);
+    }
+}
+
+impl Storage<Square> {
+    /// The raw index of the row `positive` rows up from the bottom line,
+    /// past the lines in use too (the ring's spare rows, which keep rows
+    /// that left the history for a later grow to show again).
+    #[inline]
+    fn ring_index(&self, positive: usize) -> usize {
+        (self.zero + positive) % self.inner.len()
+    }
+
+    /// Compress the plain rows from `newest` rows up from the bottom line
+    /// to the top of the ring (the oldest history, then the spare rows),
+    /// `BLOCK_ROWS` at a time, at most `max_blocks` new blocks (`None`: no
+    /// limit). First drops the decoded copies reads made of blocks there.
+    /// A run of plain rows is compressed when it fills a block or a
+    /// compressed row follows it; the newest ones wait for a full block.
+    /// Returns whether rows were left plain for the limit; then `resume`
+    /// keeps where it stopped, and a call on the same ring goes on from
+    /// there (with its first pass over the ring done), so a pass in steps
+    /// costs about what one call does.
+    pub(crate) fn compress_from(
+        &mut self,
+        newest: usize,
+        max_blocks: Option<usize>,
+    ) -> bool {
+        let mut resume = self.resume.take();
+        let more = self.compress_rows(newest, max_blocks, &mut resume);
+        self.resume = resume;
+        more
+    }
+
+    fn compress_rows(
+        &mut self,
+        newest: usize,
+        max_blocks: Option<usize>,
+        resume: &mut Option<compress::Resume>,
+    ) -> bool {
+        let top = self.inner.len();
+        if newest >= top {
+            *resume = None;
+            return false;
+        }
+        // Oldest first: the k-th row's raw index.
+        let count = top - newest;
+        let zero = self.zero;
+        let order = move |k: usize| (zero + top - 1 - k) % top;
+        let ring = (zero, top, self.len, newest);
+        if let Some(at) = resume.take().filter(|r| r.ring == ring) {
+            return self.encode_from(order, count, at.k, max_blocks, ring, resume);
+        }
+
+        // How many rows still point at each encoding, the viewport's too:
+        // one whose rows were mostly written (and so made plain) is
+        // unpacked whole and compressed again with them, so a few rows
+        // don't keep all of it. A block's rows sit together, so the last
+        // one looked up is nearly always the one.
+        let mut live: FxHashMap<*const compress::Encoded, (usize, usize)> =
+            FxHashMap::default();
+        let mut counts: Vec<(*const compress::Encoded, usize, usize)> = Vec::new();
+        let mut run: Option<(*const compress::Encoded, usize, usize)> = None;
+        for row in &self.inner {
+            let Some(block) = &row.packed else { continue };
+            let key = Arc::as_ptr(&block.data);
+            match &mut run {
+                Some((k, rows, _)) if *k == key => *rows += 1,
+                _ => {
+                    if let Some(done) = run.take() {
+                        counts.push(done);
+                    }
+                    run = Some((key, 1, block.len()));
+                }
+            }
+        }
+        counts.extend(run);
+        for (key, rows, of) in counts {
+            live.entry(key).or_insert((0, of)).0 += rows;
+        }
+        let sparse = |data: *const compress::Encoded| {
+            live.get(&data).is_some_and(|&(rows, of)| rows * 2 < of)
+        };
+
+        // Decoded copies go: rows point to a copy of their block without.
+        let mut fresh: FxHashMap<*const Block<Square>, Arc<Block<Square>>> =
+            FxHashMap::default();
+        // The last block looked up: whether its rows are unpacked, or the
+        // copy they take.
+        type Seen = (*const Block<Square>, bool, Option<Arc<Block<Square>>>);
+        let mut prev: Option<Seen> = None;
+        // A pass in steps (while someone may be looking) keeps the decoded
+        // block just above the viewport: what's drawn reads a little past
+        // its top (a search's matches running into it), and dropped it
+        // would be decoded again by the next frame, and dropped again.
+        let near = if max_blocks.is_some() {
+            count.saturating_sub(BLOCK_ROWS)
+        } else {
+            count
+        };
+        for k in 0..count {
+            let index = order(k);
+            let row = &mut self.inner[index];
+            let Some(block) = &row.packed else { continue };
+            if k >= near && block.is_decoded() {
+                continue;
+            }
+            let key = Arc::as_ptr(block);
+            let (unpack, copy) = match &prev {
+                Some((k, unpack, copy)) if *k == key => (*unpack, copy.clone()),
+                _ => {
+                    let unpack = sparse(Arc::as_ptr(&block.data));
+                    let copy = (!unpack && block.is_decoded()).then(|| {
+                        fresh
+                            .entry(key)
+                            .or_insert_with(|| Arc::new(block.without_cache()))
+                            .clone()
+                    });
+                    prev = Some((key, unpack, copy.clone()));
+                    (unpack, copy)
+                }
+            };
+            if unpack {
+                row.unpack_into(&mut self.slabs);
+            } else if let Some(copy) = copy {
+                row.packed = Some(copy);
+            }
+        }
+
+        self.encode_from(order, count, 0, max_blocks, ring, resume)
+    }
+
+    /// The encoding part of [`Self::compress_from`], from the `k`-th row.
+    fn encode_from(
+        &mut self,
+        order: impl Fn(usize) -> usize,
+        count: usize,
+        mut k: usize,
+        max_blocks: Option<usize>,
+        ring: (usize, usize, usize, usize),
+        resume: &mut Option<compress::Resume>,
+    ) -> bool {
+        let mut made = 0;
+        let mut run = Vec::with_capacity(BLOCK_ROWS);
+        while k < count {
+            run.clear();
+            while k < count && run.len() < BLOCK_ROWS {
+                let index = order(k);
+                if self.inner[index].packed.is_some() {
+                    break;
+                }
+                run.push(index);
+                k += 1;
+            }
+            let full = run.len() == BLOCK_ROWS;
+            let before_packed = k < count;
+            if run.is_empty() || !(full || before_packed) {
+                // A compressed row, or the newest rows short of a block.
+                k += 1;
+                continue;
+            }
+            if max_blocks.is_some_and(|max| made >= max) {
+                *resume = Some(compress::Resume {
+                    ring,
+                    k: k - run.len(),
+                });
+                return true;
+            }
+            let rows: Vec<&Row<Square>> = run.iter().map(|&j| &self.inner[j]).collect();
+            let block = Arc::new(compress::encode(&rows));
+            for (at, &j) in run.iter().enumerate() {
+                let row = &mut self.inner[j];
+                row.inner = super::cells::Cells::new();
+                row.packed_at = at as u16;
+                row.packed = Some(block.clone());
+            }
+            made += 1;
+        }
+        false
+    }
+
+    /// What the rows from `newest` up to the top of the ring take,
+    /// compressed and not.
+    pub(crate) fn memory_from(&self, newest: usize) -> HistoryMemory {
+        let mut m = HistoryMemory::default();
+        // Rows of one encoding can be in two blocks (a copy without the
+        // decoded rows, and the one rows below `newest` keep): each is
+        // counted once.
+        let mut blocks: Vec<*const Block<Square>> = Vec::new();
+        let mut encoded: Vec<*const compress::Encoded> = Vec::new();
+        let mut last: *const Block<Square> = std::ptr::null();
+        for p in newest..self.inner.len() {
+            let row = &self.inner[self.ring_index(p)];
+            match &row.packed {
+                None => m.plain_rows += 1,
+                Some(block) => {
+                    m.compressed_rows += 1;
+                    let key = Arc::as_ptr(block);
+                    if key == last || blocks.contains(&key) {
+                        last = key;
+                        continue;
+                    }
+                    last = key;
+                    blocks.push(key);
+                    m.decoded_bytes += block.decoded_bytes();
+                    let data = Arc::as_ptr(&block.data);
+                    if !encoded.contains(&data) {
+                        encoded.push(data);
+                        m.compressed_bytes += block.encoded_bytes();
+                    }
+                }
+            }
+        }
+        m
     }
 }
 
@@ -468,6 +777,8 @@ mod tests {
             visible_lines: 3,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         // Grow buffer.
@@ -480,6 +791,8 @@ mod tests {
             visible_lines: 4,
             len: 4,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
         // Resize grows by exactly one line now (no scrollback over-alloc).
         expected.inner.push(filled_row('\0'));
@@ -512,6 +825,8 @@ mod tests {
             visible_lines: 3,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         // Grow buffer.
@@ -524,6 +839,8 @@ mod tests {
             visible_lines: 4,
             len: 4,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
         // Resize grows by exactly one line now (no scrollback over-alloc).
         expected.inner.push(filled_row('\0'));
@@ -553,6 +870,8 @@ mod tests {
             visible_lines: 3,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         // Shrink buffer.
@@ -565,6 +884,8 @@ mod tests {
             visible_lines: 2,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -591,6 +912,8 @@ mod tests {
             visible_lines: 3,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         // Shrink buffer.
@@ -603,6 +926,8 @@ mod tests {
             visible_lines: 2,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -642,6 +967,8 @@ mod tests {
             visible_lines: 6,
             len: 6,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         // Shrink buffer.
@@ -661,6 +988,8 @@ mod tests {
             visible_lines: 2,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -696,6 +1025,8 @@ mod tests {
             visible_lines: 1,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         // Truncate buffer.
@@ -708,6 +1039,8 @@ mod tests {
             visible_lines: 1,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -733,6 +1066,8 @@ mod tests {
             visible_lines: 1,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         // Truncate buffer.
@@ -745,6 +1080,8 @@ mod tests {
             visible_lines: 1,
             len: 2,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -792,6 +1129,8 @@ mod tests {
             visible_lines: 0,
             len: 6,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         // Shrink buffer.
@@ -811,6 +1150,8 @@ mod tests {
             visible_lines: 0,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
         assert_eq!(storage.inner, shrinking_expected.inner);
         assert_eq!(storage.zero, shrinking_expected.zero);
@@ -833,6 +1174,8 @@ mod tests {
             visible_lines: 0,
             len: 4,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         assert_eq!(storage.inner, growing_expected.inner);
@@ -856,6 +1199,8 @@ mod tests {
             visible_lines: 0,
             len: 6,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         // Initialize additional lines.
@@ -879,6 +1224,8 @@ mod tests {
             visible_lines: 0,
             len: 9,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         assert_eq!(storage.len, expected_storage.len);
@@ -904,6 +1251,8 @@ mod tests {
             visible_lines: 25,
             len: 6,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         // Initialize additional lines.
@@ -925,6 +1274,8 @@ mod tests {
             visible_lines: 25,
             len: 11,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         assert_eq!(storage.len, expected_storage.len);
@@ -940,6 +1291,8 @@ mod tests {
             visible_lines: 0,
             len: 3,
             free: Vec::new(),
+            slabs: Default::default(),
+            resume: None,
         };
 
         storage.rotate(2);
@@ -955,7 +1308,7 @@ mod tests {
 
     // Rows truncated off the ring wait in the pool, up to MAX_CACHE_SIZE
     // of them, and a later growth takes them back blank at the current
-    // width instead of allocating.
+    // width, in slab slots.
     #[test]
     fn truncated_rows_are_pooled_and_handed_back_blank() {
         let mut storage = Storage::<char>::with_capacity(3, 2);
@@ -973,20 +1326,17 @@ mod tests {
         assert_eq!(storage.len, 303);
         assert_eq!(storage.inner.len(), 303);
         assert_eq!(storage.free.len(), MAX_CACHE_SIZE);
-        let pooled: Vec<*const char> =
-            storage.free.iter().map(|row| row.inner.as_ptr()).collect();
+        // Pooled rows let go of their slab slots (the slabs go once all
+        // their rows did).
+        assert!(storage.free.iter().all(|row| row.inner.is_empty()));
 
-        // Growing again drains the pool before allocating anything.
+        // Growing again drains the pool, the rows' cells in slab slots.
         storage.initialize(1, 2);
         assert_eq!(storage.len, 304);
         assert_eq!(storage.inner.len(), 303 + MAX_CACHE_SIZE);
         assert!(storage.free.is_empty());
-        let reused = storage.inner[303..]
-            .iter()
-            .filter(|row| pooled.contains(&row.inner.as_ptr()))
-            .count();
-        assert_eq!(reused, MAX_CACHE_SIZE, "every pooled buffer came back");
         for row in &storage.inner[303..] {
+            assert!(row.inner.in_slab());
             assert_eq!(row.inner.len(), 2);
             assert!(
                 row.inner.iter().all(|c| *c == char::default()),

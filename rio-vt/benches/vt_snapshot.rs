@@ -3,7 +3,8 @@
 // lines of styled history. Variants: OSC 8 links on every line, a color
 // per cell (the most SGR a snapshot writes), an alt-screen program over
 // the history, the visible screen alone, and the plain text of it all;
-// and streamed (`snapshot_to`) into a sink, or a buffer kept between runs.
+// and streamed (`snapshot_to`) into a sink, or a buffer kept between runs;
+// and compressed history: compressing it, and a snapshot reading it back.
 
 use criterion::{criterion_group, criterion_main, Criterion};
 
@@ -112,6 +113,40 @@ fn bench(c: &mut Criterion) {
 
     let t = term(|i| if i < 5 { styled(i) } else { String::new() });
     g.bench_function("screen_only", |b| b.iter(|| t.snapshot_formatted()));
+
+    // Compressed history (`compress_history`): compressing 10k styled
+    // lines, and a snapshot that reads them all back (decoding each block
+    // once; compressing again drops the decoded copies, outside timing).
+    g.bench_function("compress_10k", |b| {
+        b.iter_batched(
+            || term(styled),
+            |mut t| t.compress_history(None),
+            criterion::BatchSize::LargeInput,
+        )
+    });
+    let mut t = term(styled);
+    let plain = t.history_memory();
+    t.compress_history(None);
+    let m = t.history_memory();
+    eprintln!(
+        "compressed: {} of {} rows, {} KB of blocks for {} KB of rows",
+        m.compressed_rows,
+        m.compressed_rows + m.plain_rows,
+        m.compressed_bytes / 1024,
+        (plain.plain_rows * COLS * 8) / 1024
+    );
+    g.bench_function("styled_10k_compressed", |b| {
+        b.iter_custom(|iters| {
+            let mut total = std::time::Duration::ZERO;
+            for _ in 0..iters {
+                t.compress_history(None);
+                let start = std::time::Instant::now();
+                std::hint::black_box(t.snapshot_formatted());
+                total += start.elapsed();
+            }
+            total
+        })
+    });
     g.finish();
 }
 

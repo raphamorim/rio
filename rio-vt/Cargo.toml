@@ -29,6 +29,8 @@ regex-automata = "0.4.18"
 cursor-icon = { version = "1.1.0", default-features = false }
 smallvec = { workspace = true }
 flate2 = { workspace = true }
+# Compressed scrollback (grid::compress): the safe, pure-Rust block codec.
+lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-encode", "safe-decode", "checked-decode"] }
 
 # Native-only: SIMD UTF-8/base64 (scalar fallbacks on wasm), the PTY stack,
 # and the system clipboard.

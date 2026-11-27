@@ -19,6 +19,10 @@ use crate::crosswords::square::{Square, Wide};
 use crate::crosswords::Crosswords;
 use crate::crosswords::{Boundary, Column, Direction, Pos, Side};
 
+/// Lines past which a search decodes what it reads for itself (see
+/// `regex_search`).
+const TRANSIENT_SEARCH_LINES: i32 = 512;
+
 /// Used to match equal brackets, when performing a bracket-pair selection.
 const BRACKET_PAIRS: [(char, char); 4] = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
 
@@ -150,13 +154,24 @@ impl<T: event::EventListener> Crosswords<T> {
         side: Side,
         mut max_lines: Option<usize>,
     ) -> Option<Match> {
-        origin = self.expand_wide(origin, direction);
-
         max_lines = max_lines.filter(|max_lines| max_lines + 1 < self.grid.total_lines());
 
-        match direction {
-            Direction::Right => self.next_match_right(regex, origin, side, max_lines),
-            Direction::Left => self.next_match_left(regex, origin, side, max_lines),
+        let mut next = || {
+            origin = self.expand_wide(origin, direction);
+            match direction {
+                Direction::Right => self.next_match_right(regex, origin, side, max_lines),
+                Direction::Left => self.next_match_left(regex, origin, side, max_lines),
+            }
+        };
+        // A search through the history decodes what it reads for itself,
+        // the passes that find a match's ends included (see
+        // `regex_search`).
+        if max_lines.is_none_or(|lines| lines as i32 > TRANSIENT_SEARCH_LINES) {
+            // SAFETY: the result is positions; no reference into the grid
+            // outlives the closure.
+            unsafe { crate::crosswords::grid::compress::transient_reads(next) }
+        } else {
+            next()
         }
     }
 
@@ -258,10 +273,12 @@ impl<T: event::EventListener> Crosswords<T> {
         end: Pos,
     ) -> Option<Match> where {
         // Find start and end of match.
-        let match_start = self.regex_search(start, end, &mut regex.left_fdfa)?;
-        let match_end = self.regex_search(match_start, start, &mut regex.left_rdfa)?;
-
-        Some(match_start..=match_end)
+        self.bulk_search(start, end, Direction::Left, || {
+            let match_start = self.regex_search(start, end, &mut regex.left_fdfa)?;
+            let match_end =
+                self.regex_search(match_start, start, &mut regex.left_rdfa)?;
+            Some(match_start..=match_end)
+        })
     }
 
     /// Find the next regex match to the right of the origin point.
@@ -274,15 +291,43 @@ impl<T: event::EventListener> Crosswords<T> {
         end: Pos,
     ) -> Option<Match> {
         // Find start and end of match.
-        let match_end = self.regex_search(start, end, &mut regex.right_fdfa)?;
-        let match_start = self.regex_search(match_end, start, &mut regex.right_rdfa)?;
-
-        Some(match_start..=match_end)
+        self.bulk_search(start, end, Direction::Right, || {
+            let match_end = self.regex_search(start, end, &mut regex.right_fdfa)?;
+            let match_start =
+                self.regex_search(match_end, start, &mut regex.right_rdfa)?;
+            Some(match_start..=match_end)
+        })
     }
 
     /// Find the next regex match.
     ///
     /// This will always return the side of the first match which is farthest from the start point.
+    /// Run `search`, a search from `start` to `end`, so that one over more
+    /// than a screen or two (the history, or round the end to the other
+    /// side) decodes what it reads for itself and leaves nothing decoded
+    /// behind, both of a match's passes in one scope; a short one (the
+    /// hints around the viewport, every frame) reads the blocks' caches,
+    /// so a frame doesn't decode the same block again.
+    fn bulk_search<R>(
+        &self,
+        start: Pos,
+        end: Pos,
+        direction: Direction,
+        search: impl FnOnce() -> R,
+    ) -> R {
+        let (wraps, lines) = match direction {
+            Direction::Right => (end < start, end.row.0 - start.row.0),
+            Direction::Left => (end > start, start.row.0 - end.row.0),
+        };
+        if wraps || lines > TRANSIENT_SEARCH_LINES {
+            // SAFETY: the result is positions; no reference into the
+            // grid outlives the closure, which runs only the search.
+            unsafe { crate::crosswords::grid::compress::transient_reads(search) }
+        } else {
+            search()
+        }
+    }
+
     fn regex_search(&self, start: Pos, end: Pos, regex: &mut LazyDfa) -> Option<Pos> {
         match self.regex_search_internal(start, end, regex) {
             Ok(regex_match) => regex_match,

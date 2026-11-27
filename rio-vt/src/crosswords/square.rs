@@ -301,6 +301,12 @@ impl Square {
         self.0
     }
 
+    /// A cell from bits [`Square::raw`] gave (compressed history).
+    #[inline(always)]
+    pub(crate) fn from_raw(bits: u64) -> Square {
+        Square(bits)
+    }
+
     /// The cell's base character only.
     ///
     /// This is **not** the cell's full text: combining marks, ZWJ joiners and
