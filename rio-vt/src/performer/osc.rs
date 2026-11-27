@@ -287,21 +287,17 @@ fn parse_directory_url(param: &[u8]) -> Option<String> {
     let host = &after_scheme[..path_start];
     let path = &after_scheme[path_start..];
 
-    if !host_is_local(host) {
+    // A file URL's host is percent-encoded like its path (`h%C3%B6st`); the
+    // kitty flavor writes it as is.
+    let host = if percent_encoded {
+        std::borrow::Cow::Owned(percent_decode(host)?)
+    } else {
+        std::borrow::Cow::Borrowed(host)
+    };
+    if !host_is_local(&host) {
         tracing::warn!("ignoring OSC 7 for non-local host {host:?}");
         return None;
     }
-
-    // `file:////server/share` is a share whatever the target: look before
-    // Windows loses the leading slash below and leaves a rooted `/server/share`.
-    if names_a_share(path) {
-        return None;
-    }
-
-    // Windows paths arrive as `/C:/...` in both flavors; drop the
-    // leading slash.
-    #[cfg(windows)]
-    let path = path.strip_prefix('/').unwrap_or(path);
 
     let path = if percent_encoded {
         // A query or fragment is not part of the path.
@@ -311,7 +307,23 @@ fn parse_directory_url(param: &[u8]) -> Option<String> {
         // path bytes, not URL syntax.
         path.to_string()
     };
-    (!names_a_share(&path)).then_some(path)
+    // Looked at while the URL's leading slash is still there, so
+    // `file:////server/share` and `file:///%5C%5Cserver` read the same on
+    // every target.
+    if names_a_share(&path) {
+        return None;
+    }
+
+    // Windows paths arrive as `/C:/...` in both flavors; the slash goes, and
+    // only before a drive letter: `/Users` stays rooted rather than becoming
+    // a relative `Users`.
+    #[cfg(windows)]
+    let path = match path.as_bytes() {
+        [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => path[1..].to_string(),
+        _ => path,
+    };
+
+    Some(path)
 }
 
 /// A path to a share on another machine: two separators of either kind first
@@ -339,23 +351,21 @@ fn host_is_local(host: &str) -> bool {
         return true;
     }
 
-    match local_hostname() {
-        Some(local) => host.eq_ignore_ascii_case(&local),
-        // With no hostname to compare against, take the shell at its word
-        // rather than dropping the directory outright.
-        None => true,
-    }
+    let local = local_hostnames();
+    // With no hostname to compare against, take the shell at its word
+    // rather than dropping the directory outright.
+    local.is_empty() || local.iter().any(|name| host.eq_ignore_ascii_case(name))
 }
 
-/// This machine's hostname, read per check: one syscall, where a
+/// This machine's hostnames, read per check: a syscall or three, where a
 /// process-lifetime cache would keep rejecting a shell's cwd reports
 /// after the hostname changes mid-session (macOS mDNS renames).
-fn local_hostname() -> Option<String> {
-    read_hostname()
+fn local_hostnames() -> Vec<String> {
+    read_hostnames()
 }
 
 #[cfg(unix)]
-fn read_hostname() -> Option<String> {
+fn read_hostnames() -> Vec<String> {
     // `_POSIX_HOST_NAME_MAX` is 255; the extra byte is for the terminator,
     // which a truncating implementation is not required to write.
     let mut buffer = [0_u8; 256];
@@ -364,21 +374,58 @@ fn read_hostname() -> Option<String> {
         libc::gethostname(buffer.as_mut_ptr() as *mut libc::c_char, buffer.len())
     };
     if result != 0 {
-        return None;
+        return Vec::new();
     }
 
-    let end = buffer.iter().position(|byte| *byte == 0)?;
-    std::str::from_utf8(&buffer[..end])
-        .ok()
+    buffer
+        .iter()
+        .position(|byte| *byte == 0)
+        .and_then(|end| std::str::from_utf8(&buffer[..end]).ok())
         .filter(|hostname| !hostname.is_empty())
-        .map(str::to_owned)
+        .map(|hostname| vec![hostname.to_owned()])
+        .unwrap_or_default()
 }
 
-#[cfg(not(unix))]
-fn read_hostname() -> Option<String> {
-    // No lookup here, so `host_is_local` falls back to accepting the payload,
-    // which is what rio did on every platform before.
-    None
+/// Windows has a name per use, and a shell may report any of them:
+/// `$env:COMPUTERNAME` is the NetBIOS one (`DESKTOP-1A2B3C`), `hostname`
+/// and most ports of Unix tools the DNS one, which can also be qualified.
+#[cfg(windows)]
+fn read_hostnames() -> Vec<String> {
+    use windows_sys::Win32::System::SystemInformation::{
+        ComputerNameDnsFullyQualified, ComputerNameDnsHostname, ComputerNameNetBIOS,
+        GetComputerNameExW,
+    };
+
+    let mut names: Vec<String> = Vec::new();
+    for kind in [
+        ComputerNameDnsHostname,
+        ComputerNameDnsFullyQualified,
+        ComputerNameNetBIOS,
+    ] {
+        // DNS names are at most 255 characters, NetBIOS ones 15.
+        let mut buffer = [0_u16; 256];
+        let mut len = buffer.len() as u32;
+        // SAFETY: `len` is the buffer's size in characters; on success it is
+        // the name's length, without the terminator.
+        let ok = unsafe { GetComputerNameExW(kind, buffer.as_mut_ptr(), &mut len) };
+        if ok == 0 {
+            continue;
+        }
+        let Ok(name) = String::from_utf16(&buffer[..len as usize]) else {
+            continue;
+        };
+        if !name.is_empty() && !names.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+#[cfg(not(any(unix, windows)))]
+fn read_hostnames() -> Vec<String> {
+    // No lookup here (wasm), so `host_is_local` falls back to accepting the
+    // payload.
+    Vec::new()
 }
 
 /// Percent-decode a URL path. Invalid escapes are passed through as written,
@@ -977,9 +1024,13 @@ mod tests {
     #[test]
     fn current_directory_strips_windows_leading_slash() {
         assert_eq!(cwd("file:///C:/Users/user"), Some("C:/Users/user".into()));
+        assert_eq!(cwd("file:///c%3A/src"), Some("c:/src".into()));
+        // Only before a drive letter: a rooted path stays rooted.
+        assert_eq!(cwd("file:///Users/user"), Some("/Users/user".into()));
+        assert_eq!(cwd("file://localhost/share"), Some("/share".into()));
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn current_directory_accepts_local_hosts() {
         // Empty host means this machine (RFC 8089), as does localhost.
@@ -989,7 +1040,7 @@ mod tests {
 
         // Our own hostname, as sent by a local shell, in either case and with
         // the FQDN root dot.
-        let local = local_hostname().expect("hostname");
+        let local = local_hostnames().into_iter().next().expect("hostname");
         assert_eq!(cwd(&format!("file://{local}/tmp")), Some("/tmp".into()));
         assert_eq!(
             cwd(&format!("file://{}/tmp", local.to_uppercase())),
@@ -998,11 +1049,24 @@ mod tests {
         assert_eq!(cwd(&format!("file://{local}./tmp")), Some("/tmp".into()));
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn current_directory_rejects_remote_hosts() {
         // A shell on the far side of an ssh session must not move our cwd.
         assert_eq!(cwd("file://not-this-machine.invalid/tmp"), None);
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn current_directory_decodes_a_file_urls_host() {
+        // `file://h%C3%B6st/` is the host `höst`; the kitty flavor's host is
+        // written as is.
+        let local = local_hostnames().into_iter().next().expect("hostname");
+        let encoded: String = local.bytes().map(|b| format!("%{b:02X}")).collect();
+        assert_eq!(cwd(&format!("file://{encoded}/tmp")), Some("/tmp".into()));
+        assert_eq!(cwd(&format!("kitty-shell-cwd://{encoded}/tmp")), None);
+        // A host that doesn't decode to text names nothing.
+        assert_eq!(cwd("file://%FF/tmp"), None);
     }
 
     #[test]
