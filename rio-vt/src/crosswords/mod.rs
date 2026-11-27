@@ -3076,6 +3076,14 @@ impl<U: EventListener> Crosswords<U> {
     }
 
     pub fn selection_to_string(&self) -> Option<String> {
+        // A copy of the whole history (a block selection a line at a
+        // time) leaves nothing decoded behind.
+        // SAFETY: the text is owned; no reference into the grid outlives
+        // the closure.
+        unsafe { grid::compress::transient_reads(|| self.selection_text()) }
+    }
+
+    fn selection_text(&self) -> Option<String> {
         let selection_range = self.selection.as_ref().and_then(|s| s.to_range(self))?;
         let SelectionRange { start, end, .. } = selection_range;
 
