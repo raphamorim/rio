@@ -262,7 +262,10 @@ fn encode_with(rows: &[&Row<Square>], scratch: &mut Scratch) -> Block<Square> {
 
 /// Blocks a bulk read on this thread decoded for itself (see
 /// [`transient_reads`]), each a `Box<Box<[Row<T>]>>` as a thin pointer with
-/// what drops it, keyed by the block.
+/// what drops it, keyed by the block. (By its address alone: the blocks a
+/// scope reads are alive and borrowed for all of it, and all are
+/// `Block<Square>`; a second cell type read in the same scope would need
+/// its type in the key.)
 /// One block's rows in the scratch: the block, the rows, what drops them.
 type Decoded = (*const (), *mut (), unsafe fn(*mut ()));
 
@@ -296,7 +299,10 @@ unsafe fn drop_transient<T>(rows: *mut ()) {
 ///
 /// No reference into a grid obtained in `f` may be used after it returns:
 /// rows it reads may live in the scratch. Its callers return owned values
-/// (text, bytes, positions) and keep no reference past it.
+/// (text, bytes, positions) and keep no reference past it, and `f` runs
+/// no code but rio-vt's own: anything else it calls (a caller's
+/// `io::Write`) goes through [`outside_transient_reads`], or that code
+/// could keep a row read in the scope past it.
 pub(crate) unsafe fn transient_reads<R>(f: impl FnOnce() -> R) -> R {
     struct Scope;
     impl Drop for Scope {
@@ -319,6 +325,24 @@ pub(crate) unsafe fn transient_reads<R>(f: impl FnOnce() -> R) -> R {
     }
     TRANSIENT.with(|t| t.borrow_mut().depth += 1);
     let _scope = Scope;
+    f()
+}
+
+/// Run `f` as if outside any [`transient_reads`]: what it reads goes
+/// through the blocks' caches, as everywhere else, so it may keep it. For
+/// code inside a scope that isn't the read's own, such as the caller's
+/// `io::Write` a snapshot streams to (which could read the terminal).
+/// The scope's scratch stays where it is meanwhile, and is back after.
+pub(crate) fn outside_transient_reads<R>(f: impl FnOnce() -> R) -> R {
+    struct Restore(Transient);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let saved = std::mem::take(&mut self.0);
+            // Whatever `f` opened has closed (its scopes freed their own).
+            TRANSIENT.with(|t| *t.borrow_mut() = saved);
+        }
+    }
+    let _restore = Restore(TRANSIENT.with(|t| std::mem::take(&mut *t.borrow_mut())));
     f()
 }
 
@@ -1193,6 +1217,70 @@ mod tests {
             copied.push(t.term.selection_to_string());
         }
         assert_eq!(copied[0], copied[1]);
+        assert_eq!(a.term.history_memory(), m);
+    }
+
+    #[test]
+    fn a_writer_that_reads_the_terminal_keeps_what_it_read() {
+        use crate::crosswords::grid::row::Row;
+        use crate::crosswords::square::Square;
+        use std::io;
+        // The caller's `io::Write`, run while a snapshot streams: it may
+        // read the terminal and keep the row it read past the snapshot.
+        struct Peek<'a> {
+            t: &'a Crosswords<VoidListener>,
+            line: Line,
+            kept: Option<&'a Row<Square>>,
+        }
+        impl io::Write for Peek<'_> {
+            fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+                if self.kept.is_none() {
+                    self.kept = Some(&self.t.grid[self.line]);
+                }
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let (a, b) = twins(30, 5, 2_000, 1_200);
+        let line = Line(-(a.term.grid.history_size() as i32) + 3);
+        let mut w = Peek {
+            t: &a.term,
+            line,
+            kept: None,
+        };
+        a.term.format_to(FormatOptions::snapshot(), &mut w).unwrap();
+        let kept = w.kept.expect("written to");
+        // Read through the block's cache, not the snapshot's scratch: still
+        // there, and the row it was.
+        assert!(a.term.history_memory().decoded_bytes > 0);
+        assert_eq!(kept, &b.term.grid[line]);
+        assert_eq!(kept, &a.term.grid[line]);
+    }
+
+    #[test]
+    fn copying_a_block_selection_of_the_history_leaves_it_undecoded() {
+        use crate::crosswords::{Pos, Side};
+        use crate::selection::{Selection, SelectionType};
+        let (mut a, mut b) = twins(30, 5, 2_000, 1_200);
+        let m = a.term.history_memory();
+        let top = a.term.grid.topmost_line();
+        let mut copied = Vec::new();
+        for t in [&mut a, &mut b] {
+            let mut sel = Selection::new(
+                SelectionType::Block,
+                Pos::new(top, Column(2)),
+                Side::Left,
+            );
+            sel.update(Pos::new(Line(4), Column(20)), Side::Right);
+            t.term.selection = Some(sel);
+            copied.push(t.term.selection_to_string());
+        }
+        assert_eq!(copied[0], copied[1]);
+        assert!(copied[0]
+            .as_ref()
+            .is_some_and(|c| c.lines().count() > 1_000));
         assert_eq!(a.term.history_memory(), m);
     }
 
