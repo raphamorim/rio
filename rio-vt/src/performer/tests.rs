@@ -2147,17 +2147,21 @@ fn quiet_output_has_its_history_compressed() {
         );
         if on {
             // Scrolled back over it, it's decoded to be shown, and once
-            // that's quiet compressed again, the copies dropped.
-            {
+            // that's quiet compressed again, the copies dropped (all but
+            // the block just above the viewport, which the frames read).
+            let decoded = {
                 let mut terminal = terminal.lock();
                 terminal.scroll_display(crate::crosswords::grid::Scroll::Top);
                 let top = -(terminal.grid.history_size() as i32);
-                assert_eq!(terminal.grid[Line(top)][Column(0)].c(), 'l');
-                assert!(terminal.history_memory().decoded_bytes > 0);
+                for line in top..0 {
+                    assert_eq!(terminal.grid[Line(line)][Column(0)].c(), 'l');
+                }
                 terminal.scroll_display(crate::crosswords::grid::Scroll::Bottom);
-            }
+                terminal.history_memory().decoded_bytes
+            };
+            assert!(decoded > 0);
             let deadline = Instant::now() + Duration::from_secs(5);
-            while terminal.lock().history_memory().decoded_bytes > 0 {
+            while terminal.lock().history_memory().decoded_bytes * 20 > decoded {
                 assert!(Instant::now() < deadline, "decoded copies stay");
                 std::thread::sleep(Duration::from_millis(5));
             }
@@ -2171,6 +2175,39 @@ fn quiet_output_has_its_history_compressed() {
 // Rows that keep arriving in the history push the wait back, but a step
 // is still taken every so often; output that leaves the history as it is
 // (a spinner redrawing a line) doesn't push it back at all.
+#[test]
+fn rows_that_keep_coming_get_a_pass_of_blocks() {
+    let mut t = Crosswords::new(
+        CrosswordsSize::new(30, 5),
+        CursorShape::Block,
+        VoidListener,
+        WindowId::from(0),
+        0,
+        4_000,
+    );
+    t.set_scrollback_compression(true);
+    let mut parser = handler::Processor::default();
+    for i in 0..3_000 {
+        parser.advance(&mut t, format!("line {i}\r\n").as_bytes());
+    }
+    // Rows before every step, for two seconds: a flood.
+    let mut timer = CompressTimer::default();
+    let start = Instant::now();
+    let (mut now, mut steps) = (start, 0);
+    while now < start + COMPRESS_FLOWING * 2 {
+        timer.arm(now);
+        if timer.due(now) {
+            timer.step(Some(&mut t), now);
+            steps += 1;
+        }
+        now += COMPRESS_STEP;
+    }
+    // The backstop's pass ran its blocks, output or not.
+    assert!(steps >= COMPRESS_FLOWING_BLOCKS as usize, "{steps} steps");
+    let rows = t.history_memory().compressed_rows;
+    assert!(rows >= COMPRESS_FLOWING_BLOCKS as usize * 16, "{rows} rows");
+}
+
 #[test]
 fn compression_waits_for_the_history_to_settle() {
     let start = Instant::now();

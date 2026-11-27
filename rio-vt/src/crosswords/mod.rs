@@ -1001,9 +1001,11 @@ impl<U: EventListener> Crosswords<U> {
         // announce the damage; ask for the render here.
         if old_display_offset != self.grid.display_offset() {
             // Showing history decodes it: have it compressed again (the
-            // decoded copies dropped) once things are quiet.
+            // decoded copies dropped) once scrolling stops.
             if self.scrollback_compression {
-                self.history_was_read();
+                if let Some(reads) = &self.history_reads {
+                    reads.scrolled();
+                }
             }
             self.mark_fully_damaged();
             self.request_render();

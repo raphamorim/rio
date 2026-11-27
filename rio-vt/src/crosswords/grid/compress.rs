@@ -125,6 +125,13 @@ impl HistoryReads {
         }
     }
 
+    /// The viewport moved over the history: put the pass off until
+    /// reading stops, asked for or not.
+    pub(crate) fn scrolled(&self) {
+        self.pending.store(true, Ordering::Release);
+        (self.sink)();
+    }
+
     /// A pass started: reads from here on ask for another.
     #[cfg_attr(not(feature = "pty"), allow(dead_code))]
     pub(crate) fn taken(&self) {
@@ -164,12 +171,15 @@ impl<T> Block<T> {
     /// The block's rows, decoding them on the first call.
     #[inline]
     pub(crate) fn rows(&self) -> &[Row<T>] {
-        self.cache.get_or_init(|| {
-            if let Some(reads) = &self.reads {
-                reads.read();
-            }
-            (self.decode)(&self.data)
-        })
+        if let Some(rows) = self.cache.get() {
+            return rows;
+        }
+        let rows = self.cache.get_or_init(|| (self.decode)(&self.data));
+        // Once decoded (not while other reads wait on the cell).
+        if let Some(reads) = &self.reads {
+            reads.read();
+        }
+        rows
     }
 
     /// Cells of the block's `at`th row, without decoding anything.
@@ -742,6 +752,24 @@ mod tests {
         }
         let m = a.term.history_memory();
         assert!(m.plain_rows >= 40, "{m:?}");
+    }
+
+    #[test]
+    fn a_pass_in_steps_keeps_the_block_above_the_viewport_decoded() {
+        let mut a = T::new(30, 5, 2_000);
+        a.feed(&output(1_200));
+        a.term.compress_history(None);
+        // What a frame reads past the viewport's top (a search running
+        // into it): decoded.
+        let _ = a.term.grid[Line(-1)][Column(0)].c();
+        let read = a.term.history_memory().decoded_bytes;
+        assert!(read > 0);
+        while a.term.compress_history(Some(1)) {}
+        // Not dropped for the next frame to decode again.
+        assert_eq!(a.term.history_memory().decoded_bytes, read);
+        // A whole pass (an embedder's) drops it.
+        a.term.compress_history(None);
+        assert_eq!(a.term.history_memory().decoded_bytes, 0);
     }
 
     #[test]

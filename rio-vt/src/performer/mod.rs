@@ -103,13 +103,18 @@ const READ_BUDGET: usize = READ_CHUNK * 4;
 #[cfg(feature = "pty")]
 const COMPRESS_IDLE: Duration = Duration::from_millis(250);
 
-/// While rows keep arriving in the history (a long build log), a step is
-/// taken this long after the first of them all the same, so it doesn't
-/// stay as written until the output pauses: a block per this interval, a
-/// fraction of a percent of the thread that parses. Longer than
-/// [`COMPRESS_IDLE`], or output that pauses would never get that wait.
+/// While rows keep arriving in the history (a long build log), a pass
+/// starts this long after the first of them all the same, so it doesn't
+/// stay as written until the output pauses. Longer than [`COMPRESS_IDLE`],
+/// or output that pauses would never get that wait.
 #[cfg(feature = "pty")]
 const COMPRESS_FLOWING: Duration = Duration::from_secs(1);
+
+/// Blocks such a pass compresses, a step at a time, before output can put
+/// it off again: 4096 rows a second at 256-row blocks, more than a build
+/// log writes, for a few milliseconds of the parsing thread's second.
+#[cfg(feature = "pty")]
+const COMPRESS_FLOWING_BLOCKS: u32 = 16;
 
 /// Between the steps of one pass. Each compresses one block (a tenth of
 /// a millisecond at 120 columns) and goes on where the last stopped; the
@@ -217,9 +222,9 @@ pub struct State {
 }
 
 /// When the reader compresses the history: [`COMPRESS_IDLE`] after rows
-/// last arrived in it (or a resize, or a scroll over it), then a step
+/// last arrived in it (or a resize, or the last read of it), then a step
 /// every [`COMPRESS_STEP`] until none is left; while rows keep arriving,
-/// a step every [`COMPRESS_FLOWING`].
+/// [`COMPRESS_FLOWING_BLOCKS`] every [`COMPRESS_FLOWING`].
 #[cfg(feature = "pty")]
 #[derive(Default)]
 struct CompressTimer {
@@ -229,6 +234,9 @@ struct CompressTimer {
     /// The history was read (or the viewport left it) since the last
     /// pass started: the next one looks over all of it.
     read: bool,
+    /// Steps left of a pass output can't put off (see
+    /// [`COMPRESS_FLOWING_BLOCKS`]).
+    flowing: u32,
     /// The history as last seen: rows in it and rows dropped from it,
     /// both screens'.
     history: (usize, u64, usize, u64),
@@ -238,8 +246,26 @@ struct CompressTimer {
 impl CompressTimer {
     /// The history changed (output, a resize): compress once it's quiet.
     fn arm(&mut self, now: Instant) {
+        if self.flowing > 0 {
+            // The pass rows kept coming for: it runs its blocks.
+            return;
+        }
         let since = *self.since.get_or_insert(now);
         self.at = Some((now + COMPRESS_IDLE).min(since + COMPRESS_FLOWING));
+    }
+
+    /// The history was read (scrolled over, searched): drop the decoded
+    /// copies once reading stops. Reads don't count toward the backstop.
+    fn read(&mut self, now: Instant) {
+        self.read = true;
+        if self.flowing > 0 {
+            return;
+        }
+        let quiet = now + COMPRESS_IDLE;
+        self.at = Some(
+            self.since
+                .map_or(quiet, |s| quiet.min(s + COMPRESS_FLOWING)),
+        );
     }
 
     /// After output: arm if rows arrived in the history (the clock read
@@ -269,13 +295,19 @@ impl CompressTimer {
             self.at = Some(now + COMPRESS_STEP);
             return;
         };
+        if self.flowing == 0 && self.since.is_some_and(|s| now >= s + COMPRESS_FLOWING) {
+            // Rows kept coming: the backstop's pass.
+            self.flowing = COMPRESS_FLOWING_BLOCKS;
+        }
         self.since = None;
         if std::mem::take(&mut self.read) {
             terminal.history_reads_taken();
         }
         if terminal.scrollback_compression() && terminal.compress_history(Some(1)) {
+            self.flowing = self.flowing.saturating_sub(1);
             self.at = Some(now + COMPRESS_STEP);
         } else {
+            self.flowing = 0;
             self.at = None;
         }
     }
@@ -527,10 +559,7 @@ where
                     // reflow it.
                     state.compress.arm(Instant::now());
                 }
-                Msg::Compress => {
-                    state.compress.read = true;
-                    state.compress.arm(Instant::now());
-                }
+                Msg::Compress => state.compress.read(Instant::now()),
                 Msg::Shutdown => return false,
             }
         }
