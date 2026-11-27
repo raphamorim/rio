@@ -357,8 +357,10 @@ mod tests {
         assert!(row[Column(0)].has_hyperlink());
         assert_eq!(row[Column(2)].semantic_content(), SemanticContent::Input);
         assert!(row[Column(2)].has_hyperlink());
+        assert!(!row[Column(2)].has_grapheme());
         assert_eq!(row[Column(3)].semantic_content(), SemanticContent::Input);
         assert!(!row[Column(3)].has_hyperlink());
+        assert!(!row[Column(3)].has_grapheme());
         assert_eq!(row[Column(4)].semantic_content(), SemanticContent::Input);
         assert!(row[Column(4)].has_grapheme());
     }

@@ -207,9 +207,11 @@ pub type ExtrasId = u16;
 ///
 /// TODO: move extras out of the cell into a map keyed by cell position
 /// and drop the 16-bit `extras_id`. Only 2 `CellFlags` bits (5 and 6) are
-/// left; this would free about 16 more. Hyperlinks keep `HYPERLINK` as the
-/// lookup flag, graphemes can use `content_tag` value 3 (freeing
-/// `GRAPHEME`), and glyph bindings are known from the codepoint. The map
+/// left; this would free 16 bits of the cell for new fields. Hyperlinks
+/// keep `HYPERLINK` as the lookup flag, graphemes can use `content_tag`
+/// value 3 (freeing `GRAPHEME`; `ContentTag::from_bits` must stop reading 3
+/// as `BgRgb`), and glyph bindings need no flag since only registration
+/// block codepoints can have one (the version itself stays in the map). The map
 /// must follow every cell move (scroll, eviction, insert/delete chars,
 /// erase, reflow, alt screen), and `Row` has to stay 5 words.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Hash)]
