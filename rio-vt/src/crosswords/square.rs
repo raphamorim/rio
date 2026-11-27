@@ -133,17 +133,12 @@ bitflags! {
     pub struct CellFlags: u8 {
  /// Soft-wrap continuation marker on the last cell of a wrapped line.
         const WRAPLINE         = 1 << 0;
- /// Cell carries graphics data (sixel / iTerm2 inline image piece).
- /// Look up the actual graphic in `Grid::extras_table` via `extras_id`.
-        // Bit 1 is reserved (was the per-cell graphics flag before
-        // sixel/iTerm2 moved to placements).
-        const RESERVED_GRAPHICS = 1 << 1;
+        const SEMANTIC_INPUT   = 1 << 1;
  /// Cell carries hyperlink metadata. Lookup via extras_id.
         const HYPERLINK        = 1 << 2;
  /// Cell carries multi-codepoint grapheme cluster. Lookup via extras_id.
         const GRAPHEME         = 1 << 3;
-        const SEMANTIC_INPUT   = 1 << 4;
-        const SEMANTIC_PROMPT  = 1 << 5;
+        const SEMANTIC_PROMPT  = 1 << 4;
     }
 }
 

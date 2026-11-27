@@ -331,6 +331,39 @@ mod tests {
     }
 
     #[test]
+    fn copying_a_prompt_line_trims_trailing_spaces() {
+        use crate::crosswords::pos::Side;
+        use crate::selection::{Selection, SelectionType};
+
+        let mut cw = term(30, 5, 100);
+        feed(&mut cw, "<A>$   <B>ls   ");
+        cw.selection = Some(Selection::new(
+            SelectionType::Lines,
+            Pos::new(Line(0), Column(0)),
+            Side::Left,
+        ));
+        assert_eq!(cw.selection_to_string().as_deref(), Some("$   ls\n"));
+    }
+
+    #[test]
+    fn tags_combine_with_hyperlinks_and_marks() {
+        let mut cw = term(30, 5, 100);
+        feed(
+            &mut cw,
+            "<A>\x1b]8;;http://a\x07$ <B>x\x1b]8;;\x07ye\u{301}",
+        );
+        let row = &cw.grid[Line(0)];
+        assert_eq!(row[Column(0)].semantic_content(), SemanticContent::Prompt);
+        assert!(row[Column(0)].has_hyperlink());
+        assert_eq!(row[Column(2)].semantic_content(), SemanticContent::Input);
+        assert!(row[Column(2)].has_hyperlink());
+        assert_eq!(row[Column(3)].semantic_content(), SemanticContent::Input);
+        assert!(!row[Column(3)].has_hyperlink());
+        assert_eq!(row[Column(4)].semantic_content(), SemanticContent::Input);
+        assert!(row[Column(4)].has_grapheme());
+    }
+
+    #[test]
     fn tags_cells_by_content() {
         let mut cw = term(20, 5, 100);
         feed(&mut cw, "<A>$ <B>ls\r\n<C>out");
