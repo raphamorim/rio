@@ -240,15 +240,17 @@ fn strip_scheme<'a>(s: &'a str, scheme: &str) -> Option<&'a str> {
 
 /// OSC 7: working directory as a `file://` URL (percent-encoded path),
 /// a `kitty-shell-cwd://` payload (raw path, no encoding), or a bare
-/// absolute path (as is, as OSC 9;9 takes it), which some shell
-/// integrations and scripts send. Parsed
+/// absolute path (as is, the same paths OSC 9;9 takes: `is_absolute_path`),
+/// which some shell integrations and scripts send. Parsed
 /// by hand rather than with a URL crate: these are the only URLs the
 /// terminal core looks at, and a general parser costs an IDNA/Unicode
 /// stack just to reach `.path()`.
 ///
 /// Anything on the other end of the PTY can send this, including a shell on the
-/// far side of an ssh session, so a directory that belongs to another machine is
-/// refused rather than reported as ours.
+/// far side of an ssh session, so a URL naming another machine is refused rather
+/// than reported as ours, and so is a path to a share on one (`\\server`,
+/// `//server`) in any form. A bare path names no host: like OSC 9;9's, it is
+/// taken as this machine's.
 ///
 /// `Some(None)` is an empty payload: the program no longer knows its
 /// directory, so the stored one is stale. `None` is a malformed
@@ -270,7 +272,7 @@ fn parse_directory_url(param: &[u8]) -> Option<String> {
     let s = simd_utf8::from_utf8_fast(param).ok()?;
 
     // A bare path: no scheme, and no host to check either.
-    if std::path::Path::new(s).is_absolute() {
+    if is_absolute_path(s) {
         return Some(s.to_string());
     }
 
@@ -295,16 +297,21 @@ fn parse_directory_url(param: &[u8]) -> Option<String> {
     #[cfg(windows)]
     let path = path.strip_prefix('/').unwrap_or(path);
 
-    if !percent_encoded {
+    let path = if percent_encoded {
+        // A query or fragment is not part of the path.
+        percent_decode(&path[..path.find(['?', '#']).unwrap_or(path.len())])?
+    } else {
         // The kitty flavor is the path verbatim: `?`, `#` and `%` are
         // path bytes, not URL syntax.
-        return Some(path.to_string());
-    }
+        path.to_string()
+    };
+    (!names_a_share(&path)).then_some(path)
+}
 
-    // A query or fragment is not part of the path.
-    let path = &path[..path.find(['?', '#']).unwrap_or(path.len())];
-
-    percent_decode(path)
+/// A path to a share on another machine (UNC: `\\server\share`, or
+/// `//server/share`, which Windows reads the same way).
+fn names_a_share(path: &str) -> bool {
+    path.starts_with("//") || path.starts_with("\\\\")
 }
 
 /// Whether an OSC 7 host names this machine.
@@ -723,6 +730,9 @@ pub(super) fn is_conemu_subcommand(sub: &[u8]) -> bool {
 /// is refused: it names another machine, which the host-checked OSC 7
 /// flavors refuse too.
 fn is_absolute_path(path: &str) -> bool {
+    if names_a_share(path) {
+        return false;
+    }
     if path.starts_with('/') {
         return true;
     }
@@ -982,7 +992,6 @@ mod tests {
         assert_eq!(cwd("file://not-this-machine.invalid/tmp"), None);
     }
 
-    #[cfg(unix)]
     #[test]
     fn current_directory_from_a_bare_path() {
         // As is: no percent-decoding, `?` and `#` are path bytes.
@@ -994,10 +1003,28 @@ mod tests {
         assert_eq!(cwd("./src"), None);
     }
 
-    #[cfg(windows)]
     #[test]
     fn current_directory_from_a_bare_windows_path() {
+        // On every target, as OSC 9;9 takes them.
         assert_eq!(cwd("C:\\Users\\user"), Some("C:\\Users\\user".into()));
+        assert_eq!(cwd("c:/src"), Some("c:/src".into()));
+    }
+
+    #[test]
+    fn current_directory_refuses_a_share_on_another_machine() {
+        for payload in [
+            "\\\\server\\share",
+            "//server/share",
+            "kitty-shell-cwd:////server/share",
+            "file:////server/share",
+        ] {
+            assert_eq!(cwd(payload), None, "{payload}");
+        }
+        // (On Windows, where the URL's leading slash goes.)
+        #[cfg(windows)]
+        assert_eq!(cwd("file:///%5C%5Cserver%5Cshare"), None);
+        let parse = parse_conemu_working_directory;
+        assert_eq!(parse(&[b"9", b"9", b"\\\\server\\share"]), None);
     }
 
     #[test]
