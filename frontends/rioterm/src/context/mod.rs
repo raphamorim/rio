@@ -96,40 +96,47 @@ const FLOWING_BLOCKS: usize = 16;
 
 #[derive(Default)]
 pub struct IdleCompression {
-    /// The viewport as the last tick saw it: a move is someone scrolling.
-    offset: usize,
+    /// The terminal's viewport moves (`Crosswords::viewport_moves`) as the
+    /// last look saw them: a new one is someone scrolling.
+    moves: u64,
     /// When the viewport last moved.
     moved: Option<std::time::Instant>,
-    /// The history (rows in it, rows dropped from it) when the last pass
-    /// over it found nothing left: nothing to do until it changes.
-    done: Option<(usize, u64)>,
-    /// The history as the last tick saw it: rows still arriving if not.
+    /// What the history was when the last pass over it found nothing left
+    /// (see [`HistoryKey`]): nothing to do until it changes.
+    done: Option<HistoryKey>,
+    /// The history's rows as the last look saw them: rows still arriving
+    /// if they changed.
     seen: Option<(usize, u64)>,
 }
 
+/// What a pass leaves behind changes with: rows in the history and rows
+/// dropped from it (output), the width (a column resize decompresses all
+/// of it to reflow), and the viewport's moves (scrolling decodes what it
+/// shows, which the next pass drops).
+type HistoryKey = (usize, u64, usize, u64);
+
 impl<T: EventListener> Context<T> {
     /// Compress this terminal's scrollback until `until`, if no one has
-    /// used it for [`IDLE_COMPRESS_AFTER`]. Returns whether there's more to
-    /// do now (it was busy, or `until` came first).
+    /// used it for [`IDLE_COMPRESS_AFTER`]. Returns whether there's more
+    /// to do now (`until` came first).
     pub fn compress_idle_scrollback(
         &mut self,
         now: std::time::Instant,
         until: std::time::Instant,
     ) -> bool {
+        use rio_backend::crosswords::grid::Dimensions;
         if now < self.messenger.last_input() + IDLE_COMPRESS_AFTER {
             return false;
         }
         // Not while someone has it (the reader parsing a flood, a frame):
-        // the next tick tries again.
+        // the next look, a second from now, tries again.
         let Some(mut terminal) = self.terminal.try_lock() else {
-            return true;
+            return false;
         };
-        let offset = terminal.grid.display_offset();
-        if offset != self.idle.offset {
-            self.idle.offset = offset;
+        let moves = terminal.viewport_moves();
+        if moves != self.idle.moves {
+            self.idle.moves = moves;
             self.idle.moved = Some(now);
-            // What scrolling decoded is dropped by the next pass.
-            self.idle.done = None;
         }
         if self
             .idle
@@ -138,29 +145,29 @@ impl<T: EventListener> Context<T> {
         {
             return false;
         }
-        use rio_backend::crosswords::grid::Dimensions;
-        let history = (terminal.grid.history_size(), terminal.grid.lines_evicted());
-        if self.idle.done == Some(history) {
+        let rows = (terminal.grid.history_size(), terminal.grid.lines_evicted());
+        let key = (rows.0, rows.1, terminal.grid.columns(), moves);
+        if self.idle.done == Some(key) {
             return false;
         }
-        let flowing = self
-            .idle
-            .seen
-            .replace(history)
-            .is_some_and(|h| h != history);
+        // The other terminals' looks took this one's time.
+        if std::time::Instant::now() >= until {
+            return true;
+        }
+        let flowing = self.idle.seen.replace(rows).is_some_and(|r| r != rows);
         let mut blocks = 0;
         loop {
             if !terminal.compress_history(Some(1)) {
-                self.idle.done = Some(history);
+                self.idle.done = Some(key);
                 return false;
             }
             blocks += 1;
-            if flowing {
-                if blocks >= FLOWING_BLOCKS {
-                    // The rest on the next tick, a second from now.
-                    return false;
-                }
-            } else if std::time::Instant::now() >= until {
+            let out_of_time = std::time::Instant::now() >= until;
+            if flowing && (blocks >= FLOWING_BLOCKS || out_of_time) {
+                // The rest on the next look, a second from now.
+                return false;
+            }
+            if out_of_time {
                 return true;
             }
         }
@@ -1886,9 +1893,10 @@ pub mod test {
     #[test]
     fn an_idle_terminal_has_its_scrollback_compressed() {
         use std::time::{Duration, Instant};
+        // Before the context is made: its "last used" is after this.
+        let start = Instant::now();
         let mut ctx = idle_test_context();
         feed_lines(&ctx, 0, 3_000);
-        let start = Instant::now();
         let far = start + Duration::from_secs(60);
         // Just used (made, typed in): not yet.
         assert!(!ctx.compress_idle_scrollback(start + Duration::from_secs(1), far));
@@ -1907,6 +1915,68 @@ pub mod test {
         // (Fewer, if anything: output takes the ring's spare rows, some
         // compressed, for its new lines.)
         assert!(compressed(&ctx) <= done, "{} > {done}", compressed(&ctx));
+    }
+
+    fn plain(ctx: &Context<VoidListener>) -> usize {
+        ctx.terminal.lock().history_memory().plain_rows
+    }
+
+    #[test]
+    fn what_changes_the_history_without_rows_is_compressed_again() {
+        use rio_backend::crosswords::grid::Scroll;
+        use rio_backend::crosswords::CrosswordsSize;
+        use std::time::{Duration, Instant};
+        let mut ctx = idle_test_context();
+        feed_lines(&ctx, 0, 3_000);
+        let far = Instant::now() + Duration::from_secs(3_600);
+        let mut t = Instant::now() + IDLE_COMPRESS_AFTER * 2;
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        assert!(plain(&ctx) < 512);
+        // A column resize decompresses it all to reflow (no rows arrive).
+        ctx.terminal.lock().resize(CrosswordsSize::new(90, 40));
+        assert!(plain(&ctx) > 2_000);
+        t += Duration::from_secs(1);
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        assert!(plain(&ctx) < 512, "{}", plain(&ctx));
+        // Scrolled up and back between two looks: used, then compressed.
+        {
+            let mut terminal = ctx.terminal.lock();
+            terminal.scroll_display(Scroll::Top);
+            terminal.scroll_display(Scroll::Bottom);
+        }
+        t += Duration::from_secs(1);
+        let before = ctx.terminal.lock().history_memory();
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        assert_eq!(ctx.terminal.lock().history_memory(), before, "put off");
+        t += IDLE_COMPRESS_AFTER;
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        assert_eq!(ctx.terminal.lock().history_memory().decoded_bytes, 0);
+    }
+
+    #[test]
+    fn output_under_a_scrolled_back_view_isnt_someone_using_it() {
+        use rio_backend::crosswords::grid::Scroll;
+        use std::time::{Duration, Instant};
+        let mut ctx = idle_test_context();
+        feed_lines(&ctx, 0, 3_000);
+        ctx.terminal.lock().scroll_display(Scroll::Delta(100));
+        let far = Instant::now() + Duration::from_secs(3_600);
+        let mut t = Instant::now() + IDLE_COMPRESS_AFTER * 2;
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        // Output keeps the view where it is, moving its offset.
+        let offset = ctx.terminal.lock().grid.display_offset();
+        feed_lines(&ctx, 3_000, 2_000);
+        assert!(ctx.terminal.lock().grid.display_offset() > offset);
+        // (The scroll above was someone using it: that look saw it.)
+        let moved = ctx.idle.moved;
+        assert_eq!(moved, Some(t));
+        t += IDLE_COMPRESS_AFTER + Duration::from_secs(1);
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        // Not taken for a scroll: the look went on (the rows it took are
+        // below the view, which a pass leaves as they are).
+        assert_eq!(ctx.idle.moved, moved);
+        let history = ctx.terminal.lock().history_size();
+        assert_eq!(ctx.idle.seen.map(|s| s.0), Some(history));
     }
 
     #[test]

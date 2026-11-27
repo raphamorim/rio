@@ -588,6 +588,8 @@ where
     /// don't believe in a protocol nobody acts on) and reports are
     /// dropped here instead of waking the embedder for nothing.
     program_status_enabled: bool,
+    /// Times `scroll_display` moved the viewport (see `viewport_moves`).
+    viewport_moves: u64,
     /// Keyboard focus as the host last reported it. To the program a pane
     /// in a background tab or split is unfocused, so hosts report their
     /// own pane switches too. Read when a program enables focus events.
@@ -695,6 +697,7 @@ impl<U: EventListener> Crosswords<U> {
             damage_event_in_flight: false,
             sync_update_started: None,
             program_status_enabled: false,
+            viewport_moves: 0,
             focused: false,
             program_status_seen: false,
             glyph_grapheme_query: false,
@@ -738,6 +741,13 @@ impl<U: EventListener> Crosswords<U> {
         formats: &'static [crate::ansi::glyph_protocol::GlyphFormat],
     ) {
         self.glyph_formats = formats;
+    }
+
+    /// How many times the viewport was scrolled (`scroll_display` moving
+    /// it): someone reading the history, unlike the offset output moves to
+    /// keep a scrolled-back view where it is.
+    pub fn viewport_moves(&self) -> u64 {
+        self.viewport_moves
     }
 
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
@@ -932,6 +942,7 @@ impl<U: EventListener> Crosswords<U> {
         // viewport operation from the UI thread, so no PTY drain will
         // announce the damage; ask for the render here.
         if old_display_offset != self.grid.display_offset() {
+            self.viewport_moves += 1;
             self.mark_fully_damaged();
             self.request_render();
             // Scrolling changes image positions on screen
