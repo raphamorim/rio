@@ -2540,6 +2540,10 @@ pub fn build_row_fg<P: GridPalette>(
             continue;
         };
 
+        let baseline_ascent_px =
+            primary_ascent_px(rasterizer, font_library, size_u16, size_bucket)
+                .unwrap_or(ascent_px);
+
         let (synthetic_bold, synthetic_italic) =
             rasterizer.get_synthesis(font_id, font_library);
 
@@ -2602,7 +2606,7 @@ pub fn build_row_fg<P: GridPalette>(
                 size_bucket,
                 size_u16,
                 cell_h,
-                ascent_px,
+                baseline_ascent_px,
                 is_emoji,
                 synthetic_italic,
                 synthetic_bold,
@@ -2895,6 +2899,10 @@ fn emit_preedit_cluster(
         (hash, ascent_px)
     };
 
+    let baseline_ascent_px =
+        primary_ascent_px(rasterizer, font_library, size_u16, size_bucket)
+            .unwrap_or(ascent_px);
+
     let (synthetic_bold, synthetic_italic) =
         rasterizer.get_synthesis(font_id, font_library);
 
@@ -2917,7 +2925,7 @@ fn emit_preedit_cluster(
             size_bucket,
             size_u16,
             cell_h,
-            ascent_px,
+            baseline_ascent_px,
             is_emoji,
             synthetic_italic,
             synthetic_bold,
