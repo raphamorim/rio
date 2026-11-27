@@ -630,7 +630,6 @@ impl Screen<'_> {
                     config.cursor.shape,
                     config.cursor.blinking,
                 );
-                terminal.set_scrollback_compression(config.scrollback_compression);
                 drop(terminal);
             }
         }
@@ -2494,6 +2493,26 @@ impl Screen<'_> {
         } else {
             0
         }
+    }
+
+    /// Compress the scrollback of this window's terminals that no one has
+    /// used for a while (`context::IDLE_COMPRESS_AFTER`), until `until`.
+    /// Returns whether one has more to do now.
+    pub fn compress_idle_scrollback(
+        &mut self,
+        now: std::time::Instant,
+        until: std::time::Instant,
+    ) -> bool {
+        if !self.context_manager.config.scrollback_compression {
+            return false;
+        }
+        let mut more = false;
+        for context_grid in self.context_manager.contexts_mut() {
+            for item in context_grid.contexts_mut().values_mut() {
+                more |= item.context_mut().compress_idle_scrollback(now, until);
+            }
+        }
+        more
     }
 
     /// Perform one tick of selection auto-scroll.

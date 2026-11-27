@@ -1,14 +1,22 @@
 use crate::event::Msg;
 use rio_backend::event::WindowSize;
 use std::borrow::Cow;
+use std::cell::Cell;
+use std::time::Instant;
 
 pub struct Messenger {
     pub channel: corcovado::channel::Sender<Msg>,
+    /// When input (keys, a paste, mouse reports) was last written to the
+    /// terminal: whether someone is using it.
+    last_input: Cell<Instant>,
 }
 
 impl Messenger {
     pub fn new(channel: corcovado::channel::Sender<Msg>) -> Messenger {
-        Messenger { channel }
+        Messenger {
+            channel,
+            last_input: Cell::new(Instant::now()),
+        }
     }
 
     #[inline]
@@ -19,7 +27,14 @@ impl Messenger {
             return;
         }
 
+        self.last_input.set(Instant::now());
         let _ = self.channel.send(Msg::Input(bytes));
+    }
+
+    /// When input was last written to the terminal (or it was made).
+    #[inline]
+    pub fn last_input(&self) -> Instant {
+        self.last_input.get()
     }
 
     /// The answer to a query the terminal left to this thread (the

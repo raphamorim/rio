@@ -714,18 +714,9 @@ impl Grid<Square> {
     }
 
     /// Have the next limited compression look over the whole ring.
-    #[cfg_attr(not(feature = "pty"), allow(dead_code))]
+    #[cfg(test)]
     pub(crate) fn forget_compress_resume(&mut self) {
         self.raw.forget_compress_resume();
-    }
-
-    /// Who to tell when a read decodes compressed rows.
-    #[cfg_attr(not(feature = "pty"), allow(dead_code))]
-    pub(crate) fn set_history_reads(
-        &mut self,
-        reads: Option<std::sync::Arc<compress::HistoryReads>>,
-    ) {
-        self.raw.set_history_reads(reads);
     }
 
     /// How much of the history (and the rows the ring keeps past it) is

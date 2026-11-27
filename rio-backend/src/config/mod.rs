@@ -267,9 +267,10 @@ pub struct Config {
         rename = "scrollback-history-limit"
     )]
     pub scrollback_history_limit: usize,
-    /// Compress the scrollback while output is quiet. It reads the same,
-    /// takes a fraction of the memory, and is decoded when scrolled back
-    /// to. The history limit counts lines either way.
+    /// Compress the scrollback of terminals no one has used for a few
+    /// seconds (no input, the view not moved). It reads the same, takes a
+    /// fraction of the memory, and is decoded when scrolled back to. The
+    /// history limit counts lines either way.
     #[serde(default = "default_bool_true", rename = "scrollback-compression")]
     pub scrollback_compression: bool,
     #[serde(default = "effects::Effects::default")]

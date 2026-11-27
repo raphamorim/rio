@@ -77,7 +77,94 @@ pub struct Context<T: EventListener> {
     pub spawned_program: String,
     /// The command exited and the pane is held open until a key press.
     pub exited: bool,
+    /// Its scrollback's compression while no one uses it.
+    pub idle: IdleCompression,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
+}
+
+/// A terminal's scrollback is compressed once no one has used it for
+/// [`IDLE_COMPRESS_AFTER`]: no input written to it, its viewport not
+/// moved. Output may go on meanwhile (a build, `tail -f`); what it adds to
+/// the history is compressed as it comes, a few blocks a tick.
+pub const IDLE_COMPRESS_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Blocks (256 rows each) compressed a second while rows keep arriving in
+/// the history: more than a build log writes, for a couple of milliseconds
+/// of the terminal's lock a second, so a flood isn't slowed (nor rows
+/// about to be dropped from the history compressed for nothing).
+const FLOWING_BLOCKS: usize = 16;
+
+#[derive(Default)]
+pub struct IdleCompression {
+    /// The viewport as the last tick saw it: a move is someone scrolling.
+    offset: usize,
+    /// When the viewport last moved.
+    moved: Option<std::time::Instant>,
+    /// The history (rows in it, rows dropped from it) when the last pass
+    /// over it found nothing left: nothing to do until it changes.
+    done: Option<(usize, u64)>,
+    /// The history as the last tick saw it: rows still arriving if not.
+    seen: Option<(usize, u64)>,
+}
+
+impl<T: EventListener> Context<T> {
+    /// Compress this terminal's scrollback until `until`, if no one has
+    /// used it for [`IDLE_COMPRESS_AFTER`]. Returns whether there's more to
+    /// do now (it was busy, or `until` came first).
+    pub fn compress_idle_scrollback(
+        &mut self,
+        now: std::time::Instant,
+        until: std::time::Instant,
+    ) -> bool {
+        if now < self.messenger.last_input() + IDLE_COMPRESS_AFTER {
+            return false;
+        }
+        // Not while someone has it (the reader parsing a flood, a frame):
+        // the next tick tries again.
+        let Some(mut terminal) = self.terminal.try_lock() else {
+            return true;
+        };
+        let offset = terminal.grid.display_offset();
+        if offset != self.idle.offset {
+            self.idle.offset = offset;
+            self.idle.moved = Some(now);
+            // What scrolling decoded is dropped by the next pass.
+            self.idle.done = None;
+        }
+        if self
+            .idle
+            .moved
+            .is_some_and(|m| now < m + IDLE_COMPRESS_AFTER)
+        {
+            return false;
+        }
+        use rio_backend::crosswords::grid::Dimensions;
+        let history = (terminal.grid.history_size(), terminal.grid.lines_evicted());
+        if self.idle.done == Some(history) {
+            return false;
+        }
+        let flowing = self
+            .idle
+            .seen
+            .replace(history)
+            .is_some_and(|h| h != history);
+        let mut blocks = 0;
+        loop {
+            if !terminal.compress_history(Some(1)) {
+                self.idle.done = Some(history);
+                return false;
+            }
+            blocks += 1;
+            if flowing {
+                if blocks >= FLOWING_BLOCKS {
+                    // The rest on the next tick, a second from now.
+                    return false;
+                }
+            } else if std::time::Instant::now() >= until {
+                return true;
+            }
+        }
+    }
 }
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
@@ -250,6 +337,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         title_dirty: false,
         spawned_program: String::new(),
         exited: false,
+        idle: IdleCompression::default(),
         _io_thread: None,
     }
 }
@@ -332,7 +420,6 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             config.scrollback_history_limit,
         );
         terminal.set_grapheme_clustering(config.grapheme_clustering);
-        terminal.set_scrollback_compression(config.scrollback_compression);
         terminal.set_default_colors(config.colors);
         // The application answers `q;grapheme=` by shaping the cluster
         // with the grid rasterizer (`GlyphProtocolGraphemeQuery`).
@@ -459,6 +546,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title_dirty: false,
             spawned_program: spawned_program_name(config),
             exited: false,
+            idle: IdleCompression::default(),
             _io_thread: io_thread,
         };
         context.title = ContextTitle {
@@ -1736,6 +1824,129 @@ pub mod test {
                 }
                 _ => {}
             }
+        }
+    }
+
+    fn idle_test_context() -> Context<VoidListener> {
+        use rio_backend::config::layout::Margin;
+        use rio_backend::sugarloaf::layout::TextDimensions;
+        let text = TextDimensions {
+            scale: 1.0,
+            width: 18.,
+            height: 9.,
+        };
+        let cell = rio_backend::sugarloaf::layout::CellMetrics {
+            cell_width: 18,
+            cell_height: 9,
+            cell_baseline: 0,
+            face_width: 18.0,
+            face_height: 9.0,
+            face_y: 0.0,
+        };
+        let dimension = ContextDimension::build(
+            1200.0,
+            800.0,
+            text,
+            cell,
+            1.0,
+            14.0,
+            Margin::default(),
+        );
+        let mut ctx =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, dimension);
+        // (A dead context keeps no history.)
+        let terminal = Crosswords::new(
+            ctx.dimension,
+            CursorShape::Block,
+            VoidListener {},
+            WindowId::from(0),
+            0,
+            10_000,
+        );
+        ctx.terminal = Arc::new(TerminalLock::new(terminal));
+        ctx
+    }
+
+    fn feed_lines(ctx: &Context<VoidListener>, from: usize, n: usize) {
+        use rio_backend::performer::handler::Processor;
+        let mut parser = Processor::default();
+        let mut terminal = ctx.terminal.lock();
+        for i in from..from + n {
+            parser.advance(
+                &mut *terminal,
+                format!("\x1b[3{}mline {i}\x1b[0m of some output\r\n", i % 8).as_bytes(),
+            );
+        }
+    }
+
+    fn compressed(ctx: &Context<VoidListener>) -> usize {
+        ctx.terminal.lock().history_memory().compressed_rows
+    }
+
+    #[test]
+    fn an_idle_terminal_has_its_scrollback_compressed() {
+        use std::time::{Duration, Instant};
+        let mut ctx = idle_test_context();
+        feed_lines(&ctx, 0, 3_000);
+        let start = Instant::now();
+        let far = start + Duration::from_secs(60);
+        // Just used (made, typed in): not yet.
+        assert!(!ctx.compress_idle_scrollback(start + Duration::from_secs(1), far));
+        assert_eq!(compressed(&ctx), 0);
+        // Unused for long enough: all of it.
+        let idle = start + IDLE_COMPRESS_AFTER + Duration::from_secs(1);
+        assert!(!ctx.compress_idle_scrollback(idle, far));
+        let done = compressed(&ctx);
+        assert!(done >= 2_000, "{done}");
+        // Nothing new: nothing done (not even a look over the history).
+        assert!(!ctx.compress_idle_scrollback(idle, far));
+        // Input to it puts it off again.
+        ctx.messenger.send_write(&b"x"[..]);
+        feed_lines(&ctx, 3_000, 600);
+        assert!(!ctx.compress_idle_scrollback(Instant::now(), far));
+        // (Fewer, if anything: output takes the ring's spare rows, some
+        // compressed, for its new lines.)
+        assert!(compressed(&ctx) <= done, "{} > {done}", compressed(&ctx));
+    }
+
+    #[test]
+    fn scrolling_puts_compression_off_and_flowing_output_gets_a_few_blocks() {
+        use rio_backend::crosswords::grid::Scroll;
+        use std::time::{Duration, Instant};
+        let mut ctx = idle_test_context();
+        feed_lines(&ctx, 0, 3_000);
+        let far = Instant::now() + Duration::from_secs(3_600);
+        let t0 = Instant::now() + IDLE_COMPRESS_AFTER + Duration::from_secs(1);
+        // Someone scrolled back: the viewport moved since the last look.
+        ctx.terminal.lock().scroll_display(Scroll::Delta(50));
+        assert!(!ctx.compress_idle_scrollback(t0, far));
+        assert_eq!(compressed(&ctx), 0);
+        // Still there a while later, untouched: compressed.
+        let t1 = t0 + IDLE_COMPRESS_AFTER;
+        assert!(!ctx.compress_idle_scrollback(t1, far));
+        let done = compressed(&ctx);
+        assert!(done >= 2_000, "{done}");
+        // Rows still arriving between looks (no one typing): a few blocks
+        // a look, not all of them.
+        ctx.terminal.lock().scroll_display(Scroll::Bottom);
+        let t2 = t1 + IDLE_COMPRESS_AFTER * 2;
+        assert!(!ctx.compress_idle_scrollback(t2, far));
+        // (Scrolling down was using it too: once that's past, a quiet look.)
+        let mut t = t2 + IDLE_COMPRESS_AFTER;
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        assert!(ctx.terminal.lock().history_memory().plain_rows < 512);
+        for round in 0..3 {
+            // A whole history's worth between two looks.
+            feed_lines(&ctx, 3_000 + round * 10_000, 10_000);
+            t += Duration::from_secs(1);
+            assert!(!ctx.compress_idle_scrollback(t, far));
+            // FLOWING_BLOCKS of 256 rows compressed, the rest left for
+            // the next looks.
+            let plain = ctx.terminal.lock().history_memory().plain_rows;
+            assert!(
+                plain >= 10_000 - (FLOWING_BLOCKS + 1) * 256,
+                "round {round}: {plain} plain"
+            );
         }
     }
 

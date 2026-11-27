@@ -75,9 +75,6 @@ pub struct Storage<T> {
     /// makes compressed rows plain again forgets it, so the next call
     /// looks over the whole ring.
     resume: Option<compress::Resume>,
-
-    /// Told when a read decodes a block made here.
-    reads: Option<Arc<compress::HistoryReads>>,
 }
 
 impl<T: PartialEq> PartialEq for Storage<T> {
@@ -109,17 +106,7 @@ impl<T> Storage<T> {
             free: Vec::new(),
             slabs,
             resume: None,
-            reads: None,
         }
-    }
-
-    /// Who to tell when a read decodes compressed rows.
-    #[cfg_attr(not(feature = "pty"), allow(dead_code))]
-    pub(crate) fn set_history_reads(
-        &mut self,
-        reads: Option<Arc<compress::HistoryReads>>,
-    ) {
-        self.reads = reads;
     }
 
     /// Make the compressed row at raw `index` plain.
@@ -670,9 +657,7 @@ impl Storage<Square> {
                 return true;
             }
             let rows: Vec<&Row<Square>> = run.iter().map(|&j| &self.inner[j]).collect();
-            let mut block = compress::encode(&rows);
-            block.reads = self.reads.clone();
-            let block = Arc::new(block);
+            let block = Arc::new(compress::encode(&rows));
             for (at, &j) in run.iter().enumerate() {
                 let row = &mut self.inner[j];
                 row.inner = super::cells::Cells::new();
@@ -794,7 +779,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         // Grow buffer.
@@ -809,7 +793,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
         // Resize grows by exactly one line now (no scrollback over-alloc).
         expected.inner.push(filled_row('\0'));
@@ -844,7 +827,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         // Grow buffer.
@@ -859,7 +841,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
         // Resize grows by exactly one line now (no scrollback over-alloc).
         expected.inner.push(filled_row('\0'));
@@ -891,7 +872,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         // Shrink buffer.
@@ -906,7 +886,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -935,7 +914,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         // Shrink buffer.
@@ -950,7 +928,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -992,7 +969,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         // Shrink buffer.
@@ -1014,7 +990,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -1052,7 +1027,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         // Truncate buffer.
@@ -1067,7 +1041,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -1095,7 +1068,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         // Truncate buffer.
@@ -1110,7 +1082,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
         assert_eq!(storage.visible_lines, expected.visible_lines);
         assert_eq!(storage.inner, expected.inner);
@@ -1160,7 +1131,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         // Shrink buffer.
@@ -1182,7 +1152,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
         assert_eq!(storage.inner, shrinking_expected.inner);
         assert_eq!(storage.zero, shrinking_expected.zero);
@@ -1207,7 +1176,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         assert_eq!(storage.inner, growing_expected.inner);
@@ -1233,7 +1201,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         // Initialize additional lines.
@@ -1259,7 +1226,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         assert_eq!(storage.len, expected_storage.len);
@@ -1287,7 +1253,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         // Initialize additional lines.
@@ -1311,7 +1276,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         assert_eq!(storage.len, expected_storage.len);
@@ -1329,7 +1293,6 @@ mod tests {
             free: Vec::new(),
             slabs: Default::default(),
             resume: None,
-            reads: None,
         };
 
         storage.rotate(2);

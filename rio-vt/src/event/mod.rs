@@ -101,12 +101,6 @@ pub enum Msg {
     Shutdown,
 
     Resize(WindowSize),
-
-    /// The viewport moved over the history, which decodes compressed
-    /// rows to show them: the PTY reader compresses again (dropping what
-    /// was decoded) once things are quiet. Sent by the terminal itself;
-    /// see `Crosswords::set_scrollback_compression`.
-    Compress,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -340,6 +334,9 @@ pub enum RioEvent {
 
     /// Selection scroll tick — auto-scroll while dragging outside viewport.
     SelectionScrollTick,
+    /// Compress the scrollback of terminals no one has used for a while
+    /// (the application's own timer).
+    CompressScrollback,
 
     /// Update terminal screen colors.
     ///
@@ -462,6 +459,7 @@ impl Debug for RioEvent {
                 write!(f, "BlinkCursor {timeout} {route_id}")
             }
             RioEvent::SelectionScrollTick => write!(f, "SelectionScrollTick"),
+            RioEvent::CompressScrollback => write!(f, "CompressScrollback"),
             RioEvent::Noop => write!(f, "Noop"),
             RioEvent::Copy(_) => write!(f, "Copy"),
             RioEvent::Paste => write!(f, "Paste"),

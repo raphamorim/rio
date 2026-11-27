@@ -583,13 +583,6 @@ where
 
     /// When the last BSU of the active synchronized update arrived.
     pub sync_update_started: Option<crate::time::Instant>,
-    /// Whether the thread reading the PTY compresses the history while
-    /// output is quiet. Off by default; see
-    /// [`Self::set_scrollback_compression`].
-    scrollback_compression: bool,
-    /// Tells the PTY reader the history was read (the viewport moved over
-    /// it, or a read decoded rows), once per compression pass.
-    history_reads: Option<std::sync::Arc<grid::compress::HistoryReads>>,
     /// Whether the embedder handles OSC 7501. Off by default: until an
     /// embedder opts in, the support query goes unanswered (so programs
     /// don't believe in a protocol nobody acts on) and reports are
@@ -701,8 +694,6 @@ impl<U: EventListener> Crosswords<U> {
             current_directory: None,
             damage_event_in_flight: false,
             sync_update_started: None,
-            scrollback_compression: false,
-            history_reads: None,
             program_status_enabled: false,
             focused: false,
             program_status_seen: false,
@@ -747,65 +738,6 @@ impl<U: EventListener> Crosswords<U> {
         formats: &'static [crate::ansi::glyph_protocol::GlyphFormat],
     ) {
         self.glyph_formats = formats;
-    }
-
-    /// Let the thread reading the PTY ([`crate::performer::Machine`])
-    /// compress the history ([`Self::compress_history`]) once output has
-    /// been quiet for a moment, a few blocks at a time. Turned off, what
-    /// is compressed stays so until it is written to; turned on, it
-    /// starts after the next output.
-    pub fn set_scrollback_compression(&mut self, enabled: bool) {
-        let was = std::mem::replace(&mut self.scrollback_compression, enabled);
-        if enabled && !was {
-            // What came in while it was off waits for no more output.
-            self.history_was_read();
-        }
-    }
-
-    /// Have the PTY reader compress (drop decoded copies) once quiet.
-    fn history_was_read(&self) {
-        if let Some(reads) = &self.history_reads {
-            reads.read();
-        }
-    }
-
-    /// Rows in each screen's history and rows dropped from it: what
-    /// changes only when rows arrive in the history (or leave it).
-    #[cfg(feature = "pty")]
-    pub(crate) fn history_serial(&self) -> (usize, u64, usize, u64) {
-        (
-            self.grid.history_size(),
-            self.grid.lines_evicted(),
-            self.inactive_grid.history_size(),
-            self.inactive_grid.lines_evicted(),
-        )
-    }
-
-    /// Whether the history is compressed while output is quiet.
-    pub fn scrollback_compression(&self) -> bool {
-        self.scrollback_compression
-    }
-
-    /// For the PTY reader: what to call when the viewport moves over the
-    /// history.
-    #[cfg(feature = "pty")]
-    pub(crate) fn set_history_read_sink(&mut self, sink: Box<dyn Fn() + Send + Sync>) {
-        let reads = std::sync::Arc::new(grid::compress::HistoryReads::new(sink));
-        self.grid.set_history_reads(Some(reads.clone()));
-        self.inactive_grid.set_history_reads(Some(reads.clone()));
-        self.history_reads = Some(reads);
-    }
-
-    /// For the PTY reader, as a pass starts: the next read asks for
-    /// another, and the pass looks over the whole ring (rows a read
-    /// decoded, or the viewport left, can be anywhere in it).
-    #[cfg(feature = "pty")]
-    pub(crate) fn history_reads_taken(&mut self) {
-        if let Some(reads) = &self.history_reads {
-            reads.taken();
-        }
-        self.grid.forget_compress_resume();
-        self.inactive_grid.forget_compress_resume();
     }
 
     pub fn set_grapheme_clustering(&mut self, enabled: bool) {
@@ -1000,13 +932,6 @@ impl<U: EventListener> Crosswords<U> {
         // viewport operation from the UI thread, so no PTY drain will
         // announce the damage; ask for the render here.
         if old_display_offset != self.grid.display_offset() {
-            // Showing history decodes it: have it compressed again (the
-            // decoded copies dropped) once scrolling stops.
-            if self.scrollback_compression {
-                if let Some(reads) = &self.history_reads {
-                    reads.scrolled();
-                }
-            }
             self.mark_fully_damaged();
             self.request_render();
             // Scrolling changes image positions on screen

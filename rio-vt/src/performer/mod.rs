@@ -44,7 +44,7 @@ use std::sync::Arc;
 #[cfg(feature = "pty")]
 use std::thread::{Builder, JoinHandle};
 #[cfg(feature = "pty")]
-use std::time::{Duration, Instant};
+use std::time::Instant;
 #[cfg(feature = "pty")]
 use tracing::error;
 
@@ -95,33 +95,6 @@ pub const READ_CHUNK: usize = 65536;
 /// every chunk, so a thread waiting for it never waits this long.
 #[cfg(feature = "pty")]
 const READ_BUDGET: usize = READ_CHUNK * 4;
-
-/// How long the history stays as it is before it's compressed: rows
-/// arriving in it meanwhile start the wait over. Output that leaves the
-/// history alone (a redraw, a spinner, a program on the alt screen)
-/// doesn't.
-#[cfg(feature = "pty")]
-const COMPRESS_IDLE: Duration = Duration::from_millis(250);
-
-/// While rows keep arriving in the history (a long build log), a pass
-/// starts this long after the first of them all the same, so it doesn't
-/// stay as written until the output pauses. Longer than [`COMPRESS_IDLE`],
-/// or output that pauses would never get that wait.
-#[cfg(feature = "pty")]
-const COMPRESS_FLOWING: Duration = Duration::from_secs(1);
-
-/// Blocks such a pass compresses, a step at a time, before output can put
-/// it off again: 4096 rows a second at 256-row blocks, more than a build
-/// log writes, for a few milliseconds of the parsing thread's second.
-#[cfg(feature = "pty")]
-const COMPRESS_FLOWING_BLOCKS: u32 = 16;
-
-/// Between the steps of one pass. Each compresses one block (a tenth of
-/// a millisecond at 120 columns) and goes on where the last stopped; the
-/// PTY is read, and a thread waiting for the terminal gets it, between
-/// them.
-#[cfg(feature = "pty")]
-const COMPRESS_STEP: Duration = Duration::from_millis(1);
 
 #[cfg(feature = "pty")]
 #[derive(Debug, PartialEq, Eq)]
@@ -216,101 +189,6 @@ pub struct State {
     /// Deadline of the terminal's active synchronized update, refreshed
     /// whenever the terminal lock is held.
     sync_deadline: Option<Instant>,
-    /// When the history is compressed next, with the terminal's
-    /// scrollback compression on.
-    compress: CompressTimer,
-}
-
-/// When the reader compresses the history: [`COMPRESS_IDLE`] after rows
-/// last arrived in it (or a resize, or the last read of it), then a step
-/// every [`COMPRESS_STEP`] until none is left; while rows keep arriving,
-/// [`COMPRESS_FLOWING_BLOCKS`] every [`COMPRESS_FLOWING`].
-#[cfg(feature = "pty")]
-#[derive(Default)]
-struct CompressTimer {
-    at: Option<Instant>,
-    /// The first change since the last step.
-    since: Option<Instant>,
-    /// The history was read (or the viewport left it) since the last
-    /// pass started: the next one looks over all of it.
-    read: bool,
-    /// Steps left of a pass output can't put off (see
-    /// [`COMPRESS_FLOWING_BLOCKS`]).
-    flowing: u32,
-    /// The history as last seen: rows in it and rows dropped from it,
-    /// both screens'.
-    history: (usize, u64, usize, u64),
-}
-
-#[cfg(feature = "pty")]
-impl CompressTimer {
-    /// The history changed (output, a resize): compress once it's quiet.
-    fn arm(&mut self, now: Instant) {
-        if self.flowing > 0 {
-            // The pass rows kept coming for: it runs its blocks.
-            return;
-        }
-        let since = *self.since.get_or_insert(now);
-        self.at = Some((now + COMPRESS_IDLE).min(since + COMPRESS_FLOWING));
-    }
-
-    /// The history was read (scrolled over, searched): drop the decoded
-    /// copies once reading stops. Reads don't count toward the backstop.
-    fn read(&mut self, now: Instant) {
-        self.read = true;
-        if self.flowing > 0 {
-            return;
-        }
-        let quiet = now + COMPRESS_IDLE;
-        self.at = Some(
-            self.since
-                .map_or(quiet, |s| quiet.min(s + COMPRESS_FLOWING)),
-        );
-    }
-
-    /// After output: arm if rows arrived in the history (the clock read
-    /// only then).
-    fn output<U: EventListener>(&mut self, terminal: &Crosswords<U>) {
-        let history = terminal.history_serial();
-        if history != self.history {
-            self.history = history;
-            self.arm(Instant::now());
-        }
-    }
-
-    fn due(&self, now: Instant) -> bool {
-        self.at.is_some_and(|at| at <= now)
-    }
-
-    /// One step of a pass on `terminal`, `None` if it's taken: the next
-    /// step is scheduled, or the pass is over.
-    fn step<U: EventListener>(
-        &mut self,
-        terminal: Option<&mut Crosswords<U>>,
-        now: Instant,
-    ) {
-        let Some(terminal) = terminal else {
-            // The renderer's frame or the UI's input has it (the parsing
-            // is this thread's), for a moment: try again after one.
-            self.at = Some(now + COMPRESS_STEP);
-            return;
-        };
-        if self.flowing == 0 && self.since.is_some_and(|s| now >= s + COMPRESS_FLOWING) {
-            // Rows kept coming: the backstop's pass.
-            self.flowing = COMPRESS_FLOWING_BLOCKS;
-        }
-        self.since = None;
-        if std::mem::take(&mut self.read) {
-            terminal.history_reads_taken();
-        }
-        if terminal.scrollback_compression() && terminal.compress_history(Some(1)) {
-            self.flowing = self.flowing.saturating_sub(1);
-            self.at = Some(now + COMPRESS_STEP);
-        } else {
-            self.flowing = 0;
-            self.at = None;
-        }
-    }
 }
 
 #[cfg(feature = "pty")]
@@ -330,7 +208,6 @@ where
         route_id: usize,
     ) -> Result<Machine<T, U>, Box<dyn std::error::Error>> {
         let (control, receiver) = channel::channel();
-        let compress = control.clone();
         let (writes, inbox) = channel::channel();
         let poll = corcovado::Poll::new()?;
         let writer_poll = corcovado::Poll::new()?;
@@ -369,12 +246,6 @@ where
         // Installed last: a terminal whose machine could not be made
         // keeps sending its replies to the owner as events.
         let reply_writes = writes.clone();
-        let mut locked = terminal.lock();
-        // The viewport moving over the history comes straight here.
-        locked.set_history_read_sink(Box::new(move || {
-            let _ = compress.send(Msg::Compress);
-        }));
-        drop(locked);
         terminal
             .lock()
             .set_reply_sink(Some(crate::crosswords::ReplySink(Box::new(
@@ -520,9 +391,6 @@ where
         held_before: Option<bool>,
     ) {
         state.sync_deadline = terminal.sync_update_deadline();
-        if terminal.scrollback_compression() {
-            state.compress.output(terminal);
-        }
         let held = terminal.synchronized_output();
         let hold_ended = held_before == Some(true) && !held;
         if hold_ended || (!held && terminal.peek_damage_event().is_some()) {
@@ -547,7 +415,7 @@ where
     /// Drain the channel.
     ///
     /// Returns `false` when a shutdown message was received.
-    fn drain_recv_channel(&mut self, state: &mut State) -> bool {
+    fn drain_recv_channel(&mut self) -> bool {
         while let Some(msg) = self.receiver.recv() {
             match msg {
                 // Bytes for the PTY are the writer's; this channel only
@@ -555,11 +423,7 @@ where
                 Msg::Input(_) | Msg::Reply(_) => (),
                 Msg::Resize(window_size) => {
                     let _ = self.pty.set_winsize(window_size.into());
-                    // A column change decompressed the history to
-                    // reflow it.
-                    state.compress.arm(Instant::now());
                 }
-                Msg::Compress => state.compress.read(Instant::now()),
                 Msg::Shutdown => return false,
             }
         }
@@ -655,13 +519,10 @@ where
         let mut events = Events::with_capacity(1024);
 
         loop {
-            // Wake up for a synchronized update's timeout, and to compress
-            // the history.
-            let wake = match (state.sync_deadline, state.compress.at) {
-                (Some(a), Some(b)) => Some(a.min(b)),
-                (a, b) => a.or(b),
-            };
-            let timeout = wake.map(|at| at.saturating_duration_since(Instant::now()));
+            // Wakeup the event loop when a synchronized update timeout was reached.
+            let timeout = state
+                .sync_deadline
+                .map(|deadline| deadline.saturating_duration_since(Instant::now()));
 
             events.clear();
             if let Err(err) = self.poll.poll(&mut events, timeout) {
@@ -684,22 +545,12 @@ where
                 state.sync_deadline = terminal.sync_update_deadline();
             }
 
-            // Compress a few blocks of history, if the terminal is free.
-            // Nothing (not even the clock) while no pass is scheduled.
-            if state.compress.at.is_some() {
-                let now = Instant::now();
-                if state.compress.due(now) {
-                    let mut terminal = self.terminal.try_lock_reader();
-                    state.compress.step(terminal.as_deref_mut(), now);
-                }
-            }
-
             if events.is_empty() && self.receiver.peek().is_none() {
                 continue;
             }
 
             // Handle control messages, if there are any.
-            if !self.drain_recv_channel(state) {
+            if !self.drain_recv_channel() {
                 if self.writer_failed.load(Ordering::Acquire) {
                     return Err(io::Error::other("the PTY writer stopped"));
                 }
@@ -937,9 +788,6 @@ where
                     }
                     Msg::Resize(size) => {
                         let _ = self.control.send(Msg::Resize(size));
-                    }
-                    Msg::Compress => {
-                        let _ = self.control.send(Msg::Compress);
                     }
                     Msg::Shutdown => {
                         stopping = true;
