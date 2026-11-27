@@ -314,10 +314,17 @@ fn parse_directory_url(param: &[u8]) -> Option<String> {
     (!names_a_share(&path)).then_some(path)
 }
 
-/// A path to a share on another machine (UNC: `\\server\share`, or
-/// `//server/share`, which Windows reads the same way).
+/// A path to a share on another machine: two separators of either kind first
+/// (`\\server\share`, `//server/share`, `/\server`; Windows reads them
+/// all as UNC, device paths like `\\?\UNC\server` too), or the NT form
+/// `\??\UNC\server`, which Windows passes through as is. Refused on every
+/// target, so the answer doesn't depend on where rio-vt was built; on Unix
+/// that leaves out a directory named `\...` under `/`.
 fn names_a_share(path: &str) -> bool {
-    path.starts_with("//") || path.starts_with("\\\\")
+    let separator = |b: &u8| matches!(b, b'/' | b'\\');
+    let bytes = path.as_bytes();
+    (bytes.len() >= 2 && separator(&bytes[0]) && separator(&bytes[1]))
+        || path.starts_with("\\??\\")
 }
 
 /// Whether an OSC 7 host names this machine.
@@ -1023,14 +1030,24 @@ mod tests {
             "//server/share",
             "kitty-shell-cwd:////server/share",
             "file:////server/share",
+            // Either separator: Windows reads a mixed pair as UNC too.
+            "/\\server\\share",
+            "\\/server/share",
+            "kitty-shell-cwd:///\\/server/share",
+            "file:///%5C/server/share",
+            "\\\\?\\UNC\\server\\share",
         ] {
             assert_eq!(cwd(payload), None, "{payload}");
         }
         // (On Windows, where the URL's leading slash goes.)
         #[cfg(windows)]
         assert_eq!(cwd("file:///%5C%5Cserver%5Cshare"), None);
+        // The NT form, which a URL's path becomes once that slash is gone.
+        assert_eq!(cwd("kitty-shell-cwd:///\\??\\UNC\\server\\share"), None);
+        assert_eq!(cwd("file:///%5C%3F%3F%5CUNC%5Cserver%5Cshare"), None);
         let parse = parse_conemu_working_directory;
         assert_eq!(parse(&[b"9", b"9", b"\\\\server\\share"]), None);
+        assert_eq!(parse(&[b"9", b"9", b"/\\server\\share"]), None);
     }
 
     #[test]
