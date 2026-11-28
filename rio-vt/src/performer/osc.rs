@@ -390,18 +390,20 @@ fn read_hostnames() -> Vec<String> {
 /// Windows has a name per use, and a shell may report any of them:
 /// `$env:COMPUTERNAME` is the NetBIOS one (`DESKTOP-1A2B3C`), `hostname`
 /// and most ports of Unix tools the DNS one, which can also be qualified.
+/// The physical names: on a cluster node the others are the cluster's
+/// virtual server, while a shell reports the node it runs on.
 #[cfg(windows)]
 fn read_hostnames() -> Vec<String> {
     use windows_sys::Win32::System::SystemInformation::{
-        ComputerNameDnsFullyQualified, ComputerNameDnsHostname, ComputerNameNetBIOS,
-        GetComputerNameExW,
+        ComputerNamePhysicalDnsFullyQualified, ComputerNamePhysicalDnsHostname,
+        ComputerNamePhysicalNetBIOS, GetComputerNameExW,
     };
 
     let mut names: Vec<String> = Vec::new();
     for kind in [
-        ComputerNameDnsHostname,
-        ComputerNameDnsFullyQualified,
-        ComputerNameNetBIOS,
+        ComputerNamePhysicalDnsHostname,
+        ComputerNamePhysicalDnsFullyQualified,
+        ComputerNamePhysicalNetBIOS,
     ] {
         // DNS names are at most 255 characters, NetBIOS ones 15.
         let mut buffer = [0_u16; 256];
