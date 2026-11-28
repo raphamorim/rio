@@ -683,7 +683,10 @@ pub fn resolve_path_for_opening(text: &str, cwd: Option<&Path>) -> Option<PathBu
     let absolute = if expanded.is_absolute() {
         expanded
     } else {
-        cwd?.join(expanded)
+        // Only a directory that is absolute here: OSC 7 and OSC 9;9 take a
+        // Windows path on every target, and joined to `C:\Users` on Unix a
+        // relative path would be looked up from rio's own directory.
+        cwd.filter(|cwd| cwd.is_absolute())?.join(expanded)
     };
 
     if absolute.exists() {
@@ -924,6 +927,16 @@ mod tests {
 
         let _ = std::fs::remove_file(&file);
         let _ = std::fs::remove_dir(&subdir);
+    }
+
+    #[test]
+    fn test_resolve_path_ignores_a_cwd_that_isnt_absolute_here() {
+        // `Cargo.toml` is in the directory the test runs from, which a relative
+        // cwd (a Windows path on Unix, say) would have looked in.
+        assert!(std::path::Path::new("Cargo.toml").exists());
+        let cwd = Path::new("C:\\Users\\user");
+        assert!(resolve_path_for_opening("Cargo.toml", Some(cwd)).is_none());
+        assert!(resolve_path_for_opening("Cargo.toml", Some(Path::new("."))).is_none());
     }
 
     #[test]
