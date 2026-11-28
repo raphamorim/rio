@@ -1467,6 +1467,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             None => return,
         };
 
+        // Someone using the terminals on screen, scrolling back included
+        // (which writes nothing to them): their scrollback stays as it is
+        // for a while (see `IDLE_COMPRESS_AFTER`).
+        if matches!(
+            event,
+            WindowEvent::KeyboardInput { .. }
+                | WindowEvent::MouseInput { .. }
+                | WindowEvent::MouseWheel { .. }
+                | WindowEvent::Ime(_)
+                | WindowEvent::Touch(_)
+        ) {
+            route.window.screen.mark_in_use();
+        }
+
         match event {
             WindowEvent::CloseRequested => {
                 // macOS: Cmd+Q quit confirmation is handled by

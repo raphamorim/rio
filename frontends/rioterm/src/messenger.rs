@@ -6,16 +6,17 @@ use std::time::Instant;
 
 pub struct Messenger {
     pub channel: corcovado::channel::Sender<Msg>,
-    /// When input (keys, a paste, mouse reports) was last written to the
-    /// terminal: whether someone is using it.
-    last_input: Cell<Instant>,
+    /// When someone last used the terminal: input written to it (keys, a
+    /// paste, mouse reports), or keys, the mouse or the wheel on its window
+    /// (`mark_used`), scrolling it back included.
+    last_use: Cell<Instant>,
 }
 
 impl Messenger {
     pub fn new(channel: corcovado::channel::Sender<Msg>) -> Messenger {
         Messenger {
             channel,
-            last_input: Cell::new(Instant::now()),
+            last_use: Cell::new(Instant::now()),
         }
     }
 
@@ -27,14 +28,25 @@ impl Messenger {
             return;
         }
 
-        self.last_input.set(Instant::now());
+        self.mark_used();
         let _ = self.channel.send(Msg::Input(bytes));
     }
 
-    /// When input was last written to the terminal (or it was made).
+    /// Someone is using the terminal now.
     #[inline]
-    pub fn last_input(&self) -> Instant {
-        self.last_input.get()
+    pub fn mark_used(&self) {
+        self.last_use.set(Instant::now());
+    }
+
+    #[cfg(test)]
+    pub fn mark_used_at(&self, at: Instant) {
+        self.last_use.set(at);
+    }
+
+    /// When someone last used the terminal (or it was made).
+    #[inline]
+    pub fn last_use(&self) -> Instant {
+        self.last_use.get()
     }
 
     /// The answer to a query the terminal left to this thread (the

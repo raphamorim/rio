@@ -2498,6 +2498,15 @@ impl Screen<'_> {
     /// Compress the scrollback of this window's terminals that no one has
     /// used for a while (`context::IDLE_COMPRESS_AFTER`), until `until`.
     /// Returns whether one has more to do now.
+    /// Someone is using the terminals on screen (keys, the mouse, the wheel
+    /// on the window): the panes of the tab shown, since the wheel scrolls
+    /// the one under the pointer, focused or not.
+    pub fn mark_in_use(&self) {
+        for item in self.context_manager.current_grid().contexts().values() {
+            item.context().messenger.mark_used();
+        }
+    }
+
     pub fn compress_idle_scrollback(
         &mut self,
         now: std::time::Instant,
