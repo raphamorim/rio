@@ -289,7 +289,7 @@ fn parse_directory_url(param: &[u8]) -> Option<String> {
 
     // A file URL's host is percent-encoded like its path (`h%C3%B6st`); the
     // kitty flavor writes it as is.
-    let host = if percent_encoded {
+    let host = if percent_encoded && host.contains('%') {
         std::borrow::Cow::Owned(percent_decode(host)?)
     } else {
         std::borrow::Cow::Borrowed(host)
