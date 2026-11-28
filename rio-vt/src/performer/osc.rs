@@ -328,15 +328,16 @@ fn parse_directory_url(param: &[u8]) -> Option<String> {
 
 /// A path to a share on another machine: two separators of either kind first
 /// (`\\server\share`, `//server/share`, `/\server`; Windows reads them
-/// all as UNC, device paths like `\\?\UNC\server` too), or the NT form
-/// `\??\UNC\server`, which Windows passes through as is. Refused on every
+/// all as UNC, device paths like `\\?\UNC\server` too). Refused on every
 /// target, so the answer doesn't depend on where rio-vt was built; on Unix
 /// that leaves out a directory named `\...` under `/`.
+///
+/// The NT form `\??\UNC\server` needs no case of its own: a bare path must
+/// start with `/` or a drive letter, and a URL's path is looked at with its
+/// leading `/`, which makes it `/\??\...`.
 fn names_a_share(path: &str) -> bool {
     let separator = |b: &u8| matches!(b, b'/' | b'\\');
-    let bytes = path.as_bytes();
-    (bytes.len() >= 2 && separator(&bytes[0]) && separator(&bytes[1]))
-        || path.starts_with("\\??\\")
+    matches!(path.as_bytes(), [first, second, ..] if separator(first) && separator(second))
 }
 
 /// Whether an OSC 7 host names this machine.
@@ -1103,10 +1104,9 @@ mod tests {
         ] {
             assert_eq!(cwd(payload), None, "{payload}");
         }
-        // (On Windows, where the URL's leading slash goes.)
-        #[cfg(windows)]
+        // Encoded separators, and the NT form, are seen after decoding.
         assert_eq!(cwd("file:///%5C%5Cserver%5Cshare"), None);
-        // The NT form, which a URL's path becomes once that slash is gone.
+        assert_eq!(cwd("\\??\\UNC\\server\\share"), None);
         assert_eq!(cwd("kitty-shell-cwd:///\\??\\UNC\\server\\share"), None);
         assert_eq!(cwd("file:///%5C%3F%3F%5CUNC%5Cserver%5Cshare"), None);
         let parse = parse_conemu_working_directory;
