@@ -267,6 +267,12 @@ pub struct Config {
         rename = "scrollback-history-limit"
     )]
     pub scrollback_history_limit: usize,
+    /// Compress the scrollback of terminals no one has used for a few
+    /// seconds (no input, keys, mouse or wheel). It reads the same, takes a
+    /// fraction of the memory, and is decoded when scrolled back to. The
+    /// history limit counts lines either way.
+    #[serde(default = "default_bool_true", rename = "scrollback-compression")]
+    pub scrollback_compression: bool,
     #[serde(default = "effects::Effects::default")]
     pub effects: effects::Effects,
 }
@@ -781,6 +787,7 @@ impl Default for Config {
             notify_on_command_finish: NotifyOnCommandFinish::default(),
             enable_scroll_bar: true,
             scrollback_history_limit: default_scrollback_history_limit(),
+            scrollback_compression: true,
             effects: effects::Effects::default(),
         }
     }
@@ -1475,6 +1482,15 @@ mod tests {
 
         let scroll = scroll_config("scroll-partial-multiplier", "multiplier = 5.0");
         assert_eq!((scroll.multiplier, scroll.divider), (5.0, 1.0));
+    }
+
+    #[test]
+    fn test_scrollback_compression() {
+        let on = create_temporary_config("compression-default", "");
+        assert!(on.scrollback_compression);
+        let off =
+            create_temporary_config("compression-off", "scrollback-compression = false");
+        assert!(!off.scrollback_compression);
     }
 
     #[test]

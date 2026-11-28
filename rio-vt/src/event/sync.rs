@@ -65,6 +65,13 @@ impl<T> TerminalLock<T> {
         guard
     }
 
+    /// Lock the terminal if no one has it, without signalling demand
+    /// (the reader isn't asked to make way): for work that can wait,
+    /// such as compressing an idle terminal's scrollback.
+    pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
+        self.data.try_lock()
+    }
+
     /// Lock the terminal without signalling demand. For the reader
     /// thread, whose hot loop is what demand is measured against.
     #[cfg(any(feature = "pty", test))]

@@ -1,14 +1,23 @@
 use crate::event::Msg;
 use rio_backend::event::WindowSize;
 use std::borrow::Cow;
+use std::cell::Cell;
+use std::time::Instant;
 
 pub struct Messenger {
     pub channel: corcovado::channel::Sender<Msg>,
+    /// When someone last used the terminal: input written to it (keys, a
+    /// paste, mouse reports), or keys, the mouse or the wheel on its window
+    /// (`mark_used`), scrolling it back included.
+    last_use: Cell<Instant>,
 }
 
 impl Messenger {
     pub fn new(channel: corcovado::channel::Sender<Msg>) -> Messenger {
-        Messenger { channel }
+        Messenger {
+            channel,
+            last_use: Cell::new(Instant::now()),
+        }
     }
 
     #[inline]
@@ -19,7 +28,25 @@ impl Messenger {
             return;
         }
 
+        self.mark_used();
         let _ = self.channel.send(Msg::Input(bytes));
+    }
+
+    /// Someone is using the terminal now.
+    #[inline]
+    pub fn mark_used(&self) {
+        self.last_use.set(Instant::now());
+    }
+
+    #[cfg(test)]
+    pub fn mark_used_at(&self, at: Instant) {
+        self.last_use.set(at);
+    }
+
+    /// When someone last used the terminal (or it was made).
+    #[inline]
+    pub fn last_use(&self) -> Instant {
+        self.last_use.get()
     }
 
     /// The answer to a query the terminal left to this thread (the

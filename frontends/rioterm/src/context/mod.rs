@@ -77,7 +77,85 @@ pub struct Context<T: EventListener> {
     pub spawned_program: String,
     /// The command exited and the pane is held open until a key press.
     pub exited: bool,
+    /// Its scrollback's compression while no one uses it.
+    pub idle: IdleCompression,
     _io_thread: Option<JoinHandle<(Machine<teletypewriter::Pty, T>, performer::State)>>,
+}
+
+/// A terminal's scrollback is compressed once no one has used it for
+/// [`IDLE_COMPRESS_AFTER`]: no input written to it, no keys, mouse or wheel
+/// on its window (`Messenger::last_use`). Output may go on meanwhile (a build, `tail -f`); what it adds to
+/// the history is compressed as it comes, a few blocks a tick.
+pub const IDLE_COMPRESS_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Blocks (256 rows each) compressed a second while rows keep arriving in
+/// the history: more than a build log writes, for a couple of milliseconds
+/// of the terminal's lock a second, so a flood isn't slowed (nor rows
+/// about to be dropped from the history compressed for nothing).
+const FLOWING_BLOCKS: usize = 16;
+
+#[derive(Default)]
+pub struct IdleCompression {
+    /// What the history was when the last pass over it found nothing left
+    /// (see [`HistoryKey`]): nothing to do until it changes.
+    done: Option<HistoryKey>,
+    /// The history's rows as the last look saw them: rows still arriving
+    /// if they changed.
+    seen: Option<(usize, u64)>,
+}
+
+/// What a pass leaves behind changes with: rows in the history and rows
+/// dropped from it (output), the width (a column resize decompresses all
+/// of it to reflow), and the last use (scrolling back decodes what it
+/// shows, which the next pass drops).
+type HistoryKey = (usize, u64, usize, std::time::Instant);
+
+impl<T: EventListener> Context<T> {
+    /// Compress this terminal's scrollback until `until`, if no one has
+    /// used it for [`IDLE_COMPRESS_AFTER`]. Returns whether there's more
+    /// to do now (`until` came first).
+    pub fn compress_idle_scrollback(
+        &mut self,
+        now: std::time::Instant,
+        until: std::time::Instant,
+    ) -> bool {
+        use rio_backend::crosswords::grid::Dimensions;
+        let last_use = self.messenger.last_use();
+        if now < last_use + IDLE_COMPRESS_AFTER {
+            return false;
+        }
+        // Not while someone has it (the reader parsing a flood, a frame):
+        // the next look, a second from now, tries again.
+        let Some(mut terminal) = self.terminal.try_lock() else {
+            return false;
+        };
+        let rows = (terminal.grid.history_size(), terminal.grid.lines_evicted());
+        let key = (rows.0, rows.1, terminal.grid.columns(), last_use);
+        if self.idle.done == Some(key) {
+            return false;
+        }
+        // The other terminals' looks took this one's time.
+        if std::time::Instant::now() >= until {
+            return true;
+        }
+        let flowing = self.idle.seen.replace(rows).is_some_and(|r| r != rows);
+        let mut blocks = 0;
+        loop {
+            if !terminal.compress_history(Some(1)) {
+                self.idle.done = Some(key);
+                return false;
+            }
+            blocks += 1;
+            let out_of_time = std::time::Instant::now() >= until;
+            if flowing && (blocks >= FLOWING_BLOCKS || out_of_time) {
+                // The rest on the next look, a second from now.
+                return false;
+            }
+            if out_of_time {
+                return true;
+            }
+        }
+    }
 }
 
 impl<T: rio_backend::event::EventListener> Drop for Context<T> {
@@ -139,6 +217,7 @@ pub struct ContextManagerConfig {
     pub title: rio_backend::config::title::Title,
     pub keyboard: rio_backend::config::keyboard::Keyboard,
     pub scrollback_history_limit: usize,
+    pub scrollback_compression: bool,
     pub grapheme_clustering: bool,
     /// The configured palette, handed to every terminal so it answers
     /// color queries itself.
@@ -249,6 +328,7 @@ pub fn create_dead_context<T: rio_backend::event::EventListener>(
         title_dirty: false,
         spawned_program: String::new(),
         exited: false,
+        idle: IdleCompression::default(),
         _io_thread: None,
     }
 }
@@ -457,6 +537,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title_dirty: false,
             spawned_program: spawned_program_name(config),
             exited: false,
+            idle: IdleCompression::default(),
             _io_thread: io_thread,
         };
         context.title = ContextTitle {
@@ -1544,6 +1625,7 @@ impl<T: EventListener + Clone + std::marker::Send + 'static> ContextManager<T> {
             title: config.title,
             keyboard: config.keyboard,
             scrollback_history_limit: config.scrollback_history_limit,
+            scrollback_compression: config.scrollback_compression,
             grapheme_clustering: config.grapheme_clustering,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
             cursor_shape: config.cursor.shape,
@@ -1733,6 +1815,209 @@ pub mod test {
                 }
                 _ => {}
             }
+        }
+    }
+
+    fn idle_test_context() -> Context<VoidListener> {
+        use rio_backend::config::layout::Margin;
+        use rio_backend::sugarloaf::layout::TextDimensions;
+        let text = TextDimensions {
+            scale: 1.0,
+            width: 18.,
+            height: 9.,
+        };
+        let cell = rio_backend::sugarloaf::layout::CellMetrics {
+            cell_width: 18,
+            cell_height: 9,
+            cell_baseline: 0,
+            face_width: 18.0,
+            face_height: 9.0,
+            face_y: 0.0,
+        };
+        let dimension = ContextDimension::build(
+            1200.0,
+            800.0,
+            text,
+            cell,
+            1.0,
+            14.0,
+            Margin::default(),
+        );
+        let mut ctx =
+            create_mock_context(VoidListener {}, WindowId::from(0), 0, dimension);
+        // (A dead context keeps no history.)
+        let terminal = Crosswords::new(
+            ctx.dimension,
+            CursorShape::Block,
+            VoidListener {},
+            WindowId::from(0),
+            0,
+            10_000,
+        );
+        ctx.terminal = Arc::new(TerminalLock::new(terminal));
+        ctx
+    }
+
+    fn feed_lines(ctx: &Context<VoidListener>, from: usize, n: usize) {
+        use rio_backend::performer::handler::Processor;
+        let mut parser = Processor::default();
+        let mut terminal = ctx.terminal.lock();
+        for i in from..from + n {
+            parser.advance(
+                &mut *terminal,
+                format!("\x1b[3{}mline {i}\x1b[0m of some output\r\n", i % 8).as_bytes(),
+            );
+        }
+    }
+
+    fn compressed(ctx: &Context<VoidListener>) -> usize {
+        ctx.terminal.lock().history_memory().compressed_rows
+    }
+
+    #[test]
+    fn an_idle_terminal_has_its_scrollback_compressed() {
+        use std::time::{Duration, Instant};
+        // Before the context is made: its "last used" is after this.
+        let start = Instant::now();
+        let mut ctx = idle_test_context();
+        feed_lines(&ctx, 0, 3_000);
+        let far = start + Duration::from_secs(60);
+        // Just used (made, typed in): not yet.
+        assert!(!ctx.compress_idle_scrollback(start + Duration::from_secs(1), far));
+        assert_eq!(compressed(&ctx), 0);
+        // Unused for long enough: all of it.
+        let idle = start + IDLE_COMPRESS_AFTER + Duration::from_secs(1);
+        assert!(!ctx.compress_idle_scrollback(idle, far));
+        let done = compressed(&ctx);
+        assert!(done >= 2_000, "{done}");
+        // Nothing new: nothing done (not even a look over the history).
+        assert!(!ctx.compress_idle_scrollback(idle, far));
+        // Input to it puts it off again.
+        ctx.messenger.send_write(&b"x"[..]);
+        feed_lines(&ctx, 3_000, 600);
+        assert!(!ctx.compress_idle_scrollback(Instant::now(), far));
+        // (Fewer, if anything: output takes the ring's spare rows, some
+        // compressed, for its new lines.)
+        assert!(compressed(&ctx) <= done, "{} > {done}", compressed(&ctx));
+    }
+
+    fn plain(ctx: &Context<VoidListener>) -> usize {
+        ctx.terminal.lock().history_memory().plain_rows
+    }
+
+    /// Someone scrolling `ctx` at `at`: the window's wheel or keys, which
+    /// mark it used (`Screen::mark_in_use`), then the scroll itself.
+    fn scroll_as_someone(
+        ctx: &Context<VoidListener>,
+        scroll: rio_backend::crosswords::grid::Scroll,
+        at: std::time::Instant,
+    ) {
+        ctx.messenger.mark_used_at(at);
+        ctx.terminal.lock().scroll_display(scroll);
+    }
+
+    #[test]
+    fn what_changes_the_history_without_rows_is_compressed_again() {
+        use rio_backend::crosswords::grid::Scroll;
+        use rio_backend::crosswords::CrosswordsSize;
+        use std::time::{Duration, Instant};
+        let mut ctx = idle_test_context();
+        feed_lines(&ctx, 0, 3_000);
+        let far = Instant::now() + Duration::from_secs(3_600);
+        let mut t = Instant::now() + IDLE_COMPRESS_AFTER * 2;
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        assert!(plain(&ctx) < 512);
+        // A column resize decompresses it all to reflow (no rows arrive).
+        ctx.terminal.lock().resize(CrosswordsSize::new(90, 40));
+        assert!(plain(&ctx) > 2_000);
+        t += Duration::from_secs(1);
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        assert!(plain(&ctx) < 512, "{}", plain(&ctx));
+        // Scrolled up and back between two looks: used, then compressed
+        // (the history's rows and width are as the last pass left them).
+        let at = t + Duration::from_millis(500);
+        scroll_as_someone(&ctx, Scroll::Top, at);
+        {
+            // What a frame at the top reads, which decodes it.
+            use rio_backend::crosswords::pos::{Column, Line};
+            let terminal = ctx.terminal.lock();
+            let top = -(terminal.history_size() as i32);
+            let _ = terminal.grid[Line(top)][Column(0)].c();
+            assert!(terminal.history_memory().decoded_bytes > 0);
+        }
+        scroll_as_someone(&ctx, Scroll::Bottom, at);
+        t += Duration::from_secs(1);
+        let before = ctx.terminal.lock().history_memory();
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        assert_eq!(ctx.terminal.lock().history_memory(), before, "put off");
+        t += IDLE_COMPRESS_AFTER;
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        assert_eq!(ctx.terminal.lock().history_memory().decoded_bytes, 0);
+    }
+
+    #[test]
+    fn output_under_a_scrolled_back_view_isnt_someone_using_it() {
+        use rio_backend::crosswords::grid::Scroll;
+        use std::time::{Duration, Instant};
+        let mut ctx = idle_test_context();
+        feed_lines(&ctx, 0, 3_000);
+        let at = Instant::now();
+        scroll_as_someone(&ctx, Scroll::Delta(100), at);
+        let far = Instant::now() + Duration::from_secs(3_600);
+        let mut t = at + IDLE_COMPRESS_AFTER * 2;
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        // Output keeps the view where it is, moving its offset, and is no
+        // one using the terminal.
+        let offset = ctx.terminal.lock().grid.display_offset();
+        feed_lines(&ctx, 3_000, 2_000);
+        assert!(ctx.terminal.lock().grid.display_offset() > offset);
+        assert_eq!(ctx.messenger.last_use(), at);
+        t += Duration::from_secs(1);
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        // The look went on (the rows it took are below the view, which a
+        // pass leaves as they are).
+        let history = ctx.terminal.lock().history_size();
+        assert_eq!(ctx.idle.seen.map(|s| s.0), Some(history));
+    }
+
+    #[test]
+    fn scrolling_puts_compression_off_and_flowing_output_gets_a_few_blocks() {
+        use rio_backend::crosswords::grid::Scroll;
+        use std::time::{Duration, Instant};
+        let mut ctx = idle_test_context();
+        feed_lines(&ctx, 0, 3_000);
+        let far = Instant::now() + Duration::from_secs(3_600);
+        let t0 = Instant::now() + IDLE_COMPRESS_AFTER + Duration::from_secs(1);
+        // Someone scrolled back just before the look.
+        scroll_as_someone(&ctx, Scroll::Delta(50), t0);
+        assert!(!ctx.compress_idle_scrollback(t0, far));
+        assert_eq!(compressed(&ctx), 0);
+        // Still there a while later, untouched: compressed.
+        let t1 = t0 + IDLE_COMPRESS_AFTER;
+        assert!(!ctx.compress_idle_scrollback(t1, far));
+        let done = compressed(&ctx);
+        assert!(done >= 2_000, "{done}");
+        // Rows still arriving between looks (no one typing): a few blocks
+        // a look, not all of them.
+        let t2 = t1 + Duration::from_secs(1);
+        scroll_as_someone(&ctx, Scroll::Bottom, t2);
+        assert!(!ctx.compress_idle_scrollback(t2, far));
+        // (Scrolling down was using it too: once that's past, a quiet look.)
+        let mut t = t2 + IDLE_COMPRESS_AFTER;
+        assert!(!ctx.compress_idle_scrollback(t, far));
+        assert!(ctx.terminal.lock().history_memory().plain_rows < 512);
+        for round in 0..3 {
+            // A whole history's worth between two looks.
+            feed_lines(&ctx, 3_000 + round * 10_000, 10_000);
+            t += Duration::from_secs(1);
+            assert!(!ctx.compress_idle_scrollback(t, far));
+            // FLOWING_BLOCKS of 256 rows compressed, the rest left for
+            // the next looks.
+            let plain = ctx.terminal.lock().history_memory().plain_rows;
+            assert!(
+                plain >= 10_000 - (FLOWING_BLOCKS + 1) * 256,
+                "round {round}: {plain} plain"
+            );
         }
     }
 

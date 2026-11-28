@@ -31,6 +31,26 @@ use rio_window::window::WindowId;
 use rio_window::window::{CursorIcon, Fullscreen};
 use std::error::Error;
 use std::time::{Duration, Instant};
+/// How often every terminal's scrollback is looked at (see
+/// `context::IDLE_COMPRESS_AFTER`).
+const COMPRESS_SCROLLBACK_EVERY: Duration = Duration::from_secs(1);
+/// The work one look does, at most, across all terminals: about ten
+/// blocks of 256 rows.
+const COMPRESS_SCROLLBACK_WORK: Duration = Duration::from_millis(1);
+/// The next look, while a terminal has more to compress.
+const COMPRESS_SCROLLBACK_AGAIN: Duration = Duration::from_millis(10);
+/// The timers' ids: no window's or route's (`Scheduler::unschedule_window`
+/// drops every timer with a closed one's id).
+const COMPRESS_SCROLLBACK_TIMER: usize = usize::MAX;
+const COMPRESS_SCROLLBACK_SOON: usize = usize::MAX - 1;
+
+fn compress_scrollback_event() -> EventPayload {
+    // Not a window's: the handler looks at all of them.
+    EventPayload::new(
+        RioEventType::Rio(RioEvent::CompressScrollback),
+        rio_backend::event::WindowId::from(0),
+    )
+}
 
 pub struct Application<'a> {
     config: rio_backend::config::Config,
@@ -108,7 +128,15 @@ impl Application<'_> {
             rio_backend::config::config_dir_path(),
             event_proxy.clone(),
         );
-        let scheduler = Scheduler::new(proxy);
+        let mut scheduler = Scheduler::new(proxy);
+        // Every terminal's scrollback is looked at once a second, and
+        // compressed once no one has used it for a while.
+        scheduler.schedule(
+            compress_scrollback_event(),
+            COMPRESS_SCROLLBACK_EVERY,
+            true,
+            TimerId::new(Topic::CompressScrollback, COMPRESS_SCROLLBACK_TIMER),
+        );
         event_loop.listen_device_events(DeviceEvents::Never);
 
         #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -949,6 +977,26 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
                     }
                 }
             }
+            RioEventType::Rio(RioEvent::CompressScrollback) => {
+                // A millisecond of it per tick, at most, for all windows'
+                // idle terminals; again soon while some have more to do.
+                let now = Instant::now();
+                let until = now + COMPRESS_SCROLLBACK_WORK;
+                let mut more = false;
+                for route in self.router.routes.values_mut() {
+                    more |= route.window.screen.compress_idle_scrollback(now, until);
+                }
+                let soon =
+                    TimerId::new(Topic::CompressScrollback, COMPRESS_SCROLLBACK_SOON);
+                if more && !self.scheduler.scheduled(soon) {
+                    self.scheduler.schedule(
+                        compress_scrollback_event(),
+                        COMPRESS_SCROLLBACK_AGAIN,
+                        false,
+                        soon,
+                    );
+                }
+            }
             RioEventType::Rio(RioEvent::SelectionScrollTick) => {
                 if let Some(route) = self.router.routes.get_mut(&window_id) {
                     route.window.screen.selection_scroll_tick();
@@ -1418,6 +1466,20 @@ impl ApplicationHandler<EventPayload> for Application<'_> {
             Some(window) => window,
             None => return,
         };
+
+        // Someone using the terminals on screen, scrolling back included
+        // (which writes nothing to them): their scrollback stays as it is
+        // for a while (see `IDLE_COMPRESS_AFTER`).
+        if matches!(
+            event,
+            WindowEvent::KeyboardInput { .. }
+                | WindowEvent::MouseInput { .. }
+                | WindowEvent::MouseWheel { .. }
+                | WindowEvent::Ime(_)
+                | WindowEvent::Touch(_)
+        ) {
+            route.window.screen.mark_in_use();
+        }
 
         match event {
             WindowEvent::CloseRequested => {

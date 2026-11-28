@@ -334,6 +334,9 @@ pub enum RioEvent {
 
     /// Selection scroll tick — auto-scroll while dragging outside viewport.
     SelectionScrollTick,
+    /// Compress the scrollback of terminals no one has used for a while
+    /// (the application's own timer).
+    CompressScrollback,
 
     /// Update terminal screen colors.
     ///
@@ -456,6 +459,7 @@ impl Debug for RioEvent {
                 write!(f, "BlinkCursor {timeout} {route_id}")
             }
             RioEvent::SelectionScrollTick => write!(f, "SelectionScrollTick"),
+            RioEvent::CompressScrollback => write!(f, "CompressScrollback"),
             RioEvent::Noop => write!(f, "Noop"),
             RioEvent::Copy(_) => write!(f, "Copy"),
             RioEvent::Paste => write!(f, "Paste"),

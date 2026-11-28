@@ -281,6 +281,7 @@ impl Screen<'_> {
             title: config.title.clone(),
             keyboard: config.keyboard.clone(),
             scrollback_history_limit: config.scrollback_history_limit,
+            scrollback_compression: config.scrollback_compression,
             grapheme_clustering: config.grapheme_clustering,
             colors: rio_backend::config::colors::term::List::from(&config.colors),
             cursor_shape: config.cursor.shape,
@@ -638,6 +639,9 @@ impl Screen<'_> {
 
         // Update keyboard config in context manager
         self.context_manager.config.keyboard = config.keyboard.clone();
+        // Tabs and splits opened from now on take it too.
+        self.context_manager.config.scrollback_compression =
+            config.scrollback_compression;
         // New terminals take the reloaded cursor defaults.
         self.context_manager.config.cursor_shape = config.cursor.shape;
         self.context_manager.config.cursor_blinking = config.cursor.blinking;
@@ -2489,6 +2493,35 @@ impl Screen<'_> {
         } else {
             0
         }
+    }
+
+    /// Compress the scrollback of this window's terminals that no one has
+    /// used for a while (`context::IDLE_COMPRESS_AFTER`), until `until`.
+    /// Returns whether one has more to do now.
+    /// Someone is using the terminals on screen (keys, the mouse, the wheel
+    /// on the window): the panes of the tab shown, since the wheel scrolls
+    /// the one under the pointer, focused or not.
+    pub fn mark_in_use(&self) {
+        for item in self.context_manager.current_grid().contexts().values() {
+            item.context().messenger.mark_used();
+        }
+    }
+
+    pub fn compress_idle_scrollback(
+        &mut self,
+        now: std::time::Instant,
+        until: std::time::Instant,
+    ) -> bool {
+        if !self.context_manager.config.scrollback_compression {
+            return false;
+        }
+        let mut more = false;
+        for context_grid in self.context_manager.contexts_mut() {
+            for item in context_grid.contexts_mut().values_mut() {
+                more |= item.context_mut().compress_idle_scrollback(now, until);
+            }
+        }
+        more
     }
 
     /// Perform one tick of selection auto-scroll.
